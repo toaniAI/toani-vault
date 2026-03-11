@@ -84,10 +84,51 @@
 
 #### 2.1.2 软件依赖
 
-- **Docker**: 24.0+
-- **Docker Compose**: 2.20+
-- **Node.js**: 22+（用于 SDK）
-- **Rust**: 1.75+（用于服务端）
+| 依赖 | 版本要求 | 用途 |
+|------|----------|------|
+| **Docker** | 24.0+ | 容器化部署 |
+| **Docker Compose** | 2.20+ | 服务编排 |
+| **Node.js** | 22+ | SDK 开发 |
+| **Rust** | 1.75+ | 服务端开发 |
+
+**版本管理工具安装（推荐）**
+
+为了方便管理 Node.js 和 Rust 版本，建议使用以下版本管理工具：
+
+**nvm（Node.js 版本管理）:**
+```bash
+# macOS/Linux
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+
+# 安装后重新加载 shell
+source ~/.bashrc  # 或 ~/.zshrc
+
+# 安装 Node.js 22
+nvm install 22
+nvm use 22
+nvm alias default 22
+
+# 验证安装
+node --version  # v22.x.x
+npm --version
+```
+
+**rustup（Rust 版本管理）:**
+```bash
+# 安装 rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# 选择默认工具链
+source $HOME/.cargo/env
+
+# 安装指定版本
+rustup install 1.75.0
+rustup default 1.75.0
+
+# 验证安装
+rustc --version  # rustc 1.75.0
+cargo --version
+```
 
 ### 2.2 安装
 
@@ -183,7 +224,7 @@ credbridge token create \
 
 打开浏览器访问 `http://localhost:3000`（或您的部署地址）。
 
-**截图位置**: [登录页面截图] - 显示登录表单界面
+> 💡 **界面说明**: 登录页面包含用户名/密码输入框、登录按钮、忘记密码链接。首次访问时请使用管理员账号登录。
 
 #### 3.1.2 用户名/密码登录
 
@@ -200,7 +241,7 @@ credbridge token create \
 4. 输入验证码确认
 5. **保存恢复码**（用于 MFA 设备丢失时恢复）
 
-**截图位置**: [MFA 设置页面截图] - 显示 QR 码和恢复码
+> 💡 **界面说明**: MFA 设置页面显示二维码（用于 Authenticator App 扫描）和 10 个恢复码，请务必保存恢复码到安全位置。
 
 ### 3.2 凭证管理
 
@@ -214,7 +255,7 @@ credbridge token create \
 - 按类型、标签、日期过滤
 - 分页（每页 10/25/50 条）
 
-**截图位置**: [凭证列表页面截图] - 显示凭证表格和过滤器
+> 💡 **界面说明**: 凭证列表页面以表格形式展示所有凭证，支持按类型、标签、日期过滤，可切换为卡片视图。
 
 #### 3.2.2 创建凭证
 
@@ -236,7 +277,7 @@ credbridge token create \
 
 4. 点击「保存」
 
-**截图位置**: [创建凭证表单截图] - 显示各类型凭证的表单
+> 💡 **界面说明**: 创建凭证表单根据所选类型动态变化，包含名称、服务、标签、过期时间等通用字段，以及类型特定的字段（如用户名/密码、API Key 等）。
 
 #### 3.2.3 查看和编辑凭证
 
@@ -271,7 +312,7 @@ credbridge token create \
 - 最后使用时间
 - 状态（活跃/已撤销/已过期）
 
-**截图位置**: [Token 列表页面截图]
+> 💡 **界面说明**: Token 列表页面展示所有 API Token 的名称、权限范围、创建/过期时间、最后使用时间和状态。
 
 #### 3.3.2 生成 Token
 
@@ -291,7 +332,7 @@ credbridge token create \
 
 **⚠️ 重要提示**: Token 生成后仅显示一次，请务必立即复制保存。
 
-**截图位置**: [生成 Token 弹窗截图] - 显示 Token 和复制按钮
+> 💡 **界面说明**: 生成 Token 弹窗显示新生成的 PASETO Token 字符串（仅显示一次）和复制按钮，请立即复制保存。
 
 #### 3.3.3 撤销 Token
 
@@ -314,7 +355,7 @@ credbridge token create \
 - 结果（成功/失败/拒绝）
 - IP 地址
 
-**截图位置**: [审计日志列表截图]
+> 💡 **界面说明**: 审计日志列表以时间倒序展示所有操作记录，包括时间戳、用户、操作类型、资源、结果和 IP 地址。
 
 #### 3.4.2 日志过滤
 
@@ -333,7 +374,7 @@ credbridge token create \
 4. 选择范围：当前筛选结果 或 全部
 5. 下载导出文件
 
-**截图位置**: [日志导出弹窗截图]
+> 💡 **界面说明**: 日志导出弹窗允许选择导出格式（JSON/CSV）和范围（当前筛选结果或全部）。
 
 ### 3.5 租户管理（管理员）
 
@@ -1197,6 +1238,60 @@ credbridge audit resync
 
 ---
 
+### 8.7 故障排查快速检查清单 ✅
+
+使用以下检查清单进行系统性故障排查：
+
+#### 服务启动检查
+- [ ] Docker 版本 >= 24.0 (`docker --version`)
+- [ ] Docker Compose 版本 >= 2.20 (`docker-compose --version`)
+- [ ] 必要端口未被占用 (8080, 3000, 5432, 3322, 8200)
+- [ ] `.env` 文件已正确配置
+- [ ] 配置文件存在于 `docker/config/` 目录
+
+#### 依赖服务检查
+- [ ] PostgreSQL 服务正常运行 (`docker-compose ps postgres`)
+- [ ] Redis 服务正常运行 (`docker-compose ps redis`)
+- [ ] immudb 服务正常运行 (`docker-compose ps immudb`)
+- [ ] Vault 服务正常运行 (`docker-compose ps vault`)
+- [ ] 数据库连接正常 (`docker-compose exec postgres pg_isready -U credbridge`)
+
+#### TEE 环境检查
+- [ ] TEE 驱动已加载 (`ls /dev/sgx*`)
+- [ ] CPU 支持 SGX (`grep sgx /proc/cpuinfo`)
+- [ ] 软件 TEE 降级模式可用 (`credbridge init --tee-mode software`)
+
+#### 认证检查
+- [ ] Token 未过期
+- [ ] Token 未被撤销
+- [ ] Authorization 头格式正确 (`Bearer v4.local.xxx`)
+- [ ] Token 拥有所需 Scope
+
+#### API 连接检查
+- [ ] 健康检查端点返回 200 (`curl http://localhost:8080/health`)
+- [ ] 网络连通性正常 (`ping localhost`)
+- [ ] 防火墙未阻断端口
+
+#### 性能检查
+- [ ] 磁盘空间充足 (`df -h`)
+- [ ] 内存使用率正常 (`docker stats`)
+- [ ] CPU 负载正常 (`uptime`)
+
+#### 日志检查
+- [ ] 查看 vault-service 日志 (`docker-compose logs vault-service`)
+- [ ] 查看 PostgreSQL 日志 (`docker-compose logs postgres`)
+- [ ] 日志中无 ERROR 级别错误
+- [ ] 审计日志正常写入
+
+#### 恢复操作
+如果以上检查均正常但问题仍存在：
+1. [ ] 重启服务: `docker-compose restart`
+2. [ ] 清理重建: `docker-compose down -v && docker-compose up -d`
+3. [ ] 检查最新版本更新
+4. [ ] 联系技术支持并提供完整日志
+
+---
+
 ## 附录
 
 ### A. 术语表
@@ -1213,10 +1308,13 @@ credbridge audit resync
 
 ### B. 参考文档
 
-- [API 详细文档](./API.md)
-- [设计规范](./CredBridge_CN_设计规范_v1.0.md)
-- [架构设计](../_bmad-output/planning-artifacts/architecture.md)
-- [安全白皮书](https://credbridge.io/security)
+- [API 详细文档](../API.md) - RESTful API 完整参考
+- [设计规范](./CredBridge_CN_设计规范_v1.0.md) - 系统设计文档
+- [架构设计](../_bmad-output/planning-artifacts/architecture.md) - 技术架构决策
+- [安全白皮书](https://credbridge.io/security) 🔗 - 外部链接（需网络访问）
+- [部署指南](../docker/README.md) - Docker 部署配置
+- [SDK 文档](./SDK_GUIDE.md) - TypeScript/Rust SDK 使用指南
+- [MCP 集成](./MCP_INTEGRATION.md) - Model Context Protocol 配置
 
 ### C. 更新日志
 
