@@ -1443,6 +1443,7 @@ name = "vault-service"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "http",
  "reqwest",
  "serde",

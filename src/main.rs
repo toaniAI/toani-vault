@@ -33,6 +33,7 @@ use tracing::{info, Level};
 use vault_service::api::{
     credentials::{routes as credential_routes, AppState as CredentialAppState, DefaultAuditLogger},
     audit::{audit_routes, AuditApiState, MemoryAuditStorageAdapter},
+    auth::{auth_routes, AuthApiState},
     tenant::{tenant_routes, TenantApiState},
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     API_BASE_PATH,
@@ -145,6 +146,7 @@ struct AppState {
     config: ServerConfig,
     credential_state: CredentialAppState,
     audit_state: AuditApiState,
+    auth_state: AuthApiState,
     rate_limit_state: RateLimitState,
 }
 
@@ -244,6 +246,9 @@ async fn initialize_app_state(
         storage: Arc::new(audit_storage_adapter),
     };
 
+    // 创建认证 API 状态
+    let auth_state = AuthApiState::new();
+
     // 初始化速率限制状态
     let rate_limit_config = RateLimitConfig::from_env();
     let rate_limit_state = RateLimitState::new(rate_limit_config);
@@ -252,6 +257,7 @@ async fn initialize_app_state(
         config: config.clone(),
         credential_state,
         audit_state,
+        auth_state,
         rate_limit_state,
     })
 }
@@ -334,6 +340,9 @@ fn build_api_routes(app_state: AppState) -> Router {
     // 审计日志路由
     let audit_routes = audit_routes(app_state.audit_state.clone());
 
+    // 认证路由
+    let auth_routes = auth_routes().with_state(app_state.auth_state.clone());
+
     // 租户管理路由（使用内存存储）
     let tenant_store = MemoryTenantConfigStore::new();
     let tenant_manager = TenantManager::new_simple(tenant_store);
@@ -354,6 +363,8 @@ fn build_api_routes(app_state: AppState) -> Router {
         .merge(credential_routes)
         // 嵌套审计路由
         .merge(audit_routes)
+        // 嵌套认证路由
+        .merge(auth_routes)
         // 嵌套租户路由
         .merge(tenant_routes)
         .layer(Extension(app_state))

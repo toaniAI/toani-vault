@@ -1,4 +1,8 @@
+# Build artifacts
 /target
+**/target/
+
+# Node.js
 /node_modules
 **/node_modules/
 **/dist/

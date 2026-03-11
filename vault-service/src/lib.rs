@@ -1,6 +1,6 @@
 //! CredBridge Vault Service - 监控与告警模块
 //!
-//! 提供服务健康检查、指标收集和告警功能。
+//! 提供服务健康检查、指标收集、告警功能和 TEE 远程认证。
 
 pub mod alerting;
 pub mod api;
@@ -16,6 +16,12 @@ pub use metrics::MetricsCollector;
 pub use api::{
     health_check, health_check_detail, DetailedHealthResponse, HealthConfig, HealthResponse,
     HealthState, HealthStatus,
+};
+
+// 重新导出 attestation 类型
+pub use api::{
+    attestation_routes, init_attestation_api, AttestationApiConfig, AttestationState,
+    AttestationStatus, TeeType,
 };
 
 /// 模块版本

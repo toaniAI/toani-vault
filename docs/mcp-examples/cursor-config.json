@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "servers": {
+      "credbridge": {
+        "command": "/usr/local/bin/credbridge-mcp-server",
+        "args": ["--config", "/etc/credbridge/mcp-config.json"],
+        "env": {
+          "CREDBRIDGE_API_URL": "http://localhost:8080"
+        }
+      }
+    }
+  }
+}

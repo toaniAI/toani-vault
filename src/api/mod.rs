@@ -5,6 +5,7 @@
 pub mod attestation;
 pub mod audit;
 pub mod audit_models;
+pub mod auth;
 pub mod context;
 pub mod credentials;
 pub mod middleware;
@@ -41,3 +42,4 @@ pub use tenant_middleware::{
     tenant_isolation_middleware, cross_tenant_check_middleware,
     validate_path_tenant_id, validate_query_tenant_id, RequestContextExt,
 };
+pub use auth::{auth_routes, AuthApiState};
