@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["router","tool","wrapper"],"trait":["ServerHandler"]};

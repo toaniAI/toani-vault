@@ -1,2 +1,0 @@
-createSrcSidebar('[["rmcp",["",[["handler",[["server",[["router",[],["tool.rs"]],["wrapper",[],["json.rs"]]],["resource.rs","router.rs","tool.rs","wrapper.rs"]]],["server.rs"]],["model",[],["annotated.rs","capabilities.rs","content.rs","extension.rs","meta.rs","prompt.rs","resource.rs","serde_impl.rs","tool.rs"]],["service",[],["server.rs"]],["transport",[["common",[],["http_header.rs"]]],["async_rw.rs","common.rs","sink_stream.rs"]]],["error.rs","handler.rs","lib.rs","model.rs","service.rs","transport.rs"]]]]');
-//{"start":19,"fragment_lengths":[495]}

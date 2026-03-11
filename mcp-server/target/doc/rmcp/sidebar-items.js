@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"attr":["tool","tool_handler","tool_router"],"enum":["RmcpError"],"macro":["const_string","object","paste"],"mod":["handler","model","service","transport"],"type":["Error"]};
