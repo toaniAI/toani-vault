@@ -1,0 +1,10 @@
+//! 数据库服务模块
+//!
+//! 提供 PostgreSQL 数据库连接池和基础操作。
+//! 支持多租户 Schema 隔离。
+
+pub mod pool;
+pub mod schema;
+
+pub use pool::{DatabasePool, DatabaseConfig};
+pub use schema::SchemaManager;

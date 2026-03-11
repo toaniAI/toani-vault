@@ -41,6 +41,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::{info, warn, error};
 
 
 use super::{
@@ -450,12 +451,18 @@ impl TenantService for MemoryTenantStorage {
 pub struct TenantManager<S: TenantConfigStore> {
     config_manager: TenantConfigManager<S>,
     tenant_storage: std::sync::Arc<dyn TenantService>,
+    /// 数据库连接池（可选）
+    db_pool: Option<crate::services::db::DatabasePool>,
+    /// Vault 客户端（可选）
+    vault_client: Option<std::sync::Arc<crate::vault::client::VaultKvClient>>,
 }
 
 /// 租户管理器构建器
 pub struct TenantManagerBuilder<S: TenantConfigStore> {
     store: S,
     tenant_storage: Option<std::sync::Arc<dyn TenantService>>,
+    db_pool: Option<crate::services::db::DatabasePool>,
+    vault_client: Option<std::sync::Arc<crate::vault::client::VaultKvClient>>,
 }
 
 impl<S: TenantConfigStore> TenantManagerBuilder<S> {
@@ -463,6 +470,8 @@ impl<S: TenantConfigStore> TenantManagerBuilder<S> {
         Self {
             store,
             tenant_storage: None,
+            db_pool: None,
+            vault_client: None,
         }
     }
 
@@ -471,6 +480,21 @@ impl<S: TenantConfigStore> TenantManagerBuilder<S> {
         storage: std::sync::Arc<dyn TenantService>,
     ) -> Self {
         self.tenant_storage = Some(storage);
+        self
+    }
+
+    /// 设置数据库连接池
+    pub fn with_db_pool(mut self, pool: crate::services::db::DatabasePool) -> Self {
+        self.db_pool = Some(pool);
+        self
+    }
+
+    /// 设置 Vault 客户端
+    pub fn with_vault_client(
+        mut self,
+        client: std::sync::Arc<crate::vault::client::VaultKvClient>,
+    ) -> Self {
+        self.vault_client = Some(client);
         self
     }
 
@@ -485,6 +509,8 @@ impl<S: TenantConfigStore> TenantManagerBuilder<S> {
         TenantManager {
             config_manager,
             tenant_storage,
+            db_pool: self.db_pool,
+            vault_client: self.vault_client,
         }
     }
 }
@@ -499,6 +525,26 @@ impl<S: TenantConfigStore> TenantManager<S> {
         TenantManager {
             config_manager,
             tenant_storage,
+            db_pool: None,
+            vault_client: None,
+        }
+    }
+
+    /// 创建租户管理器（完整版，包含数据库和 Vault）
+    pub async fn new_full(
+        store: S,
+        db_pool: crate::services::db::DatabasePool,
+        vault_client: std::sync::Arc<crate::vault::client::VaultKvClient>,
+    ) -> TenantManager<S> {
+        let config_manager = TenantConfigManager::new(store);
+        let tenant_storage: std::sync::Arc<dyn TenantService> =
+            std::sync::Arc::new(MemoryTenantStorage::new());
+
+        TenantManager {
+            config_manager,
+            tenant_storage,
+            db_pool: Some(db_pool),
+            vault_client: Some(vault_client),
         }
     }
 
@@ -592,52 +638,123 @@ impl<S: TenantConfigStore> TenantManager<S> {
     /// 初始化数据库Schema
     async fn initialize_database_schema(
         &self,
-        _tenant_id: &TenantId,
+        tenant_id: &TenantId,
     ) -> Result<(), TenantProvisioningError> {
-        // TODO: 实际实现需要连接到PostgreSQL并创建Schema
-        // 执行类似以下的操作:
-        // CREATE SCHEMA IF NOT EXISTS tenant_{tenant_id};
-        // SET search_path TO tenant_{tenant_id};
-        // CREATE TABLE IF NOT EXISTS credentials (...);
-        // CREATE TABLE IF NOT EXISTS tokens (...);
-        // CREATE POLICY tenant_isolation ON credentials ...;
+        info!("Initializing database schema for tenant: {}", tenant_id.as_str());
 
-        // 模拟成功
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        Ok(())
+        // 检查是否有数据库连接池
+        match &self.db_pool {
+            Some(db_pool) => {
+                // 使用 SchemaManager 创建租户 Schema
+                let schema_manager = crate::services::db::SchemaManager::new(db_pool.clone());
+
+                schema_manager
+                    .create_tenant_schema(tenant_id.as_str())
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to create tenant schema: {}", e);
+                        TenantProvisioningError::SchemaCreationFailed(e.to_string())
+                    })?;
+
+                info!("Successfully created database schema for tenant: {}", tenant_id.as_str());
+                Ok(())
+            }
+            None => {
+                // 没有数据库连接池，使用模拟模式（开发/测试）
+                warn!("No database pool configured, using simulation mode for schema creation");
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                Ok(())
+            }
+        }
     }
 
     /// 初始化加密密钥
     async fn initialize_encryption_keys(
         &self,
-        _tenant_id: &TenantId,
+        tenant_id: &TenantId,
     ) -> Result<(), TenantProvisioningError> {
-        // TODO: 实际实现需要:
-        // 1. 在Vault中创建租户专属的密钥路径
-        // 2. 生成或派生租户根密钥
-        // 3. 存储密钥元数据
+        info!("Initializing encryption keys for tenant: {}", tenant_id.as_str());
 
-        // 模拟成功
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        Ok(())
+        // 检查是否有 Vault 客户端
+        match &self.vault_client {
+            Some(vault_client) => {
+                // 在 Vault 中创建租户专属的密钥路径
+                // 路径格式: secret/tenant/{tenant_id}/
+                let tenant_path = format!("tenant/{}", tenant_id.as_str());
+
+                // 创建租户密钥元数据
+                let key_metadata = serde_json::json!({
+                    "tenant_id": tenant_id.as_str(),
+                    "created_at": Utc::now().to_rfc3339(),
+                    "key_status": "active",
+                    "key_version": 1,
+                    "algorithm": "AES-256-GCM",
+                    "kdf": "HKDF-SHA-256",
+                });
+
+                // 在 Vault 中存储租户密钥元数据
+                // 使用空 credential_id 表示这是租户级别的配置
+                vault_client
+                    .write_secret(&tenant_path, "_metadata", &key_metadata)
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to create tenant key path in Vault: {}", e);
+                        TenantProvisioningError::VaultPathCreationFailed(e.to_string())
+                    })?;
+
+                info!("Successfully created encryption key path for tenant: {}", tenant_id.as_str());
+                Ok(())
+            }
+            None => {
+                // 没有 Vault 客户端，使用模拟模式（开发/测试）
+                warn!("No Vault client configured, using simulation mode for key initialization");
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                Ok(())
+            }
+        }
     }
 
     /// 创建默认角色
     async fn create_default_roles(
         &self,
-        _tenant_id: &TenantId,
+        tenant_id: &TenantId,
     ) -> Result<(), TenantProvisioningError> {
-        // TODO: 实际实现需要:
-        // 1. 创建 admin 角色
-        // 2. 创建 user 角色
-        // 3. 创建 readonly 角色
-        // 4. 设置角色权限
+        info!("Creating default roles for tenant: {}", tenant_id.as_str());
 
-        let _default_roles = DefaultRoles::default();
+        // 检查是否有数据库连接池
+        match &self.db_pool {
+            Some(db_pool) => {
+                // 使用 SchemaManager 创建默认角色
+                let schema_manager = crate::services::db::SchemaManager::new(db_pool.clone());
 
-        // 模拟成功
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        Ok(())
+                schema_manager
+                    .create_default_roles(tenant_id.as_str())
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to create default roles: {}", e);
+                        TenantProvisioningError::RoleCreationFailed(e.to_string())
+                    })?;
+
+                info!("Successfully created default roles for tenant: {}", tenant_id.as_str());
+                Ok(())
+            }
+            None => {
+                // 没有数据库连接池，记录默认角色配置
+                let default_roles = DefaultRoles::default();
+
+                // 在没有数据库的情况下，我们记录角色信息
+                info!(
+                    "Simulating role creation - Admin: {}, User: {}, ReadOnly: {}",
+                    default_roles.create_admin_role,
+                    default_roles.create_user_role,
+                    default_roles.create_readonly_role
+                );
+
+                warn!("No database pool configured, using simulation mode for role creation");
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                Ok(())
+            }
+        }
     }
 
     /// 获取租户配置

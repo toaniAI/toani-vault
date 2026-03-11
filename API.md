@@ -4,10 +4,95 @@
 
 ## 目录
 
+- [健康检查 API](#健康检查-api)
 - [认证](#认证)
 - [凭证管理 API](#凭证管理-api)
 - [审计日志 API](#审计日志-api)
 - [错误处理](#错误处理)
+
+---
+
+## 健康检查 API
+
+### 简单健康检查
+
+检查服务基本运行状态。
+
+**Endpoint**: `GET /health`
+
+**认证**: 不需要
+
+**响应 (200 OK)**:
+
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": 1741702800
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `status` | string | 服务状态：`healthy` 或 `degraded` |
+| `version` | string | 服务版本号 |
+| `timestamp` | u64 | Unix 时间戳（秒） |
+
+---
+
+### 详细健康检查
+
+检查服务及各组件详细状态。
+
+**Endpoint**: `GET /health/detail`
+
+**认证**: 不需要
+
+**响应 (200 OK)**:
+
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": 1741702800,
+  "components": {
+    "vault": "healthy",
+    "enclave": "healthy",
+    "audit_log": "healthy"
+  }
+}
+```
+
+**响应 (503 Service Unavailable)**:
+
+当服务状态为 `degraded` 时返回：
+
+```json
+{
+  "status": "degraded",
+  "version": "1.0.0",
+  "timestamp": 1741702800,
+  "components": {
+    "vault": "healthy",
+    "enclave": "simulation_mode",
+    "audit_log": "healthy"
+  }
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `status` | string | 整体状态：`healthy` 或 `degraded` |
+| `version` | string | 服务版本号 |
+| `timestamp` | u64 | Unix 时间戳（秒） |
+| `components` | object | 各组件状态详情 |
+| `components.vault` | string | 凭证保险库状态：`healthy` |
+| `components.enclave` | string | Enclave 状态：`healthy` 或 `simulation_mode` |
+| `components.audit_log` | string | 审计日志状态：`healthy` |
 
 ---
 

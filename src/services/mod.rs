@@ -2,6 +2,9 @@
 //!
 //! 实现核心业务逻辑
 
+/// 数据库服务
+pub mod db;
+
 /// 凭证保险库服务
 pub mod vault_service {
     use crate::models::{CredentialMetadata, CredentialType};
