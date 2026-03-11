@@ -1,0 +1,23 @@
+apiVersion: 1
+
+providers:
+  - name: 'CredBridge Dashboards'
+    orgId: 1
+    folder: 'CredBridge'
+    folderUid: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true
+
+  - name: 'Default Dashboards'
+    orgId: 1
+    folder: 'System'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

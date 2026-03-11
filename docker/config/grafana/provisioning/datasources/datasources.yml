@@ -1,0 +1,38 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "5s"
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: "2.40.0"
+      cacheLevel: 'High'
+      disableRecordingRules: false
+      incrementalQueryOverlapWindow: 10m
+
+  # 可选：添加 Loki 日志数据源
+  # - name: Loki
+  #   type: loki
+  #   access: proxy
+  #   url: http://loki:3100
+  #   editable: false
+  #   jsonData:
+  #     maxLines: 1000
+  #     derivedFields:
+  #       - name: TraceID
+  #         matcherRegex: '"trace_id":"([^"]*)"'
+  #         url: '$${__value.raw}'
+
+  # 可选：添加 Jaeger 追踪数据源
+  # - name: Jaeger
+  #   type: jaeger
+  #   access: proxy
+  #   url: http://jaeger:16686
+  #   editable: false
