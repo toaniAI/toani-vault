@@ -1,0 +1,40 @@
+[package]
+name = "credbridge-sdk"
+version = "0.1.0"
+edition = "2021"
+authors = ["CredBridge Team"]
+description = "Rust SDK for CredBridge Vault API"
+license = "MIT"
+repository = "https://github.com/credbridge/credbridge"
+keywords = ["credentials", "vault", "security", "api", "sdk"]
+categories = ["api-bindings", "authentication", "cryptography"]
+rust-version = "1.70"
+
+[dependencies]
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+thiserror = "1.0"
+url = "2.4"
+uuid = { version = "1.0", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.21"
+tracing = "0.1"
+urlencoding = "2.1"
+async-trait = "0.1"
+
+[dev-dependencies]
+mockall = "0.12"
+tokio-test = "0.4"
+wiremock = "0.6"
+futures = "0.3"
+
+[features]
+default = ["rustls"]
+rustls = ["reqwest/rustls-tls"]
+native-tls = ["reqwest/native-tls"]
+
+[[test]]
+name = "client_tests"
+path = "tests/client_tests.rs"

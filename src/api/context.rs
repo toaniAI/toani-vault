@@ -1,0 +1,467 @@
+//! 请求上下文模块
+//!
+//! 提供请求级别的上下文管理，包含租户ID、用户信息等
+//! - 从 Token 中提取 tenant_id
+//! - 注入到请求扩展中供后续处理器使用
+//! - 支持数据库 RLS（行级安全）上下文设置
+
+use axum::{
+    extract::{FromRef, FromRequestParts, Request},
+    http::{request::Parts, StatusCode},
+};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+use crate::api::middleware::ValidatedToken;
+
+/// 请求上下文
+///
+/// 包含当前请求的所有上下文信息，从 Token 中提取
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestContext {
+    /// 租户ID
+    pub tenant_id: String,
+    /// 用户ID
+    pub user_id: String,
+    /// Token ID (jti)
+    pub token_id: String,
+    /// 授权 Scope 列表
+    pub scopes: Vec<String>,
+    /// 请求ID（用于追踪）
+    pub request_id: String,
+}
+
+impl RequestContext {
+    /// 创建新的请求上下文
+    pub fn new(
+        tenant_id: impl Into<String>,
+        user_id: impl Into<String>,
+        token_id: impl Into<String>,
+        scopes: Vec<String>,
+    ) -> Self {
+        Self {
+            tenant_id: tenant_id.into(),
+            user_id: user_id.into(),
+            token_id: token_id.into(),
+            scopes,
+            request_id: generate_request_id(),
+        }
+    }
+
+    /// 从 ValidatedToken 创建请求上下文
+    pub fn from_validated_token(token: &ValidatedToken) -> Self {
+        Self {
+            tenant_id: token.tenant_id.clone(),
+            user_id: token.user_id.clone(),
+            token_id: token.token_id.clone(),
+            scopes: token.scopes.iter().map(|s| s.as_str().to_string()).collect(),
+            request_id: generate_request_id(),
+        }
+    }
+
+    /// 检查是否拥有指定 scope
+    pub fn has_scope(&self, scope: &str) -> bool {
+        self.scopes.contains(&scope.to_string()) || self.scopes.contains(&"admin".to_string())
+    }
+
+    /// 检查是否拥有任一指定 scope
+    pub fn has_any_scope(&self, scopes: &[&str]) -> bool {
+        scopes.iter().any(|s| self.has_scope(s))
+    }
+
+    /// 获取租户ID
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
+    }
+
+    /// 获取用户ID
+    pub fn user_id(&self) -> &str {
+        &self.user_id
+    }
+
+    /// 获取请求ID
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// 设置请求ID
+    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = request_id.into();
+        self
+    }
+}
+
+/// 生成请求ID
+fn generate_request_id() -> String {
+    format!("req_{}", uuid::Uuid::now_v7())
+}
+
+/// 从请求中提取上下文
+pub fn extract_context(request: &Request) -> Option<&RequestContext> {
+    request.extensions().get::<RequestContext>()
+}
+
+/// 将上下文注入到请求中
+pub fn inject_context(request: &mut Request, context: RequestContext) {
+    request.extensions_mut().insert(context);
+}
+
+/// 租户ID提取器
+///
+/// 用于在处理器中直接提取租户ID
+#[derive(Debug, Clone)]
+pub struct TenantId(pub String);
+
+impl TenantId {
+    /// 获取租户ID字符串
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TenantId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[async_trait::async_trait]
+impl<S> FromRequestParts<S> for TenantId
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<RequestContext>()
+            .map(|ctx| TenantId(ctx.tenant_id.clone()))
+            .ok_or((
+                StatusCode::UNAUTHORIZED,
+                "Missing tenant context - authentication required",
+            ))
+    }
+}
+
+/// 请求上下文提取器
+///
+/// 用于在处理器中直接提取完整的请求上下文
+#[async_trait::async_trait]
+impl<S> FromRequestParts<S> for RequestContext
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<RequestContext>()
+            .cloned()
+            .ok_or((
+                StatusCode::UNAUTHORIZED,
+                "Missing request context - authentication required",
+            ))
+    }
+}
+
+/// 数据库 RLS 上下文
+///
+/// 用于 PostgreSQL RLS（行级安全）的会话变量设置
+#[derive(Debug, Clone)]
+pub struct RlsContext {
+    /// 租户ID
+    pub tenant_id: String,
+    /// 用户ID
+    pub user_id: String,
+    /// 允许的 Scope
+    pub scopes: Vec<String>,
+}
+
+impl RlsContext {
+    /// 从请求上下文创建 RLS 上下文
+    pub fn from_request_context(ctx: &RequestContext) -> Self {
+        Self {
+            tenant_id: ctx.tenant_id.clone(),
+            user_id: ctx.user_id.clone(),
+            scopes: ctx.scopes.clone(),
+        }
+    }
+
+    /// 生成 PostgreSQL RLS 设置 SQL
+    ///
+    /// 这些语句应该在每个数据库连接上执行，以启用 RLS
+    pub fn to_sql_statements(&self) -> Vec<String> {
+        vec![
+            format!("SET app.current_tenant_id = '{}'", escape_sql_string(&self.tenant_id)),
+            format!("SET app.current_user_id = '{}'", escape_sql_string(&self.user_id)),
+            format!(
+                "SET app.current_scopes = '{}'",
+                escape_sql_string(&self.scopes.join(","))
+            ),
+        ]
+    }
+}
+
+/// SQL 字符串转义（防止 SQL 注入）
+fn escape_sql_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
+/// 带租户隔离的数据库查询构建器
+///
+/// 自动添加 tenant_id 过滤条件
+pub struct TenantQueryBuilder {
+    tenant_id: String,
+    base_query: String,
+}
+
+impl TenantQueryBuilder {
+    /// 创建新的查询构建器
+    pub fn new(tenant_id: impl Into<String>, base_query: impl Into<String>) -> Self {
+        Self {
+            tenant_id: tenant_id.into(),
+            base_query: base_query.into(),
+        }
+    }
+
+    /// 构建带租户过滤的查询
+    ///
+    /// 自动添加 WHERE tenant_id = ? 条件
+    pub fn build(&self) -> (String, Vec<String>) {
+        let query = if self.base_query.to_uppercase().contains("WHERE") {
+            format!("{} AND tenant_id = '{}'", self.base_query, escape_sql_string(&self.tenant_id))
+        } else {
+            format!("{} WHERE tenant_id = '{}'", self.base_query, escape_sql_string(&self.tenant_id))
+        };
+
+        (query, vec![self.tenant_id.clone()])
+    }
+
+    /// 获取租户ID
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
+    }
+}
+
+/// 租户隔离错误
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum TenantIsolationError {
+    #[error("跨租户访问被拒绝: 请求租户 {requested} 不匹配资源租户 {actual}")]
+    CrossTenantAccessDenied {
+        requested: String,
+        actual: String,
+    },
+
+    #[error("租户上下文缺失")]
+    MissingTenantContext,
+
+    #[error("无效的租户ID: {0}")]
+    InvalidTenantId(String),
+
+    #[error("租户未激活: {0}")]
+    TenantInactive(String),
+}
+
+/// 验证资源访问权限
+///
+/// 检查请求上下文是否有权访问指定租户的资源
+pub fn verify_tenant_access(
+    ctx: &RequestContext,
+    resource_tenant_id: &str,
+) -> Result<(), TenantIsolationError> {
+    if ctx.tenant_id != resource_tenant_id {
+        return Err(TenantIsolationError::CrossTenantAccessDenied {
+            requested: ctx.tenant_id.clone(),
+            actual: resource_tenant_id.to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// 验证资源访问权限（从路径参数）
+///
+/// 用于验证 URL 路径中的租户ID是否与 Token 中的一致
+pub fn verify_tenant_access_from_param(
+    ctx: &RequestContext,
+    param_tenant_id: &str,
+) -> Result<(), TenantIsolationError> {
+    verify_tenant_access(ctx, param_tenant_id)
+}
+
+/// 跨租户访问错误响应
+#[derive(Debug, Clone, Serialize)]
+pub struct CrossTenantErrorResponse {
+    pub success: bool,
+    pub error: CrossTenantError,
+    pub meta: ErrorMeta,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CrossTenantError {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ErrorMeta {
+    pub request_id: String,
+    pub timestamp: String,
+}
+
+impl CrossTenantErrorResponse {
+    pub fn new(request_id: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            error: CrossTenantError {
+                code: "CROSS_TENANT_ACCESS_DENIED".to_string(),
+                message: message.into(),
+            },
+            meta: ErrorMeta {
+                request_id: request_id.into(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        }
+    }
+}
+
+/// 租户信息存储（用于管理租户状态）
+#[derive(Debug, Clone)]
+pub struct TenantInfo {
+    pub tenant_id: String,
+    pub tenant_name: String,
+    pub is_active: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// 租户存储 trait
+#[async_trait::async_trait]
+pub trait TenantStorage: Send + Sync {
+    async fn get_tenant(&self, tenant_id: &str) -> Option<TenantInfo>;
+    async fn is_tenant_active(&self, tenant_id: &str) -> bool;
+}
+
+/// 内存租户存储（用于测试）
+pub struct MemoryTenantStorage {
+    tenants: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, TenantInfo>>>,
+}
+
+impl MemoryTenantStorage {
+    pub fn new() -> Self {
+        Self {
+            tenants: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+        }
+    }
+
+    pub async fn add_tenant(&self, tenant: TenantInfo) {
+        let mut tenants = self.tenants.write().await;
+        tenants.insert(tenant.tenant_id.clone(), tenant);
+    }
+}
+
+#[async_trait::async_trait]
+impl TenantStorage for MemoryTenantStorage {
+    async fn get_tenant(&self, tenant_id: &str) -> Option<TenantInfo> {
+        let tenants = self.tenants.read().await;
+        tenants.get(tenant_id).cloned()
+    }
+
+    async fn is_tenant_active(&self, tenant_id: &str) -> bool {
+        self.get_tenant(tenant_id)
+            .await
+            .map(|t| t.is_active)
+            .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_request_context_creation() {
+        let ctx = RequestContext::new(
+            "tenant_123",
+            "user_456",
+            "token_789",
+            vec!["credential:read".to_string()],
+        );
+
+        assert_eq!(ctx.tenant_id, "tenant_123");
+        assert_eq!(ctx.user_id, "user_456");
+        assert_eq!(ctx.token_id, "token_789");
+        assert!(ctx.has_scope("credential:read"));
+        assert!(!ctx.has_scope("admin"));
+    }
+
+    #[test]
+    fn test_scope_check_with_admin() {
+        let ctx = RequestContext::new(
+            "tenant_123",
+            "user_456",
+            "token_789",
+            vec!["admin".to_string()],
+        );
+
+        assert!(ctx.has_scope("credential:read"));
+        assert!(ctx.has_scope("credential:write"));
+        assert!(ctx.has_scope("admin"));
+    }
+
+    #[test]
+    fn test_verify_tenant_access() {
+        let ctx = RequestContext::new(
+            "tenant_123",
+            "user_456",
+            "token_789",
+            vec!["credential:read".to_string()],
+        );
+
+        assert!(verify_tenant_access(&ctx, "tenant_123").is_ok());
+        assert!(verify_tenant_access(&ctx, "tenant_456").is_err());
+    }
+
+    #[test]
+    fn test_sql_escape() {
+        assert_eq!(escape_sql_string("test' OR '1'='1"), "test\\' OR \\'1\\'=\\'1");
+        assert_eq!(escape_sql_string("test\\value"), "test\\\\value");
+    }
+
+    #[test]
+    fn test_tenant_query_builder() {
+        let builder = TenantQueryBuilder::new("tenant_123", "SELECT * FROM credentials");
+        let (query, params) = builder.build();
+
+        assert!(query.contains("WHERE tenant_id = 'tenant_123'"));
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0], "tenant_123");
+    }
+
+    #[test]
+    fn test_tenant_query_builder_with_existing_where() {
+        let builder = TenantQueryBuilder::new("tenant_123", "SELECT * FROM credentials WHERE is_active = true");
+        let (query, _params) = builder.build();
+
+        assert!(query.contains("WHERE is_active = true"));
+        assert!(query.contains("AND tenant_id = 'tenant_123'"));
+    }
+
+    #[test]
+    fn test_rls_context_sql() {
+        let ctx = RlsContext {
+            tenant_id: "tenant_123".to_string(),
+            user_id: "user_456".to_string(),
+            scopes: vec!["read".to_string(), "write".to_string()],
+        };
+
+        let statements = ctx.to_sql_statements();
+        assert_eq!(statements.len(), 3);
+        assert!(statements[0].contains("SET app.current_tenant_id = 'tenant_123'"));
+        assert!(statements[1].contains("SET app.current_user_id = 'user_456'"));
+        assert!(statements[2].contains("SET app.current_scopes = 'read,write'"));
+    }
+}

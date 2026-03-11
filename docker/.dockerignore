@@ -1,0 +1,116 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+.azure-pipelines.yml
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Rust / Cargo
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Documentation (except what's needed)
+docs/*.md
+!docs/README.md
+*.md
+!README.md
+!LICENSE
+
+# Test files
+tests/
+benches/
+examples/
+
+# Build artifacts
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# Local development
+.env
+.env.*
+!.env.example
+.envrc
+.sealed/
+.claude/
+
+# Docker files (not needed in build context)
+docker/
+!docker/scripts/
+docker-compose*.yml
+Dockerfile*
+
+# Node.js (if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+
+# Security / Secrets
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+config/secrets/
+*.secret
+
+# Coverage
+coverage/
+*.lcov
+
+# Profiling
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Misc
+.editorconfig
+.eslintrc
+.prettierrc
+.stylelintrc
+CONTRIBUTING.md
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+
+# BMAD output
+_bmad/
+_bmad-output/
+
+# SDKs (separate packages)
+sdk-rust/
+sdk-typescript/
+
+# Target directory (Rust build output)
+target/

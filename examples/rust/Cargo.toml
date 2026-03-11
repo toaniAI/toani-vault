@@ -1,0 +1,13 @@
+[package]
+name = "credbridge-examples"
+version = "1.0.0"
+edition = "2021"
+description = "CredBridge Rust SDK 示例项目"
+
+[dependencies]
+credbridge-sdk = { path = "../../sdk-rust" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
+chrono = "0.4"
+anyhow = "1.0"
+futures = "0.3"

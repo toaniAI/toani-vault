@@ -1,0 +1,14 @@
+/Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/deps/serde-240a04439e136f3a.d: /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/build/serde-f7820387e22cc7ff/out/private.rs
+
+/Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/deps/libserde-240a04439e136f3a.rlib: /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/build/serde-f7820387e22cc7ff/out/private.rs
+
+/Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/deps/libserde-240a04439e136f3a.rmeta: /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/build/serde-f7820387e22cc7ff/out/private.rs
+
+/Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/yvan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/build/serde-f7820387e22cc7ff/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/yvan/AIWorkspace/credbridge/vault-service/target/debug/build/serde-f7820387e22cc7ff/out

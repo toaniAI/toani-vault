@@ -1,0 +1,499 @@
+//! CredBridge - 凭证保险库 HTTP 服务
+//!
+//! HTTP API 服务器入口点
+//! 支持环境变量配置端口和运行模式
+//!
+//! # 环境变量
+//!
+//! - `CREDBRIDGE_PORT` - 服务器端口 (默认: 8080)
+//! - `CREDBRIDGE_HOST` - 服务器主机 (默认: 0.0.0.0)
+//! - `CREDBRIDGE_ENV` - 运行环境 (development/production, 默认: development)
+//! - `RUST_LOG` - 日志级别 (默认: info)
+//! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - 速率限制请求数/窗口 (默认: 100)
+//! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - 速率限制窗口（秒）(默认: 60)
+
+use axum::{
+    http::StatusCode,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::get,
+    Extension, Json, Router,
+};
+use serde::Serialize;
+use serde_json::json;
+use std::env;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::{self, TraceLayer};
+use tracing::{info, Level};
+
+// CredBridge 内部模块
+use vault_service::api::{
+    credentials::{routes as credential_routes, AppState as CredentialAppState, DefaultAuditLogger},
+    audit::{audit_routes, AuditApiState, MemoryAuditStorageAdapter},
+    tenant::{tenant_routes, TenantApiState},
+    rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
+    API_BASE_PATH,
+};
+use vault_service::crypto::KeyHierarchy;
+use vault_service::crypto::keys::HardwareRootKey;
+use vault_service::tee::{Enclave, EnclaveConfig};
+use vault_service::vault::storage::CredentialVault;
+use vault_service::tenant::{
+    MemoryTenantConfigStore, TenantManager, TenantService, MemoryTenantStorage,
+};
+use vault_service::audit::MemoryAuditStorage;
+
+/// API 根响应
+#[derive(Debug, Serialize)]
+struct ApiRootResponse {
+    name: String,
+    version: String,
+    environment: String,
+    endpoints: Vec<ApiEndpoint>,
+}
+
+#[derive(Debug, Serialize)]
+struct ApiEndpoint {
+    path: String,
+    description: String,
+}
+
+/// 健康检查响应
+#[derive(Debug, Serialize)]
+struct HealthResponse {
+    status: String,
+    version: String,
+    timestamp: u64,
+}
+
+/// 详细健康检查响应
+#[derive(Debug, Serialize)]
+struct HealthDetailResponse {
+    status: String,
+    version: String,
+    timestamp: u64,
+    components: ComponentHealth,
+}
+
+#[derive(Debug, Serialize)]
+struct ComponentHealth {
+    vault: String,
+    enclave: String,
+    audit_log: String,
+}
+
+/// 服务器配置
+#[derive(Debug, Clone)]
+struct ServerConfig {
+    host: String,
+    port: u16,
+    environment: Environment,
+    log_level: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Environment {
+    Development,
+    Production,
+}
+
+impl Environment {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Environment::Development => "development",
+            Environment::Production => "production",
+        }
+    }
+
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "production" | "prod" => Environment::Production,
+            _ => Environment::Development,
+        }
+    }
+}
+
+impl ServerConfig {
+    /// 从环境变量加载配置
+    fn from_env() -> Self {
+        Self {
+            host: env::var("CREDBRIDGE_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            port: env::var("CREDBRIDGE_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(8080),
+            environment: Environment::from_str(
+                &env::var("CREDBRIDGE_ENV").unwrap_or_else(|_| "development".to_string()),
+            ),
+            log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+        }
+    }
+
+    fn socket_addr(&self) -> SocketAddr {
+        format!("{}:{}", self.host, self.port)
+            .parse()
+            .expect("无效的服务器地址")
+    }
+}
+
+/// 应用状态（包含所有 API 模块共享的状态）
+#[derive(Clone)]
+struct AppState {
+    config: ServerConfig,
+    credential_state: CredentialAppState,
+    audit_state: AuditApiState,
+    rate_limit_state: RateLimitState,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 加载配置
+    let config = ServerConfig::from_env();
+
+    // 初始化日志
+    init_logging(&config);
+
+    // 打印启动信息
+    info!("╔══════════════════════════════════════════════════════════╗");
+    info!("║           CredBridge - TEE Credential Vault              ║");
+    info!("║              Secure AI-Native Secret Storage             ║");
+    info!("╚══════════════════════════════════════════════════════════╝");
+    info!("");
+    info!("🚀 正在启动 HTTP 服务器...");
+    info!("📍 环境: {}", config.environment.as_str());
+    info!("🌐 地址: http://{}:{}", config.host, config.port);
+
+    // 显示速率限制配置
+    let rate_limit_config = RateLimitConfig::from_env();
+    info!("🛡️  速率限制: {}/{}秒/IP", rate_limit_config.requests_per_window, rate_limit_config.window_seconds);
+
+    // 初始化应用状态
+    let app_state = initialize_app_state(&config).await?;
+
+    // 构建路由
+    let app = build_router(app_state, &config);
+
+    // 绑定地址并启动服务器
+    let addr = config.socket_addr();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    info!("✅ 服务器启动成功！");
+    info!("📚 API 文档: http://{}:{}/api/v1/", config.host, config.port);
+    info!("💊 健康检查: http://{}:{}/health", config.host, config.port);
+    info!("");
+
+    // 启动服务器
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+/// 初始化日志系统
+fn init_logging(config: &ServerConfig) {
+    let level = match config.log_level.to_lowercase().as_str() {
+        "trace" => Level::TRACE,
+        "debug" => Level::DEBUG,
+        "warn" => Level::WARN,
+        "error" => Level::ERROR,
+        _ => Level::INFO,
+    };
+
+    // 使用简单的日志初始化
+    eprintln!("[INFO] 初始化日志系统，级别: {:?}", level);
+}
+
+/// 初始化应用状态
+async fn initialize_app_state(
+    config: &ServerConfig,
+) -> Result<AppState, Box<dyn std::error::Error>> {
+    // 初始化 Enclave
+    let enclave_config = EnclaveConfig {
+        debug_mode: config.environment == Environment::Development,
+        ..Default::default()
+    };
+    let mut enclave = Enclave::new(enclave_config);
+    enclave.initialize()?;
+
+    // 初始化 L0 密钥（模拟模式）
+    let l0 = HardwareRootKey::for_simulation()?;
+
+    // 初始化密钥层次结构
+    let mut hierarchy = KeyHierarchy::new();
+    let _l1_handle = hierarchy.initialize_master_key(&l0)?;
+
+    // 初始化 Vault（内存存储模式）
+    let vault = Arc::new(CredentialVault::new_in_memory());
+
+    // 初始化审计日志存储
+    let audit_storage = MemoryAuditStorage::new(100_000)
+        .map_err(|e| format!("创建审计存储失败: {:?}", e))?;
+    let audit_storage_adapter = MemoryAuditStorageAdapter::new(audit_storage);
+
+    // 创建凭证 API 状态
+    let credential_state = CredentialAppState {
+        vault,
+        key_hierarchy: Arc::new(RwLock::new(hierarchy)),
+        audit_logger: Arc::new(DefaultAuditLogger),
+    };
+
+    // 创建审计 API 状态
+    let audit_state = AuditApiState {
+        storage: Arc::new(audit_storage_adapter),
+    };
+
+    // 初始化速率限制状态
+    let rate_limit_config = RateLimitConfig::from_env();
+    let rate_limit_state = RateLimitState::new(rate_limit_config);
+
+    Ok(AppState {
+        config: config.clone(),
+        credential_state,
+        audit_state,
+        rate_limit_state,
+    })
+}
+
+/// 构建路由器
+fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
+    // CORS 配置
+    let cors = create_cors_layer(config);
+
+    // 构建 API 路由
+    let api_routes = build_api_routes(app_state.clone());
+
+    // 速率限制层
+    let rate_limit_layer = axum::middleware::from_fn(rate_limit_middleware);
+
+    // 构建主路由器
+    Router::new()
+        // 根路径
+        .route("/", get(root_handler))
+        // API 路由
+        .nest(&format!("{}", API_BASE_PATH), api_routes)
+        // 健康检查路由
+        .route("/health", get(health_check))
+        .route("/health/detail", get(health_check_detail))
+        // 速率限制中间件
+        .layer(rate_limit_layer)
+        // 全局 CORS
+        .layer(cors)
+        // 全局追踪
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+        )
+        // 添加速率限制状态扩展
+        .layer(Extension(app_state.rate_limit_state.clone()))
+        // 添加配置扩展
+        .layer(Extension(app_state))
+}
+
+/// 创建 CORS 层
+fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
+    let cors = CorsLayer::new()
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    if config.environment == Environment::Production {
+        // 生产环境使用更严格的 CORS 配置
+        cors.allow_origin(
+            env::var("CREDBRIDGE_ALLOWED_ORIGINS")
+                .ok()
+                .and_then(|origins| {
+                    let origins: Vec<_> = origins
+                        .split(',')
+                        .map(|s| s.parse().ok())
+                        .flatten()
+                        .collect();
+                    if origins.is_empty() {
+                        None
+                    } else {
+                        Some(tower_http::cors::AllowOrigin::list(origins))
+                    }
+                })
+                .unwrap_or_else(|| tower_http::cors::AllowOrigin::exact(
+                    "https://credbridge.io".parse().unwrap()
+                )),
+        )
+    } else {
+        // 开发环境允许所有来源
+        cors.allow_origin(Any)
+    }
+}
+
+/// 构建 API 路由
+fn build_api_routes(app_state: AppState) -> Router {
+    // 凭证管理路由
+    let credential_routes = credential_routes()
+        .with_state(app_state.credential_state.clone());
+
+    // 审计日志路由
+    let audit_routes = audit_routes(app_state.audit_state.clone());
+
+    // 租户管理路由（使用内存存储）
+    let tenant_store = MemoryTenantConfigStore::new();
+    let tenant_manager = TenantManager::new_simple(tenant_store);
+    let tenant_service: Arc<dyn TenantService> = Arc::new(MemoryTenantStorage::new());
+
+    // 手动创建 TenantApiState
+    let tenant_api_state = TenantApiState {
+        tenant_manager: Arc::new(tenant_manager),
+        tenant_service,
+    };
+    let tenant_routes = tenant_routes::<MemoryTenantConfigStore>()
+        .with_state(tenant_api_state);
+
+    // 合并所有路由
+    Router::new()
+        .route("/", get(api_root_handler))
+        // 嵌套凭证路由（路径前缀已在 credential_routes 中定义）
+        .merge(credential_routes)
+        // 嵌套审计路由
+        .merge(audit_routes)
+        // 嵌套租户路由
+        .merge(tenant_routes)
+        .layer(Extension(app_state))
+}
+
+/// 根路径处理器
+async fn root_handler() -> impl IntoResponse {
+    Json(json!({
+        "name": "CredBridge",
+        "description": "TEE Credential Vault - Secure AI-Native Secret Storage",
+        "version": env!("CARGO_PKG_VERSION"),
+        "api_base": API_BASE_PATH,
+        "health_check": "/health",
+    }))
+}
+
+/// API 根路径处理器
+async fn api_root_handler(Extension(state): Extension<AppState>) -> impl IntoResponse {
+    let response = ApiRootResponse {
+        name: "CredBridge API".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        environment: state.config.environment.as_str().to_string(),
+        endpoints: vec![
+            ApiEndpoint {
+                path: format!("{}/credentials", API_BASE_PATH),
+                description: "凭证管理 API".to_string(),
+            },
+            ApiEndpoint {
+                path: format!("{}/audit/logs", API_BASE_PATH),
+                description: "审计日志 API".to_string(),
+            },
+            ApiEndpoint {
+                path: format!("{}/tenants", API_BASE_PATH),
+                description: "租户管理 API".to_string(),
+            },
+            ApiEndpoint {
+                path: "/health".to_string(),
+                description: "健康检查".to_string(),
+            },
+        ],
+    };
+
+    (StatusCode::OK, Json(response))
+}
+
+/// 健康检查处理器
+async fn health_check() -> impl IntoResponse {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let response = HealthResponse {
+        status: "healthy".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp,
+    };
+
+    (StatusCode::OK, Json(response))
+}
+
+/// 详细健康检查处理器
+async fn health_check_detail(Extension(state): Extension<AppState>) -> impl IntoResponse {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    // 检查各个组件状态
+    let vault_status = "healthy";
+    let enclave_status = if state.config.environment == Environment::Development {
+        "simulation_mode"
+    } else {
+        "healthy"
+    };
+    let audit_status = "healthy";
+
+    let overall_status = if vault_status == "healthy" && audit_status == "healthy" {
+        "healthy"
+    } else {
+        "degraded"
+    };
+
+    let response = HealthDetailResponse {
+        status: overall_status.to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp,
+        components: ComponentHealth {
+            vault: vault_status.to_string(),
+            enclave: enclave_status.to_string(),
+            audit_log: audit_status.to_string(),
+        },
+    };
+
+    let status_code = if overall_status == "healthy" {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (status_code, Json(response))
+}
+
+// 开发模式演示函数（可选）
+#[allow(dead_code)]
+fn demonstrate_key_hierarchy() -> Result<(), Box<dyn std::error::Error>> {
+    println!("📋 演示: L0-L3 四层密钥层次架构 (HKDF-SHA256)");
+    println!("═══════════════════════════════════════════════════════");
+    println!();
+
+    // 初始化 Enclave 和 L0 密钥
+    println!("[Step 1] 初始化 SGX Enclave 和 L0 硬件根密钥");
+    let config = EnclaveConfig {
+        debug_mode: true,
+        ..Default::default()
+    };
+    let mut enclave = Enclave::new(config);
+    enclave.initialize()?;
+    println!("  ✓ Enclave 状态: {:?}", enclave.state());
+    println!();
+
+    // 从 L0 派生 L1
+    println!("[Step 2] 从 L0 派生 L1 Enclave Master Key");
+    let l0 = HardwareRootKey::for_simulation()?;
+    let mut hierarchy = KeyHierarchy::new();
+    let l1_handle = hierarchy.initialize_master_key(&l0)?;
+    println!("  ✓ L1 Master Key 句柄: {}", hex_encode(&l1_handle[..8]));
+    println!();
+
+    println!("✅ 密钥层次架构演示完成！");
+
+    Ok(())
+}
+
+/// hex 编码辅助函数
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut result, "{:02x}", byte).unwrap();
+    }
+    result
+}

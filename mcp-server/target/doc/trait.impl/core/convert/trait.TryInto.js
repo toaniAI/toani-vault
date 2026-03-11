@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["rmcp",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.0/core/convert/trait.TryInto.html\" title=\"trait core::convert::TryInto\">TryInto</a>&lt;<a class=\"struct\" href=\"rmcp/model/struct.Notification.html\" title=\"struct rmcp::model::Notification\">Notification</a>&lt;<a class=\"struct\" href=\"rmcp/model/struct.CancelledNotificationMethod.html\" title=\"struct rmcp::model::CancelledNotificationMethod\">CancelledNotificationMethod</a>, <a class=\"struct\" href=\"rmcp/model/struct.CancelledNotificationParam.html\" title=\"struct rmcp::model::CancelledNotificationParam\">CancelledNotificationParam</a>&gt;&gt; for <a class=\"enum\" href=\"rmcp/model/enum.ClientNotification.html\" title=\"enum rmcp::model::ClientNotification\">ClientNotification</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.0/core/convert/trait.TryInto.html\" title=\"trait core::convert::TryInto\">TryInto</a>&lt;<a class=\"struct\" href=\"rmcp/model/struct.Notification.html\" title=\"struct rmcp::model::Notification\">Notification</a>&lt;<a class=\"struct\" href=\"rmcp/model/struct.CancelledNotificationMethod.html\" title=\"struct rmcp::model::CancelledNotificationMethod\">CancelledNotificationMethod</a>, <a class=\"struct\" href=\"rmcp/model/struct.CancelledNotificationParam.html\" title=\"struct rmcp::model::CancelledNotificationParam\">CancelledNotificationParam</a>&gt;&gt; for <a class=\"enum\" href=\"rmcp/model/enum.ServerNotification.html\" title=\"enum rmcp::model::ServerNotification\">ServerNotification</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1556]}

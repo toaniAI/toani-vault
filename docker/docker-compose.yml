@@ -1,0 +1,310 @@
+# CredBridge - Docker Compose 开发环境配置
+# 包含：Vault Service、PostgreSQL、Redis、immudb、HashiCorp Vault
+
+version: "3.9"
+
+services:
+  # ============================================================================
+  # Vault Service - 主服务
+  # ============================================================================
+  vault-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: credbridge-vault-service
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # 服务配置
+      - VAULT_SERVICE_HOST=0.0.0.0
+      - VAULT_SERVICE_PORT=8080
+      - VAULT_SERVICE_ENV=development
+      - RUST_LOG=debug
+
+      # PostgreSQL 配置
+      - DATABASE_URL=postgresql://credbridge:credbridge_secret@postgres:5432/credbridge
+
+      # Redis 配置
+      - REDIS_URL=redis://redis:6379/0
+
+      # immudb 配置
+      - IMMUDB_HOST=immudb
+      - IMMUDB_PORT=3322
+      - IMMUDB_DATABASE=credbridge_audit
+      - IMMUDB_USERNAME=credbridge
+      - IMMUDB_PASSWORD=credbridge_immudb_pass
+
+      # HashiCorp Vault 配置
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_TOKEN:-credbridge-root-token}
+
+      # TEE 配置 (开发模式)
+      - TEE_MODE=simulation
+      - TEE_DEBUG=true
+
+      # 加密配置
+      - ENCRYPTION_KEY_PATH=/app/config/keys
+
+    volumes:
+      - vault_data:/app/data
+      - vault_logs:/app/logs
+      - vault_config:/app/config
+    networks:
+      - credbridge_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      immudb:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["/app/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # ============================================================================
+  # PostgreSQL - 主数据库
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: credbridge-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=credbridge
+      - POSTGRES_PASSWORD=credbridge_secret
+      - POSTGRES_DB=credbridge
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - credbridge_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credbridge -d credbridge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ============================================================================
+  # Redis - 缓存与会话存储
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: credbridge-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --requirepass credbridge_redis_pass
+    volumes:
+      - redis_data:/data
+    networks:
+      - credbridge_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ============================================================================
+  # immudb - 不可变审计日志存储
+  # ============================================================================
+  immudb:
+    image: codenotary/immudb:latest
+    container_name: credbridge-immudb
+    restart: unless-stopped
+    ports:
+      - "3322:3322"
+      - "9497:9497"
+    environment:
+      - IMMUDB_ADDRESS=0.0.0.0
+      - IMMUDB_PORT=3322
+      - IMMUDB_PGSQL_SERVER_ENABLED=true
+      - IMMUDB_PGSQL_SERVER_PORT=5433
+      - IMMUDB_WEBSERVER_ENABLED=true
+      - IMMUDB_WEBSERVER_PORT=8081
+    volumes:
+      - immudb_data:/var/lib/immudb
+    networks:
+      - credbridge_network
+    healthcheck:
+      test: ["CMD", "/app/immudb", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ============================================================================
+  # HashiCorp Vault - 密钥管理
+  # ============================================================================
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: credbridge-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_TOKEN:-credbridge-root-token}
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - VAULT_ADDR=http://0.0.0.0:8200
+    volumes:
+      - vault_secrets:/vault/file
+      - ./config/vault:/vault/config:ro
+    networks:
+      - credbridge_network
+    command: >
+      vault server -dev
+      -dev-root-token-id=${VAULT_TOKEN:-credbridge-root-token}
+      -dev-listen-address=0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ============================================================================
+  # Vault Agent - 自动解封（可选）
+  # ============================================================================
+  vault-agent:
+    image: hashicorp/vault:1.15
+    container_name: credbridge-vault-agent
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=${VAULT_TOKEN:-credbridge-root-token}
+    volumes:
+      - ./config/vault-agent:/vault/config:ro
+    networks:
+      - credbridge_network
+    depends_on:
+      vault:
+        condition: service_healthy
+    command: >
+      vault agent -config=/vault/config/agent.hcl
+    profiles:
+      - with-agent
+
+  # ============================================================================
+  # 监控：Prometheus（可选）
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: credbridge-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    networks:
+      - credbridge_network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    profiles:
+      - monitoring
+
+  # ============================================================================
+  # 监控：Grafana（可选）
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: credbridge-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning:ro
+    networks:
+      - credbridge_network
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+# =============================================================================
+# 数据卷
+# =============================================================================
+volumes:
+  vault_data:
+    driver: local
+  vault_logs:
+    driver: local
+  vault_config:
+    driver: local
+  vault_secrets:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  immudb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# =============================================================================
+# 网络
+# =============================================================================
+networks:
+  credbridge_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

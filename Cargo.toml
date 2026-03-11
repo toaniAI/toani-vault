@@ -1,0 +1,117 @@
+[package]
+name = "vault-service"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 加密库
+ring = "0.17"
+aes-gcm = "0.10"
+rand = "0.8"
+
+# 编码
+base64 = "0.22"
+hex = "0.4"
+
+# 内存安全
+zeroize = { version = "1.8", features = ["derive"] }
+
+# 日志
+log = "0.4"
+
+# 错误处理
+thiserror = "1.0"
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 类型工具
+derive_more = { version = "1.0", features = ["display"] }
+
+# UUID（v7 时间排序）
+uuid = { version = "1.7", features = ["v7", "serde"] }
+
+# PASETO Token
+pasetors = { version = "0.7", features = ["v4"] }
+time = "0.3"
+
+# HTTP API 框架（Axum）
+axum = { version = "0.7", features = ["json", "macros"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+http = "1.0"
+http-body-util = "0.1"
+
+# Vault 客户端
+vaultrs = "0.7"
+reqwest = { version = "0.12", features = ["json"] }
+
+# Redis 客户端
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# 配置管理
+config = "0.14"
+
+# 异步 trait
+async-trait = "0.1"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 日期时间
+chrono = { version = "0.4", features = ["serde"] }
+
+# 异步运行时
+[dependencies.tokio]
+version = "1"
+features = ["full", "rt-multi-thread"]
+
+[features]
+default = []
+# 严格生产模式：禁止调试功能
+strict-production = []
+# 允许调试模式（即使在发布构建中）
+allow-debug = []
+
+[[test]]
+name = "paseto_tests"
+path = "tests/token/paseto_tests.rs"
+
+[[test]]
+name = "redis_store_tests"
+path = "tests/token/redis_store_tests.rs"
+required-features = []
+
+[[test]]
+name = "scope_tests"
+path = "tests/token/scope_tests.rs"
+
+[[test]]
+name = "audit_events_tests"
+path = "tests/audit/events_tests.rs"
+
+[[test]]
+name = "immudb_tests"
+path = "tests/audit/immudb_tests.rs"
+
+[[test]]
+name = "audit_api_tests"
+path = "tests/api/audit_tests.rs"
+
+[[test]]
+name = "tenant_middleware_tests"
+path = "tests/api/tenant_middleware_tests.rs"
+
+[[test]]
+name = "tenant_config_tests"
+path = "tests/tenant/config_tests.rs"
+
+[[test]]
+name = "dcap_tests"
+path = "tests/tee/dcap_tests.rs"
+
+[[test]]
+name = "attestation_api_tests"
+path = "tests/api/attestation_tests.rs"
