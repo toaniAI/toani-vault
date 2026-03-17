@@ -7,7 +7,6 @@
 import {
   type CredBridgeConfig,
   type RequestOptions,
-  type ApiResponse,
   CredBridgeError,
   CredBridgeErrorCode,
   type SdkEvent,
@@ -317,41 +316,52 @@ export class CredBridgeClient {
       clearTimeout(timeoutId);
 
       // 解析响应
-      let data: ApiResponse<T>;
       const contentType = response.headers.get('content-type');
+      let responseData: unknown;
 
       if (contentType?.includes('application/json')) {
-        data = await response.json() as ApiResponse<T>;
+        responseData = await response.json();
       } else {
         const text = await response.text();
-        data = {
-          success: false,
-          error: {
-            code: 'unknown',
-            message: text || 'Unknown error',
-          },
-          meta: {
-            requestId,
-            timestamp: new Date().toISOString(),
-          },
-        };
+        responseData = text;
       }
 
       // 处理错误响应
-      if (!response.ok || !data.success) {
-        const errorData = data.success === false ? data.error : { code: 'unknown', message: 'Unknown error' };
+      if (!response.ok) {
+        // 尝试解析错误响应
+        const errorData =
+          typeof responseData === 'object' &&
+          responseData !== null &&
+          'error' in responseData
+            ? (responseData as { error: { code: string; message: string; details?: unknown } }).error
+            : { code: 'unknown', message: typeof responseData === 'string' ? responseData : 'Unknown error' };
+
         const errorCode = parseErrorCode(response.status, errorData.code);
 
         throw new CredBridgeError(
           errorCode,
           errorData.message,
           response.status,
-          errorData.details,
+          errorData.details as Record<string, unknown> | undefined,
           requestId
         );
       }
 
-      return data.data;
+      // 处理成功响应 - 支持两种格式：
+      // 1. 标准包装格式: { success: true, data: T }
+      // 2. 直接格式: T (后端直接返回数据)
+      if (
+        typeof responseData === 'object' &&
+        responseData !== null &&
+        'success' in responseData &&
+        responseData.success === true
+      ) {
+        // 标准包装格式
+        return (responseData as unknown as { data: T }).data;
+      } else {
+        // 直接格式 - 直接返回响应数据
+        return responseData as T;
+      }
     } catch (error) {
       clearTimeout(timeoutId);
 
@@ -394,9 +404,24 @@ export class CredBridgeClient {
   }
 
   /**
+   * 验证 PASETO 格式
+   */
+  private validatePasetoFormat(token: string): boolean {
+    return token.startsWith('v4.local.') || token.startsWith('v4.public.');
+  }
+
+  /**
    * 解析并存储 Token 信息
    */
   private parseAndStoreToken(token: string): void {
+    // 验证 PASETO 格式
+    if (!this.validatePasetoFormat(token)) {
+      throw new CredBridgeError(
+        CredBridgeErrorCode.InvalidToken,
+        'Invalid PASETO token format. Token must start with v4.local. or v4.public.'
+      );
+    }
+
     try {
       // 解析 PASETO token 的 payload 部分
       const parts = token.split('.');

@@ -12,6 +12,7 @@ use axum::{
     Json, Router,
     routing::{post, get},
 };
+use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,13 +55,21 @@ impl MemoryUserStore {
     pub fn new() -> Self {
         let mut users = std::collections::HashMap::new();
 
+        // 使用 bcrypt 哈希密码（在编译时生成哈希值）
+        // admin123 的 bcrypt 哈希
+        let admin_password_hash = hash("admin123", DEFAULT_COST)
+            .expect("Failed to hash admin password");
+        // user123 的 bcrypt 哈希
+        let user_password_hash = hash("user123", DEFAULT_COST)
+            .expect("Failed to hash user password");
+
         // 添加默认测试用户
         users.insert(
             "admin".to_string(),
             UserInfo {
                 user_id: "user-001".to_string(),
                 tenant_id: "tenant-001".to_string(),
-                password_hash: "admin123".to_string(), // 生产环境应使用 bcrypt 哈希
+                password_hash: admin_password_hash,
                 scopes: vec![TokenScope::Admin],
             },
         );
@@ -70,7 +79,7 @@ impl MemoryUserStore {
             UserInfo {
                 user_id: "user-002".to_string(),
                 tenant_id: "tenant-001".to_string(),
-                password_hash: "user123".to_string(),
+                password_hash: user_password_hash,
                 scopes: vec![TokenScope::CredentialRead, TokenScope::CredentialDecrypt],
             },
         );
@@ -82,12 +91,13 @@ impl MemoryUserStore {
 impl AuthApiState {
     /// 创建认证 API 状态
     pub fn new() -> Self {
+        use rand::rngs::OsRng;
         use rand::RngCore;
-        
-        // 生成随机密钥（生产环境应使用安全的随机数生成器）
+
+        // 生成随机密钥（使用密码学安全的 OsRng）
         let mut secret_key = vec![0u8; 32];
-        rand::thread_rng().fill_bytes(&mut secret_key);
-        
+        OsRng.fill_bytes(&mut secret_key);
+
         Self {
             secret_key,
             user_store: Arc::new(MemoryUserStore::new()),
@@ -99,10 +109,10 @@ impl MemoryUserStore {
     /// 验证用户凭据
     pub fn verify_user(&self, username: &str, password: &str) -> Option<UserInfo> {
         self.users.get(username).and_then(|user| {
-            if user.password_hash == password {
-                Some(user.clone())
-            } else {
-                None
+            match verify(password, &user.password_hash) {
+                Ok(true) => Some(user.clone()),
+                Ok(false) => None,
+                Err(_) => None,
             }
         })
     }
@@ -126,6 +136,17 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// 用户信息（用于登录响应）
+#[derive(Debug, Serialize)]
+pub struct UserInfoResponse {
+    pub id: String,
+    pub username: String,
+    pub email: String,
+    pub role: String,
+    pub tenant_id: String,
+    pub mfa_enabled: bool,
+}
+
 /// 登录响应
 #[derive(Debug, Serialize)]
 pub struct LoginResponse {
@@ -137,12 +158,8 @@ pub struct LoginResponse {
     pub token_type: String,
     /// 过期时间（秒）
     pub expires_in: u64,
-    /// 用户 ID
-    pub user_id: String,
-    /// 租户 ID
-    pub tenant_id: String,
-    /// 授权 Scope
-    pub scope: String,
+    /// 用户信息
+    pub user: UserInfoResponse,
 }
 
 /// Token 创建请求
@@ -300,12 +317,21 @@ pub async fn login_handler(
         }
     };
 
-    // 构建响应
-    let scope = user.scopes.iter()
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
+    // 构建用户信息
+    let user_response = UserInfoResponse {
+        id: user.user_id.clone(),
+        username: request.username.clone(),
+        email: format!("{}@credbridge.local", request.username),
+        role: if user.scopes.contains(&TokenScope::Admin) {
+            "admin".to_string()
+        } else {
+            "user".to_string()
+        },
+        tenant_id: user.tenant_id.clone(),
+        mfa_enabled: false,
+    };
 
+    // 构建响应
     (
         StatusCode::OK,
         Json(LoginResponse {
@@ -313,9 +339,7 @@ pub async fn login_handler(
             refresh_token,
             token_type: "Bearer".to_string(),
             expires_in: 900,
-            user_id: user.user_id,
-            tenant_id: user.tenant_id,
-            scope,
+            user: user_response,
         }),
     ).into_response()
 }
@@ -368,7 +392,7 @@ pub async fn create_token_handler(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("System time before Unix epoch")
         .as_secs();
 
     let token_id = Uuid::now_v7().to_string();
@@ -550,7 +574,7 @@ fn generate_paseto_token(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("System time before Unix epoch")
         .as_secs();
 
     // 构建 Claims（使用 expires_in Duration）
@@ -688,7 +712,7 @@ fn verify_refresh_token(token: &str) -> Result<(String, String), String> {
 fn now_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("System time before Unix epoch")
         .as_secs()
 }
 

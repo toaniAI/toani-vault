@@ -144,11 +144,19 @@ pub async fn create_credential(
     require_scope(TokenScope::CredentialWrite)(&token)
         .map_err(|e| ApiError::new("forbidden", e.message))?;
 
+    // 先创建 UserId 对象，用于加密和存储
+    let user_id = UserId::new(&token.user_id);
+    let tenant_id = TenantId::new(&token.tenant_id);
+
+    // 先生成 credential_id，确保加密时使用的 ID 与存储时一致
+    let credential_id = CredentialId::new();
+
     // 加密凭证内容（在 TEE 内完成）
     let encrypted_payload = encrypt_credential_in_tee(
         &state,
-        &token.tenant_id,
-        &token.user_id,
+        tenant_id.as_str(),
+        &user_id,
+        &credential_id,
         &request.plaintext_data,
     )
     .await
@@ -156,17 +164,17 @@ pub async fn create_credential(
 
     // 创建凭证请求
     let create_request = CreateCredentialRequest {
-        tenant_id: TenantId::new(&token.tenant_id),
-        user_id: UserId::new(&token.user_id),
+        tenant_id,
+        user_id,
         service_id: ServiceId::new(&request.service_id),
         credential_type: request.credential_type,
         expires_at: request.expires_at,
     };
 
-    // 存储凭证
+    // 存储凭证（使用预生成的 credential_id）
     let entry = state
         .vault
-        .create_credential(create_request, encrypted_payload)
+        .create_credential_with_id(create_request, encrypted_payload, credential_id)
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
 
     // 记录审计日志
@@ -188,10 +196,16 @@ pub async fn create_credential(
 }
 
 /// 在 TEE 内加密凭证
+///
+/// 修复说明：
+/// - 接收预生成的 credential_id，确保加密和存储使用相同的 ID
+/// - 使用 user_id.hash() 派生 L2 密钥，与解密流程一致
+/// - 使用 user_id.hash() 构建 AAD，与解密流程一致
 async fn encrypt_credential_in_tee(
     state: &AppState,
     tenant_id: &str,
-    user_id: &str,
+    user_id: &UserId,
+    credential_id: &CredentialId,
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
     // 序列化明文
@@ -199,21 +213,22 @@ async fn encrypt_credential_in_tee(
         .map_err(|e| format!("明文序列化失败: {}", e))?;
 
     // 派生 L3 密钥
+    // 使用 user_id.hash() 保持与解密流程一致
     let l3_key = {
         let hierarchy = state.key_hierarchy.write().await;
         let l2_key = hierarchy
-            .derive_user_vault_key(tenant_id, user_id)
+            .derive_user_vault_key(tenant_id, user_id.hash())
             .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
 
-        // 使用临时凭证 ID 派生密钥
-        let temp_cred_id = uuid::Uuid::now_v7().to_string();
+        // 使用预生成的 credential_id 派生密钥，确保与存储的 ID 一致
         hierarchy
-            .derive_credential_key(&l2_key, &temp_cred_id, KeyPurpose::CredentialEncryption)
+            .derive_credential_key(&l2_key, credential_id.as_str(), KeyPurpose::CredentialEncryption)
             .map_err(|e| format!("L3 密钥派生失败: {}", e))?
     };
 
     // 执行加密
-    let aad = format!("{}:{}", tenant_id, user_id);
+    // 使用 user_id.hash() 构建 AAD，与解密流程一致
+    let aad = format!("{}:{}", tenant_id, user_id.hash());
     let blob = encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
         .map_err(|e| format!("加密失败: {}", e))?;
 
@@ -371,10 +386,20 @@ pub async fn decrypt_credential_endpoint(
 
     // 解析明文为 JSON
     let plaintext_data: serde_json::Value =
-        serde_json::from_slice(&plaintext_bytes).unwrap_or_else(|_| {
-            // 如果不是 JSON，包装为字符串
-            serde_json::Value::String(String::from_utf8_lossy(&plaintext_bytes).to_string())
-        });
+        match serde_json::from_slice(&plaintext_bytes) {
+            Ok(v) => v,
+            Err(_) => {
+                match String::from_utf8(plaintext_bytes) {
+                    Ok(s) => serde_json::Value::String(s),
+                    Err(e) => {
+                        return Err(ApiError::new(
+                            "invalid_request",
+                            format!("Failed to decode plaintext as UTF-8: {}", e)
+                        ));
+                    }
+                }
+            }
+        };
 
     Ok(Json(DecryptCredentialResponse {
         credential_id: entry.credential_id.as_str().to_string(),
@@ -410,11 +435,12 @@ async fn decrypt_credential_in_tee(
             )
             .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
 
+        // 注意：AES-GCM 是对称加密，解密时使用与加密相同的 KeyPurpose
         hierarchy
             .derive_credential_key(
                 &l2_key,
                 entry.credential_id.as_str(),
-                KeyPurpose::CredentialDecryption,
+                KeyPurpose::CredentialEncryption,
             )
             .map_err(|e| format!("L3 密钥派生失败: {}", e))?
     };
@@ -474,16 +500,134 @@ pub async fn delete_credential(
     }))
 }
 
+/// 更新凭证请求
+#[derive(Debug, Deserialize)]
+pub struct UpdateCredentialApiRequest {
+    /// 新的明文凭证内容
+    pub plaintext_data: serde_json::Value,
+    /// 变更原因（用于审计）
+    pub change_reason: Option<String>,
+}
+
+/// 更新凭证响应
+#[derive(Debug, Serialize)]
+pub struct UpdateCredentialApiResponse {
+    pub credential_id: String,
+    pub version: u32,
+    pub service_id: String,
+    pub credential_type: String,
+    pub updated_at: String,
+    pub previous_version: u32,
+}
+
+/// PUT /api/v1/credentials/:id - 更新凭证（创建新版本）
+pub async fn update_credential(
+    State(state): State<AppState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(id): Path<String>,
+    Json(request): Json<UpdateCredentialApiRequest>,
+) -> Result<Json<UpdateCredentialApiResponse>, ApiError> {
+    // 验证 Scope: credential:write
+    require_scope(TokenScope::CredentialWrite)(&token)
+        .map_err(|e| ApiError::new("forbidden", e.message))?;
+
+    let credential_id = CredentialId::from_string(id.clone())
+        .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
+
+    let tenant_id = TenantId::new(&token.tenant_id);
+    let user_id = UserId::new(&token.user_id);
+
+    // 加密新的凭证内容
+    let encrypted_payload = encrypt_credential_update(
+        &state,
+        tenant_id.as_str(),
+        &user_id,
+        &credential_id,
+        &request.plaintext_data,
+    )
+    .await
+    .map_err(|e| ApiError::new("internal_error", e))?;
+
+    // 更新凭证
+    let update_result = state
+        .vault
+        .update_credential_with_version(
+            &credential_id,
+            &tenant_id,
+            &user_id,
+            encrypted_payload,
+            request.change_reason,
+        )
+        .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
+
+    Ok(Json(UpdateCredentialApiResponse {
+        credential_id: id,
+        version: update_result.new_version,
+        service_id: update_result.service_id,
+        credential_type: update_result.credential_type,
+        updated_at: chrono::Utc::now().to_rfc3339(),
+        previous_version: update_result.previous_version,
+    }))
+}
+
+/// 加密更新后的凭证内容
+///
+/// 修复说明：
+/// - 使用 user_id.hash() 派生 L2 密钥，与解密流程一致
+/// - 使用 user_id.hash() 构建 AAD，与解密流程一致
+async fn encrypt_credential_update(
+    state: &AppState,
+    tenant_id: &str,
+    user_id: &UserId,
+    credential_id: &CredentialId,
+    plaintext: &serde_json::Value,
+) -> Result<EncryptedPayload, String> {
+    use crate::crypto::EncryptedBlob;
+
+    // 序列化明文
+    let plaintext_bytes = serde_json::to_vec(plaintext)
+        .map_err(|e| format!("明文序列化失败: {}", e))?;
+
+    // 派生 L3 密钥
+    // 使用 user_id.hash() 保持与解密流程一致
+    let l3_key = {
+        let hierarchy = state.key_hierarchy.write().await;
+        let l2_key = hierarchy
+            .derive_user_vault_key(tenant_id, user_id.hash())
+            .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
+
+        hierarchy
+            .derive_credential_key(&l2_key, credential_id.as_str(), KeyPurpose::CredentialEncryption)
+            .map_err(|e| format!("L3 密钥派生失败: {}", e))?
+    };
+
+    // 执行加密
+    // 使用 user_id.hash() 构建 AAD，与解密流程一致
+    let aad = format!("{}:{}", tenant_id, user_id.hash());
+    let blob = crate::crypto::cipher::encrypt_credential(
+        &l3_key,
+        &plaintext_bytes,
+        Some(aad.as_bytes()),
+    )
+    .map_err(|e| format!("加密失败: {}", e))?;
+
+    Ok(EncryptedPayload::from_blob(&blob))
+}
+
 /// 构建凭证 API 路由
 pub fn routes() -> axum::Router<AppState> {
-    use axum::routing::{delete, get, post};
+    use axum::routing::{delete, get, post, put};
 
     axum::Router::new()
         .route("/credentials", post(create_credential))
         .route("/credentials", get(list_credentials))
         .route("/credentials/:id", get(get_credential))
+        .route("/credentials/:id", put(update_credential))
         .route("/credentials/:id/decrypt", post(decrypt_credential_endpoint))
         .route("/credentials/:id", delete(delete_credential))
+        .route("/credentials/:id/versions", get(crate::api::versions::get_version_history))
+        .route("/credentials/:id/versions/:version", get(crate::api::versions::get_version_detail))
+        .route("/credentials/:id/rollback", post(crate::api::versions::rollback_credential))
 }
 
 #[cfg(test)]

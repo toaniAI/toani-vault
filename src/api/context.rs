@@ -13,6 +13,41 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::api::middleware::ValidatedToken;
+use crate::utils::sql::escape_sql_string;
+
+/// API 上下文
+///
+/// 用于在处理器之间共享依赖
+#[derive(Clone)]
+pub struct ApiContext {
+    /// 数据库连接池
+    pub db: Option<Arc<sqlx::PgPool>>,
+    /// 凭证 Vault
+    pub vault: Option<Arc<crate::vault::storage::CredentialVault>>,
+    /// 应用配置
+    pub config: Option<Arc<std::collections::HashMap<String, String>>>,
+}
+
+impl ApiContext {
+    /// 创建新的 API 上下文
+    pub fn new(
+        db: Option<Arc<sqlx::PgPool>>,
+        vault: Option<Arc<crate::vault::storage::CredentialVault>>,
+        config: Option<Arc<std::collections::HashMap<String, String>>>,
+    ) -> Self {
+        Self { db, vault, config }
+    }
+
+    /// 从请求上下文创建
+    pub fn from_request_context(_ctx: &RequestContext) -> Self {
+        // 这里简化处理，实际应该从全局状态获取
+        Self {
+            db: None,
+            vault: None,
+            config: None,
+        }
+    }
+}
 
 /// 请求上下文
 ///
@@ -177,6 +212,8 @@ pub struct RlsContext {
     pub user_id: String,
     /// 允许的 Scope
     pub scopes: Vec<String>,
+    /// 是否为管理员（绕过 RLS 检查）
+    pub is_admin: bool,
 }
 
 impl RlsContext {
@@ -186,12 +223,47 @@ impl RlsContext {
             tenant_id: ctx.tenant_id.clone(),
             user_id: ctx.user_id.clone(),
             scopes: ctx.scopes.clone(),
+            is_admin: ctx.scopes.contains(&"admin".to_string()),
         }
     }
 
-    /// 生成 PostgreSQL RLS 设置 SQL
+    /// 创建新的 RLS 上下文
+    pub fn new(
+        tenant_id: impl Into<String>,
+        user_id: impl Into<String>,
+        scopes: Vec<String>,
+    ) -> Self {
+        let tenant_id = tenant_id.into();
+        let user_id = user_id.into();
+        let is_admin = scopes.contains(&"admin".to_string());
+        Self {
+            tenant_id,
+            user_id,
+            scopes,
+            is_admin,
+        }
+    }
+
+    /// 生成 PostgreSQL RLS 设置 SQL（事务级别）
     ///
-    /// 这些语句应该在每个数据库连接上执行，以启用 RLS
+    /// 使用 SET LOCAL 确保变量仅在事务级别生效，避免连接池污染
+    /// 这些语句必须在事务内执行
+    pub fn to_sql_transaction_local(&self) -> String {
+        format!(
+            "SET LOCAL app.current_tenant_id = '{}'; \
+             SET LOCAL app.current_user_id = '{}'; \
+             SET LOCAL app.current_scopes = '{}'; \
+             SET LOCAL app.is_admin = '{}';",
+            escape_sql_string(&self.tenant_id),
+            escape_sql_string(&self.user_id),
+            escape_sql_string(&self.scopes.join(",")),
+            self.is_admin
+        )
+    }
+
+    /// 生成 PostgreSQL RLS 设置 SQL（会话级别）
+    ///
+    /// 这些语句应该在连接获取后立即执行
     pub fn to_sql_statements(&self) -> Vec<String> {
         vec![
             format!("SET app.current_tenant_id = '{}'", escape_sql_string(&self.tenant_id)),
@@ -200,16 +272,19 @@ impl RlsContext {
                 "SET app.current_scopes = '{}'",
                 escape_sql_string(&self.scopes.join(","))
             ),
+            format!("SET app.is_admin = '{}'", self.is_admin),
         ]
     }
-}
 
-/// SQL 字符串转义（防止 SQL 注入）
-fn escape_sql_string(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
+    /// 检查是否有管理员权限
+    pub fn is_admin(&self) -> bool {
+        self.is_admin
+    }
+
+    /// 检查是否有指定 scope
+    pub fn has_scope(&self, scope: &str) -> bool {
+        self.scopes.contains(&scope.to_string()) || self.is_admin
+    }
 }
 
 /// 带租户隔离的数据库查询构建器
@@ -456,12 +531,55 @@ mod tests {
             tenant_id: "tenant_123".to_string(),
             user_id: "user_456".to_string(),
             scopes: vec!["read".to_string(), "write".to_string()],
+            is_admin: false,
         };
 
         let statements = ctx.to_sql_statements();
-        assert_eq!(statements.len(), 3);
+        assert_eq!(statements.len(), 4);
         assert!(statements[0].contains("SET app.current_tenant_id = 'tenant_123'"));
         assert!(statements[1].contains("SET app.current_user_id = 'user_456'"));
         assert!(statements[2].contains("SET app.current_scopes = 'read,write'"));
+        assert!(statements[3].contains("SET app.is_admin = 'false'"));
+    }
+
+    #[test]
+    fn test_rls_context_transaction_local() {
+        let ctx = RlsContext {
+            tenant_id: "tenant_123".to_string(),
+            user_id: "user_456".to_string(),
+            scopes: vec!["read".to_string(), "admin".to_string()],
+            is_admin: true,
+        };
+
+        let sql = ctx.to_sql_transaction_local();
+        assert!(sql.contains("SET LOCAL app.current_tenant_id = 'tenant_123'"));
+        assert!(sql.contains("SET LOCAL app.is_admin = 'true'"));
+    }
+
+    #[test]
+    fn test_rls_context_is_admin() {
+        let admin_ctx = RlsContext::new("tenant_1", "user_1", vec!["admin".to_string()]);
+        assert!(admin_ctx.is_admin());
+        assert!(admin_ctx.has_scope("any_scope"));
+
+        let normal_ctx = RlsContext::new("tenant_2", "user_2", vec!["read".to_string()]);
+        assert!(!normal_ctx.is_admin());
+        assert!(normal_ctx.has_scope("read"));
+        assert!(!normal_ctx.has_scope("write"));
+    }
+
+    #[test]
+    fn test_rls_context_from_request() {
+        let req_ctx = RequestContext::new(
+            "tenant_123",
+            "user_456",
+            "token_789",
+            vec!["admin".to_string(), "write".to_string()],
+        );
+
+        let rls_ctx = RlsContext::from_request_context(&req_ctx);
+        assert_eq!(rls_ctx.tenant_id, "tenant_123");
+        assert_eq!(rls_ctx.user_id, "user_456");
+        assert!(rls_ctx.is_admin);
     }
 }

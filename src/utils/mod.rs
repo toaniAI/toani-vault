@@ -1,5 +1,7 @@
 //! 工具函数模块
 
+pub mod sql;
+
 use ring::digest;
 
 /// 计算 SHA-256 哈希

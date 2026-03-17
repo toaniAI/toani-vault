@@ -32,6 +32,12 @@ pub enum VaultError {
 
     #[error("加密错误: {0}")]
     EncryptionError(String),
+
+    #[error("无效的版本号: {message}")]
+    InvalidVersion { message: String },
+
+    #[error("凭证 {credential_id} 的版本 {version} 未找到")]
+    VersionNotFound { credential_id: String, version: u32 },
 }
 
 /// 凭证 ID（基于 UUID v7）
@@ -362,6 +368,9 @@ pub struct VaultEntry {
     /// 凭证唯一 ID（UUID v7）
     pub credential_id: CredentialId,
 
+    /// 当前版本号（从 1 开始递增）
+    pub version: u32,
+
     /// 租户 ID（多租户隔离）
     pub tenant_id: TenantId,
 
@@ -404,6 +413,7 @@ impl VaultEntry {
 
         Self {
             credential_id: CredentialId::new(),
+            version: 1, // 新凭证从版本 1 开始
             tenant_id,
             user_id,
             service_id,
@@ -414,6 +424,42 @@ impl VaultEntry {
             encrypted_payload,
             is_deleted: false,
         }
+    }
+
+    /// 创建新的凭证条目（使用预生成的 credential_id）
+    ///
+    /// 用于修复加密流程中 credential_id 不一致的问题：
+    /// 加密时需要知道将要使用的 credential_id，以确保密钥派生参数一致
+    pub fn with_credential_id(
+        credential_id: CredentialId,
+        tenant_id: TenantId,
+        user_id: UserId,
+        service_id: ServiceId,
+        credential_type: CredentialType,
+        encrypted_payload: EncryptedPayload,
+        expires_at: Option<u64>,
+    ) -> Self {
+        let now = current_timestamp();
+
+        Self {
+            credential_id,
+            version: 1, // 新凭证从版本 1 开始
+            tenant_id,
+            user_id,
+            service_id,
+            credential_type,
+            created_at: now,
+            updated_at: now,
+            expires_at,
+            encrypted_payload,
+            is_deleted: false,
+        }
+    }
+
+    /// 增加版本号并更新时间戳
+    pub fn increment_version(&mut self) {
+        self.version += 1;
+        self.updated_at = current_timestamp();
     }
 
     /// 检查凭证是否过期
@@ -435,6 +481,7 @@ impl VaultEntry {
             created_at: timestamp_to_iso8601(self.created_at),
             expires_at: self.expires_at.map(timestamp_to_iso8601),
             is_deleted: self.is_deleted,
+            version: self.version,
         }
     }
 
@@ -532,10 +579,10 @@ fn current_timestamp() -> u64 {
 
 /// 将 Unix 时间戳转换为 ISO 8601 格式
 fn timestamp_to_iso8601(timestamp: u64) -> String {
-    use std::time::{Duration, SystemTime};
-    let datetime = SystemTime::UNIX_EPOCH + Duration::from_secs(timestamp);
-    // 简化处理，实际应该使用 chrono crate
-    format!("{}Z", timestamp)
+    use chrono::{DateTime, Utc};
+    let datetime = DateTime::from_timestamp(timestamp as i64, 0)
+        .unwrap_or_else(|| Utc::now());
+    datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
 #[cfg(test)]
