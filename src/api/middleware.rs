@@ -30,6 +30,12 @@ pub enum TokenScope {
     CredentialWrite,
     /// 审计日志读取权限
     AuditRead,
+    /// 沙箱执行权限
+    SandboxExecute,
+    /// 沙箱读取权限
+    SandboxRead,
+    /// 沙箱写入权限（创建/删除）
+    SandboxWrite,
     /// 管理员权限
     Admin,
 }
@@ -42,6 +48,9 @@ impl TokenScope {
             TokenScope::CredentialDecrypt => "credential:decrypt",
             TokenScope::CredentialWrite => "credential:write",
             TokenScope::AuditRead => "audit:read",
+            TokenScope::SandboxExecute => "sandbox:execute",
+            TokenScope::SandboxRead => "sandbox:read",
+            TokenScope::SandboxWrite => "sandbox:write",
             TokenScope::Admin => "admin",
         }
     }
@@ -53,6 +62,9 @@ impl TokenScope {
             "credential:decrypt" => Some(TokenScope::CredentialDecrypt),
             "credential:write" => Some(TokenScope::CredentialWrite),
             "audit:read" => Some(TokenScope::AuditRead),
+            "sandbox:execute" => Some(TokenScope::SandboxExecute),
+            "sandbox:read" => Some(TokenScope::SandboxRead),
+            "sandbox:write" => Some(TokenScope::SandboxWrite),
             "admin" => Some(TokenScope::Admin),
             _ => None,
         }
@@ -156,35 +168,17 @@ fn extract_token_from_header(request: &Request) -> Result<String, AuthError> {
 const TOKEN_BLACKLIST_TTL_SECONDS: u64 = 900; // 15 分钟
 
 /// 验证 Token（使用 pasetors）
+///
+/// 注意：Access Token 在有效期内可重复使用，不启用单次使用限制。
+/// 如需单次使用 Token，请使用专门的 Action Token 机制。
 async fn validate_token(
     token: &str,
-    token_store: &TokenStore,
+    _token_store: &TokenStore,
     secret_key: &[u8],
 ) -> Result<ValidatedToken, AuthError> {
     // 使用 pasetors 验证 v4.local Token
     let validation_result = validate_paseto_token(token, secret_key)
         .map_err(|e| AuthError::new("invalid_token", format!("Token 验证失败: {}", e)))?;
-
-    // 检查 jti 是否已被使用（单次使用验证）
-    match token_store.is_blacklisted(&validation_result.token_id).await {
-        Ok(true) => {
-            return Err(AuthError::new("revoked_token", "Token 已被使用或撤销"));
-        }
-        Ok(false) => {}
-        Err(e) => {
-            eprintln!("Token 黑名单检查错误: {}", e);
-            // 黑名单检查失败不阻止验证，但记录错误
-        }
-    }
-
-    // 记录 jti 已使用（使用 TTL 自动过期）
-    if let Err(e) = token_store
-        .blacklist_token(&validation_result.token_id, TOKEN_BLACKLIST_TTL_SECONDS)
-        .await
-    {
-        eprintln!("Token 添加到黑名单错误: {}", e);
-        // 添加到黑名单失败不阻止验证，但记录错误
-    }
 
     // 检查是否过期
     let now = SystemTime::now()
@@ -204,6 +198,7 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
     use pasetors::keys::SymmetricKey;
     use pasetors::local;
     use pasetors::token::UntrustedToken;
+    use time::OffsetDateTime;
 
     // 创建对称密钥
     let sk: SymmetricKey<_> = SymmetricKey::from(secret_key)
@@ -235,22 +230,35 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
         .ok_or("Token 缺少 sub 声明")?
         .to_string();
 
-    let expires_at = claims
-        .get_claim("exp")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<u64>().ok())
-        .ok_or("Token 缺少 exp 声明")?;
+    // 解析 exp（ISO 8601 格式）
+    let expires_at = match claims.get_claim("exp").and_then(|v| v.as_str()) {
+        Some(s) => {
+            OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
+                .map(|dt| dt.unix_timestamp() as u64)
+                .map_err(|_| "无法解析 exp 时间".to_string())
+        }
+        None => Err("Token 缺少 exp 声明".to_string()),
+    }?;
 
-    let issued_at = claims
-        .get_claim("iat")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or_else(|| {
+    // 解析 iat（ISO 8601 格式）
+    let issued_at = match claims.get_claim("iat").and_then(|v| v.as_str()) {
+        Some(s) => {
+            OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
+                .map(|dt| dt.unix_timestamp() as u64)
+                .unwrap_or_else(|_| {
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                })
+        }
+        None => {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs()
-        });
+        }
+    };
 
     let scope_str = claims
         .get_claim("scope")

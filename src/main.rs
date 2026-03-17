@@ -35,7 +35,11 @@ use vault_service::api::{
     audit::{audit_routes, AuditApiState, MemoryAuditStorageAdapter},
     auth::{auth_routes, AuthApiState},
     tenant::{tenant_routes, TenantApiState},
+    attestation::{attestation_routes, init_attestation_api, AttestationApiConfig, AttestationState},
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
+    middleware::auth_middleware,
+    token_blacklist::create_token_store,
+    sandbox::{sandbox_routes, SandboxState},
     API_BASE_PATH,
 };
 use vault_service::crypto::KeyHierarchy;
@@ -148,6 +152,8 @@ struct AppState {
     audit_state: AuditApiState,
     auth_state: AuthApiState,
     rate_limit_state: RateLimitState,
+    attestation_state: Option<Arc<AttestationState>>,
+    sandbox_state: Option<SandboxState>,
 }
 
 #[tokio::main]
@@ -253,13 +259,50 @@ async fn initialize_app_state(
     let rate_limit_config = RateLimitConfig::from_env();
     let rate_limit_state = RateLimitState::new(rate_limit_config);
 
+    // 初始化 Attestation API（在开发模式下使用模拟模式）
+    let attestation_state = match init_attestation_api(AttestationApiConfig {
+        simulation_mode: config.environment == Environment::Development,
+        ..Default::default()
+    }) {
+        Ok(state) => Some(state),
+        Err(e) => {
+            eprintln!("[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {}", e);
+            None
+        }
+    };
+
+    // 初始化沙箱 API（可选）
+    let sandbox_state = match initialize_sandbox_state().await {
+        Ok(state) => {
+            info!("✅ 沙箱 API 初始化成功");
+            Some(state)
+        }
+        Err(e) => {
+            eprintln!("[WARN] 沙箱 API 初始化失败（将跳过沙箱路由）: {}", e);
+            None
+        }
+    };
+
     Ok(AppState {
         config: config.clone(),
         credential_state,
         audit_state,
         auth_state,
         rate_limit_state,
+        attestation_state,
+        sandbox_state,
     })
+}
+
+/// 初始化沙箱状态
+async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::Error>> {
+    use vault_service::tee::sandbox::config::SandboxConfig;
+
+    let config = SandboxConfig::default();
+    let state = SandboxState::new(config).await
+        .map_err(|e| format!("沙箱初始化失败: {:?}", e))?;
+
+    Ok(state)
 }
 
 /// 构建路由器
@@ -282,6 +325,8 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         // 健康检查路由
         .route("/health", get(health_check))
         .route("/health/detail", get(health_check_detail))
+        // Prometheus 指标端点
+        .route("/metrics", get(metrics_handler))
         // 速率限制中间件
         .layer(rate_limit_layer)
         // 全局 CORS
@@ -333,15 +378,21 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
 
 /// 构建 API 路由
 fn build_api_routes(app_state: AppState) -> Router {
+    // 创建 Token 存储用于黑名单检查
+    let token_store = create_token_store();
+    let secret_key = app_state.auth_state.secret_key.clone();
+
+    // 认证路由（公开，不需要认证）
+    let auth_routes = auth_routes().with_state(app_state.auth_state.clone());
+
+    // ========== 受保护的路由（需要认证） ==========
+
     // 凭证管理路由
     let credential_routes = credential_routes()
         .with_state(app_state.credential_state.clone());
 
     // 审计日志路由
     let audit_routes = audit_routes(app_state.audit_state.clone());
-
-    // 认证路由
-    let auth_routes = auth_routes().with_state(app_state.auth_state.clone());
 
     // 租户管理路由（使用内存存储）
     let tenant_store = MemoryTenantConfigStore::new();
@@ -356,18 +407,65 @@ fn build_api_routes(app_state: AppState) -> Router {
     let tenant_routes = tenant_routes::<MemoryTenantConfigStore>()
         .with_state(tenant_api_state);
 
-    // 合并所有路由
-    Router::new()
-        .route("/", get(api_root_handler))
-        // 嵌套凭证路由（路径前缀已在 credential_routes 中定义）
+    // 认证中间件层
+    let auth_layer = axum::middleware::from_fn_with_state(
+        (token_store.clone(), secret_key.clone()),
+        auth_middleware,
+    );
+
+    // 构建受保护的路由组
+    let protected_routes = Router::new()
+        // 嵌套凭证路由
         .merge(credential_routes)
         // 嵌套审计路由
         .merge(audit_routes)
-        // 嵌套认证路由
-        .merge(auth_routes)
         // 嵌套租户路由
         .merge(tenant_routes)
-        .layer(Extension(app_state))
+        // 应用认证中间件
+        .layer(auth_layer);
+
+    // Attestation 路由（独立，可能需要不同的认证策略）
+    // 注意：Attestation 端点部分公开，部分需要认证
+    let attestation_routes = if let Some(ref att_state) = app_state.attestation_state {
+        let routes = attestation_routes(Arc::clone(att_state));
+        Some(Router::new().nest("/attestation", routes))
+    } else {
+        None
+    };
+
+    // 沙箱路由（需要认证）- 创建新的 auth_layer
+    let sandbox_routes = if let Some(ref sandbox_state) = app_state.sandbox_state {
+        let sandbox_auth_layer = axum::middleware::from_fn_with_state(
+            (token_store, secret_key),
+            auth_middleware,
+        );
+        let routes = sandbox_routes()
+            .with_state(sandbox_state.clone())
+            .layer(sandbox_auth_layer);
+        Some(routes)
+    } else {
+        None
+    };
+
+    // 合并所有路由
+    let mut router = Router::new()
+        .route("/", get(api_root_handler))
+        // 认证路由（公开）
+        .merge(auth_routes)
+        // 受保护的路由
+        .merge(protected_routes);
+
+    // 添加 attestation 路由（如果已初始化）
+    if let Some(att_routes) = attestation_routes {
+        router = router.merge(att_routes);
+    }
+
+    // 添加沙箱路由（如果已初始化）
+    if let Some(sb_routes) = sandbox_routes {
+        router = router.merge(sb_routes);
+    }
+
+    router.layer(Extension(app_state))
 }
 
 /// 根路径处理器
@@ -424,6 +522,57 @@ async fn health_check() -> impl IntoResponse {
     };
 
     (StatusCode::OK, Json(response))
+}
+
+/// Prometheus 指标端点
+async fn metrics_handler(Extension(state): Extension<AppState>) -> impl IntoResponse {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    // 构建 Prometheus 格式的指标
+    let metrics = format!(
+        r#"# HELP credbridge_up Service up status
+# TYPE credbridge_up gauge
+credbridge_up{{version="{}"}} 1
+
+# HELP credbridge_health_status Service health status
+# TYPE credbridge_health_status gauge
+credbridge_health_status{{status="healthy"}} 1
+
+# HELP credbridge_build_info Build information
+# TYPE credbridge_build_info gauge
+credbridge_build_info{{version="{}",env="{}"}} 1
+
+# HELP credbridge_timestamp Current timestamp
+# TYPE credbridge_timestamp gauge
+credbridge_timestamp {}
+
+# HELP credbridge_attestation_valid Attestation quote validity
+# TYPE credbridge_attestation_valid gauge
+credbridge_attestation_valid{{}} {}
+
+# HELP credbridge_enclave_state Enclave state (1=running, 0=stopped)
+# TYPE credbridge_enclave_state gauge
+credbridge_enclave_state{{}} {}
+"#,
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+        state.config.environment.as_str(),
+        timestamp,
+        if state.attestation_state.is_some() { 1 } else { 0 },
+        if state.attestation_state.is_some() { 1 } else { 0 },
+    );
+
+    (
+        StatusCode::OK,
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
+        metrics,
+    )
 }
 
 /// 详细健康检查处理器

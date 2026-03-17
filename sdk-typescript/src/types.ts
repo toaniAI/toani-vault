@@ -89,16 +89,25 @@ export interface CreateCredentialRequest {
 /** 创建凭证响应 */
 export interface CreateCredentialResponse {
   /** 凭证 ID */
-  credentialId: string;
+  credential_id: string;
   /** 服务 ID */
-  serviceId: string;
+  service_id: string;
   /** 凭证类型 */
-  credentialType: string;
+  credential_type: string;
   /** 创建时间 */
-  createdAt: string;
+  created_at: string;
   /** 过期时间 */
-  expiresAt?: string;
+  expires_at?: string;
 }
+
+/** 创建凭证响应 (camelCase 别名) */
+export type CreateCredentialResponseCamel = {
+  credentialId: string;
+  serviceId: string;
+  credentialType: string;
+  createdAt: string;
+  expiresAt?: string;
+};
 
 /** 凭证元数据 */
 export interface CredentialMetadata {
@@ -155,13 +164,13 @@ export interface DecryptCredentialRequest {
 /** 解密凭证响应 */
 export interface DecryptCredentialResponse {
   /** 凭证 ID */
-  credentialId: string;
+  credential_id: string;
   /** 服务 ID */
-  serviceId: string;
+  service_id: string;
   /** 凭证类型 */
-  credentialType: string;
+  credential_type: string;
   /** 解密的明文数据 */
-  plaintextData: Record<string, unknown>;
+  plaintext_data: Record<string, unknown>;
 }
 
 /** 删除凭证响应 */
@@ -489,4 +498,227 @@ export interface AuditLogFilter {
   startTime?: string;
   endTime?: string;
   success?: boolean;
+}
+
+// ============================================================================
+// Sandbox 类型
+// ============================================================================
+
+/** Session 状态 */
+export enum SessionStatus {
+  /** 正在创建 */
+  Creating = 'creating',
+  /** 运行中 */
+  Running = 'running',
+  /** 已暂停 */
+  Paused = 'paused',
+  /** 已关闭 */
+  Closed = 'closed',
+  /** 错误状态 */
+  Error = 'error',
+}
+
+/** 操作类型 */
+export enum OperationType {
+  /** 导航到URL */
+  Navigate = 'navigate',
+  /** 点击元素 */
+  Click = 'click',
+  /** 填充表单 */
+  Fill = 'fill',
+  /** 获取文本 */
+  GetText = 'get_text',
+  /** 获取元素属性 */
+  GetAttribute = 'get_attribute',
+  /** 执行脚本 */
+  ExecuteScript = 'execute_script',
+  /** 等待元素 */
+  WaitForSelector = 'wait_for_selector',
+  /** 截图 */
+  Screenshot = 'screenshot',
+  /** 导出数据 */
+  ExportData = 'export_data',
+}
+
+/** 操作状态 */
+export enum OperationStatus {
+  /** 待执行 */
+  Pending = 'pending',
+  /** 执行中 */
+  Running = 'running',
+  /** 成功 */
+  Success = 'success',
+  /** 失败 */
+  Failed = 'failed',
+  /** 已取消 */
+  Cancelled = 'cancelled',
+}
+
+/** 创建 Session 请求 */
+export interface CreateSessionRequest {
+  /** 服务ID */
+  serviceId: string;
+  /** 凭证ID（可选） */
+  credentialId?: string;
+  /** 启动URL */
+  startUrl?: string;
+  /** 视口宽度 */
+  viewportWidth?: number;
+  /** 视口高度 */
+  viewportHeight?: number;
+  /** 用户代理 */
+  userAgent?: string;
+  /** 超时时间（毫秒） */
+  timeout?: number;
+}
+
+/** 创建 Session 响应 */
+export interface CreateSessionResponse {
+  /** Session ID */
+  sessionId: string;
+  /** Session 状态 */
+  status: SessionStatus;
+  /** WebSocket URL */
+  wsUrl?: string;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+/** Session 信息 */
+export interface SessionInfo {
+  /** Session ID */
+  sessionId: string;
+  /** Session 状态 */
+  status: SessionStatus;
+  /** 服务ID */
+  serviceId: string;
+  /** 凭证ID */
+  credentialId?: string;
+  /** 当前URL */
+  currentUrl?: string;
+  /** 页面标题 */
+  pageTitle?: string;
+  /** 创建时间 */
+  createdAt: string;
+  /** 最后活动时间 */
+  lastActivityAt?: string;
+  /** 过期时间 */
+  expiresAt?: string;
+}
+
+/** 执行操作请求 */
+export interface ExecuteOperationRequest {
+  /** 操作类型 */
+  operationType: OperationType;
+  /** 选择器（CSS选择器或XPath） */
+  selector?: string;
+  /** 输入值 */
+  value?: string;
+  /** URL（用于导航操作） */
+  url?: string;
+  /** 脚本（用于执行脚本操作） */
+  script?: string;
+  /** 属性名（用于获取属性操作） */
+  attribute?: string;
+  /** 超时时间（毫秒） */
+  timeout?: number;
+  /** 等待条件 */
+  waitCondition?: {
+    /** 可见性 */
+    visible?: boolean;
+    /** 存在性 */
+    attached?: boolean;
+  };
+}
+
+/** 执行操作响应 */
+export interface ExecuteOperationResponse {
+  /** 操作ID */
+  operationId: string;
+  /** 操作状态 */
+  status: OperationStatus;
+  /** 操作结果 */
+  result?: unknown;
+  /** 错误信息 */
+  error?: string;
+  /** 执行时间（毫秒） */
+  executionTimeMs: number;
+}
+
+/** 截图选项 */
+export interface ScreenshotOptions {
+  /** 选择器（截取特定元素） */
+  selector?: string;
+  /** 完整页面截图 */
+  fullPage?: boolean;
+  /** 图片格式 */
+  type?: 'png' | 'jpeg';
+  /** 图片质量（仅jpeg） */
+  quality?: number;
+  /** 裁剪区域 */
+  clip?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+/** 截图响应 */
+export interface ScreenshotResponse {
+  /** 图片数据（Base64） */
+  data: string;
+  /** 图片格式 */
+  type: 'png' | 'jpeg';
+  /** 宽度 */
+  width: number;
+  /** 高度 */
+  height: number;
+}
+
+/** 导出数据请求 */
+export interface ExportDataRequest {
+  /** 导出格式 */
+  format: 'json' | 'csv' | 'html';
+  /** 选择器 */
+  selector?: string;
+  /** 数据提取规则 */
+  extractionRules?: Array<{
+    /** 字段名 */
+    name: string;
+    /** 选择器 */
+    selector: string;
+    /** 属性（默认为textContent） */
+    attribute?: string;
+  }>;
+}
+
+/** 导出数据响应 */
+export interface ExportDataResponse {
+  /** 导出数据 */
+  data: unknown;
+  /** 数据格式 */
+  format: 'json' | 'csv' | 'html';
+  /** 记录数 */
+  recordCount: number;
+}
+
+/** Session 列表响应 */
+export interface ListSessionsResponse {
+  /** Session 列表 */
+  sessions: SessionInfo[];
+  /** 总数 */
+  total: number;
+}
+
+/** Sandbox 配置 */
+export interface SandboxConfig {
+  /** 默认视口宽度 */
+  defaultViewportWidth?: number;
+  /** 默认视口高度 */
+  defaultViewportHeight?: number;
+  /** 默认超时时间（毫秒） */
+  defaultTimeout?: number;
+  /** 默认用户代理 */
+  defaultUserAgent?: string;
 }

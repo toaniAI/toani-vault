@@ -10,10 +10,14 @@ pub mod context;
 pub mod credentials;
 pub mod middleware;
 pub mod rate_limit;
+pub mod response;
 pub mod routes;
+pub mod sandbox;
 pub mod tenant;
 pub mod tenant_middleware;
 pub mod token_blacklist;
+pub mod versions;
+pub mod websocket;
 
 /// API 版本
 pub const API_VERSION: &str = "v1";
@@ -29,7 +33,7 @@ pub use attestation::{
 pub use audit::{audit_routes, AuditApiState, AuditStorage, MemoryAuditStorageAdapter};
 pub use audit_models::*;
 pub use context::{
-    CrossTenantErrorResponse, RequestContext, TenantId, TenantIsolationError, TenantQueryBuilder,
+    ApiContext, CrossTenantErrorResponse, RequestContext, TenantId, TenantIsolationError, TenantQueryBuilder,
     RlsContext, verify_tenant_access, verify_tenant_access_from_param,
 };
 pub use credentials::{AppState, AuditLogger, DefaultAuditLogger};
@@ -43,3 +47,4 @@ pub use tenant_middleware::{
     validate_path_tenant_id, validate_query_tenant_id, RequestContextExt,
 };
 pub use auth::{auth_routes, AuthApiState};
+pub use sandbox::{sandbox_routes, SandboxState};

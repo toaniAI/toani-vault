@@ -16,6 +16,12 @@ pub mod credentials {
     pub const DELETE: &str = "/credentials/:id";
     /// 解密凭证
     pub const DECRYPT: &str = "/credentials/:id/decrypt";
+    /// 获取凭证版本历史
+    pub const VERSIONS: &str = "/credentials/:id/versions";
+    /// 获取指定版本详情
+    pub const VERSION_DETAIL: &str = "/credentials/:id/versions/:version";
+    /// 回滚凭证到指定版本
+    pub const ROLLBACK: &str = "/credentials/:id/rollback";
 }
 
 /// Token 路由
@@ -48,4 +54,28 @@ pub mod health {
     pub const CHECK_DETAIL: &str = "/health/detail";
     /// 指标端点
     pub const METRICS: &str = "/metrics";
+}
+
+/// 沙箱路由
+pub mod sandbox {
+    /// 创建沙箱会话
+    pub const CREATE_SESSION: &str = "/sandbox/sessions";
+    /// 获取沙箱会话列表
+    pub const LIST_SESSIONS: &str = "/sandbox/sessions";
+    /// 获取单个沙箱会话
+    pub const GET_SESSION: &str = "/sandbox/sessions/:id";
+    /// 终止沙箱会话
+    pub const TERMINATE_SESSION: &str = "/sandbox/sessions/:id/terminate";
+    /// 在沙箱中执行操作
+    pub const EXECUTE_OPERATION: &str = "/sandbox/sessions/:id/execute";
+    /// 获取会话操作列表
+    pub const LIST_OPERATIONS: &str = "/sandbox/sessions/:id/operations";
+    /// 获取单个操作详情
+    pub const GET_OPERATION: &str = "/sandbox/operations/:operation_id";
+    /// 获取沙箱统计信息
+    pub const GET_STATS: &str = "/sandbox/stats";
+    /// 获取沙箱健康状态
+    pub const HEALTH_CHECK: &str = "/sandbox/health";
+    /// 验证 TEE 证明报告
+    pub const VERIFY_ATTESTATION: &str = "/sandbox/attestation/verify";
 }

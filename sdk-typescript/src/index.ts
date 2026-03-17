@@ -32,6 +32,8 @@
 export { CredBridgeClient } from './client.js';
 export { CredentialsService } from './credentials.js';
 export { TokenManager } from './token.js';
+export { SandboxService } from './sandbox.js';
+export { SandboxWebSocketClient } from './websocket.js';
 
 // 导出所有类型
 export {
@@ -40,6 +42,9 @@ export {
   TokenScope,
   CredBridgeErrorCode,
   SdkEventType,
+  SessionStatus,
+  OperationType,
+  OperationStatus,
 
   // 错误类
   CredBridgeError,
@@ -83,17 +88,55 @@ export {
   type AuditLogEntry,
   type ListAuditLogsResponse,
   type AuditLogFilter,
+
+  // Sandbox 类型
+  type CreateSessionRequest,
+  type CreateSessionResponse,
+  type SessionInfo,
+  type ExecuteOperationRequest,
+  type ExecuteOperationResponse,
+  type ScreenshotOptions,
+  type ScreenshotResponse,
+  type ExportDataRequest,
+  type ExportDataResponse,
+  type ListSessionsResponse,
+  type SandboxConfig,
 } from './types.js';
+
+// 重新导出 WebSocket 类型
+export type {
+  WebSocketConfig,
+  ClientMessage,
+  ServerMessage,
+  ExecuteMessage,
+  ScreenshotMessage,
+  HeartbeatMessage,
+  CloseMessage,
+  ConnectedMessage,
+  OperationProgressMessage,
+  OperationCompletedMessage,
+  ScreenshotResultMessage,
+  HeartbeatAckMessage,
+  SessionStatusUpdateMessage,
+  ErrorMessage,
+  ExecuteOperationOptions,
+  ExecuteOperationResult,
+  ScreenshotResult,
+} from './websocket.js';
+
+// 导出 WebSocket 状态枚举
+export { WebSocketState } from './websocket.js';
 
 import { CredBridgeClient } from './client.js';
 import { CredentialsService } from './credentials.js';
 import { TokenManager } from './token.js';
+import { SandboxService } from './sandbox.js';
 import type { CredBridgeConfig } from './types.js';
 
 /**
  * CredBridge SDK 主类
  *
- * 提供凭证管理和 Token 操作的便捷接口
+ * 提供凭证管理、Token 操作和 Sandbox 自动化功能的便捷接口
  */
 export class CredBridgeSDK {
   /** 核心 HTTP 客户端 */
@@ -102,6 +145,8 @@ export class CredBridgeSDK {
   public readonly credentials: CredentialsService;
   /** Token 管理 */
   public readonly token: TokenManager;
+  /** Sandbox 服务 */
+  public readonly sandbox: SandboxService;
 
   /**
    * 创建 CredBridge SDK 实例
@@ -139,6 +184,7 @@ export class CredBridgeSDK {
 
     this.credentials = new CredentialsService(this.client);
     this.token = new TokenManager(this.client);
+    this.sandbox = new SandboxService(this.client);
   }
 
   /**
