@@ -78,7 +78,7 @@ impl Default for CredentialId {
 }
 
 /// 用户 ID（存储时哈希）
-#[derive(Debug, Clone, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
 pub struct UserId {
     /// 原始用户 ID（仅在内存中，不序列化）
     #[serde(skip)]
@@ -91,6 +91,13 @@ impl PartialEq for UserId {
     fn eq(&self, other: &Self) -> bool {
         // 只比较哈希值，不比较原始值
         self.hash == other.hash
+    }
+}
+
+impl std::hash::Hash for UserId {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // 只哈希 hash 字段，与 PartialEq 保持一致
+        self.hash.hash(state);
     }
 }
 
@@ -353,8 +360,8 @@ impl Default for EncryptedPayload {
             version: constants::PROTOCOL_VERSION,
             algorithm: constants::ALGORITHM_AES_256_GCM.to_string(),
             kdf: constants::KDF_HKDF_SHA256.to_string(),
-            nonce: URL_SAFE_NO_PAD.encode(&[0u8; constants::NONCE_LENGTH]),
-            auth_tag: URL_SAFE_NO_PAD.encode(&[0u8; constants::AUTH_TAG_LENGTH]),
+            nonce: URL_SAFE_NO_PAD.encode([0u8; constants::NONCE_LENGTH]),
+            auth_tag: URL_SAFE_NO_PAD.encode([0u8; constants::AUTH_TAG_LENGTH]),
             ciphertext: String::new(),
         }
     }
@@ -474,7 +481,7 @@ impl VaultEntry {
     pub fn metadata(&self) -> CredentialMetadata {
         CredentialMetadata {
             credential_id: self.credential_id.as_str().to_string(),
-            credential_type: self.credential_type.clone(),
+            credential_type: self.credential_type,
             user_id_hash: self.user_id.hash().to_string(),
             service_id: self.service_id.as_str().to_string(),
             tenant_id: self.tenant_id.as_str().to_string(),
@@ -584,7 +591,7 @@ fn current_timestamp() -> u64 {
 /// 将 Unix 时间戳转换为 ISO 8601 格式
 fn timestamp_to_iso8601(timestamp: u64) -> String {
     use chrono::{DateTime, Utc};
-    let datetime = DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_else(|| Utc::now());
+    let datetime = DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_else(Utc::now);
     datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 

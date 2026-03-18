@@ -639,7 +639,7 @@ fn generate_new_token() -> String {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes).unwrap();
 
-    format!("tok_{}", hex::encode(&bytes))
+    format!("tok_{}", hex::encode(bytes))
 }
 
 /// 获取随机字节

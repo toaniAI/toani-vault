@@ -3,9 +3,8 @@
 //! EP4-Story4.1 审计事件记录功能的集成测试
 
 use vault_service::audit::{
-    AuditAction, AuditEntry, AuditFilter, AuditRecorder, AuditStats, MemoryAuditStorage, Outcome,
-    PiiRedactor, RedactedParam, RiskTier, SignedAuditEntry, create_memory_storage, hash_user_id,
-    is_high_risk_action,
+    AuditAction, AuditEntry, AuditFilter, AuditRecorder, Outcome, PiiRedactor, RedactedParam,
+    RiskTier, create_memory_storage, hash_user_id, is_high_risk_action,
 };
 
 /// 测试：审计条目创建和基本属性
@@ -405,13 +404,13 @@ fn test_audit_chain_integrity() {
     // 记录多个事件
     for i in 0..10 {
         let entry = AuditEntry::new(
-            &format!("user_{}", i),
-            &format!("session_{}", i),
+            format!("user_{}", i),
+            format!("session_{}", i),
             "vault-service",
             AuditAction::CredentialDecrypt,
             Outcome::Success,
             "mrenclave_measurement",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).expect("Should record entry");
     }
@@ -429,13 +428,13 @@ fn test_query_recent_entries() {
     // 记录事件
     for i in 0..5 {
         let entry = AuditEntry::new(
-            &format!("user_{}", i),
+            format!("user_{}", i),
             "session",
             "service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).unwrap();
     }
@@ -456,13 +455,13 @@ fn test_query_by_outcome() {
     // 记录成功事件
     for i in 0..3 {
         let entry = AuditEntry::new(
-            &format!("user_{}", i),
+            format!("user_{}", i),
             "session",
             "service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).unwrap();
     }
@@ -470,13 +469,13 @@ fn test_query_by_outcome() {
     // 记录失败事件
     for i in 0..2 {
         let entry = AuditEntry::new(
-            &format!("user_fail_{}", i),
+            format!("user_fail_{}", i),
             "session",
             "service",
             AuditAction::CredentialDecrypt,
             Outcome::Failure,
             "mrenclave",
-            &format!("jti_fail_{}", i),
+            format!("jti_fail_{}", i),
         );
         storage.record(entry).unwrap();
     }
@@ -503,13 +502,13 @@ fn test_audit_report_generation() {
             Outcome::Success
         };
         let entry = AuditEntry::new(
-            &format!("user_{}", i),
+            format!("user_{}", i),
             "session",
             "service",
             AuditAction::TokenValidate,
             outcome,
             "mrenclave",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).unwrap();
     }
@@ -709,13 +708,13 @@ fn test_mass_audit_recording() {
     let count = 100;
     for i in 0..count {
         let entry = AuditEntry::new(
-            &format!("user_{}", i % 10), // 10 个不同用户
-            &format!("session_{}", i),
+            format!("user_{}", i % 10), // 10 个不同用户
+            format!("session_{}", i),
             "vault-service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave_measurement",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).expect("Should record entry");
     }
@@ -767,13 +766,13 @@ fn test_audit_export_json() {
     // 记录几个事件
     for i in 0..3 {
         let entry = AuditEntry::new(
-            &format!("user_{}", i),
+            format!("user_{}", i),
             "session",
             "service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).unwrap();
     }
@@ -795,13 +794,13 @@ fn test_audit_tamper_resistance() {
     // 记录一系列事件
     for i in 0..5 {
         let entry = AuditEntry::new(
-            &format!("user_{}", i),
+            format!("user_{}", i),
             "session",
             "service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave",
-            &format!("jti_{}", i),
+            format!("jti_{}", i),
         );
         storage.record(entry).unwrap();
     }

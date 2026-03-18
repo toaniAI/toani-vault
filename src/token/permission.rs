@@ -325,10 +325,10 @@ impl PermissionEngine {
         }
 
         // 3. 风险等级检查
-        if let Some(risk_level) = request.context.risk_level {
-            if risk_level >= 2 {
-                return AccessDecision::RequireApproval("高风险操作需要人工审批".to_string());
-            }
+        if let Some(risk_level) = request.context.risk_level
+            && risk_level >= 2
+        {
+            return AccessDecision::RequireApproval("高风险操作需要人工审批".to_string());
         }
 
         AccessDecision::Allow
@@ -440,7 +440,7 @@ impl BatchPermissionChecker {
         let mut results = Vec::new();
 
         for id in credential_ids {
-            let request = AccessRequest::credential(operation.clone(), id.clone());
+            let request = AccessRequest::credential(operation, id.clone());
             let decision = self.engine.check_access(&request);
             results.push((id.clone(), decision));
             self.results
@@ -602,12 +602,12 @@ impl ExtendedRestrictedContext {
 
     /// 检查请求限制
     pub fn check_rate_limit(&mut self) -> Result<(), PermissionError> {
-        if let Some(max) = self.max_requests {
-            if self.current_requests >= max {
-                return Err(PermissionError::CheckFailed(
-                    "Token 请求次数已耗尽".to_string(),
-                ));
-            }
+        if let Some(max) = self.max_requests
+            && self.current_requests >= max
+        {
+            return Err(PermissionError::CheckFailed(
+                "Token 请求次数已耗尽".to_string(),
+            ));
         }
         self.current_requests += 1;
         Ok(())
@@ -615,13 +615,8 @@ impl ExtendedRestrictedContext {
 
     /// 获取剩余请求次数
     pub fn remaining_requests(&self) -> Option<u32> {
-        self.max_requests.map(|max| {
-            if self.current_requests >= max {
-                0
-            } else {
-                max - self.current_requests
-            }
-        })
+        self.max_requests
+            .map(|max| max.saturating_sub(self.current_requests))
     }
 }
 

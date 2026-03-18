@@ -56,7 +56,7 @@ impl TokenScope {
     }
 
     /// 从字符串解析 scope
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "credential:read" => Some(TokenScope::CredentialRead),
             "credential:decrypt" => Some(TokenScope::CredentialDecrypt),
@@ -68,6 +68,14 @@ impl TokenScope {
             "admin" => Some(TokenScope::Admin),
             _ => None,
         }
+    }
+}
+
+impl std::str::FromStr for TokenScope {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
     }
 }
 
@@ -156,11 +164,10 @@ fn extract_token_from_header(request: &Request) -> Result<String, AuthError> {
         .to_string();
 
     // 支持 "Bearer <token>" 格式
-    if auth_header.starts_with("Bearer ") {
-        Ok(auth_header[7..].to_string())
-    } else {
-        Ok(auth_header)
-    }
+    Ok(auth_header
+        .strip_prefix("Bearer ")
+        .map(|s| s.to_string())
+        .unwrap_or(auth_header))
 }
 
 /// Token 默认黑名单 TTL（秒）
@@ -263,7 +270,7 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
 
     let scopes: Vec<TokenScope> = scope_str
         .split_whitespace()
-        .filter_map(TokenScope::from_str)
+        .filter_map(|s| s.parse().ok())
         .collect();
 
     if scopes.is_empty() {
@@ -322,41 +329,6 @@ pub async fn auth_middleware(
     next.run(request).await
 }
 
-/// 测试辅助模块
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    /// 获取测试密钥
-    pub fn get_test_key() -> Vec<u8> {
-        vec![0u8; 32]
-    }
-
-    /// 创建模拟的 ValidatedToken（用于测试）
-    pub fn create_mock_token(
-        tenant_id: &str,
-        user_id: &str,
-        scopes: Vec<TokenScope>,
-    ) -> ValidatedToken {
-        ValidatedToken {
-            token_id: uuid::Uuid::now_v7().to_string(),
-            subject: format!("{}:{}", tenant_id, user_id),
-            tenant_id: tenant_id.to_string(),
-            user_id: user_id.to_string(),
-            expires_at: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                + 3600,
-            scopes,
-            issued_at: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        }
-    }
-}
-
 /// 从请求扩展获取 Token（处理器中使用）
 pub fn get_token_from_request(request: &Request) -> Option<&ValidatedToken> {
     request.extensions().get::<ValidatedToken>()
@@ -401,6 +373,41 @@ pub fn require_any_scope(
                     token.scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>()
                 ),
             ))
+        }
+    }
+}
+
+/// 测试辅助模块
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    /// 获取测试密钥
+    pub fn get_test_key() -> Vec<u8> {
+        vec![0u8; 32]
+    }
+
+    /// 创建模拟的 ValidatedToken（用于测试）
+    pub fn create_mock_token(
+        tenant_id: &str,
+        user_id: &str,
+        scopes: Vec<TokenScope>,
+    ) -> ValidatedToken {
+        ValidatedToken {
+            token_id: uuid::Uuid::now_v7().to_string(),
+            subject: format!("{}:{}", tenant_id, user_id),
+            tenant_id: tenant_id.to_string(),
+            user_id: user_id.to_string(),
+            expires_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 3600,
+            scopes,
+            issued_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
         }
     }
 }

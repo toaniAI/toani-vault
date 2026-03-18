@@ -329,7 +329,7 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         // 根路径
         .route("/", get(root_handler))
         // API 路由
-        .nest(&format!("{}", API_BASE_PATH), api_routes)
+        .nest(API_BASE_PATH, api_routes)
         // 健康检查路由
         .route("/health", get(health_check))
         .route("/health/detail", get(health_check_detail))
@@ -361,11 +361,8 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
             env::var("CREDBRIDGE_ALLOWED_ORIGINS")
                 .ok()
                 .and_then(|origins| {
-                    let origins: Vec<_> = origins
-                        .split(',')
-                        .map(|s| s.parse().ok())
-                        .flatten()
-                        .collect();
+                    let origins: Vec<_> =
+                        origins.split(',').filter_map(|s| s.parse().ok()).collect();
                     if origins.is_empty() {
                         None
                     } else {

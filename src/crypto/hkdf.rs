@@ -336,7 +336,7 @@ impl KeyHierarchy {
     /// 3. 需要重新派生所有密钥
     pub fn rotate_key_version(&mut self) {
         // 保存旧版本
-        self.legacy_versions.push(self.key_version.clone());
+        self.legacy_versions.push(self.key_version);
 
         // 限制历史版本数量（防止内存无限增长）
         if self.legacy_versions.len() > 5 {
@@ -471,6 +471,14 @@ pub mod utils {
 
         Ok(key)
     }
+}
+
+/// 获取当前时间戳
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("系统时间错误")
+        .as_secs()
 }
 
 #[cfg(test)]
@@ -755,12 +763,4 @@ mod tests {
         };
         assert!(old_version.needs_rotation(current_time));
     }
-}
-
-/// 获取当前时间戳
-fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("系统时间错误")
-        .as_secs()
 }

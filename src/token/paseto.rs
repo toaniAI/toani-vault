@@ -231,8 +231,8 @@ impl PasetoToken {
 
         // 创建验证规则
         let mut validation_rules = ClaimsValidationRules::new();
-        validation_rules.validate_issuer_with(&"credbridge-vault");
-        validation_rules.validate_audience_with(&expected_audience);
+        validation_rules.validate_issuer_with("credbridge-vault");
+        validation_rules.validate_audience_with(expected_audience);
         // 注意：subject 在 claims.validate() 中验证
 
         // 验证 Token

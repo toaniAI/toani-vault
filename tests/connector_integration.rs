@@ -74,10 +74,10 @@ impl Connector for MockHttpConnector {
 
     async fn validate(&self, params: &Value) -> Result<ValidatedParams, ValidationError> {
         // 验证必需字段
-        if let Some(method) = params.get("method") {
-            if method.as_str().is_none() {
-                return Err(ValidationError::field("method", "方法必须是字符串"));
-            }
+        if let Some(method) = params.get("method")
+            && method.as_str().is_none()
+        {
+            return Err(ValidationError::field("method", "方法必须是字符串"));
         }
         Ok(ValidatedParams::new(params.clone()))
     }
@@ -436,12 +436,11 @@ async fn test_custom_validation_rule() {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Some(obj) = value.as_object() {
-                if let Some(val) = obj.get("custom_field") {
-                    if val.as_str() == Some("valid") {
-                        return Ok(());
-                    }
-                }
+            if let Some(obj) = value.as_object()
+                && let Some(val) = obj.get("custom_field")
+                && val.as_str() == Some("valid")
+            {
+                return Ok(());
             }
             Err("custom_field 必须是 'valid'".to_string())
         }
@@ -638,7 +637,7 @@ async fn test_concurrent_execute() {
     }
 
     // 验证调用次数
-    let connector = registry.get("concurrent").await.unwrap();
+    let _connector = registry.get("concurrent").await.unwrap();
     // 注意：由于 connector 是 Arc<dyn Connector>，我们无法直接访问 MockHttpConnector 的 call_count
     // 但这证明了并发执行不会 panic
 }

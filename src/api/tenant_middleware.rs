@@ -253,13 +253,13 @@ pub fn validate_query_tenant_id(
     context: &RequestContext,
     query_tenant_id: Option<&str>,
 ) -> Result<(), TenantIsolationError> {
-    if let Some(tid) = query_tenant_id {
-        if context.tenant_id() != tid {
-            return Err(TenantIsolationError::CrossTenantAccessDenied {
-                requested: context.tenant_id().to_string(),
-                actual: tid.to_string(),
-            });
-        }
+    if let Some(tid) = query_tenant_id
+        && context.tenant_id() != tid
+    {
+        return Err(TenantIsolationError::CrossTenantAccessDenied {
+            requested: context.tenant_id().to_string(),
+            actual: tid.to_string(),
+        });
     }
     Ok(())
 }

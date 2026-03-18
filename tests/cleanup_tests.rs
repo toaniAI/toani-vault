@@ -11,8 +11,8 @@ use std::thread;
 use std::time::Duration;
 use vault_service::crypto::constants::KEY_LENGTH;
 use vault_service::tee::{
-    CacheStatistics, CachedKeyEntry, CleanupConfig, CleanupScheduler, DEFAULT_KEY_TTL_SECONDS,
-    KeyCleaner, KeyLifecycle, KeyManager, KeyType, MASTER_KEY_STORAGE_ID, MasterKeyMetadata,
+    CachedKeyEntry, CleanupConfig, CleanupScheduler, DEFAULT_KEY_TTL_SECONDS, KeyCleaner,
+    KeyLifecycle, KeyManager, KeyType, MASTER_KEY_STORAGE_ID, MasterKeyMetadata,
     ProtectedKeyMaterial, ProtectedMemory, SealPolicy, SecureScope, UserKeyCache,
 };
 

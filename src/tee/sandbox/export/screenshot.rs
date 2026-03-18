@@ -73,7 +73,7 @@ impl PlaywrightClient {
     }
 
     /// 创建带默认配置的客户端
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(PlaywrightConfig::default())
     }
 
@@ -276,12 +276,12 @@ impl PlaywrightClient {
         {
             if self.browser.is_some() {
                 debug!("健康检查通过: 浏览器已连接");
-                return Ok(());
+                Ok(())
             } else {
                 warn!("健康检查失败: 浏览器未连接");
-                return Err(ExportError::BrowserConnectionError(
+                Err(ExportError::BrowserConnectionError(
                     "浏览器未连接".to_string(),
-                ));
+                ))
             }
         }
 
@@ -527,7 +527,7 @@ impl ScreenshotService {
     pub fn with_freezer(freezer: PageStateFreezer) -> Self {
         Self::new(
             freezer,
-            PlaywrightClient::default(),
+            PlaywrightClient::with_default_config(),
             ScreenshotConfig::default(),
             WatermarkService::default_service(),
         )
@@ -771,30 +771,27 @@ impl ScreenshotService {
                     screenshot.review_result = Some(review_result.clone());
 
                     // 步骤4: 自动脱敏（如果检测到敏感信息）
-                    if let Some(redaction_service) = redaction {
-                        if !review_result.redaction_regions.is_empty() {
-                            debug!(
-                                "开始脱敏处理，检测到 {} 个敏感区域",
-                                review_result.redaction_regions.len()
-                            );
+                    if let Some(redaction_service) = redaction
+                        && !review_result.redaction_regions.is_empty()
+                    {
+                        debug!(
+                            "开始脱敏处理，检测到 {} 个敏感区域",
+                            review_result.redaction_regions.len()
+                        );
 
-                            // 使用审核结果中的脱敏区域
-                            let regions = &review_result.redaction_regions;
+                        // 使用审核结果中的脱敏区域
+                        let regions = &review_result.redaction_regions;
 
-                            // 执行脱敏
-                            match redaction_service.redact(
-                                &screenshot.data,
-                                screenshot.format,
-                                regions,
-                            ) {
-                                Ok(redacted_data) => {
-                                    screenshot.data = redacted_data;
-                                    debug!("脱敏处理完成");
-                                }
-                                Err(e) => {
-                                    warn!("脱敏处理失败: {}", e);
-                                    // 脱敏失败不阻断流程
-                                }
+                        // 执行脱敏
+                        match redaction_service.redact(&screenshot.data, screenshot.format, regions)
+                        {
+                            Ok(redacted_data) => {
+                                screenshot.data = redacted_data;
+                                debug!("脱敏处理完成");
+                            }
+                            Err(e) => {
+                                warn!("脱敏处理失败: {}", e);
+                                // 脱敏失败不阻断流程
                             }
                         }
                     }
@@ -866,6 +863,7 @@ impl ScreenshotService {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
     use crate::tee::sandbox::export::freezer::{FrozenMetadata, ViewportInfo};
 
@@ -883,7 +881,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_playwright_client() {
-        let client = PlaywrightClient::default();
+        let client = PlaywrightClient::with_default_config();
 
         // 未连接浏览器时，health_check 应该返回错误（如果启用了 CDP）或通过（如果未启用）
         let result = client.health_check().await;
@@ -904,7 +902,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_playwright_client_connection_status() {
-        let client = PlaywrightClient::default();
+        let client = PlaywrightClient::with_default_config();
 
         // 新创建的客户端应该未连接
         assert!(!client.is_connected());

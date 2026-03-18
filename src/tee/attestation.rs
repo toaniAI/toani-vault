@@ -538,6 +538,11 @@ impl QuoteSignature {
         4 + self.qe_certification_data.len()
     }
 
+    /// 检查签名数据是否为空
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// 序列化为字节
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -985,14 +990,18 @@ impl AttestationSession {
     /// 更新状态
     pub fn transition_to(&mut self, new_state: AttestationState) -> Result<(), AttestationError> {
         // 状态机转换验证
-        let valid_transition = match (self.state, new_state) {
-            (AttestationState::ChallengeCreated, AttestationState::QuoteReceived) => true,
-            (AttestationState::ChallengeCreated, AttestationState::Expired) => true,
-            (AttestationState::QuoteReceived, AttestationState::Verified) => true,
-            (AttestationState::QuoteReceived, AttestationState::Failed) => true,
-            (AttestationState::QuoteReceived, AttestationState::Expired) => true,
-            _ => false,
-        };
+        let valid_transition = matches!(
+            (self.state, new_state),
+            (
+                AttestationState::ChallengeCreated,
+                AttestationState::QuoteReceived
+            ) | (
+                AttestationState::ChallengeCreated,
+                AttestationState::Expired
+            ) | (AttestationState::QuoteReceived, AttestationState::Verified)
+                | (AttestationState::QuoteReceived, AttestationState::Failed)
+                | (AttestationState::QuoteReceived, AttestationState::Expired)
+        );
 
         if !valid_transition {
             return Err(AttestationError::InternalError(

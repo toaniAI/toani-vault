@@ -198,10 +198,8 @@ impl TeeDriverVerifier {
         let driver_hash = self.compute_driver_hash(&self.config.driver_path)?;
 
         // 步骤 3: 验证哈希匹配
-        if self.config.enable_hash_verification {
-            if driver_hash != metadata.expected_hash {
-                return Ok(VerificationStatus::HashMismatch);
-            }
+        if self.config.enable_hash_verification && driver_hash != metadata.expected_hash {
+            return Ok(VerificationStatus::HashMismatch);
         }
 
         // 步骤 4: 验证驱动签名
@@ -213,12 +211,11 @@ impl TeeDriverVerifier {
         }
 
         // 步骤 5: 检查版本白名单
-        if self.config.enable_version_check {
-            if !self.allowed_versions.is_empty()
-                && !self.allowed_versions.contains(&metadata.version)
-            {
-                return Ok(VerificationStatus::UnsupportedVersion);
-            }
+        if self.config.enable_version_check
+            && !self.allowed_versions.is_empty()
+            && !self.allowed_versions.contains(&metadata.version)
+        {
+            return Ok(VerificationStatus::UnsupportedVersion);
         }
 
         Ok(VerificationStatus::Verified)
@@ -372,6 +369,15 @@ impl Drop for DriverMetadata {
     }
 }
 
+/// 获取当前时间戳
+#[allow(dead_code)]
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("系统时间错误")
+        .as_secs()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_metadata_zeroize_on_drop() {
-        let mut metadata = DriverMetadata {
+        let metadata = DriverMetadata {
             name: "test".to_string(),
             version: "1.0.0".to_string(),
             build_timestamp: 0,
@@ -420,13 +426,4 @@ mod tests {
         drop(metadata);
         // 无法直接验证，但确保 Drop trait 被实现
     }
-}
-
-/// 获取当前时间戳
-#[allow(dead_code)]
-fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("系统时间错误")
-        .as_secs()
 }

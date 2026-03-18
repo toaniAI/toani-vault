@@ -172,12 +172,12 @@ impl EnclaveVersion {
 
     /// 获取 MRENCLAVE 十六进制字符串
     pub fn mrenclave_hex(&self) -> String {
-        hex::encode(&self.mrenclave)
+        hex::encode(self.mrenclave)
     }
 
     /// 获取 MRSIGNER 十六进制字符串
     pub fn mrsigner_hex(&self) -> String {
-        hex::encode(&self.mrsigner)
+        hex::encode(self.mrsigner)
     }
 }
 
@@ -369,12 +369,12 @@ impl BlueGreenUpgradeManager {
         }
 
         // 检查是否已经是活跃版本
-        if let Some(active) = self.active_version.read().await.as_ref() {
-            if active.mrenclave == version.mrenclave {
-                return Err(UpgradeError::InvalidState(
-                    "新版本与当前版本相同".to_string(),
-                ));
-            }
+        if let Some(active) = self.active_version.read().await.as_ref()
+            && active.mrenclave == version.mrenclave
+        {
+            return Err(UpgradeError::InvalidState(
+                "新版本与当前版本相同".to_string(),
+            ));
         }
 
         Ok(())

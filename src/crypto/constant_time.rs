@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_secure_buffer_drop() {
-        let mut buffer = SecureBuffer::with_data(&[0x42u8; 32]);
+        let buffer = SecureBuffer::with_data(&[0x42u8; 32]);
         let ptr = buffer.as_slice().as_ptr();
 
         drop(buffer);

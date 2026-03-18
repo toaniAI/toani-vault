@@ -116,40 +116,40 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         let filtered: Vec<_> = all_entries
             .into_iter()
             .filter(|e| {
-                if let Some(start) = filter.start_time {
-                    if e.entry.timestamp < start {
-                        return false;
-                    }
+                if let Some(start) = filter.start_time
+                    && e.entry.timestamp < start
+                {
+                    return false;
                 }
-                if let Some(end) = filter.end_time {
-                    if e.entry.timestamp > end {
-                        return false;
-                    }
+                if let Some(end) = filter.end_time
+                    && e.entry.timestamp > end
+                {
+                    return false;
                 }
-                if let Some(ref user_hash) = filter.user_id_hash {
-                    if &e.entry.user_id_hash != user_hash {
-                        return false;
-                    }
+                if let Some(ref user_hash) = filter.user_id_hash
+                    && &e.entry.user_id_hash != user_hash
+                {
+                    return false;
                 }
-                if let Some(action) = filter.action {
-                    if e.entry.action != action {
-                        return false;
-                    }
+                if let Some(action) = filter.action
+                    && e.entry.action != action
+                {
+                    return false;
                 }
-                if let Some(tier) = filter.risk_tier {
-                    if e.entry.risk_tier != tier {
-                        return false;
-                    }
+                if let Some(tier) = filter.risk_tier
+                    && e.entry.risk_tier != tier
+                {
+                    return false;
                 }
-                if let Some(outcome) = filter.outcome {
-                    if e.entry.outcome != outcome {
-                        return false;
-                    }
+                if let Some(outcome) = filter.outcome
+                    && e.entry.outcome != outcome
+                {
+                    return false;
                 }
-                if let Some(ref service) = filter.service {
-                    if &e.entry.service != service {
-                        return false;
-                    }
+                if let Some(ref service) = filter.service
+                    && &e.entry.service != service
+                {
+                    return false;
                 }
                 true
             })
@@ -247,7 +247,7 @@ pub async fn list_audit_logs(
     };
 
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditLogListResponse::error(
@@ -320,7 +320,7 @@ pub async fn get_audit_log_detail(
         }
     };
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditLogDetailResponse::error(
@@ -433,7 +433,7 @@ pub async fn export_audit_logs(
         }
     };
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditExportResponse::error(
@@ -591,7 +591,7 @@ pub async fn verify_audit_log(
         }
     };
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditVerifyResponse::error(
@@ -660,10 +660,11 @@ pub async fn verify_audit_log(
     });
 
     // 3. 验证 Merkle 证明
-    let merkle_proof_valid = match state.storage.verify_entry(entry.log_index).await {
-        Ok(valid) => valid,
-        Err(_) => false,
-    };
+    let merkle_proof_valid: bool = state
+        .storage
+        .verify_entry(entry.log_index)
+        .await
+        .unwrap_or_default();
     details.push(VerificationDetail {
         step: "Merkle Tree 验证".to_string(),
         passed: merkle_proof_valid,

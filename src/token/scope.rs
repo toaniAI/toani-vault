@@ -82,7 +82,7 @@ impl Scope {
     ///
     /// # 返回值
     /// 解析成功返回 `Some(Scope)`，失败返回 `None`
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "credential:read" => Some(Scope::CredentialRead),
             "credential:decrypt" => Some(Scope::CredentialDecrypt),
@@ -299,7 +299,7 @@ impl ScopeSet {
         let mut scopes = Vec::new();
 
         for scope_str in s.split_whitespace() {
-            match Scope::from_str(scope_str) {
+            match Scope::parse(scope_str) {
                 Some(scope) => scopes.push(scope),
                 None => {
                     return Err(ScopeError::ParseError(format!(
@@ -351,13 +351,9 @@ impl ScopeSet {
         &self.scopes
     }
 
-    /// 转换为字符串（空格分隔）
-    pub fn to_string(&self) -> String {
-        self.scopes
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
+    /// 转换为字符串表示（空格分隔 scope）
+    pub fn as_string(&self) -> String {
+        self.to_string()
     }
 
     /// 检查是否为空
@@ -374,6 +370,20 @@ impl ScopeSet {
 impl From<Vec<Scope>> for ScopeSet {
     fn from(scopes: Vec<Scope>) -> Self {
         Self::from_scopes(scopes)
+    }
+}
+
+impl fmt::Display for ScopeSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.scopes
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
     }
 }
 
@@ -517,10 +527,10 @@ impl PermissionChecker {
         }
 
         // 2. 检查资源级权限（如果是凭证操作且有 credential_id）
-        if operation.is_credential_operation() {
-            if let Some(id) = credential_id {
-                self.can_access_credential(id)?;
-            }
+        if operation.is_credential_operation()
+            && let Some(id) = credential_id
+        {
+            self.can_access_credential(id)?;
         }
 
         Ok(())
@@ -580,26 +590,23 @@ mod tests {
 
     #[test]
     fn test_scope_from_str() {
+        assert_eq!(Scope::parse("credential:read"), Some(Scope::CredentialRead));
         assert_eq!(
-            Scope::from_str("credential:read"),
-            Some(Scope::CredentialRead)
-        );
-        assert_eq!(
-            Scope::from_str("credential:decrypt"),
+            Scope::parse("credential:decrypt"),
             Some(Scope::CredentialDecrypt)
         );
         assert_eq!(
-            Scope::from_str("credential:write"),
+            Scope::parse("credential:write"),
             Some(Scope::CredentialWrite)
         );
         assert_eq!(
-            Scope::from_str("credential:delete"),
+            Scope::parse("credential:delete"),
             Some(Scope::CredentialDelete)
         );
-        assert_eq!(Scope::from_str("token:manage"), Some(Scope::TokenManage));
-        assert_eq!(Scope::from_str("audit:read"), Some(Scope::AuditRead));
-        assert_eq!(Scope::from_str("admin"), Some(Scope::Admin));
-        assert_eq!(Scope::from_str("invalid:scope"), None);
+        assert_eq!(Scope::parse("token:manage"), Some(Scope::TokenManage));
+        assert_eq!(Scope::parse("audit:read"), Some(Scope::AuditRead));
+        assert_eq!(Scope::parse("admin"), Some(Scope::Admin));
+        assert_eq!(Scope::parse("invalid:scope"), None);
     }
 
     #[test]

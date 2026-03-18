@@ -138,10 +138,10 @@ impl NsjailSandbox {
         }
 
         // 清理 cgroup
-        if let Some(ref cgroup_path) = self.cgroup_path {
-            if let Err(e) = self.cleanup_cgroup(cgroup_path).await {
-                warn!("Failed to cleanup cgroup for {}: {}", self.id, e);
-            }
+        if let Some(ref cgroup_path) = self.cgroup_path
+            && let Err(e) = self.cleanup_cgroup(cgroup_path).await
+        {
+            warn!("Failed to cleanup cgroup for {}: {}", self.id, e);
         }
 
         // 清理工作目录
@@ -163,10 +163,10 @@ impl NsjailSandbox {
         }
 
         // 检查进程状态
-        if let Some(ref process) = self.process {
-            if let Some(pid) = process.id() {
-                return Self::check_process_running(pid);
-            }
+        if let Some(ref process) = self.process
+            && let Some(pid) = process.id()
+        {
+            return Self::check_process_running(pid);
         }
 
         false
@@ -220,7 +220,7 @@ impl NsjailSandbox {
         let work_dir = self.config.sandbox.working_dir.join(self.id.to_string());
         tokio::fs::create_dir_all(&work_dir)
             .await
-            .map_err(|e| SandboxError::Io(e))?;
+            .map_err(SandboxError::Io)?;
         Ok(())
     }
 
@@ -229,7 +229,7 @@ impl NsjailSandbox {
         if work_dir.exists() {
             tokio::fs::remove_dir_all(&work_dir)
                 .await
-                .map_err(|e| SandboxError::Io(e))?;
+                .map_err(SandboxError::Io)?;
         }
         Ok(())
     }
@@ -292,7 +292,7 @@ impl NsjailSandbox {
         let stat_path = format!("/proc/{}/stat", pid);
         let stat_content = tokio::fs::read_to_string(&stat_path)
             .await
-            .map_err(|e| SandboxError::Io(e))?;
+            .map_err(SandboxError::Io)?;
 
         // 解析 /proc/PID/stat
         // 格式: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime priority nice num_threads itrealvalue starttime vsize rss rsslim ...
@@ -402,6 +402,7 @@ impl WarmNsjailInstance {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
     use crate::tee::sandbox::config::{SandboxConfig, SandboxPoolConfig};
 
@@ -421,7 +422,7 @@ mod tests {
         let config = create_test_config();
         let sandbox = NsjailSandbox::new(config);
 
-        assert_eq!(sandbox.process.is_none(), true);
+        assert!(sandbox.process.is_none());
     }
 
     #[test]

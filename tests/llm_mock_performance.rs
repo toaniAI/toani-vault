@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 // 引入被测试的模块
 use vault_service::services::llm::{
-    CostTracker, LlmProvider, PricingInfo,
+    LlmProvider,
     mock::{MockLlmProvider, MockProviderConfig, presets},
     types::{ChatRequest, ChatRequestWithImage, EmbeddingRequest},
 };
@@ -135,7 +135,7 @@ async fn test_zero_api_cost() {
 
     // 执行多次调用
     for i in 0..10 {
-        let request = ChatRequest::new("Test", &format!("Test message {}", i));
+        let request = ChatRequest::new("Test", format!("Test message {}", i));
         let _ = provider.chat_completion(request).await.unwrap();
     }
 
@@ -291,7 +291,7 @@ async fn test_comprehensive_performance() {
     let mut latencies: Vec<Duration> = Vec::with_capacity(iterations);
 
     for i in 0..iterations {
-        let request = ChatRequest::new("Test", &format!("Message {}", i));
+        let request = ChatRequest::new("Test", format!("Message {}", i));
         let start = Instant::now();
         let _ = provider.chat_completion(request).await.unwrap();
         latencies.push(start.elapsed());

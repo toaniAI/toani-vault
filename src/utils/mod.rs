@@ -45,7 +45,7 @@ pub fn bytes_to_hex(bytes: &[u8]) -> String {
 
 /// 十六进制字符串转字节数组
 pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, String> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err("Invalid hex length".to_string());
     }
 

@@ -244,9 +244,9 @@ mod tests {
             version: constants::PROTOCOL_VERSION,
             algorithm: constants::ALGORITHM_AES_256_GCM.to_string(),
             kdf: constants::KDF_HKDF_SHA256.to_string(),
-            nonce: URL_SAFE_NO_PAD.encode(&[0u8; constants::NONCE_LENGTH]),
-            auth_tag: URL_SAFE_NO_PAD.encode(&[0u8; constants::AUTH_TAG_LENGTH]),
-            ciphertext: URL_SAFE_NO_PAD.encode(&[1, 2, 3, 4, 5]),
+            nonce: URL_SAFE_NO_PAD.encode([0u8; constants::NONCE_LENGTH]),
+            auth_tag: URL_SAFE_NO_PAD.encode([0u8; constants::AUTH_TAG_LENGTH]),
+            ciphertext: URL_SAFE_NO_PAD.encode([1, 2, 3, 4, 5]),
         }
     }
 

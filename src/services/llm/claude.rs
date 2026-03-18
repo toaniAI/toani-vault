@@ -146,6 +146,7 @@ impl ClaudeClient {
 
     /// 转换带图片的请求为 Claude Messages API 格式
     /// 使用多模态 content blocks 格式，支持图片和文本的组合
+    #[allow(dead_code)]
     fn convert_image_request(&self, request: &ChatRequestWithImage) -> ClaudeRequestWithContent {
         let messages = vec![ClaudeMessageWithContent {
             role: "user".to_string(),
@@ -464,6 +465,7 @@ struct ClaudeResponse {
 /// Claude Content (响应用)
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
+#[allow(dead_code)]
 enum ClaudeContent {
     #[serde(rename = "text")]
     Text { text: String },

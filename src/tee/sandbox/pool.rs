@@ -482,13 +482,13 @@ impl SandboxPool for NsjailSandboxPool {
         // 清理热实例
         let warm_instances: Vec<_> = self.warm_instances.lock().await.drain(..).collect();
         for instance in warm_instances {
-            if let Some(mut sandbox) = instance.sandbox {
-                if let Err(e) = sandbox.stop().await {
-                    error!(
-                        "Failed to stop warm instance {}: {}",
-                        instance.info.instance_id, e
-                    );
-                }
+            if let Some(mut sandbox) = instance.sandbox
+                && let Err(e) = sandbox.stop().await
+            {
+                error!(
+                    "Failed to stop warm instance {}: {}",
+                    instance.info.instance_id, e
+                );
             }
         }
 

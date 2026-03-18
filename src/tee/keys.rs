@@ -395,7 +395,7 @@ impl UserKeyCache {
     ///
     /// 用于 Enclave 关闭时彻底清理
     pub fn clear(&mut self) {
-        for (_key, entry) in &self.entries {
+        for entry in self.entries.values() {
             entry.secure_clear();
         }
         self.entries.clear();

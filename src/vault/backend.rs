@@ -270,16 +270,16 @@ impl StorageBackend for VaultStorageBackend {
                     continue;
                 }
 
-                if let Some(ref service_id) = filter.service_id {
-                    if entry.service_id != *service_id {
-                        continue;
-                    }
+                if let Some(ref service_id) = filter.service_id
+                    && entry.service_id != *service_id
+                {
+                    continue;
                 }
 
-                if let Some(ref cred_type) = filter.credential_type {
-                    if entry.credential_type != *cred_type {
-                        continue;
-                    }
+                if let Some(ref cred_type) = filter.credential_type
+                    && entry.credential_type != *cred_type
+                {
+                    continue;
                 }
 
                 credentials.push(entry.metadata());

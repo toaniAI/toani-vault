@@ -3,11 +3,10 @@
 //! 测试页面冻结、安全截图、内容审核和脱敏功能的集成
 
 use std::sync::Arc;
-use vault_service::crypto::{EnclaveKeyManager, KeyAlgorithm, KeyConfig, KeyState};
+use vault_service::crypto::{EnclaveKeyManager, KeyConfig, KeyState};
 use vault_service::tee::sandbox::export::{
-    ContentReviewer, ExportFormat, ExportRequest, ExportService, FreezeState, ImageFormat,
-    PageStateFreezer, RedactionService, ReviewConfig, RiskLevel, ScreenshotConfig,
-    ScreenshotRequest, ScreenshotService, SensitiveType,
+    ExportFormat, ExportRequest, ExportService, FreezeState, ImageFormat, PageStateFreezer,
+    RedactionService, ScreenshotRequest, ScreenshotService, SensitiveType,
 };
 use vault_service::tee::sandbox::types::SessionId;
 
@@ -211,7 +210,6 @@ async fn test_export_service_csv() {
 /// 测试 Enclave 密钥管理器
 #[tokio::test]
 async fn test_enclave_key_manager_basic() {
-    use std::path::PathBuf;
     use vault_service::tee::sealing::SealedStorage;
 
     // 创建临时存储目录

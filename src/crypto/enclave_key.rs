@@ -315,10 +315,10 @@ impl EnclaveKeyManager {
     pub async fn verify(&self, data: &[u8], signature: &Signature) -> Result<bool, KeyError> {
         // 首先尝试用当前密钥验证
         let current = self.current_key.read().await;
-        if let Some(ref key) = *current {
-            if key.key_id == signature.key_id {
-                return self.perform_verify(data, signature, &key.key_pair.public_key);
-            }
+        if let Some(ref key) = *current
+            && key.key_id == signature.key_id
+        {
+            return self.perform_verify(data, signature, &key.key_pair.public_key);
         }
         drop(current);
 
@@ -361,23 +361,23 @@ impl EnclaveKeyManager {
 
         // 检查是否是当前密钥
         let mut current = self.current_key.write().await;
-        if let Some(ref mut key) = *current {
-            if key.key_id == key_id {
-                key.state = KeyState::Revoked;
-                self.save_key(key).await?;
-                *current = None;
-                return Ok(());
-            }
+        if let Some(ref mut key) = *current
+            && key.key_id == key_id
+        {
+            key.state = KeyState::Revoked;
+            self.save_key(key).await?;
+            *current = None;
+            return Ok(());
         }
         drop(current);
 
         // 检查历史密钥
         let mut historical = self.historical_keys.write().await;
-        if let Some(pos) = historical.iter().position(|k| k.key_id == key_id) {
-            if let Some(mut key) = historical.remove(pos) {
-                key.state = KeyState::Revoked;
-                self.save_key(&key).await?;
-            }
+        if let Some(pos) = historical.iter().position(|k| k.key_id == key_id)
+            && let Some(mut key) = historical.remove(pos)
+        {
+            key.state = KeyState::Revoked;
+            self.save_key(&key).await?;
         }
 
         Ok(())
@@ -505,10 +505,10 @@ impl EnclaveKeyManager {
         match key.state {
             KeyState::Active => {
                 // 如果是新密钥，将旧密钥移到历史列表
-                if let Some(old_key_id) = index.current_key_id.replace(key.key_id.clone()) {
-                    if !index.historical_key_ids.contains(&old_key_id) {
-                        index.historical_key_ids.insert(0, old_key_id);
-                    }
+                if let Some(old_key_id) = index.current_key_id.replace(key.key_id.clone())
+                    && !index.historical_key_ids.contains(&old_key_id)
+                {
+                    index.historical_key_ids.insert(0, old_key_id);
                 }
             }
             KeyState::DecryptOnly | KeyState::Archived => {
@@ -701,6 +701,7 @@ struct KeyIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
     use std::path::PathBuf;
 
     fn create_test_storage() -> Arc<SealedStorage> {

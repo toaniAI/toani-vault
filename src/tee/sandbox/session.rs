@@ -420,10 +420,10 @@ impl SandboxSession for ActiveNsjailSession {
 
         // 停止沙箱
         let mut sandbox_guard = self.sandbox.write().await;
-        if let Some(mut sandbox) = sandbox_guard.take() {
-            if let Err(e) = sandbox.stop().await {
-                warn!("Failed to stop sandbox for session {}: {}", self.id, e);
-            }
+        if let Some(mut sandbox) = sandbox_guard.take()
+            && let Err(e) = sandbox.stop().await
+        {
+            warn!("Failed to stop sandbox for session {}: {}", self.id, e);
         }
 
         *status = SessionStatus::Closed;
@@ -468,6 +468,7 @@ impl ActiveNsjailSession {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
     use crate::tee::sandbox::config::SandboxConfig;
     use crate::tee::sandbox::nsjail::NsjailSandbox;
@@ -504,7 +505,7 @@ mod tests {
     #[test]
     fn test_session_creation() {
         let session = create_test_session();
-        assert!(session.is_expired() == false);
+        assert!(!session.is_expired());
     }
 
     #[tokio::test]

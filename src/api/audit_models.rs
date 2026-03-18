@@ -61,10 +61,10 @@ impl AuditLogQueryRequest {
     /// 验证请求参数
     pub fn validate(&self) -> Result<(), String> {
         // 验证时间范围
-        if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
-            if start > end {
-                return Err("开始时间不能大于结束时间".to_string());
-            }
+        if let (Some(start), Some(end)) = (self.start_time, self.end_time)
+            && start > end
+        {
+            return Err("开始时间不能大于结束时间".to_string());
         }
 
         // 验证页码
@@ -397,17 +397,13 @@ impl From<(SignedAuditEntry, Option<MerkleProofResponse>)> for AuditLogDetailDat
 /// 导出格式
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ExportFormat {
     /// JSON 格式
+    #[default]
     Json,
     /// CSV 格式
     Csv,
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self {
-        ExportFormat::Json
-    }
 }
 
 /// 审计日志导出请求

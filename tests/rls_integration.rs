@@ -6,9 +6,8 @@
 //! - 管理员绕过测试
 //! - RLS 上下文设置测试
 
+use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::{PgPool, Row};
-use std::time::Duration;
 
 // RLS 上下文结构（用于测试）
 #[derive(Debug, Clone)]

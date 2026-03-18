@@ -385,11 +385,7 @@ async fn verify_quote(
     };
 
     // 验证 nonce（如果提供）
-    let nonce = request
-        .nonce
-        .as_ref()
-        .map(|n| STANDARD.decode(n).ok())
-        .flatten();
+    let nonce = request.nonce.as_ref().and_then(|n| STANDARD.decode(n).ok());
 
     // 执行验证
     match dcap_service.verify_attestation(&quote_bytes, nonce.as_deref()) {
@@ -592,7 +588,7 @@ async fn create_challenge(
         }
     };
 
-    let challenge_response = match prover_protocol.respond_to_challenge(&*enclave, &challenge) {
+    let challenge_response = match prover_protocol.respond_to_challenge(&enclave, &challenge) {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -619,11 +615,11 @@ async fn create_challenge(
         Json(ChallengeResponseData {
             success: true,
             challenge_id: challenge.id.clone(),
-            nonce: hex::encode(&challenge.nonce),
+            nonce: hex::encode(challenge.nonce),
             quote_b64: STANDARD.encode(&quote_bytes),
             expires_at: challenge.expires_at,
-            mrenclave: hex::encode(&challenge_response.quote.mrenclave()),
-            mrsigner: hex::encode(&challenge_response.quote.mrsigner()),
+            mrenclave: hex::encode(challenge_response.quote.mrenclave()),
+            mrsigner: hex::encode(challenge_response.quote.mrsigner()),
             error: None,
         }),
     )
@@ -695,7 +691,7 @@ async fn verify_challenge_response(
         }
     };
 
-    let enclave_identity = generate_enclave_identity(&*enclave);
+    let enclave_identity = generate_enclave_identity(&enclave);
 
     // 验证响应
     let challenge_protocol = match state.challenge_protocol.read() {
@@ -721,8 +717,8 @@ async fn verify_challenge_response(
             Json(VerifyChallengeResponseResult {
                 success: true,
                 verified: result.success,
-                mrenclave: hex::encode(&result.mrenclave),
-                mrsigner: hex::encode(&result.mrsigner),
+                mrenclave: hex::encode(result.mrenclave),
+                mrsigner: hex::encode(result.mrsigner),
                 timestamp: result.timestamp,
                 error: None,
             }),
@@ -788,8 +784,8 @@ async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> i
     };
 
     let enclave_state = enclave.state().to_string();
-    let mrenclave = hex::encode(&enclave.mrenclave());
-    let mrsigner = hex::encode(&enclave.mrsigner());
+    let mrenclave = hex::encode(enclave.mrenclave());
+    let mrsigner = hex::encode(enclave.mrsigner());
 
     // 确定认证状态
     let (status, quote_valid, quote_expires_at) = if !enclave.is_running() {
@@ -871,7 +867,7 @@ async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoR
         }
     };
 
-    match dcap_service.refresh_quote(&*enclave) {
+    match dcap_service.refresh_quote(&enclave) {
         Ok(quote) => match QuoteSerializer::serialize(&quote) {
             Ok(quote_bytes) => (
                 StatusCode::OK,

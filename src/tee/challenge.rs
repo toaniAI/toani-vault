@@ -677,7 +677,7 @@ fn generate_challenge_id() -> String {
 
     format!(
         "chal_{}",
-        base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, &bytes)
+        base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes)
     )
 }
 

@@ -7,8 +7,6 @@
 //! - 配置管理器操作
 //! - 缓存集成
 
-use std::collections::HashMap;
-
 use vault_service::tenant::{
     FeatureFlags, MemoryTenantConfigStore, PartialTenantConfig, QuotaLimits, TenantConfig,
     TenantConfigError, TenantConfigManager, TenantConfigStore, TenantId, TenantSettings,

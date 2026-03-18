@@ -198,7 +198,7 @@ impl OperationReviewer {
         // 检测参数中的字符串值
         let mut combined_result = description_result;
 
-        for (_key, value) in &operation.parameters {
+        for value in operation.parameters.values() {
             if let Some(s) = value.as_str() {
                 let param_result = self.injection_detector.detect(s);
                 if param_result.detected {

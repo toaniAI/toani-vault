@@ -3,15 +3,10 @@
 //! 测试 DCAP Quote 生成、验证和远程认证 API 功能
 
 use vault_service::tee::{
-    dcap::{
-        CertificateInfo, DcapAttestationReport, DcapConfig, DcapError, DcapQuote,
-        DcapQuoteSignature, DcapReportBody, DcapService, EcdsaSignatureDcap,
-        INTEL_PCS_BASE_URL_PROD, MAX_PCK_CERT_CHAIN_LEN,
-    },
+    dcap::{DcapConfig, DcapError, DcapService, EcdsaSignatureDcap, INTEL_PCS_BASE_URL_PROD},
     enclave::{Enclave, EnclaveConfig},
     quote::{
-        ParsedQuote, QuoteMetadata, QuoteParseError, QuoteParser, QuoteSerializeError,
-        QuoteSerializer, QuoteValidationError, QuoteValidator,
+        QuoteParseError, QuoteParser, QuoteSerializer, QuoteValidationError, QuoteValidator,
         utils::{format_mrenclave, format_mrsigner},
     },
 };
@@ -93,7 +88,7 @@ mod dcap_service_tests {
         assert!(!report.mrenclave_hex.is_empty());
         assert!(!report.mrsigner_hex.is_empty());
         assert!(!report.quote_b64.is_empty());
-        assert_eq!(report.result.success, true);
+        assert!(report.result.success);
     }
 
     #[test]

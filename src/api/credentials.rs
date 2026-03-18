@@ -502,7 +502,7 @@ pub async fn delete_credential(
     state.audit_logger.log_credential_deleted(
         &token.tenant_id,
         &token.user_id,
-        &credential_id.as_str(),
+        credential_id.as_str(),
     );
 
     Ok(Json(DeleteCredentialResponse {
@@ -654,6 +654,7 @@ pub fn routes() -> axum::Router<AppState> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
     use crate::api::middleware::TokenScope;
     use crate::api::middleware::tests::create_mock_token;

@@ -56,8 +56,10 @@ pub enum TenantConfigError {
 /// 租户状态
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum TenantStatus {
     /// 待激活
+    #[default]
     Pending,
     /// 活跃
     Active,
@@ -76,12 +78,6 @@ impl TenantStatus {
     /// 检查状态是否允许修改配置
     pub fn allows_config_changes(&self) -> bool {
         matches!(self, TenantStatus::Active | TenantStatus::Pending)
-    }
-}
-
-impl Default for TenantStatus {
-    fn default() -> Self {
-        TenantStatus::Pending
     }
 }
 
@@ -699,10 +695,10 @@ impl<S: TenantConfigStore> TenantConfigManager<S> {
         tenant_id: &TenantId,
     ) -> Result<TenantConfig, TenantConfigError> {
         // 先尝试从缓存获取
-        if let Some(cache) = &self.cache {
-            if let Some(config) = cache.get(tenant_id).await {
-                return Ok(config);
-            }
+        if let Some(cache) = &self.cache
+            && let Some(config) = cache.get(tenant_id).await
+        {
+            return Ok(config);
         }
 
         // 从存储获取
@@ -812,6 +808,12 @@ pub trait TenantConfigCache: Send + Sync {
 pub struct RedisTenantConfigCache {
     // Redis 连接将在这里实现
     _marker: std::marker::PhantomData<()>,
+}
+
+impl Default for RedisTenantConfigCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RedisTenantConfigCache {

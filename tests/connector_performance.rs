@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tokio::time::timeout;
 use vault_service::connector::{
     Connector, ConnectorConfig, ConnectorError, ConnectorRegistry, ConnectorResult, TimeoutConfig,
     TimeoutWrapper, ValidatedParams, ValidationError,

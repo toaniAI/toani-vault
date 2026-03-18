@@ -99,8 +99,6 @@ fn test_ac1_credential_storage_metadata() {
 /// AC-2: 加密载荷应包含 version=2, algorithm='AES-256-GCM', kdf='HKDF-SHA-256'
 #[test]
 fn test_ac2_encrypted_payload_format() {
-    use vault_service::crypto::constants;
-
     let payload = create_test_payload();
 
     // 验证版本

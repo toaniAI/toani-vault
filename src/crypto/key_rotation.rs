@@ -425,12 +425,12 @@ impl KeyRotationManager {
 
         // 检查并发轮换
         let rotation_key = format!("{}:{}", tenant_id, user_id);
-        if !self
+        if self
             .rotating_keys
             .write()
             .await
             .insert(rotation_key.clone(), current_time)
-            .is_none()
+            .is_some()
         {
             return Err(KeyRotationError::ConcurrentRotationConflict);
         }
@@ -710,7 +710,7 @@ mod tests {
     #[tokio::test]
     async fn test_key_expiry() {
         let current_time = current_timestamp();
-        let mut metadata = KeyMetadata::new(
+        let metadata = KeyMetadata::new(
             "test_key".to_string(),
             "tenant_123".to_string(),
             RotationPolicy::L2Scheduled {

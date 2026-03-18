@@ -88,6 +88,12 @@ impl MemoryUserStore {
     }
 }
 
+impl Default for AuthApiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuthApiState {
     /// 创建认证 API 状态
     pub fn new() -> Self {
@@ -363,7 +369,7 @@ pub async fn create_token_handler(
     let scopes: Vec<TokenScope> = request
         .scopes
         .iter()
-        .filter_map(|s| TokenScope::from_str(s))
+        .filter_map(|s| s.parse().ok())
         .collect();
 
     if scopes.is_empty() {
@@ -693,7 +699,7 @@ fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken,
 
     let scopes: Vec<TokenScope> = scope_str
         .split_whitespace()
-        .filter_map(TokenScope::from_str)
+        .filter_map(|s| s.parse().ok())
         .collect();
 
     // 解析 tenant_id 和 user_id

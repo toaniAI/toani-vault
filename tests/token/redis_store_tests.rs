@@ -10,9 +10,7 @@
 //! ```
 
 use std::time::{SystemTime, UNIX_EPOCH};
-use vault_service::token::{
-    RedisTokenStore, TokenClaims, TokenMetadata, TokenStoreError, token_keys as keys,
-};
+use vault_service::token::{RedisTokenStore, TokenClaims, TokenStoreError, token_keys as keys};
 
 /// 获取当前 Unix 时间戳
 fn current_timestamp() -> u64 {

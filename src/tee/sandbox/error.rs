@@ -339,7 +339,7 @@ mod tests {
     fn test_sandbox_error_helpers() {
         let err = SandboxError::config("invalid config");
         assert!(matches!(err, SandboxError::Config(_)));
-        assert!(err.is_timeout() == false);
+        assert!(!err.is_timeout());
 
         let timeout_err = SandboxError::Timeout {
             operation: "start".to_string(),

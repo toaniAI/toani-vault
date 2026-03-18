@@ -28,8 +28,10 @@ pub type ActionTokenJti = String;
 /// 审计事件严重等级
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum RiskTier {
     /// 低风险 - 常规操作
+    #[default]
     Low,
     /// 中风险 - 敏感数据访问
     Medium,
@@ -84,12 +86,6 @@ impl fmt::Display for RiskTier {
             RiskTier::High => write!(f, "high"),
             RiskTier::Critical => write!(f, "critical"),
         }
-    }
-}
-
-impl Default for RiskTier {
-    fn default() -> Self {
-        RiskTier::Low
     }
 }
 
@@ -378,11 +374,7 @@ impl AuditEntry {
     /// 获取事件年龄（毫秒）
     pub fn age_millis(&self) -> u64 {
         let now = current_timestamp_millis();
-        if now > self.timestamp {
-            now - self.timestamp
-        } else {
-            0
-        }
+        now.saturating_sub(self.timestamp)
     }
 }
 
