@@ -1,6 +1,6 @@
 # CredBridge 后端 Dockerfile
 
-FROM hub.bitkinetic.com/public/rust:1.88.0-bookworm AS builder
+FROM rust:1.88.0-slim-bookworm AS builder
 
 WORKDIR /app
 
