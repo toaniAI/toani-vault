@@ -321,12 +321,11 @@ impl BlueGreenUpgradeManager {
         new_version: EnclaveVersion,
         sealing_key: SealingKeyCustody,
     ) -> Result<(), UpgradeError> {
-        // 检查是否有并发的升级
-        let expected = false;
-        if !self
+        // 检查是否有并发的升级（使用 compare_exchange 而非 compare_exchange_weak 避免伪失败）
+        if self
             .is_upgrading
-            .compare_exchange_weak(expected, true, Ordering::SeqCst, Ordering::SeqCst)
-            .unwrap_or(true)
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
         {
             return Err(UpgradeError::ConcurrentUpgradeConflict);
         }

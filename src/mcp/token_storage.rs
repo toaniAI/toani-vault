@@ -271,17 +271,17 @@ pub struct StatsSnapshot {
 #[allow(dead_code)]
 pub struct McpTokenStorage {
     /// Token 元数据缓存
-    metadata_cache: RwLock<HashMap<String, TokenMetadata>>,
+    metadata_cache: Arc<RwLock<HashMap<String, TokenMetadata>>>,
     /// 加密的 Token 数据（内存中，用于快速访问）
-    encrypted_tokens: RwLock<HashMap<String, EncryptedToken>>,
+    encrypted_tokens: Arc<RwLock<HashMap<String, EncryptedToken>>>,
     /// 加密密钥（用于 Token 加密）
     encryption_key: SecureBuffer,
     /// 配置
     config: TokenStorageConfig,
     /// 统计
-    stats: TokenStorageStats,
+    stats: Arc<TokenStorageStats>,
     /// 密钥环是否已初始化
-    keychain_initialized: AtomicU64,
+    keychain_initialized: Arc<AtomicU64>,
 }
 
 impl McpTokenStorage {
@@ -292,12 +292,12 @@ impl McpTokenStorage {
         get_random_bytes(&mut encryption_key);
 
         Ok(Self {
-            metadata_cache: RwLock::new(HashMap::new()),
-            encrypted_tokens: RwLock::new(HashMap::new()),
+            metadata_cache: Arc::new(RwLock::new(HashMap::new())),
+            encrypted_tokens: Arc::new(RwLock::new(HashMap::new())),
             encryption_key: SecureBuffer::with_data(&encryption_key),
             config,
-            stats: TokenStorageStats::default(),
-            keychain_initialized: AtomicU64::new(0),
+            stats: Arc::new(TokenStorageStats::default()),
+            keychain_initialized: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -617,17 +617,35 @@ impl McpTokenStorage {
 
     /// 为任务克隆引用
     fn clone_for_task(&self) -> Arc<Self> {
-        // 在实际实现中使用 Arc
-        unimplemented!("需要使用 Arc 包装")
+        // 创建新的 Arc 实例（共享内部状态）
+        Arc::new(McpTokenStorage {
+            metadata_cache: Arc::clone(&self.metadata_cache),
+            encrypted_tokens: Arc::clone(&self.encrypted_tokens),
+            encryption_key: SecureBuffer::with_data(self.encryption_key.as_slice()),
+            config: self.config.clone(),
+            stats: Arc::clone(&self.stats),
+            keychain_initialized: Arc::clone(&self.keychain_initialized),
+        })
     }
 }
 
 /// 生成 Token ID
 fn generate_token_id(service_name: &str, account_id: &str) -> String {
-    use ring::digest::{SHA256, digest};
+    use ring::digest::{Context, SHA256};
+    use ring::rand::{SecureRandom, SystemRandom};
 
-    let data = format!("{}:{}:{}", service_name, account_id, current_timestamp());
-    let hash = digest(&SHA256, data.as_bytes());
+    // 添加随机 nonce 确保唯一性
+    let rng = SystemRandom::new();
+    let mut nonce = [0u8; 8];
+    let _ = rng.fill(&mut nonce);
+
+    let mut context = Context::new(&SHA256);
+    context.update(service_name.as_bytes());
+    context.update(account_id.as_bytes());
+    context.update(&current_timestamp().to_be_bytes());
+    context.update(&nonce);
+
+    let hash = context.finish();
     format!("token_{}", hex::encode(&hash.as_ref()[..16]))
 }
 

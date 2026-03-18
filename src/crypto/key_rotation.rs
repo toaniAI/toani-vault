@@ -362,14 +362,17 @@ impl KeyRotationManager {
 
     /// 注册新密钥
     pub async fn register_key(&self, metadata: KeyMetadata) -> Result<(), KeyRotationError> {
-        let mut keys = self.key_metadata.write().await;
+        // 在独立作用域中执行写操作，确保在调用 update_stats 前释放写锁
+        {
+            let mut keys = self.key_metadata.write().await;
 
-        if metadata.state == KeyState::Active {
-            // 设置为首个活跃密钥
-            *self.active_key_id.write().await = Some(metadata.key_id.clone());
+            if metadata.state == KeyState::Active {
+                // 设置为首个活跃密钥
+                *self.active_key_id.write().await = Some(metadata.key_id.clone());
+            }
+
+            keys.insert(metadata.key_id.clone(), metadata);
         }
-
-        keys.insert(metadata.key_id.clone(), metadata);
         self.update_stats().await;
 
         Ok(())
@@ -407,20 +410,27 @@ impl KeyRotationManager {
     ) -> Result<RotationResult, KeyRotationError> {
         let current_time = current_timestamp();
 
-        // 查找当前活跃密钥
-        let keys = self.key_metadata.read().await;
-        let current_key = keys.values().find(|k| {
-            k.tenant_id == tenant_id
-                && k.user_id.as_deref() == Some(user_id)
-                && k.state == KeyState::Active
-                && matches!(k.rotation_policy, RotationPolicy::L2Scheduled { .. })
-        });
+        // 查找当前活跃密钥（使用独立作用域确保读锁及时释放）
+        let needs_rotation = {
+            let keys = self.key_metadata.read().await;
+            let current_key = keys.values().find(|k| {
+                k.tenant_id == tenant_id
+                    && k.user_id.as_deref() == Some(user_id)
+                    && k.state == KeyState::Active
+                    && matches!(k.rotation_policy, RotationPolicy::L2Scheduled { .. })
+            });
 
-        if let Some(current_key) = current_key {
-            // 检查是否需要轮换
-            if !current_key.needs_rotation(current_time) {
-                return Ok(RotationResult::Skipped);
+            if let Some(current_key) = current_key {
+                // 检查是否需要轮换
+                current_key.needs_rotation(current_time)
+            } else {
+                // 没有活跃密钥，需要创建新密钥
+                true
             }
+        };
+
+        if !needs_rotation {
+            return Ok(RotationResult::Skipped);
         }
 
         // 检查并发轮换
@@ -464,42 +474,45 @@ impl KeyRotationManager {
         user_id: &str,
         current_time: u64,
     ) -> Result<RotationResult, KeyRotationError> {
-        let mut keys = self.key_metadata.write().await;
+        // 在独立作用域中执行所有写操作，确保在调用 update_stats 前释放写锁
+        {
+            let mut keys = self.key_metadata.write().await;
 
-        // 查找并更新旧密钥状态
-        for (_, key) in keys.iter_mut() {
-            if key.tenant_id == tenant_id
-                && key.user_id.as_deref() == Some(user_id)
-                && key.state == KeyState::Active
-            {
-                key.transition_state(KeyState::DecryptOnly)?;
+            // 查找并更新旧密钥状态
+            for (_, key) in keys.iter_mut() {
+                if key.tenant_id == tenant_id
+                    && key.user_id.as_deref() == Some(user_id)
+                    && key.state == KeyState::Active
+                {
+                    key.transition_state(KeyState::DecryptOnly)?;
+                }
             }
+
+            // 创建新密钥
+            let new_key_id = format!("l2_{}_{}_v{}", tenant_id, user_id, current_time);
+            let mut new_key = KeyMetadata::new(
+                new_key_id.clone(),
+                tenant_id.to_string(),
+                RotationPolicy::L2Scheduled {
+                    interval_secs: self.config.l2_rotation_interval_secs,
+                    last_rotation: current_time,
+                },
+            )
+            .with_user_id(user_id.to_string());
+
+            // 设置过期时间
+            new_key.expires_at = Some(current_time + self.config.l2_rotation_interval_secs);
+
+            // 注册新密钥
+            keys.insert(new_key_id.clone(), new_key);
+
+            // 更新活跃密钥
+            *self.active_key_id.write().await = Some(new_key_id);
+
+            // 清理过期归档密钥
+            self.cleanup_archived_keys(&mut keys, tenant_id, user_id)
+                .await;
         }
-
-        // 创建新密钥
-        let new_key_id = format!("l2_{}_{}_v{}", tenant_id, user_id, current_time);
-        let mut new_key = KeyMetadata::new(
-            new_key_id.clone(),
-            tenant_id.to_string(),
-            RotationPolicy::L2Scheduled {
-                interval_secs: self.config.l2_rotation_interval_secs,
-                last_rotation: current_time,
-            },
-        )
-        .with_user_id(user_id.to_string());
-
-        // 设置过期时间
-        new_key.expires_at = Some(current_time + self.config.l2_rotation_interval_secs);
-
-        // 注册新密钥
-        keys.insert(new_key_id.clone(), new_key);
-
-        // 更新活跃密钥
-        *self.active_key_id.write().await = Some(new_key_id);
-
-        // 清理过期归档密钥
-        self.cleanup_archived_keys(&mut keys, tenant_id, user_id)
-            .await;
 
         self.update_stats().await;
 
@@ -586,28 +599,31 @@ impl KeyRotationManager {
 
     /// 撤销密钥
     pub async fn revoke_key(&self, key_id: &str) -> Result<(), KeyRotationError> {
-        let mut keys = self.key_metadata.write().await;
+        // 在独立作用域中执行写操作，确保在调用 update_stats 前释放写锁
+        {
+            let mut keys = self.key_metadata.write().await;
 
-        // 先获取必要信息，避免 borrow 冲突
-        let key_info = keys
-            .get(key_id)
-            .map(|k| (k.tenant_id.clone(), k.user_id.clone(), k.state))
-            .ok_or_else(|| KeyRotationError::KeyNotFound(key_id.to_string()))?;
+            // 先获取必要信息，避免 borrow 冲突
+            let key_info = keys
+                .get(key_id)
+                .map(|k| (k.tenant_id.clone(), k.user_id.clone(), k.state))
+                .ok_or_else(|| KeyRotationError::KeyNotFound(key_id.to_string()))?;
 
-        // 更新状态
-        let key = keys.get_mut(key_id).unwrap();
-        key.transition_state(KeyState::Revoked)?;
+            // 更新状态
+            let key = keys.get_mut(key_id).unwrap();
+            key.transition_state(KeyState::Revoked)?;
 
-        // 如果是活跃密钥，需要选择新的活跃密钥
-        if key_info.2 == KeyState::Active {
-            let new_active = keys.values().find(|k| {
-                k.tenant_id == key_info.0
-                    && k.user_id == key_info.1
-                    && k.state == KeyState::DecryptOnly
-            });
+            // 如果是活跃密钥，需要选择新的活跃密钥
+            if key_info.2 == KeyState::Active {
+                let new_active = keys.values().find(|k| {
+                    k.tenant_id == key_info.0
+                        && k.user_id == key_info.1
+                        && k.state == KeyState::DecryptOnly
+                });
 
-            if let Some(new_active_key) = new_active {
-                *self.active_key_id.write().await = Some(new_active_key.key_id.clone());
+                if let Some(new_active_key) = new_active {
+                    *self.active_key_id.write().await = Some(new_active_key.key_id.clone());
+                }
             }
         }
 
