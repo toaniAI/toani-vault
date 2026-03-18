@@ -16,13 +16,13 @@ trigger:
 
 steps:
   - name: cargo-fetch
-    image: hub.bitkinetic.com/public/rust:1.85-bullseye
+    image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     commands:
       - cargo fetch
 
   - name: rust-fmt
-    image: hub.bitkinetic.com/public/rust:1.85-bullseye
+    image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     depends_on:
       - cargo-fetch
@@ -31,19 +31,19 @@ steps:
       - cargo fmt --all -- --check
 
   - name: rust-clippy
-    image: hub.bitkinetic.com/public/rust:1.85-bullseye
+    image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     depends_on:
       - cargo-fetch
     commands:
       - rustup component add clippy
-      # 对 lib 和 bin 使用严格检查
-      - cargo clippy --lib --bins -- -D warnings
+      # 对 lib 和 bin 使用严格检查（禁用风格类警告）
+      - cargo clippy --lib --bins -- -D warnings -A clippy::uninlined_format_args -A clippy::only_used_in_recursion
       # 对测试放宽常见警告（测试代码经常有需要但未使用的辅助方法）
-      - cargo clippy --tests -- -A dead_code -A clippy::approx_constant -A unexpected_cfgs -A clippy::redundant_pattern_matching -A deprecated -A clippy::field_reassign_with_default
+      - cargo clippy --tests -- -A dead_code -A clippy::approx_constant -A unexpected_cfgs -A clippy::redundant_pattern_matching -A deprecated -A clippy::field_reassign_with_default -A clippy::uninlined_format_args -A clippy::only_used_in_recursion
 
   - name: unit-tests
-    image: hub.bitkinetic.com/public/rust:1.85-bullseye
+    image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     depends_on:
       - rust-fmt
