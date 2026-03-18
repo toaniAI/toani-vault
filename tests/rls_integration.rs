@@ -112,12 +112,16 @@ fn test_rls_context_admin_flag() {
 
 #[test]
 fn test_sql_escape_security() {
-    // SQL 注入测试
+    // SQL 注入测试 - 验证单引号被正确转义
     let malicious = "test'; DROP TABLE credentials; --";
     let escaped = escape_sql_string(malicious);
 
-    assert!(!escaped.contains("DROP TABLE"));
+    // 验证单引号被转义为 \'
     assert!(escaped.contains("test\\'"));
+    // 验证转义后的字符串不包含未转义的单引号
+    assert!(!escaped.contains("';"));
+    // 验证原始内容（除单引号外）保持不变
+    assert!(escaped.contains("DROP TABLE"));
 }
 
 // =============================================================================
