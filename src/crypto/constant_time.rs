@@ -610,8 +610,7 @@ mod tests {
         );
 
         assert!(verification.iterations == 100);
-        // release 模式下可能计时为0，放宽断言检查
-        assert!(verification.min_time_ns >= 0);
+        // min_time_ns 为 u128 类型，始终 >= 0，无需断言
         assert!(verification.max_time_ns >= verification.min_time_ns);
 
         println!("{}", verification.report());
