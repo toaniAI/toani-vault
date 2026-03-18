@@ -22,7 +22,7 @@ CredBridge 是一个 AI 原生零信任凭证保险库系统，采用 Intel SGX 
 | **TEE Sandbox API** | ✅ 已实现 | TEE 安全执行沙箱（浏览器自动化 + AI 审核） |
 | **TypeScript SDK Sandbox** | ✅ 已实现 | Sandbox 客户端 SDK（WebSocket 实时连接） |
 | **OpenAPI 规范** | ✅ 已实现 | 完整的 REST API 文档 |
-| **CLI 命令行工具** | 📝 计划中 | 命令行管理工具（当前可通过 SDK 或 API 使用系统） |
+| **CLI 命令行工具** | ✅ 已实现 | 命令行管理工具，支持凭证、Token、审计、沙箱管理 |
 
 ## 架构设计
 
@@ -247,6 +247,33 @@ assert_eq!(decrypted, plaintext);
 ```rust
 enclave.shutdown().expect("Failed to shutdown enclave");
 ```
+
+## CLI 命令行工具
+
+CredBridge 提供功能完整的 CLI 工具用于命令行管理：
+
+```bash
+# 安装
+cargo install --path cli
+
+# 登录
+credbridge auth login --url https://api.credbridge.io --token <token>
+
+# 凭证管理
+credbridge credentials list
+credbridge credentials create --name prod-db --type database --value "postgres://..."
+credbridge credentials decrypt <credential-id>
+
+# Token 管理
+credbridge tokens verify
+credbridge tokens revoke
+
+# 配置管理
+credbridge config show
+credbridge config set output_format json
+```
+
+详见 [cli/README.md](cli/README.md)
 
 ## 远程认证（Remote Attestation）
 
