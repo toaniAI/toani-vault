@@ -1,7 +1,3 @@
-# CredBridge Backend Values - Test Environment
-# Chart: dn/go
-# Service: credbridge-backend
-
 replicaCount: 2
 
 strategy:
@@ -11,22 +7,21 @@ strategy:
     maxUnavailable: 0
 
 image:
-  repository: hub.bitkinetic.com/suna/credbridge-backend
+  repository: hub.bitkinetic.com/zkme/credbridge
   tag: stable
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 
-# 启动命令 - Rust 二进制直接使用
 command:
-  - /app/credbridge
+  - /app/vault-service
 args: []
 
-# 环境变量
 envs:
+  CREDBRIDGE_HOST: 0.0.0.0
+  CREDBRIDGE_PORT: "8080"
+  CREDBRIDGE_ENV: production
   RUST_LOG: info
-  CONFIG_FILE_PATH: /configs/config.yaml
-  PORT: "8080"
 
 o_envs: []
 
@@ -40,11 +35,7 @@ ports:
   - name: http
     port: 8080
     protocol: TCP
-  - name: metrics
-    port: 9090
-    protocol: TCP
 
-# 健康检查 - HTTP 方式
 healths:
   livenessProbe:
     httpGet:
@@ -61,7 +52,6 @@ healths:
     periodSeconds: 5
     failureThreshold: 3
 
-# 资源配置 (test 环境稍高)
 resources:
   limits:
     cpu: 1000m
@@ -70,9 +60,8 @@ resources:
     cpu: 200m
     memory: 256Mi
 
-# 配置挂载
 configs: {}
 configPath: /configs/
-configExist: "credbridge-backend"
+configExist: "credbridge-go"
 
 nodeSelector: {}
