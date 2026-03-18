@@ -118,8 +118,15 @@ fn test_sql_escape_security() {
 
     // 验证单引号被转义为 \'
     assert!(escaped.contains("test\\'"));
-    // 验证转义后的字符串不包含未转义的单引号
-    assert!(!escaped.contains("';"));
+    // 验证转义后的字符串不包含未转义的单引号（即没有 ' 前面没有 \ 的情况）
+    // 检查所有单引号都被转义：每个 ' 前面应该有 \
+    let chars: Vec<char> = escaped.chars().collect();
+    for i in 0..chars.len() {
+        if chars[i] == '\'' {
+            // 确保每个单引号前面都有反斜杠
+            assert!(i > 0 && chars[i - 1] == '\\', "发现未转义的单引号在位置 {}", i);
+        }
+    }
     // 验证原始内容（除单引号外）保持不变
     assert!(escaped.contains("DROP TABLE"));
 }
