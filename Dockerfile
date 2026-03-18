@@ -1,15 +1,15 @@
 # CredBridge 后端 Dockerfile
-# Rust 多阶段构建
 
-# 阶段1：构建
-FROM hub.bitkinetic.com/public/rust:1.75-bullseye AS builder
+FROM hub.bitkinetic.com/public/rust:1.85-bullseye AS builder
 
 WORKDIR /app
 
-# 安装依赖
-RUN apt-get update && apt-get install -y pkg-config libssl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# 复制 Cargo 文件并缓存依赖
+# 先复制 manifest，尽量复用依赖缓存。
 COPY Cargo.toml Cargo.lock ./
 COPY cli/Cargo.toml ./cli/
 COPY mcp-server/Cargo.toml ./mcp-server/
@@ -17,11 +17,15 @@ COPY sdk-rust/Cargo.toml ./sdk-rust/
 COPY vault-service/Cargo.toml ./vault-service/
 COPY examples/rust/Cargo.toml ./examples/rust/
 
-# 创建虚拟 main.rs 来缓存依赖层
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release 2>/dev/null || true
+RUN mkdir -p src cli/src sdk-rust/src mcp-server/src vault-service/src examples/rust/src
+RUN printf 'fn main() {}\n' > src/main.rs
+RUN printf 'fn main() {}\n' > cli/src/main.rs
+RUN printf 'fn main() {}\n' > mcp-server/src/main.rs
+RUN printf 'fn main() {}\n' > examples/rust/src/main.rs
+RUN printf 'pub fn placeholder() {}\n' > sdk-rust/src/lib.rs
+RUN printf 'pub fn placeholder() {}\n' > vault-service/src/lib.rs
+RUN cargo build --release || true
 
-# 复制源码并构建
 COPY src ./src
 COPY cli ./cli
 COPY mcp-server ./mcp-server
@@ -30,33 +34,27 @@ COPY vault-service ./vault-service
 COPY examples ./examples
 COPY migrations ./migrations
 
-# 重新构建（只编译变化的部分）
-RUN cargo build --release --bin credbridge
+RUN cargo build --release
 
-# 阶段2：运行
 FROM debian:bullseye-slim
 
 WORKDIR /app
 
-# 安装运行时依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制二进制文件
-COPY --from=builder /app/target/release/credbridge /app/credbridge
-
-# 复制 migrations（如果需要）
+COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/migrations /app/migrations
 
-# 非 root 用户运行
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD /app/credbridge healthcheck || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD sh -c 'curl -fsS "http://127.0.0.1:${CREDBRIDGE_PORT:-8080}/health" >/dev/null || exit 1'
 
-CMD ["/app/credbridge"]
+CMD ["/app/vault-service"]
