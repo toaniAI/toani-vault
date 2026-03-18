@@ -124,7 +124,11 @@ fn test_sql_escape_security() {
     for i in 0..chars.len() {
         if chars[i] == '\'' {
             // 确保每个单引号前面都有反斜杠
-            assert!(i > 0 && chars[i - 1] == '\\', "发现未转义的单引号在位置 {}", i);
+            assert!(
+                i > 0 && chars[i - 1] == '\\',
+                "发现未转义的单引号在位置 {}",
+                i
+            );
         }
     }
     // 验证原始内容（除单引号外）保持不变

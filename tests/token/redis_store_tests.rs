@@ -29,8 +29,8 @@ fn current_timestamp() -> u64 {
 /// 获取 Redis 客户端，如果 Redis 不可用则跳过测试
 /// 优先从 REDIS_URL 环境变量读取连接地址，默认使用 redis://127.0.0.1:6379/
 async fn get_redis_client() -> Option<redis::Client> {
-    let redis_url = std::env::var("REDIS_URL")
-        .unwrap_or_else(|_| "redis://127.0.0.1:6379/".to_string());
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379/".to_string());
     let client = redis::Client::open(redis_url.as_str()).ok()?;
     // 测试连接
     match client.get_multiplexed_async_connection().await {
