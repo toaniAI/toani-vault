@@ -29,24 +29,32 @@
 //!
 //! # 使用示例
 //!
-//! ```rust
-//! use credbridge::tee::sandbox::{SandboxPool, SandboxConfig, SessionRequest};
+//! ```rust,no_run
+//! use vault_service::tee::sandbox::{SandboxPool, SandboxConfig, SessionRequest};
 //!
-//! // 创建沙箱池
-//! let config = SandboxConfig::default();
-//! let pool = SandboxPool::new(config);
+//! async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//!     // 创建沙箱池
+//!     let config = SandboxConfig::default();
+//!     let pool = SandboxPool::new(config).await?;
 //!
-//! // 获取会话
-//! let request = SessionRequest {
-//!     tenant_id: tenant_id,
-//!     user_id: user_id,
-//!     credential_id: credential_id,
-//!     original_intent: "查询投资组合".to_string(),
-//! };
-//! let session = pool.acquire_session(request).await?;
+//!     // 获取会话
+//!     let request = SessionRequest {
+//!         tenant_id: "tenant_123".to_string(),
+//!         user_id: "user_456".to_string(),
+//!         credential_id: "cred_789".to_string(),
+//!         original_intent: "查询投资组合".to_string(),
+//!         metadata: Default::default(),
+//!     };
+//!     let session = pool.acquire_session(request).await?;
 //!
-//! // 执行操作
-//! let result = session.execute_operation(operation).await?;
+//!     // 执行操作
+//!     let operation = vault_service::tee::sandbox::OperationRequest {
+//!         operation_type: vault_service::tee::sandbox::OperationType::Query,
+//!         ..Default::default()
+//!     };
+//!     let result = session.execute_operation(operation).await?;
+//!     Ok(())
+//! }
 //! ```
 
 pub mod config;

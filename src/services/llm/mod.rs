@@ -8,7 +8,7 @@
 //! # 使用示例
 //!
 //! ```rust
-//! use credbridge::services::llm::{LlmService, ChatRequest, LlmProvider};
+//! use vault_service::services::llm::{LlmService, ChatRequest, LlmProvider};
 //!
 //! // 创建服务
 //! let service = LlmService::new(config);

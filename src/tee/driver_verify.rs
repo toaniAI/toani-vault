@@ -307,7 +307,7 @@ pub fn secure_hash_compare(a: &str, b: &str) -> bool {
 /// # 使用示例
 ///
 /// ```rust
-/// use credbridge::tee::driver_verify::{verify_driver_signature, DriverMetadata};
+/// use vault_service::tee::driver_verify::{verify_driver_signature, DriverMetadata};
 ///
 /// let metadata = DriverMetadata::from_file("/path/to/driver.meta.json").unwrap();
 /// let is_valid = verify_driver_signature(

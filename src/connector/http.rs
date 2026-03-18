@@ -145,7 +145,7 @@ impl HttpConnectorConfig {
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge::connector::http::{HttpConnector, HttpConnectorConfig};
+/// use vault_service::connector::http::{HttpConnector, HttpConnectorConfig};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {

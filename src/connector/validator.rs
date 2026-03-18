@@ -17,7 +17,7 @@ use serde_json::Value;
 /// # 示例
 ///
 /// ```rust
-/// use credbridge::connector::validator::ValidationRule;
+/// use vault_service::connector::validator::ValidationRule;
 /// use serde_json::Value;
 ///
 /// struct MyRule;
@@ -311,7 +311,7 @@ impl Default for CompositeValidator {
 /// # 示例
 ///
 /// ```rust
-/// use credbridge::connector::validator::{
+/// use vault_service::connector::validator::{
 ///     ValidatorBuilder, rules::RequiredRule
 /// };
 /// use serde_json::json;

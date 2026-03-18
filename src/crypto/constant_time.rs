@@ -39,7 +39,7 @@ use zeroize::Zeroize;
 ///
 /// # 示例
 /// ```rust
-/// use credbridge::crypto::constant_time::ct_compare;
+/// use vault_service::crypto::constant_time::ct_compare;
 ///
 /// let a = b"secret_key_1";
 /// let b = b"secret_key_1";

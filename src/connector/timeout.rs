@@ -152,7 +152,7 @@ impl From<TimeoutError> for ConnectorError {
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge::connector::timeout::{TimeoutWrapper, TimeoutConfig};
+/// use vault_service::connector::timeout::{TimeoutWrapper, TimeoutConfig};
 /// use std::time::Duration;
 ///
 /// #[tokio::main]
@@ -258,7 +258,7 @@ impl TimeoutWrapper {
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge::connector::timeout::with_timeout;
+/// use vault_service::connector::timeout::with_timeout;
 /// use std::time::Duration;
 ///
 /// #[tokio::main]
