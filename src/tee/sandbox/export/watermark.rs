@@ -205,7 +205,9 @@ impl WatermarkService {
         let (x, y) = match config.position {
             WatermarkPosition::TopLeft => (padding, padding),
             WatermarkPosition::TopRight => (width.saturating_sub(text_width + padding), padding),
-            WatermarkPosition::BottomLeft => (padding, height.saturating_sub(text_height + padding)),
+            WatermarkPosition::BottomLeft => {
+                (padding, height.saturating_sub(text_height + padding))
+            }
             WatermarkPosition::BottomRight => (
                 width.saturating_sub(text_width + padding),
                 height.saturating_sub(text_height + padding),

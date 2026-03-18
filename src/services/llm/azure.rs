@@ -108,10 +108,7 @@ impl AzureOpenAiClient {
         // Azure OpenAI 使用 api-key 头而非 Authorization
         headers.insert(
             "api-key",
-            self.config
-                .api_key
-                .parse()
-                .expect("Invalid API key format"),
+            self.config.api_key.parse().expect("Invalid API key format"),
         );
         headers.insert(
             reqwest::header::CONTENT_TYPE,

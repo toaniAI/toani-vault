@@ -355,10 +355,7 @@ mod tests {
         assert!(!clean.is_rejected());
         assert!(!clean.needs_warning());
 
-        let detected = DetectionResult::detected(
-            vec![AttackType::InstructionOverride],
-            0.9,
-        );
+        let detected = DetectionResult::detected(vec![AttackType::InstructionOverride], 0.9);
         assert!(detected.is_rejected());
     }
 
@@ -368,9 +365,6 @@ mod tests {
             AttackType::InstructionOverride.to_string(),
             "instruction_override"
         );
-        assert_eq!(
-            AttackType::ZeroWidthChars.to_string(),
-            "zero_width_chars"
-        );
+        assert_eq!(AttackType::ZeroWidthChars.to_string(), "zero_width_chars");
     }
 }

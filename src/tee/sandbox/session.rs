@@ -301,7 +301,10 @@ impl SandboxSession for ActiveNsjailSession {
                     }
                 }
                 Err(e) => {
-                    warn!("AI review failed for operation {}: {}", operation.operation_id, e);
+                    warn!(
+                        "AI review failed for operation {}: {}",
+                        operation.operation_id, e
+                    );
                     // 审核失败时，如果审核器配置为严格模式，则拒绝操作
                     if reviewer.is_strict_mode() {
                         if let Some(record) = self.operation_history.write().await.last_mut() {
@@ -316,8 +319,8 @@ impl SandboxSession for ActiveNsjailSession {
                     }
                     // 非严格模式下，记录警告但继续执行
                     info!(
-                        "AI review failed but strict mode is off, proceeding with operation {}"
-                        , operation.operation_id
+                        "AI review failed but strict mode is off, proceeding with operation {}",
+                        operation.operation_id
                     );
                 }
             }

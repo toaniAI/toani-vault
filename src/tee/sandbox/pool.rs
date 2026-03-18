@@ -1,12 +1,12 @@
 //! 沙箱池管理
 
 use crate::tee::sandbox::{
+    PoolStatus, SandboxHealth,
     config::{NsjailConfig, SandboxConfig, SandboxPoolConfig},
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, WarmNsjailInstance},
     session::{ActiveNsjailSession, SandboxSession},
     types::{SandboxId, SessionContext, SessionId, SessionRequest},
-    PoolStatus, SandboxHealth,
 };
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -19,11 +19,17 @@ use tracing::{debug, error, info, warn};
 #[async_trait::async_trait]
 pub trait SandboxPool: Send + Sync {
     /// 获取会话
-    async fn acquire_session(&self, request: SessionRequest) -> Result<Arc<dyn SandboxSession>, SandboxError>;
+    async fn acquire_session(
+        &self,
+        request: SessionRequest,
+    ) -> Result<Arc<dyn SandboxSession>, SandboxError>;
     /// 释放会话
     async fn release_session(&self, session_id: SessionId) -> Result<(), SandboxError>;
     /// 获取会话
-    async fn get_session(&self, session_id: SessionId) -> Result<Arc<dyn SandboxSession>, SandboxError>;
+    async fn get_session(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Arc<dyn SandboxSession>, SandboxError>;
     /// 获取健康状态
     async fn health(&self) -> SandboxHealth;
     /// 关闭池
@@ -100,13 +106,19 @@ impl NsjailSandboxPool {
         while let Some(mut instance) = warm_instances.pop_front() {
             // 检查实例是否健康
             if !instance.is_healthy() {
-                warn!("Warm instance {} is not healthy, discarding", instance.info.instance_id);
+                warn!(
+                    "Warm instance {} is not healthy, discarding",
+                    instance.info.instance_id
+                );
                 continue;
             }
 
             // 检查是否过期
             if instance.is_expired(self.config.warm_instance_ttl_secs) {
-                warn!("Warm instance {} has expired, discarding", instance.info.instance_id);
+                warn!(
+                    "Warm instance {} has expired, discarding",
+                    instance.info.instance_id
+                );
                 continue;
             }
 
@@ -148,7 +160,12 @@ impl NsjailSandboxPool {
     }
 
     /// 创建会话上下文
-    fn create_session_context(&self, request: &SessionRequest, session_id: SessionId, sandbox_id: SandboxId) -> SessionContext {
+    fn create_session_context(
+        &self,
+        request: &SessionRequest,
+        session_id: SessionId,
+        sandbox_id: SandboxId,
+    ) -> SessionContext {
         let now = OffsetDateTime::now_utc();
         let expires_at = now + Duration::minutes(self.config.session_timeout_minutes as i64);
 
@@ -172,7 +189,9 @@ impl NsjailSandboxPool {
         let config = self.config.clone();
 
         let handle = tokio::spawn(async move {
-            let mut ticker = interval(tokio::time::Duration::from_secs(config.cleanup_interval_secs));
+            let mut ticker = interval(tokio::time::Duration::from_secs(
+                config.cleanup_interval_secs,
+            ));
 
             loop {
                 ticker.tick().await;
@@ -182,7 +201,8 @@ impl NsjailSandboxPool {
                     let mut instances = warm_instances.lock().await;
                     let before_count = instances.len();
                     instances.retain(|instance| {
-                        let keep = instance.is_healthy() && !instance.is_expired(config.warm_instance_ttl_secs);
+                        let keep = instance.is_healthy()
+                            && !instance.is_expired(config.warm_instance_ttl_secs);
                         if !keep {
                             debug!("Cleaning up warm instance {}", instance.info.instance_id);
                         }
@@ -190,7 +210,10 @@ impl NsjailSandboxPool {
                     });
                     let after_count = instances.len();
                     if before_count != after_count {
-                        debug!("Cleaned up {} expired warm instances", before_count - after_count);
+                        debug!(
+                            "Cleaned up {} expired warm instances",
+                            before_count - after_count
+                        );
                     }
                 }
 
@@ -238,10 +261,7 @@ impl NsjailSandboxPool {
     /// 2. 重置沙箱状态
     /// 3. 验证沙箱健康
     /// 4. 重新加入热实例池
-    async fn recycle_sandbox(
-        &self,
-        mut sandbox: NsjailSandbox,
-    ) -> Result<(), SandboxError> {
+    async fn recycle_sandbox(&self, mut sandbox: NsjailSandbox) -> Result<(), SandboxError> {
         let sandbox_id = sandbox.id;
         info!("开始回收沙箱 {} 到热实例池", sandbox_id);
 
@@ -325,7 +345,10 @@ impl NsjailSandboxPool {
 
 #[async_trait::async_trait]
 impl SandboxPool for NsjailSandboxPool {
-    async fn acquire_session(&self, request: SessionRequest) -> Result<Arc<dyn SandboxSession>, SandboxError> {
+    async fn acquire_session(
+        &self,
+        request: SessionRequest,
+    ) -> Result<Arc<dyn SandboxSession>, SandboxError> {
         // 检查是否达到最大会话数
         let active_count = self.active_session_count().await;
         if active_count >= self.config.max_concurrent_sessions {
@@ -354,9 +377,15 @@ impl SandboxPool for NsjailSandboxPool {
 
         // 存储会话
         let session_arc: Arc<dyn SandboxSession> = Arc::new(session.clone());
-        self.active_sessions.write().await.insert(session_id, session);
+        self.active_sessions
+            .write()
+            .await
+            .insert(session_id, session);
 
-        info!("Session {} acquired for tenant {}", session_id, request.tenant_id);
+        info!(
+            "Session {} acquired for tenant {}",
+            session_id, request.tenant_id
+        );
 
         Ok(session_arc)
     }
@@ -385,7 +414,10 @@ impl SandboxPool for NsjailSandboxPool {
         Ok(())
     }
 
-    async fn get_session(&self, session_id: SessionId) -> Result<Arc<dyn SandboxSession>, SandboxError> {
+    async fn get_session(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Arc<dyn SandboxSession>, SandboxError> {
         let sessions = self.active_sessions.read().await;
 
         let session = sessions
@@ -405,10 +437,14 @@ impl SandboxPool for NsjailSandboxPool {
         let active_sessions = self.active_session_count().await;
         let warm_instances = self.warm_instance_count().await;
 
-        let healthy = status == PoolStatus::Running && active_sessions < self.config.max_concurrent_sessions;
+        let healthy =
+            status == PoolStatus::Running && active_sessions < self.config.max_concurrent_sessions;
 
         let error = if warm_instances < self.config.min_warm_instances {
-            Some(format!("Insufficient warm instances: {}/{}", warm_instances, self.config.min_warm_instances))
+            Some(format!(
+                "Insufficient warm instances: {}/{}",
+                warm_instances, self.config.min_warm_instances
+            ))
         } else {
             None
         };
@@ -436,7 +472,10 @@ impl SandboxPool for NsjailSandboxPool {
         let sessions: Vec<_> = self.active_sessions.write().await.drain().collect();
         for (session_id, session) in sessions {
             if let Err(e) = session.close().await {
-                error!("Failed to close session {} during shutdown: {}", session_id, e);
+                error!(
+                    "Failed to close session {} during shutdown: {}",
+                    session_id, e
+                );
             }
         }
 
@@ -445,7 +484,10 @@ impl SandboxPool for NsjailSandboxPool {
         for instance in warm_instances {
             if let Some(mut sandbox) = instance.sandbox {
                 if let Err(e) = sandbox.stop().await {
-                    error!("Failed to stop warm instance {}: {}", instance.info.instance_id, e);
+                    error!(
+                        "Failed to stop warm instance {}: {}",
+                        instance.info.instance_id, e
+                    );
                 }
             }
         }
