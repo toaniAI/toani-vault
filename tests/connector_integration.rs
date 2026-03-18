@@ -7,6 +7,11 @@
 //! - 错误处理测试
 //! - 线程安全测试
 
+// 允许测试中使用近似浮点数值（测试数据而非数学 PI）
+#![allow(clippy::approx_constant)]
+// 允许测试代码中有未使用的辅助方法
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
