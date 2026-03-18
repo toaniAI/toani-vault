@@ -1,6 +1,6 @@
 # CredBridge 后端 Dockerfile
 
-FROM hub.bitkinetic.com/public/rust:1.75-bullseye AS builder
+FROM hub.bitkinetic.com/public/rust:1.85-bullseye AS builder
 
 WORKDIR /app
 
