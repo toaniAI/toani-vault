@@ -16,13 +16,13 @@ trigger:
 
 steps:
   - name: cargo-fetch
-    image: hub.bitkinetic.com/public/rust:1.88-bullseye
+    image: hub.bitkinetic.com/public/rust:1.85-bullseye
     pull: if-not-exists
     commands:
       - cargo fetch
 
   - name: rust-fmt
-    image: hub.bitkinetic.com/public/rust:1.88-bullseye
+    image: hub.bitkinetic.com/public/rust:1.85-bullseye
     pull: if-not-exists
     depends_on:
       - cargo-fetch
@@ -31,7 +31,7 @@ steps:
       - cargo fmt --all -- --check
 
   - name: rust-clippy
-    image: hub.bitkinetic.com/public/rust:1.88-bullseye
+    image: hub.bitkinetic.com/public/rust:1.85-bullseye
     pull: if-not-exists
     depends_on:
       - cargo-fetch
@@ -40,7 +40,7 @@ steps:
       - cargo clippy --all-targets -- -D warnings
 
   - name: unit-tests
-    image: hub.bitkinetic.com/public/rust:1.88-bullseye
+    image: hub.bitkinetic.com/public/rust:1.85-bullseye
     pull: if-not-exists
     depends_on:
       - rust-fmt
