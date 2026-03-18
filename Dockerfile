@@ -1,6 +1,6 @@
 # CredBridge 后端 Dockerfile
 
-FROM hub.bitkinetic.com/public/rust:1.85-bullseye AS builder
+FROM hub.bitkinetic.com/public/rust:1.88.0-bookworm AS builder
 
 WORKDIR /app
 
@@ -36,14 +36,14 @@ COPY migrations ./migrations
 
 RUN cargo build --release
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    libssl1.1 \
+    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/vault-service /app/vault-service
