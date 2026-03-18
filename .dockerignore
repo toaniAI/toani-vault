@@ -32,7 +32,7 @@ docs/*.md
 # Test files
 tests/
 benches/
-examples/
+# examples/  # 暂时注释掉，Dockerfile 构建需要 examples/rust
 
 # Build artifacts
 *.tar.gz
@@ -107,8 +107,8 @@ SECURITY.md
 _bmad/
 _bmad-output/
 
-# SDKs (separate packages)
-sdk-rust/
+# SDKs (separate packages) - 注意：Dockerfile 需要这些目录
+# sdk-rust/  # 暂时注释掉，Dockerfile 构建需要
 sdk-typescript/
 
 # Target directory (Rust build output)
