@@ -7,6 +7,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
+    libsodium-dev \
+    file \
+    cmake \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # 先复制 manifest，尽量复用依赖缓存。
