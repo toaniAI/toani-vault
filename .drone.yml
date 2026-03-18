@@ -19,7 +19,7 @@ steps:
     image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     commands:
-      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
       - cargo fetch
 
   - name: rust-fmt
@@ -28,7 +28,7 @@ steps:
     depends_on:
       - cargo-fetch
     commands:
-      - apt-get update && apt-get install -y libssl-dev pkg-config
+      - apt-get update && apt-get install -y libssl-dev pkg-config libsodium-dev cmake build-essential
       - rustup component add rustfmt
       - cargo fmt --all -- --check
 
@@ -38,7 +38,7 @@ steps:
     depends_on:
       - cargo-fetch
     commands:
-      - apt-get update && apt-get install -y libssl-dev pkg-config
+      - apt-get update && apt-get install -y libssl-dev pkg-config libsodium-dev cmake build-essential
       - rustup component add clippy
       # 对 lib 和 bin 使用严格检查（禁用风格类警告）
       - cargo clippy --lib --bins -- -D warnings -A clippy::uninlined_format_args -A clippy::only_used_in_recursion
@@ -52,7 +52,7 @@ steps:
       - rust-fmt
       - rust-clippy
     commands:
-      - apt-get update && apt-get install -y libssl-dev pkg-config
+      - apt-get update && apt-get install -y libssl-dev pkg-config libsodium-dev cmake build-essential
       - cargo test --release
 
 ---
