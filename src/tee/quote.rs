@@ -57,7 +57,7 @@
 //! ```
 
 use crate::tee::attestation::{ReportData, SGX_MEASUREMENT_LEN, SGX_REPORT_DATA_LEN};
-use crate::tee::dcap::{DcapError, DcapQuote, DcapQuoteSignature, DcapReportBody, EcdsaSignatureDcap};
+use crate::tee::dcap::{DcapError, DcapQuote, DcapQuoteSignature, DcapReportBody};
 
 /// Quote 解析器
 pub struct QuoteParser;
@@ -285,7 +285,9 @@ impl QuoteParser {
             isvprodid,
             isvsvn,
             attributes,
-            report_data: ReportData { data: report_data_bytes },
+            report_data: ReportData {
+                data: report_data_bytes,
+            },
         })
     }
 
@@ -408,7 +410,7 @@ impl QuoteSerializer {
     /// 序列化 Quote 为 Base64 字符串
     pub fn serialize_to_base64(quote: &DcapQuote) -> Result<String, QuoteSerializeError> {
         let bytes = Self::serialize(quote)?;
-        use base64::{engine::general_purpose::STANDARD, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD};
         Ok(STANDARD.encode(&bytes))
     }
 }
@@ -543,7 +545,11 @@ impl std::fmt::Display for QuoteParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             QuoteParseError::InsufficientData { expected, actual } => {
-                write!(f, "Insufficient data: expected {} bytes, got {}", expected, actual)
+                write!(
+                    f,
+                    "Insufficient data: expected {} bytes, got {}",
+                    expected, actual
+                )
             }
             QuoteParseError::InvalidReportBodySize(size) => {
                 write!(f, "Invalid report body size: {} bytes (expected 384)", size)
@@ -564,7 +570,7 @@ impl std::fmt::Display for QuoteParseError {
 impl std::error::Error for QuoteParseError {}
 
 impl From<QuoteParseError> for DcapError {
-    fn from(e: QuoteParseError) -> Self {
+    fn from(_e: QuoteParseError) -> Self {
         DcapError::InvalidQuoteFormat
     }
 }
@@ -632,7 +638,11 @@ impl std::fmt::Display for QuoteValidationError {
                 write!(f, "Version mismatch: expected {}, got {}", expected, actual)
             }
             QuoteValidationError::SignTypeMismatch { expected, actual } => {
-                write!(f, "Sign type mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Sign type mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
             QuoteValidationError::InvalidMrenclave => {
                 write!(f, "Invalid MRENCLAVE (all zeros)")
@@ -685,7 +695,7 @@ pub mod utils {
 
     /// 计算 Quote 哈希
     pub fn compute_quote_hash(quote_bytes: &[u8]) -> [u8; 32] {
-        use ring::digest::{digest, SHA256};
+        use ring::digest::{SHA256, digest};
         let hash = digest(&SHA256, quote_bytes);
         let mut result = [0u8; 32];
         result.copy_from_slice(hash.as_ref());

@@ -219,16 +219,11 @@ impl VaultKvClient {
 
         if !mounts.contains_key(&format!("{}/", mount_path)) {
             // 创建 KV v2 引擎
-            mount::enable(
-                &self.client,
-                mount_path,
-                "kv-v2",
-                None,
-            )
-            .await
-            .map_err(|e| {
-                VaultClientError::ConfigError(format!("Failed to enable KV v2: {}", e))
-            })?;
+            mount::enable(&self.client, mount_path, "kv-v2", None)
+                .await
+                .map_err(|e| {
+                    VaultClientError::ConfigError(format!("Failed to enable KV v2: {}", e))
+                })?;
         }
 
         Ok(())
@@ -304,12 +299,9 @@ impl VaultKvClient {
         let path = self.config.build_path(tenant_id, credential_id);
 
         // 使用 delete_latest 删除最新版本
-        kv2::delete_latest(
-            &self.client,
-            &self.config.mount_path,
-            &path,
-        ).await
-        .map_err(|e| VaultClientError::DeleteFailed(format!("{:?}", e)))
+        kv2::delete_latest(&self.client, &self.config.mount_path, &path)
+            .await
+            .map_err(|e| VaultClientError::DeleteFailed(format!("{:?}", e)))
     }
 
     /// 物理删除凭证密文
@@ -326,12 +318,9 @@ impl VaultKvClient {
         let path = self.config.build_path(tenant_id, credential_id);
 
         // 删除元数据（永久删除）
-        kv2::delete_metadata(
-            &self.client,
-            &self.config.mount_path,
-            &path,
-        ).await
-        .map_err(|e| VaultClientError::DeleteFailed(format!("{:?}", e)))
+        kv2::delete_metadata(&self.client, &self.config.mount_path, &path)
+            .await
+            .map_err(|e| VaultClientError::DeleteFailed(format!("{:?}", e)))
     }
 
     /// 恢复软删除的凭证
@@ -344,7 +333,7 @@ impl VaultKvClient {
         // 注意：vaultrs 0.7 版本的 undelete API 可能不同
         // 这里暂时返回未实现错误
         Err(VaultClientError::WriteFailed(
-            "Undelete not implemented in current vaultrs version".to_string()
+            "Undelete not implemented in current vaultrs version".to_string(),
         ))
     }
 
@@ -355,10 +344,7 @@ impl VaultKvClient {
     ///
     /// # Returns
     /// * `Ok(Vec<String>)` - 凭证 ID 列表
-    pub async fn list_secrets(
-        &self,
-        tenant_id: &str,
-    ) -> Result<Vec<String>, VaultClientError> {
+    pub async fn list_secrets(&self, tenant_id: &str) -> Result<Vec<String>, VaultClientError> {
         use vaultrs::kv2;
 
         let prefix = format!("credbridge/{}", tenant_id);

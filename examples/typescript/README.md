@@ -17,6 +17,42 @@ export CREDBRIDGE_TOKEN="your-api-token"
 
 ## 运行示例
 
+### 快速启动
+
+使用提供的脚本自动获取 Token 并运行示例：
+
+```bash
+# 运行基础示例（默认）
+./run-examples.sh
+
+# 运行指定示例
+./run-examples.sh basic   # 基础使用示例
+./run-examples.sh batch   # 批量操作示例
+./run-examples.sh token   # Token 管理示例
+./run-examples.sh error   # 错误处理示例
+./run-examples.sh express # Express 集成示例
+```
+
+### 手动运行
+
+1. 获取 Token：
+```bash
+curl -X POST http://localhost:8082/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+```
+
+2. 设置环境变量：
+```bash
+export CREDBRIDGE_BASE_URL="http://localhost:8082"
+export CREDBRIDGE_TOKEN="v4.local.xxx..."
+```
+
+3. 运行示例：
+```bash
+npm run basic
+```
+
 ### 1. 基础使用示例
 
 展示凭证创建、获取、解密和删除的基本操作：

@@ -28,9 +28,7 @@
 //! }
 //! ```
 
-use super::scope::{
-    Operation, RestrictedTokenContext, Scope, ScopeError, ScopeSet,
-};
+use super::scope::{Operation, RestrictedTokenContext, Scope, ScopeError, ScopeSet};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use thiserror::Error;
@@ -57,10 +55,7 @@ pub enum PermissionError {
     CredentialDenied(String),
 
     #[error("操作未授权: 需要 {required}, 实际 {actual}")]
-    Unauthorized {
-        required: String,
-        actual: String,
-    },
+    Unauthorized { required: String, actual: String },
 }
 
 /// 访问决策
@@ -255,8 +250,7 @@ impl PermissionEngine {
     /// - `Ok(PermissionEngine)`: 创建成功
     /// - `Err(PermissionError)`: Scope 字符串无效
     pub fn new(scope_string: &str) -> Result<Self, PermissionError> {
-        let scope_set =
-            ScopeSet::from_string(scope_string).map_err(PermissionError::ScopeError)?;
+        let scope_set = ScopeSet::from_string(scope_string).map_err(PermissionError::ScopeError)?;
 
         Ok(Self {
             scope_set,
@@ -333,9 +327,7 @@ impl PermissionEngine {
         // 3. 风险等级检查
         if let Some(risk_level) = request.context.risk_level {
             if risk_level >= 2 {
-                return AccessDecision::RequireApproval(
-                    "高风险操作需要人工审批".to_string(),
-                );
+                return AccessDecision::RequireApproval("高风险操作需要人工审批".to_string());
             }
         }
 
@@ -451,7 +443,8 @@ impl BatchPermissionChecker {
             let request = AccessRequest::credential(operation.clone(), id.clone());
             let decision = self.engine.check_access(&request);
             results.push((id.clone(), decision));
-            self.results.push((request, results.last().unwrap().1.clone()));
+            self.results
+                .push((request, results.last().unwrap().1.clone()));
         }
 
         results
@@ -781,11 +774,15 @@ mod tests {
         assert!(engine.can_access_credential("cred_123").is_ok());
         assert!(engine.can_access_credential("cred_999").is_err());
 
-        assert!(engine
-            .can_execute_on_credential(&Operation::ReadCredential, "cred_123")
-            .is_ok());
-        assert!(engine
-            .can_execute_on_credential(&Operation::CreateCredential, "cred_123")
-            .is_err()); // 没有写权限
+        assert!(
+            engine
+                .can_execute_on_credential(&Operation::ReadCredential, "cred_123")
+                .is_ok()
+        );
+        assert!(
+            engine
+                .can_execute_on_credential(&Operation::CreateCredential, "cred_123")
+                .is_err()
+        ); // 没有写权限
     }
 }

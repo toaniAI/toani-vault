@@ -49,11 +49,7 @@ pub trait TokenBlacklist: Send + Sync {
     /// # Arguments
     /// * `jti` - Token ID
     /// * `ttl_seconds` - 黑名单 TTL（秒），超过此时间后自动移除
-    async fn blacklist_token(
-        &self,
-        jti: &str,
-        ttl_seconds: u64,
-    ) -> Result<(), BlacklistError>;
+    async fn blacklist_token(&self, jti: &str, ttl_seconds: u64) -> Result<(), BlacklistError>;
 
     /// 检查 Token ID 是否在黑名单中
     async fn is_blacklisted(&self, jti: &str) -> Result<bool, BlacklistError>;
@@ -104,11 +100,7 @@ impl Default for InMemoryTokenBlacklist {
 
 #[async_trait]
 impl TokenBlacklist for InMemoryTokenBlacklist {
-    async fn blacklist_token(
-        &self,
-        jti: &str,
-        ttl_seconds: u64,
-    ) -> Result<(), BlacklistError> {
+    async fn blacklist_token(&self, jti: &str, ttl_seconds: u64) -> Result<(), BlacklistError> {
         let now = self.now();
         let expiration = now.saturating_add(ttl_seconds);
 
@@ -235,11 +227,7 @@ impl RedisTokenBlacklist {
 
 #[async_trait]
 impl TokenBlacklist for RedisTokenBlacklist {
-    async fn blacklist_token(
-        &self,
-        jti: &str,
-        ttl_seconds: u64,
-    ) -> Result<(), BlacklistError> {
+    async fn blacklist_token(&self, jti: &str, ttl_seconds: u64) -> Result<(), BlacklistError> {
         let mut conn = self
             .client
             .get_multiplexed_async_connection()
@@ -319,9 +307,7 @@ pub fn create_token_store() -> TokenStore {
 }
 
 /// 创建 Redis Token 存储
-pub fn create_redis_token_store(
-    redis_url: &str,
-) -> Result<TokenStore, BlacklistError> {
+pub fn create_redis_token_store(redis_url: &str) -> Result<TokenStore, BlacklistError> {
     TokenBlacklistFactory::create_redis(redis_url, None)
 }
 

@@ -9,7 +9,7 @@ services:
   # ============================================================================
   vault-service:
     build:
-      context: ..
+      context: /Users/yvan/AIWorkspace/credbridge
       dockerfile: docker/Dockerfile
     container_name: credbridge-vault-service
     restart: unless-stopped
@@ -50,6 +50,8 @@ services:
       - vault_data:/app/data
       - vault_logs:/app/logs
       - vault_config:/app/config
+      # cgroup 读写权限用于 nsjail 沙箱
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
     networks:
       - credbridge_network
     depends_on:
@@ -61,8 +63,18 @@ services:
         condition: service_healthy
       vault:
         condition: service_healthy
+    # nsjail 需要特权模式来创建命名空间和操作 cgroup
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_CHROOT
+      - SYS_PTRACE
+      - NET_ADMIN
+      - IPC_LOCK
+    security_opt:
+      - seccomp:unconfined
     healthcheck:
-      test: ["/app/healthcheck.sh"]
+      test: ["CMD-SHELL", "/app/healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -89,7 +101,10 @@ services:
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 数据库初始化脚本
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      # RLS 策略初始化脚本
+      - ./scripts/init-rls.sql:/docker-entrypoint-initdb.d/02-rls.sql:ro
     networks:
       - credbridge_network
     healthcheck:
@@ -141,6 +156,7 @@ services:
   # ============================================================================
   immudb:
     image: codenotary/immudb:latest
+    platform: linux/amd64
     container_name: credbridge-immudb
     restart: unless-stopped
     ports:
@@ -158,7 +174,7 @@ services:
     networks:
       - credbridge_network
     healthcheck:
-      test: ["CMD", "/app/immudb", "version"]
+      test: ["CMD", "/usr/sbin/immudb", "version"]
       interval: 10s
       timeout: 5s
       retries: 5

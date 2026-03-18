@@ -9,12 +9,12 @@
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
-use vault_service::tee::{
-    CacheStatistics, CachedKeyEntry, CleanupConfig, CleanupScheduler, KeyCleaner, KeyLifecycle,
-    KeyManager, KeyType, MasterKeyMetadata, ProtectedKeyMaterial, ProtectedMemory, SealPolicy,
-    SecureScope, UserKeyCache, DEFAULT_KEY_TTL_SECONDS, MASTER_KEY_STORAGE_ID,
-};
 use vault_service::crypto::constants::KEY_LENGTH;
+use vault_service::tee::{
+    CacheStatistics, CachedKeyEntry, CleanupConfig, CleanupScheduler, DEFAULT_KEY_TTL_SECONDS,
+    KeyCleaner, KeyLifecycle, KeyManager, KeyType, MASTER_KEY_STORAGE_ID, MasterKeyMetadata,
+    ProtectedKeyMaterial, ProtectedMemory, SealPolicy, SecureScope, UserKeyCache,
+};
 
 /// 测试零自动清理特性
 ///
@@ -120,17 +120,14 @@ fn test_enclave_restart_key_recovery() {
 
     // 第一次：创建密钥并密封
     {
-        let manager = KeyManager::new(
-            storage_path.clone(),
-            mrsigner,
-            mrenclave,
-        );
+        let manager = KeyManager::new(storage_path.clone(), mrsigner, mrenclave);
 
         // 创建主密钥材料
         let master_key = [0xABu8; KEY_LENGTH];
 
         // 密封主密钥
-        manager.seal_master_key(&master_key, SealPolicy::Mrsigner)
+        manager
+            .seal_master_key(&master_key, SealPolicy::Mrsigner)
             .expect("密封主密钥失败");
 
         // 验证密封存储存在
@@ -139,18 +136,13 @@ fn test_enclave_restart_key_recovery() {
 
     // 第二次：模拟 Enclave 重启，恢复密钥
     {
-        let manager = KeyManager::new(
-            storage_path.clone(),
-            mrsigner,
-            mrenclave,
-        );
+        let manager = KeyManager::new(storage_path.clone(), mrsigner, mrenclave);
 
         // 验证密封存储仍然存在
         assert!(manager.has_sealed_master_key());
 
         // 恢复主密钥
-        let (recovered_key, metadata) = manager.restore_master_key()
-            .expect("恢复主密钥失败");
+        let (recovered_key, metadata) = manager.restore_master_key().expect("恢复主密钥失败");
 
         // 验证恢复的密钥
         assert_eq!(recovered_key, [0xABu8; KEY_LENGTH]);
@@ -179,14 +171,11 @@ fn test_mrsigner_compatibility_verification() {
 
     // 使用 mrsigner1 创建并密封密钥
     {
-        let manager = KeyManager::new(
-            storage_path.clone(),
-            mrsigner1,
-            mrenclave,
-        );
+        let manager = KeyManager::new(storage_path.clone(), mrsigner1, mrenclave);
 
         let master_key = [0xABu8; KEY_LENGTH];
-        manager.seal_master_key(&master_key, SealPolicy::Mrsigner)
+        manager
+            .seal_master_key(&master_key, SealPolicy::Mrsigner)
             .expect("密封主密钥失败");
     }
 
@@ -231,14 +220,11 @@ fn test_mrenclave_strict_verification() {
 
     // 使用 mrenclave1 创建并密封密钥
     {
-        let manager = KeyManager::new(
-            storage_path.clone(),
-            mrsigner,
-            mrenclave1,
-        );
+        let manager = KeyManager::new(storage_path.clone(), mrsigner, mrenclave1);
 
         let master_key = [0xABu8; KEY_LENGTH];
-        manager.seal_master_key(&master_key, SealPolicy::Mrenclave)
+        manager
+            .seal_master_key(&master_key, SealPolicy::Mrenclave)
             .expect("密封主密钥失败");
     }
 
@@ -409,20 +395,14 @@ fn test_key_lifecycle_management() {
 fn test_master_key_metadata_serialization() {
     let mrsigner = [0x01u8; 32];
     let mrenclave = [0x02u8; 32];
-    let metadata = MasterKeyMetadata::new(
-        SealPolicy::Mrsigner,
-        mrsigner,
-        mrenclave,
-        1,
-    );
+    let metadata = MasterKeyMetadata::new(SealPolicy::Mrsigner, mrsigner, mrenclave, 1);
 
     // 序列化
     let bytes = metadata.to_bytes();
     assert_eq!(bytes.len(), 77); // 4 + 1 + 32 + 32 + 8
 
     // 反序列化
-    let restored = MasterKeyMetadata::from_bytes(&bytes)
-        .expect("反序列化失败");
+    let restored = MasterKeyMetadata::from_bytes(&bytes).expect("反序列化失败");
 
     assert_eq!(restored.seal_policy, metadata.seal_policy);
     assert_eq!(restored.sealed_mrsigner, metadata.sealed_mrsigner);
@@ -474,19 +454,22 @@ fn test_mrsigner_mode_compatibility() {
     let mrenclave1 = [0x02u8; 32];
     let mrenclave2 = [0x03u8; 32];
 
-    let metadata = MasterKeyMetadata::new(
-        SealPolicy::Mrsigner,
-        mrsigner,
-        mrenclave1,
-        1,
-    );
+    let metadata = MasterKeyMetadata::new(SealPolicy::Mrsigner, mrsigner, mrenclave1, 1);
 
     // MRSIGNER 模式：相同签名者，不同 MRENCLAVE 应该通过
-    assert!(metadata.verify_compatibility(&mrsigner, &mrenclave2).is_ok());
+    assert!(
+        metadata
+            .verify_compatibility(&mrsigner, &mrenclave2)
+            .is_ok()
+    );
 
     // MRSIGNER 模式：不同签名者应该失败
     let wrong_mrsigner = [0x04u8; 32];
-    assert!(metadata.verify_compatibility(&wrong_mrsigner, &mrenclave1).is_err());
+    assert!(
+        metadata
+            .verify_compatibility(&wrong_mrsigner, &mrenclave1)
+            .is_err()
+    );
 }
 
 /// 测试 MRENCLAVE 模式的严格验证
@@ -495,17 +478,16 @@ fn test_mrenclave_mode_strictness() {
     let mrsigner = [0x01u8; 32];
     let mrenclave = [0x02u8; 32];
 
-    let metadata = MasterKeyMetadata::new(
-        SealPolicy::Mrenclave,
-        mrsigner,
-        mrenclave,
-        1,
-    );
+    let metadata = MasterKeyMetadata::new(SealPolicy::Mrenclave, mrsigner, mrenclave, 1);
 
     // MRENCLAVE 模式：完全相同的测量值应该通过
     assert!(metadata.verify_compatibility(&mrsigner, &mrenclave).is_ok());
 
     // MRENCLAVE 模式：不同的 MRENCLAVE 应该失败
     let wrong_mrenclave = [0x03u8; 32];
-    assert!(metadata.verify_compatibility(&mrsigner, &wrong_mrenclave).is_err());
+    assert!(
+        metadata
+            .verify_compatibility(&mrsigner, &wrong_mrenclave)
+            .is_err()
+    );
 }

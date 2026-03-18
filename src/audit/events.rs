@@ -68,7 +68,7 @@ impl RiskTier {
             AuditAction::TokenValidate => RiskTier::Low,
             AuditAction::AuditQuery => RiskTier::High,
             AuditAction::SystemConfigChange => RiskTier::Critical,
-            AuditAction:: TeeAttestation => RiskTier::Medium,
+            AuditAction::TeeAttestation => RiskTier::Medium,
             AuditAction::KeyRotation => RiskTier::Critical,
             AuditAction::AdminLogin => RiskTier::Critical,
             AuditAction::FailedAuth => RiskTier::High,
@@ -362,7 +362,7 @@ impl AuditEntry {
 
     /// 计算条目的内容哈希（用于 Merkle Tree）
     pub fn content_hash(&self) -> [u8; 32] {
-        use ring::digest::{digest, SHA256};
+        use ring::digest::{SHA256, digest};
         let json = self.to_json().unwrap_or_default();
         let digest = digest(&SHA256, json.as_bytes());
         let mut hash = [0u8; 32];
@@ -441,19 +441,34 @@ impl PiiRedactor {
 
         if key_lower.contains("ssn") || key_lower.contains("social") {
             Self::redact_ssn(value)
-        } else if key_lower.contains("password") || key_lower.contains("passwd") || key_lower.contains("pwd") {
+        } else if key_lower.contains("password")
+            || key_lower.contains("passwd")
+            || key_lower.contains("pwd")
+        {
             Self::redact_password(value)
-        } else if key_lower.contains("api_key") || key_lower.contains("apikey") || key_lower.contains("secret") {
+        } else if key_lower.contains("api_key")
+            || key_lower.contains("apikey")
+            || key_lower.contains("secret")
+        {
             Self::redact_api_key(value)
-        } else if key_lower.contains("credit_card") || key_lower.contains("card_number") || key_lower.contains("ccv") {
+        } else if key_lower.contains("credit_card")
+            || key_lower.contains("card_number")
+            || key_lower.contains("ccv")
+        {
             Self::redact_credit_card(value)
         } else if key_lower.contains("email") || key_lower.contains("mail") {
             Self::redact_email(value)
-        } else if key_lower.contains("phone") || key_lower.contains("mobile") || key_lower.contains("tel") {
+        } else if key_lower.contains("phone")
+            || key_lower.contains("mobile")
+            || key_lower.contains("tel")
+        {
             Self::redact_phone(value)
         } else if key_lower.contains("address") || key_lower.contains("addr") {
             Self::redact_address(value)
-        } else if key_lower.contains("key") || key_lower.contains("private") || key_lower.contains("token") {
+        } else if key_lower.contains("key")
+            || key_lower.contains("private")
+            || key_lower.contains("token")
+        {
             Self::redact_key(value)
         } else {
             Self::plain(value)
@@ -472,7 +487,7 @@ fn current_timestamp_millis() -> u64 {
 
 /// 计算用户 ID 的 SHA-256 哈希
 pub fn hash_user_id(user_id: &str) -> String {
-    use ring::digest::{digest, SHA256};
+    use ring::digest::{SHA256, digest};
     let digest = digest(&SHA256, user_id.as_bytes());
     hex::encode(digest.as_ref())
 }
@@ -499,10 +514,22 @@ mod tests {
 
     #[test]
     fn test_risk_tier_from_action() {
-        assert_eq!(RiskTier::from_action(&AuditAction::TokenValidate), RiskTier::Low);
-        assert_eq!(RiskTier::from_action(&AuditAction::CredentialAccess), RiskTier::Medium);
-        assert_eq!(RiskTier::from_action(&AuditAction::CredentialDecrypt), RiskTier::High);
-        assert_eq!(RiskTier::from_action(&AuditAction::KeyRotation), RiskTier::Critical);
+        assert_eq!(
+            RiskTier::from_action(&AuditAction::TokenValidate),
+            RiskTier::Low
+        );
+        assert_eq!(
+            RiskTier::from_action(&AuditAction::CredentialAccess),
+            RiskTier::Medium
+        );
+        assert_eq!(
+            RiskTier::from_action(&AuditAction::CredentialDecrypt),
+            RiskTier::High
+        );
+        assert_eq!(
+            RiskTier::from_action(&AuditAction::KeyRotation),
+            RiskTier::Critical
+        );
     }
 
     #[test]
@@ -522,7 +549,10 @@ mod tests {
     #[test]
     fn test_redacted_param_display() {
         assert_eq!(RedactedParam::SsnRedacted.to_string(), "[SSN_REDACTED]");
-        assert_eq!(RedactedParam::PasswordRedacted.to_string(), "[PASSWORD_REDACTED]");
+        assert_eq!(
+            RedactedParam::PasswordRedacted.to_string(),
+            "[PASSWORD_REDACTED]"
+        );
         assert_eq!(RedactedParam::Plain("test".to_string()).to_string(), "test");
     }
 
@@ -561,7 +591,10 @@ mod tests {
             "mrenclave_abc",
             "jti_xyz",
         )
-        .with_param("credential_id", RedactedParam::Plain("cred_123".to_string()))
+        .with_param(
+            "credential_id",
+            RedactedParam::Plain("cred_123".to_string()),
+        )
         .with_param("ssn", RedactedParam::SsnRedacted);
 
         let params = entry.params.as_ref().unwrap();
@@ -682,6 +715,9 @@ mod tests {
         )
         .with_error("Decryption failed: invalid key");
 
-        assert_eq!(entry.error_message.unwrap(), "Decryption failed: invalid key");
+        assert_eq!(
+            entry.error_message.unwrap(),
+            "Decryption failed: invalid key"
+        );
     }
 }

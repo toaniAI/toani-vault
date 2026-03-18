@@ -138,9 +138,8 @@ async fn test_warm_instance_startup_time() {
     let warmup_iterations = 5;
     for i in 0..warmup_iterations {
         let request = create_test_session_request();
-        let (_, elapsed) = measure_time_async(|| async {
-            pool.acquire_session(request).await
-        }).await;
+        let (_, elapsed) =
+            measure_time_async(|| async { pool.acquire_session(request).await }).await;
 
         println!("  预热迭代 {}: {}", i + 1, format_duration(elapsed));
     }
@@ -154,9 +153,8 @@ async fn test_warm_instance_startup_time() {
 
     for i in 0..test_iterations {
         let request = create_test_session_request();
-        let (result, elapsed) = measure_time_async(|| async {
-            pool.acquire_session(request).await
-        }).await;
+        let (result, elapsed) =
+            measure_time_async(|| async { pool.acquire_session(request).await }).await;
 
         if result.is_ok() {
             success_count += 1;
@@ -176,7 +174,10 @@ async fn test_warm_instance_startup_time() {
     println!("    平均: {}", format_duration(avg_elapsed));
     println!("    最小: {}", format_duration(min_elapsed));
     println!("    最大: {}", format_duration(max_elapsed));
-    println!("    成功率: {}%", (success_count as f64 / test_iterations as f64) * 100.0);
+    println!(
+        "    成功率: {}%",
+        (success_count as f64 / test_iterations as f64) * 100.0
+    );
     println!("    目标: ≤ {} ms", WARM_STARTUP_TARGET_MS);
 
     // 清理
@@ -186,8 +187,10 @@ async fn test_warm_instance_startup_time() {
     // 注意: 由于沙箱实现可能依赖外部进程，这里使用较宽松的检查
     // 实际生产环境应该更严格
     if avg_elapsed > target_duration {
-        println!("  ⚠️  警告: 热实例启动时间 ({:?}) 超过目标 ({:?})",
-                 avg_elapsed, target_duration);
+        println!(
+            "  ⚠️  警告: 热实例启动时间 ({:?}) 超过目标 ({:?})",
+            avg_elapsed, target_duration
+        );
         // 不强制失败，只记录警告（因为实际性能取决于系统环境）
     }
 }
@@ -222,9 +225,8 @@ async fn test_cold_start_time() {
         let pool = Arc::new(NsjailSandboxPool::new(create_performance_config()));
 
         let request = create_test_session_request();
-        let (result, elapsed) = measure_time_async(|| async {
-            pool.acquire_session(request).await
-        }).await;
+        let (result, elapsed) =
+            measure_time_async(|| async { pool.acquire_session(request).await }).await;
 
         if result.is_ok() {
             success_count += 1;
@@ -247,13 +249,18 @@ async fn test_cold_start_time() {
     println!("    平均: {}", format_duration(avg_elapsed));
     println!("    最小: {}", format_duration(min_elapsed));
     println!("    最大: {}", format_duration(max_elapsed));
-    println!("    成功率: {}%", (success_count as f64 / test_iterations as f64) * 100.0);
+    println!(
+        "    成功率: {}%",
+        (success_count as f64 / test_iterations as f64) * 100.0
+    );
     println!("    目标: ≤ {} ms", COLD_START_TARGET_MS);
 
     // 断言: 平均启动时间应小于目标
     if avg_elapsed > target_duration {
-        println!("  ⚠️  警告: 冷启动时间 ({:?}) 超过目标 ({:?})",
-                 avg_elapsed, target_duration);
+        println!(
+            "  ⚠️  警告: 冷启动时间 ({:?}) 超过目标 ({:?})",
+            avg_elapsed, target_duration
+        );
     }
 }
 
@@ -292,9 +299,8 @@ async fn test_concurrent_sessions() {
                     metadata: None,
                 };
 
-                let (result, elapsed) = measure_time_async(|| async {
-                    pool.acquire_session(request).await
-                }).await;
+                let (result, elapsed) =
+                    measure_time_async(|| async { pool.acquire_session(request).await }).await;
 
                 (i, result.is_ok(), elapsed)
             });
@@ -316,8 +322,12 @@ async fn test_concurrent_sessions() {
                 max_time = max_time.max(elapsed);
 
                 if id < 3 || id == concurrency - 1 {
-                    println!("    任务 {}: 成功={}, 时间={}",
-                             id, success, format_duration(elapsed));
+                    println!(
+                        "    任务 {}: 成功={}, 时间={}",
+                        id,
+                        success,
+                        format_duration(elapsed)
+                    );
                 }
             }
         }
@@ -336,9 +346,12 @@ async fn test_concurrent_sessions() {
         println!("      平均响应: {}", format_duration(avg_time));
         println!("      最小响应: {}", format_duration(min_time));
         println!("      最大响应: {}", format_duration(max_time));
-        println!("      成功率: {}/{} ({:.1}%)",
-                 success_count, concurrency,
-                 (success_count as f64 / concurrency as f64) * 100.0);
+        println!(
+            "      成功率: {}/{} ({:.1}%)",
+            success_count,
+            concurrency,
+            (success_count as f64 / concurrency as f64) * 100.0
+        );
         println!("      吞吐量: {:.2} 会话/秒", throughput);
 
         // 检查是否达到目标
@@ -346,8 +359,10 @@ async fn test_concurrent_sessions() {
             if success_count >= CONCURRENT_SESSIONS_TARGET {
                 println!("    ✅ 达到并发目标: {} 会话", success_count);
             } else {
-                println!("    ⚠️  未达到并发目标: {}/{} 会话",
-                         success_count, CONCURRENT_SESSIONS_TARGET);
+                println!(
+                    "    ⚠️  未达到并发目标: {}/{} 会话",
+                    success_count, CONCURRENT_SESSIONS_TARGET
+                );
             }
         }
     }
@@ -444,8 +459,10 @@ async fn test_concurrent_session_lifecycle() {
     println!("    总耗时: {}", format_duration(total_elapsed));
     println!("    成功会话: {}/{}", success_count, concurrency);
     println!("    平均获取时间: {}", format_duration(avg_acquire_time));
-    println!("    吞吐量: {:.2} 会话/秒",
-             concurrency as f64 / total_elapsed.as_secs_f64());
+    println!(
+        "    吞吐量: {:.2} 会话/秒",
+        concurrency as f64 / total_elapsed.as_secs_f64()
+    );
 
     // 清理
     let _ = pool.shutdown().await;
@@ -501,12 +518,14 @@ async fn test_memory_usage() {
         println!("    创建前内存: {} MB", before_memory / 1024 / 1024);
         println!("    创建后内存: {} MB", after_memory / 1024 / 1024);
         println!("    内存增长: {} MB", memory_increase / 1024 / 1024);
-        println!("    每会话平均: {} KB",
-                 if !sessions.is_empty() {
-                     memory_increase / sessions.len() as u64 / 1024
-                 } else {
-                     0
-                 });
+        println!(
+            "    每会话平均: {} KB",
+            if !sessions.is_empty() {
+                memory_increase / sessions.len() as u64 / 1024
+            } else {
+                0
+            }
+        );
 
         // 释放会话
         for session in &sessions {
@@ -525,9 +544,11 @@ async fn test_memory_usage() {
         // 检查内存目标
         let target_memory = MEMORY_USAGE_TARGET_MB * 1024 * 1024;
         if memory_increase > target_memory {
-            println!("    ⚠️  警告: 内存使用 ({:.1} MB) 超过目标 ({:.1} MB)",
-                     memory_increase as f64 / 1024.0 / 1024.0,
-                     MEMORY_USAGE_TARGET_MB as f64);
+            println!(
+                "    ⚠️  警告: 内存使用 ({:.1} MB) 超过目标 ({:.1} MB)",
+                memory_increase as f64 / 1024.0 / 1024.0,
+                MEMORY_USAGE_TARGET_MB as f64
+            );
         } else {
             println!("    ✅ 内存使用在目标范围内");
         }
@@ -540,7 +561,10 @@ async fn test_memory_usage() {
     println!("\n  最终内存统计:");
     println!("    初始: {} MB", baseline_memory / 1024 / 1024);
     println!("    最终: {} MB", final_memory / 1024 / 1024);
-    println!("    净增长: {} MB", final_memory.saturating_sub(baseline_memory) / 1024 / 1024);
+    println!(
+        "    净增长: {} MB",
+        final_memory.saturating_sub(baseline_memory) / 1024 / 1024
+    );
 }
 
 /// 测试内存稳定性（长时间运行）
@@ -564,9 +588,11 @@ async fn test_memory_stability() {
 
         measurements.push((elapsed, current_memory));
 
-        println!("  [{:>5}s] 内存: {} MB",
-                 elapsed.as_secs(),
-                 current_memory / 1024 / 1024);
+        println!(
+            "  [{:>5}s] 内存: {} MB",
+            elapsed.as_secs(),
+            current_memory / 1024 / 1024
+        );
 
         // 模拟一些活动
         let request = create_test_session_request();
@@ -590,7 +616,10 @@ async fn test_memory_stability() {
         println!("    最终: {} MB", last / 1024 / 1024);
         println!("    最小: {} MB", min / 1024 / 1024);
         println!("    最大: {} MB", max / 1024 / 1024);
-        println!("    变化: {} MB", (last as i64 - first as i64) / (1024 * 1024));
+        println!(
+            "    变化: {} MB",
+            (last as i64 - first as i64) / (1024 * 1024)
+        );
     }
 
     // 清理
@@ -701,10 +730,14 @@ async fn test_performance_benchmark() {
 
     // 1. 热实例启动基准
     println!("\n  [1/4] 热实例启动基准...");
-    let warm_start_times = benchmark_operation(|| async {
-        let request = create_test_session_request();
-        pool.acquire_session(request).await
-    }, 10).await;
+    let warm_start_times = benchmark_operation(
+        || async {
+            let request = create_test_session_request();
+            pool.acquire_session(request).await
+        },
+        10,
+    )
+    .await;
 
     print_benchmark_result("热实例启动", &warm_start_times, WARM_STARTUP_TARGET_MS);
 
@@ -724,8 +757,10 @@ async fn test_performance_benchmark() {
     // 3. 并发基准
     println!("\n  [3/4] 并发处理基准...");
     let concurrency_result = benchmark_concurrency(&pool, 50).await;
-    println!("    并发会话: {} 成功 / {} 总计",
-             concurrency_result.success_count, concurrency_result.total_count);
+    println!(
+        "    并发会话: {} 成功 / {} 总计",
+        concurrency_result.success_count, concurrency_result.total_count
+    );
     println!("    吞吐量: {:.2} 会话/秒", concurrency_result.throughput);
 
     // 4. 内存基准
@@ -743,22 +778,48 @@ async fn test_performance_benchmark() {
     println!("  总测试时间: {:?}", total_elapsed);
     println!();
     println!("  热实例启动:");
-    println!("    平均: {:?}", warm_start_times.iter().sum::<Duration>() / warm_start_times.len() as u32);
+    println!(
+        "    平均: {:?}",
+        warm_start_times.iter().sum::<Duration>() / warm_start_times.len() as u32
+    );
     println!("    目标: ≤ {} ms", WARM_STARTUP_TARGET_MS);
-    println!("    状态: {}", if warm_start_times.iter().sum::<Duration>() / warm_start_times.len() as u32
-                         <= Duration::from_millis(WARM_STARTUP_TARGET_MS) { "✅ 通过" } else { "⚠️  警告" });
+    println!(
+        "    状态: {}",
+        if warm_start_times.iter().sum::<Duration>() / warm_start_times.len() as u32
+            <= Duration::from_millis(WARM_STARTUP_TARGET_MS)
+        {
+            "✅ 通过"
+        } else {
+            "⚠️  警告"
+        }
+    );
     println!();
     println!("  并发处理:");
-    println!("    成功: {}/{}", concurrency_result.success_count, concurrency_result.total_count);
+    println!(
+        "    成功: {}/{}",
+        concurrency_result.success_count, concurrency_result.total_count
+    );
     println!("    目标: ≥ {} 并发", CONCURRENT_SESSIONS_TARGET);
-    println!("    状态: {}", if concurrency_result.success_count >= CONCURRENT_SESSIONS_TARGET
-                         { "✅ 通过" } else { "⚠️  警告" });
+    println!(
+        "    状态: {}",
+        if concurrency_result.success_count >= CONCURRENT_SESSIONS_TARGET {
+            "✅ 通过"
+        } else {
+            "⚠️  警告"
+        }
+    );
     println!();
     println!("  内存使用:");
     println!("    增长: {:.1} MB", memory_result.memory_increase_mb);
     println!("    目标: ≤ {} MB", MEMORY_USAGE_TARGET_MB);
-    println!("    状态: {}", if memory_result.memory_increase_mb <= MEMORY_USAGE_TARGET_MB as f64
-                         { "✅ 通过" } else { "⚠️  警告" });
+    println!(
+        "    状态: {}",
+        if memory_result.memory_increase_mb <= MEMORY_USAGE_TARGET_MB as f64 {
+            "✅ 通过"
+        } else {
+            "⚠️  警告"
+        }
+    );
     println!("  {}", &"=".repeat(60));
 
     // 清理
@@ -882,8 +943,10 @@ fn print_benchmark_result(name: &str, times: &[Duration], target_ms: u64) {
     let target = Duration::from_millis(target_ms);
     let status = if avg <= target { "✅" } else { "⚠️ " };
 
-    println!("    {}: 平均={:?} 最小={:?} 最大={:?} 目标={:?} {}",
-             name, avg, min, max, target, status);
+    println!(
+        "    {}: 平均={:?} 最小={:?} 最大={:?} 目标={:?} {}",
+        name, avg, min, max, target, status
+    );
 }
 
 fn print_duration_stats(name: &str, times: &[Duration]) {
@@ -897,8 +960,7 @@ fn print_duration_stats(name: &str, times: &[Duration]) {
     let min = times.iter().min().copied().unwrap_or(Duration::ZERO);
     let max = times.iter().max().copied().unwrap_or(Duration::ZERO);
 
-    println!("    {}: 平均={:?} 最小={:?} 最大={:?}",
-             name, avg, min, max);
+    println!("    {}: 平均={:?} 最小={:?} 最大={:?}", name, avg, min, max);
 }
 
 // ============================================================================
@@ -945,8 +1007,10 @@ async fn test_pool_configuration_performance() {
         let elapsed = start.elapsed();
         let avg_time = elapsed / test_count as u32;
 
-        println!("    {} 次获取/释放: {:?} (平均: {:?})",
-                 test_count, elapsed, avg_time);
+        println!(
+            "    {} 次获取/释放: {:?} (平均: {:?})",
+            test_count, elapsed, avg_time
+        );
 
         // 检查池状态
         let health = pool.health().await;

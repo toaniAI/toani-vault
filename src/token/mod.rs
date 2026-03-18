@@ -70,15 +70,14 @@
 
 pub mod claims;
 pub mod paseto;
+pub mod permission;
 pub mod redis_store;
 pub mod revocation;
 pub mod scope;
-pub mod permission;
 
 // 公开导出 - Claims
 pub use claims::{
-    ClaimsError, ScopeValidator, TokenClaims,
-    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS,
+    ClaimsError, DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, ScopeValidator, TokenClaims,
 };
 
 // 公开导出 - Scope 常量
@@ -90,10 +89,7 @@ pub use paseto::{
 };
 
 // 公开导出 - Redis Token 存储
-pub use redis_store::{
-    keys as token_keys,
-    RedisTokenStore, TokenMetadata, TokenStoreError,
-};
+pub use redis_store::{RedisTokenStore, TokenMetadata, TokenStoreError, keys as token_keys};
 
 // 公开导出 - Token 撤销
 pub use revocation::{
@@ -102,8 +98,8 @@ pub use revocation::{
 
 // 公开导出 - Scope 权限系统 (EP3-Story3.3)
 pub use scope::{
-    constants as scope_constants,
     Operation, PermissionChecker, RestrictedTokenContext, Scope, ScopeError, ScopeSet,
+    constants as scope_constants,
 };
 
 // 公开导出 - 权限检查 (EP3-Story3.3)
@@ -186,11 +182,7 @@ pub fn create_token(
 ///
 /// # 返回值
 /// TokenValidationResult - 验证结果
-pub fn quick_verify(
-    token: &str,
-    key: &PasetoKey,
-    tenant_id: &str,
-) -> TokenValidationResult {
+pub fn quick_verify(token: &str, key: &PasetoKey, tenant_id: &str) -> TokenValidationResult {
     match PasetoToken::verify(token, key, tenant_id) {
         Ok(claims) => TokenValidationResult::Valid(claims),
         Err(TokenError::Expired) | Err(TokenError::ClaimsError(ClaimsError::Expired)) => {
@@ -212,12 +204,7 @@ mod tests {
 
     #[test]
     fn test_create_token() {
-        let (claims, key) = create_token(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let (claims, key) = create_token("user_123", "tenant_456", "credential:read", true);
 
         assert_eq!(claims.sub, "user_123");
         assert_eq!(claims.aud, "tenant_456");
@@ -228,12 +215,7 @@ mod tests {
 
     #[test]
     fn test_quick_verify_valid() {
-        let (claims, key) = create_token(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let (claims, key) = create_token("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
         let result = quick_verify(&token, &key, "tenant_456");
@@ -262,12 +244,8 @@ mod tests {
 
     #[test]
     fn test_token_validation_result() {
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let valid = TokenValidationResult::Valid(claims.clone());
         assert!(valid.is_valid());

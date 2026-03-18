@@ -14,9 +14,7 @@
 //! ```
 
 use crate::crypto::{
-    constants::NONCE_LENGTH,
-    CryptoError, EncryptedBlob, KeyHandle, KeyHierarchy,
-    KeyPurpose,
+    CryptoError, EncryptedBlob, KeyHandle, KeyHierarchy, KeyPurpose, constants::NONCE_LENGTH,
 };
 use crate::tee::sealing::{SealPolicy, SealedStorage, SealingKey, SealingService};
 use std::collections::HashMap;
@@ -164,6 +162,7 @@ pub struct UserKeyCache {
 
 /// 缓存的用户密钥
 #[derive(Clone)]
+#[allow(dead_code)]
 struct CachedUserKey {
     /// 密钥句柄
     handle: KeyHandle,
@@ -240,7 +239,7 @@ impl Enclave {
             .map_err(|e| EnclaveError::KeyInitializationFailed(e.to_string()))?;
 
         // 2. 派生 L1 Master Key
-        let l1_handle = self
+        let _l1_handle = self
             .key_hierarchy
             .initialize_master_key(&crate::crypto::HardwareRootKey::from_sgx_sealing_key(
                 *l0_key.as_bytes(),
@@ -388,10 +387,10 @@ impl Enclave {
         plaintext: &[u8],
     ) -> Result<EncryptedBlob, EnclaveError> {
         use aes_gcm::{
-            aead::{Aead, AeadCore, KeyInit, OsRng},
             Aes256Gcm,
+            aead::{Aead, KeyInit},
         };
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
         self.ensure_running()?;
 
@@ -465,10 +464,10 @@ impl Enclave {
         blob: &EncryptedBlob,
     ) -> Result<Vec<u8>, EnclaveError> {
         use aes_gcm::{
-            aead::{Aead, KeyInit},
             Aes256Gcm,
+            aead::{Aead, KeyInit},
         };
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
         self.ensure_running()?;
 
@@ -490,9 +489,9 @@ impl Enclave {
             .map_err(|_| EnclaveError::DecryptionFailed("Invalid nonce encoding".to_string()))?;
 
         // 解析密文
-        let mut ciphertext = URL_SAFE_NO_PAD
-            .decode(&blob.ciphertext)
-            .map_err(|_| EnclaveError::DecryptionFailed("Invalid ciphertext encoding".to_string()))?;
+        let mut ciphertext = URL_SAFE_NO_PAD.decode(&blob.ciphertext).map_err(|_| {
+            EnclaveError::DecryptionFailed("Invalid ciphertext encoding".to_string())
+        })?;
 
         // 解析 auth tag
         let auth_tag = URL_SAFE_NO_PAD
@@ -529,12 +528,16 @@ impl Enclave {
     pub async fn cleanup_expired_cache(&self) -> Result<usize, EnclaveError> {
         let mut cache = match tokio::time::timeout(
             Duration::from_millis(LOCK_TIMEOUT_MS),
-            self.user_key_cache.write()
-        ).await {
+            self.user_key_cache.write(),
+        )
+        .await
+        {
             Ok(guard) => guard,
-            Err(_) => return Err(EnclaveError::LockTimeout(
-                "写入锁获取超时，可能存在死锁".to_string()
-            )),
+            Err(_) => {
+                return Err(EnclaveError::LockTimeout(
+                    "写入锁获取超时，可能存在死锁".to_string(),
+                ));
+            }
         };
         let now = current_timestamp();
         let ttl = cache.default_ttl;
@@ -558,12 +561,16 @@ impl Enclave {
     pub async fn get_cache_stats(&self) -> Result<CacheStats, EnclaveError> {
         let cache = match tokio::time::timeout(
             Duration::from_millis(LOCK_TIMEOUT_MS),
-            self.user_key_cache.read()
-        ).await {
+            self.user_key_cache.read(),
+        )
+        .await
+        {
             Ok(guard) => guard,
-            Err(_) => return Err(EnclaveError::LockTimeout(
-                "读取锁获取超时，可能存在死锁".to_string()
-            )),
+            Err(_) => {
+                return Err(EnclaveError::LockTimeout(
+                    "读取锁获取超时，可能存在死锁".to_string(),
+                ));
+            }
         };
         let now = current_timestamp();
         let ttl = cache.default_ttl;
@@ -596,7 +603,7 @@ impl Enclave {
 
     /// 生成测量值（模拟）
     fn generate_measurement(&mut self) {
-        use ring::digest::{digest, SHA256};
+        use ring::digest::{SHA256, digest};
 
         // 计算模拟的 MRENCLAVE
         let enclave_data = format!("{}-v{}", self.config.name, env!("CARGO_PKG_VERSION"));
@@ -692,7 +699,9 @@ impl std::fmt::Display for EnclaveError {
             EnclaveError::AuthenticationFailed => write!(f, "Authentication failed"),
             EnclaveError::SealingFailed(msg) => write!(f, "Sealing failed: {}", msg),
             EnclaveError::StorageError(msg) => write!(f, "Storage error: {}", msg),
-            EnclaveError::LockTimeout(msg) => write!(f, "Lock timeout (possible deadlock): {}", msg),
+            EnclaveError::LockTimeout(msg) => {
+                write!(f, "Lock timeout (possible deadlock): {}", msg)
+            }
             EnclaveError::InternalError(msg) => write!(f, "Internal error: {}", msg),
         }
     }
@@ -738,6 +747,7 @@ fn current_timestamp() -> u64 {
 /// 异步锁获取辅助函数
 ///
 /// 带超时的锁获取，防止死锁
+#[allow(dead_code)]
 async fn acquire_read_lock<T>(
     lock: &RwLock<T>,
 ) -> Result<tokio::sync::RwLockReadGuard<'_, T>, EnclaveError> {
@@ -749,6 +759,7 @@ async fn acquire_read_lock<T>(
     }
 }
 
+#[allow(dead_code)]
 async fn acquire_write_lock<T>(
     lock: &RwLock<T>,
 ) -> Result<tokio::sync::RwLockWriteGuard<'_, T>, EnclaveError> {
@@ -809,7 +820,7 @@ fn acquire_write_lock_sync<T>(
 
 /// 派生缓存键
 fn derive_cache_key(tenant_id: &str, user_id: &str) -> KeyHandle {
-    use ring::digest::{digest, SHA256};
+    use ring::digest::{SHA256, digest};
 
     let data = format!("{}:{}", tenant_id, user_id);
     let hash = digest(&SHA256, data.as_bytes());
@@ -927,7 +938,7 @@ mod tests {
 
     #[test]
     fn test_enclave_tamper_detection() {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
         let config = EnclaveConfig {
             debug_mode: true,
@@ -946,9 +957,7 @@ mod tests {
         let mut tampered_blob = blob.clone();
 
         // 解码、篡改、重新编码
-        let mut ciphertext_bytes = URL_SAFE_NO_PAD
-            .decode(&tampered_blob.ciphertext)
-            .unwrap();
+        let mut ciphertext_bytes = URL_SAFE_NO_PAD.decode(&tampered_blob.ciphertext).unwrap();
         if !ciphertext_bytes.is_empty() {
             ciphertext_bytes[0] ^= 0xFF; // 翻转第一个字节
         }

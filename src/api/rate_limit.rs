@@ -6,12 +6,11 @@
 //! - CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS: 时间窗口（秒）(默认: 60)
 
 use axum::{
-    body::Body,
+    Json,
     extract::{ConnectInfo, Request},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -71,10 +70,7 @@ impl RateLimitError {
     pub fn new(retry_after: u64) -> Self {
         Self {
             error: "rate_limit_exceeded".to_string(),
-            message: format!(
-                "请求频率超过限制，请在 {} 秒后重试",
-                retry_after
-            ),
+            message: format!("请求频率超过限制，请在 {} 秒后重试", retry_after),
             retry_after_seconds: retry_after,
         }
     }
@@ -84,7 +80,10 @@ impl IntoResponse for RateLimitError {
     fn into_response(self) -> Response {
         (
             StatusCode::TOO_MANY_REQUESTS,
-            [(axum::http::header::RETRY_AFTER, self.retry_after_seconds.to_string())],
+            [(
+                axum::http::header::RETRY_AFTER,
+                self.retry_after_seconds.to_string(),
+            )],
             Json(self),
         )
             .into_response()
@@ -156,10 +155,7 @@ impl RateLimitStore {
                     // 在窗口内，检查是否超过限制
                     if record.count >= self.config.requests_per_window {
                         let elapsed = record.window_start.elapsed();
-                        let retry_after = window_duration
-                            .saturating_sub(elapsed)
-                            .as_secs()
-                            .max(1);
+                        let retry_after = window_duration.saturating_sub(elapsed).as_secs().max(1);
                         return Err(retry_after);
                     }
                     record.count += 1;
@@ -229,15 +225,9 @@ fn extract_client_ip(request: &Request) -> String {
 }
 
 /// 速率限制中间件
-pub async fn rate_limit_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn rate_limit_middleware(request: Request, next: Next) -> Response {
     // 从请求扩展中获取速率限制存储
-    let store = request
-        .extensions()
-        .get::<RateLimitStore>()
-        .cloned();
+    let store = request.extensions().get::<RateLimitStore>().cloned();
 
     let Some(store) = store else {
         // 如果没有配置速率限制，直接放行

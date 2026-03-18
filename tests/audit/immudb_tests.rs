@@ -8,9 +8,8 @@
 //! ```
 
 use vault_service::audit::{
-    AuditAction, AuditEntry, ImmuDbAuditStore, ImmuDbClient, ImmuDbConfig,
-    ImmuDbState, ImmuDbStorage, ImmuDbStoreConfig, Outcome, QueryOptions, SignedAuditEntry,
-    SigningKeyPair,
+    AuditAction, AuditEntry, ImmuDbAuditStore, ImmuDbClient, ImmuDbConfig, ImmuDbState,
+    ImmuDbStorage, ImmuDbStoreConfig, Outcome, QueryOptions, SignedAuditEntry, SigningKeyPair,
 };
 
 /// 创建测试用的 SignedAuditEntry
@@ -111,7 +110,10 @@ mod immudb_client_tests {
         let signed_entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
 
         // 存储条目
-        let stored = client.store_entry(&signed_entry).await.expect("Failed to store entry");
+        let stored = client
+            .store_entry(&signed_entry)
+            .await
+            .expect("Failed to store entry");
 
         assert_eq!(stored.transaction_id, 1);
         assert!(!stored.state_hash.is_empty());
@@ -133,7 +135,10 @@ mod immudb_client_tests {
         // 存储多个条目
         for i in 0..5 {
             let entry = create_test_entry(i, AuditAction::TokenValidate, Outcome::Success);
-            client.store_entry(&entry).await.expect("Failed to store entry");
+            client
+                .store_entry(&entry)
+                .await
+                .expect("Failed to store entry");
         }
 
         assert_eq!(client.entry_count(), 5);
@@ -202,7 +207,10 @@ mod immudb_client_tests {
         let entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
         client.store_entry(&entry).await.expect("Failed to store");
 
-        let proof = client.verify_entry("audit:0").await.expect("Failed to verify");
+        let proof = client
+            .verify_entry("audit:0")
+            .await
+            .expect("Failed to verify");
         assert!(proof.verified);
         assert_eq!(proof.transaction_id, 1);
         assert!(!proof.root_hash.is_empty());
@@ -244,7 +252,9 @@ mod immudb_storage_tests {
     #[tokio::test]
     async fn test_storage_store_and_retrieve() {
         let config = create_test_config();
-        let mut storage = ImmuDbStorage::new(config).await.expect("Failed to create storage");
+        let mut storage = ImmuDbStorage::new(config)
+            .await
+            .expect("Failed to create storage");
 
         let entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
 
@@ -263,7 +273,9 @@ mod immudb_storage_tests {
     #[tokio::test]
     async fn test_storage_verify() {
         let config = create_test_config();
-        let storage = ImmuDbStorage::new(config).await.expect("Failed to create storage");
+        let storage = ImmuDbStorage::new(config)
+            .await
+            .expect("Failed to create storage");
 
         let is_valid = storage.verify().await.expect("Failed to verify");
         assert!(is_valid);
@@ -272,7 +284,9 @@ mod immudb_storage_tests {
     #[tokio::test]
     async fn test_storage_stats() {
         let config = create_test_config();
-        let storage = ImmuDbStorage::new(config).await.expect("Failed to create storage");
+        let storage = ImmuDbStorage::new(config)
+            .await
+            .expect("Failed to create storage");
 
         let stats = storage.stats();
         assert_eq!(stats.cached_entries, 0);
@@ -331,7 +345,10 @@ mod immudb_audit_store_tests {
             .map(|i| create_test_entry(i, AuditAction::TokenValidate, Outcome::Success))
             .collect();
 
-        let stored = store.store_batch(&entries).await.expect("Failed to batch store");
+        let stored = store
+            .store_batch(&entries)
+            .await
+            .expect("Failed to batch store");
         assert_eq!(stored.len(), 5);
 
         // 验证缓存
@@ -570,7 +587,10 @@ mod immudb_integration_tests {
         // 7. 获取当前状态
         let state = store.current_state().await.expect("Failed to get state");
         // tree_size 应该是 7（我们存储了 7 个条目）
-        assert_eq!(state.tree_size, 7, "Tree size should be 7 after storing 7 entries");
+        assert_eq!(
+            state.tree_size, 7,
+            "Tree size should be 7 after storing 7 entries"
+        );
         assert!(!state.state_hash.is_empty());
 
         tracing::info!("End-to-end workflow completed successfully");

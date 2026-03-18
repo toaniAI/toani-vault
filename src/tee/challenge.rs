@@ -34,12 +34,9 @@
 //! - **新鲜性保证**: 挑战有严格的时间限制（默认 5 分钟）
 //! - **不可否认**: ECDSA 签名提供强不可否认性
 
-use crate::tee::attestation::{
-    AttestationError, AttestationResult, AttestationService, AttestationSession, AttestationState,
-    Quote,
-};
+use crate::tee::attestation::{AttestationError, AttestationResult, AttestationService, Quote};
 use crate::tee::enclave::{Enclave, EnclaveError};
-use ring::digest::{digest, SHA256};
+use ring::digest::{SHA256, digest};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -369,9 +366,10 @@ impl ChallengeProtocol {
         // 触发清理
         self.maybe_cleanup();
 
-        let mut challenges = self.challenges.lock().map_err(|_| {
-            ChallengeError::InternalError("Lock poisoned".to_string())
-        })?;
+        let mut challenges = self
+            .challenges
+            .lock()
+            .map_err(|_| ChallengeError::InternalError("Lock poisoned".to_string()))?;
 
         // 检查并发限制
         if challenges.len() >= self.max_challenges {
@@ -410,9 +408,10 @@ impl ChallengeProtocol {
         response: &ChallengeResponse,
         enclave_identity: &[u8],
     ) -> Result<AttestationResult, ChallengeError> {
-        let mut challenges = self.challenges.lock().map_err(|_| {
-            ChallengeError::InternalError("Lock poisoned".to_string())
-        })?;
+        let mut challenges = self
+            .challenges
+            .lock()
+            .map_err(|_| ChallengeError::InternalError("Lock poisoned".to_string()))?;
 
         // 查找挑战
         let challenge = challenges
@@ -461,9 +460,10 @@ impl ChallengeProtocol {
 
     /// 取消挑战
     pub fn cancel_challenge(&self, challenge_id: &str) -> Result<(), ChallengeError> {
-        let mut challenges = self.challenges.lock().map_err(|_| {
-            ChallengeError::InternalError("Lock poisoned".to_string())
-        })?;
+        let mut challenges = self
+            .challenges
+            .lock()
+            .map_err(|_| ChallengeError::InternalError("Lock poisoned".to_string()))?;
 
         challenges
             .remove(challenge_id)
@@ -474,10 +474,7 @@ impl ChallengeProtocol {
 
     /// 获取活跃挑战数量
     pub fn active_challenge_count(&self) -> usize {
-        self.challenges
-            .lock()
-            .map(|c| c.len())
-            .unwrap_or(0)
+        self.challenges.lock().map(|c| c.len()).unwrap_or(0)
     }
 
     /// 清理过期挑战
@@ -844,8 +841,7 @@ mod tests {
     #[test]
     fn test_challenge_protocol_limit() {
         let attestation_service = AttestationService::new();
-        let protocol = ChallengeProtocol::new(attestation_service)
-            .with_max_challenges(3);
+        let protocol = ChallengeProtocol::new(attestation_service).with_max_challenges(3);
 
         // 创建 3 个挑战
         let _ = protocol.generate_challenge(None, None).unwrap();
@@ -893,7 +889,8 @@ mod tests {
             timestamp: current_timestamp(),
         };
 
-        let channel = SecureChannel::establish(&attestation_result, "chan_123".to_string(), 3600).unwrap();
+        let channel =
+            SecureChannel::establish(&attestation_result, "chan_123".to_string(), 3600).unwrap();
 
         assert_eq!(channel.channel_id, "chan_123");
         assert_eq!(channel.session_key.len(), CHANNEL_KEY_LENGTH);
@@ -911,7 +908,8 @@ mod tests {
             timestamp: current_timestamp(),
         };
 
-        let channel = SecureChannel::establish(&attestation_result, "chan_123".to_string(), 0).unwrap();
+        let channel =
+            SecureChannel::establish(&attestation_result, "chan_123".to_string(), 0).unwrap();
 
         // 立即过期
         assert!(!channel.is_valid());
@@ -943,7 +941,10 @@ mod tests {
 
         // 第二次验证应该失败（挑战已使用）
         let result = verifier.verify_response(&response, &identity);
-        assert!(matches!(result.unwrap_err(), ChallengeError::ChallengeNotFound));
+        assert!(matches!(
+            result.unwrap_err(),
+            ChallengeError::ChallengeNotFound
+        ));
     }
 
     /// 生成 Enclave 身份标识（辅助函数）

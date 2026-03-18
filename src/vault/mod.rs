@@ -64,6 +64,7 @@ pub mod backend;
 pub mod client;
 pub mod models;
 pub mod storage;
+pub mod version;
 
 // 重新导出核心类型
 pub use models::{
@@ -71,17 +72,22 @@ pub use models::{
     EncryptedPayload, ServiceId, TenantId, UserId, VaultEntry, VaultError,
 };
 
-pub use storage::{
-    create_credential, CredentialVault, InMemoryStorage, StorageBackend,
-};
+pub use storage::{CredentialVault, InMemoryStorage, StorageBackend, create_credential};
 
 // 重新导出 Vault 后端类型
 pub use backend::{
-    check_vault_health, VaultBackendError, VaultHealthStatus, VaultStorageBackend,
-    VaultStorageBackendBuilder,
+    VaultBackendError, VaultHealthStatus, VaultStorageBackend, VaultStorageBackendBuilder,
+    check_vault_health,
 };
 
 pub use client::{VaultClientError, VaultConfig, VaultCredentialData, VaultKvClient};
+
+// 重新导出版本控制类型
+pub use version::{
+    CredentialVersion, DiffType, MetadataChange, RollbackRequest, RollbackResponse,
+    UpdateCredentialRequest, UpdateCredentialResponse, VersionDetail, VersionDiff, VersionHistory,
+    VersionMetadata, VersionSummary,
+};
 
 #[cfg(test)]
 mod tests {

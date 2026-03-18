@@ -40,8 +40,9 @@ pub use config::{
     TenantConfigError, TenantConfigManager, TenantConfigStore, TenantSettings, TenantStatus,
 };
 pub use service::{
-    CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, TenantCreationError, TenantManager,
-    TenantManagerBuilder, TenantProvisioningError, TenantService, UpdateTenantRequest,
+    CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, TenantCreationError,
+    TenantManager, TenantManagerBuilder, TenantProvisioningError, TenantService,
+    UpdateTenantRequest,
 };
 
 use chrono::{DateTime, Utc};
@@ -287,10 +288,7 @@ mod tests {
 
     #[test]
     fn test_tenant_role_from_str() {
-        assert_eq!(
-            "admin".parse::<TenantRole>().unwrap(),
-            TenantRole::Admin
-        );
+        assert_eq!("admin".parse::<TenantRole>().unwrap(), TenantRole::Admin);
         assert_eq!(
             "read-only".parse::<TenantRole>().unwrap(),
             TenantRole::ReadOnly

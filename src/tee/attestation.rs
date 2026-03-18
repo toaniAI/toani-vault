@@ -20,12 +20,10 @@
 //! - ** freshness**: 随机挑战防止重放攻击
 //! - **不可否认**: ECDSA 签名提供不可否认性
 
-use crate::crypto::{constants::KEY_LENGTH, CryptoError};
+use crate::crypto::CryptoError;
 use crate::tee::enclave::{Enclave, EnclaveError};
-use ring::digest::{digest, SHA256};
-use ring::signature::{self, UnparsedPublicKey};
+use ring::digest::{SHA256, digest};
 use std::time::{SystemTime, UNIX_EPOCH};
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// SGX Quote 版本
 pub const SGX_QUOTE_VERSION: u16 = 3;
@@ -91,10 +89,18 @@ pub enum AttestationError {
 impl std::fmt::Display for AttestationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AttestationError::QuoteGenerationFailed(msg) => write!(f, "Quote generation failed: {}", msg),
-            AttestationError::QuoteVerificationFailed(msg) => write!(f, "Quote verification failed: {}", msg),
-            AttestationError::SignatureVerificationFailed => write!(f, "Signature verification failed"),
-            AttestationError::ChallengeVerificationFailed => write!(f, "Challenge verification failed"),
+            AttestationError::QuoteGenerationFailed(msg) => {
+                write!(f, "Quote generation failed: {}", msg)
+            }
+            AttestationError::QuoteVerificationFailed(msg) => {
+                write!(f, "Quote verification failed: {}", msg)
+            }
+            AttestationError::SignatureVerificationFailed => {
+                write!(f, "Signature verification failed")
+            }
+            AttestationError::ChallengeVerificationFailed => {
+                write!(f, "Challenge verification failed")
+            }
             AttestationError::MeasurementMismatch => write!(f, "Measurement mismatch"),
             AttestationError::QuoteExpired => write!(f, "Quote expired"),
             AttestationError::InvalidQuoteFormat => write!(f, "Invalid quote format"),
@@ -146,7 +152,9 @@ impl ReportData {
 
     /// 创建空的 Report Data
     pub fn empty() -> Self {
-        Self { data: [0u8; SGX_REPORT_DATA_LEN] }
+        Self {
+            data: [0u8; SGX_REPORT_DATA_LEN],
+        }
     }
 
     /// 验证 Report Data 是否包含预期的挑战绑定
@@ -251,7 +259,10 @@ impl Quote {
         offset += 2;
 
         let epid_group_id = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -262,7 +273,10 @@ impl Quote {
         offset += 2;
 
         let xeid = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -285,7 +299,10 @@ impl Quote {
         }
 
         let signature_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -424,7 +441,10 @@ impl ReportBody {
         offset += 16;
 
         let miscselect = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -482,7 +502,9 @@ impl ReportBody {
             isvprodid,
             isvsvn,
             reserved4,
-            report_data: ReportData { data: report_data_bytes },
+            report_data: ReportData {
+                data: report_data_bytes,
+            },
         })
     }
 }
@@ -555,7 +577,10 @@ impl QuoteSignature {
             return Err(AttestationError::InvalidQuoteFormat);
         }
         let qe_report_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -575,7 +600,10 @@ impl QuoteSignature {
             return Err(AttestationError::InvalidQuoteFormat);
         }
         let auth_data_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -587,7 +615,10 @@ impl QuoteSignature {
 
         // QE Certification Data
         let cert_data_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -805,7 +836,10 @@ impl AttestationService {
         self.verify_measurement(quote)?;
 
         // 4. 验证挑战绑定
-        if !quote.report_data().verify_binding(challenge, enclave_identity) {
+        if !quote
+            .report_data()
+            .verify_binding(challenge, enclave_identity)
+        {
             return Err(AttestationError::ChallengeVerificationFailed);
         }
 
@@ -843,10 +877,7 @@ impl AttestationService {
 
         // 检查 MRSIGNER
         if !self.allowed_mrsigners.is_empty() {
-            let mrsigner_match = self
-                .allowed_mrsigners
-                .iter()
-                .any(|m| m == quote.mrsigner());
+            let mrsigner_match = self.allowed_mrsigners.iter().any(|m| m == quote.mrsigner());
             if mrsigner_match {
                 return Ok(());
             }
@@ -1070,7 +1101,9 @@ fn generate_report_body(
 }
 
 /// 生成模拟签名
-fn generate_simulated_signature(report_body: &ReportBody) -> Result<QuoteSignature, AttestationError> {
+fn generate_simulated_signature(
+    report_body: &ReportBody,
+) -> Result<QuoteSignature, AttestationError> {
     // 在实际实现中，这会调用 SGX 硬件生成真实签名
     // 这里使用哈希值模拟签名
     let report_hash = digest(&SHA256, &report_body.to_bytes());
@@ -1153,14 +1186,23 @@ mod tests {
         eprintln!("Quote signature_len field: {}", quote.signature_len);
 
         // 验证 signature.len() 和 signature_len 一致
-        assert_eq!(quote.signature.len() as u32, quote.signature_len, "signature.len() and signature_len mismatch!");
+        assert_eq!(
+            quote.signature.len() as u32,
+            quote.signature_len,
+            "signature.len() and signature_len mismatch!"
+        );
 
         // 验证序列化后有足够的字节
         let header_size = 2 + 2 + 4 + 2 + 2 + 4 + 32; // 48 bytes
         let report_body_size = 384;
         let expected_min_size = header_size + report_body_size + 4 + quote.signature.len();
         eprintln!("Expected min size: {}", expected_min_size);
-        assert!(bytes.len() >= expected_min_size, "Serialized bytes too short: {} < {}", bytes.len(), expected_min_size);
+        assert!(
+            bytes.len() >= expected_min_size,
+            "Serialized bytes too short: {} < {}",
+            bytes.len(),
+            expected_min_size
+        );
 
         let restored = Quote::from_bytes(&bytes).unwrap();
 
@@ -1222,7 +1264,9 @@ mod tests {
 
         // 测试状态转换
         let mut session = session;
-        session.transition_to(AttestationState::QuoteReceived).unwrap();
+        session
+            .transition_to(AttestationState::QuoteReceived)
+            .unwrap();
         assert_eq!(session.state, AttestationState::QuoteReceived);
 
         session.transition_to(AttestationState::Verified).unwrap();
@@ -1237,9 +1281,15 @@ mod tests {
         assert!(session.transition_to(AttestationState::Verified).is_err());
 
         // 不能从 Verified 转回
-        session.transition_to(AttestationState::QuoteReceived).unwrap();
+        session
+            .transition_to(AttestationState::QuoteReceived)
+            .unwrap();
         session.transition_to(AttestationState::Verified).unwrap();
-        assert!(session.transition_to(AttestationState::QuoteReceived).is_err());
+        assert!(
+            session
+                .transition_to(AttestationState::QuoteReceived)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1304,6 +1354,9 @@ mod tests {
         let identity = generate_enclave_identity(&enclave);
         let result = service.verify_quote(&quote, challenge, &identity);
 
-        assert!(matches!(result.unwrap_err(), AttestationError::MeasurementMismatch));
+        assert!(matches!(
+            result.unwrap_err(),
+            AttestationError::MeasurementMismatch
+        ));
     }
 }

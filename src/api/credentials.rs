@@ -7,8 +7,8 @@
 //! - POST /api/v1/credentials/:id/decrypt - 解密凭证
 //! - DELETE /api/v1/credentials/:id - 删除凭证
 
-use crate::api::middleware::{require_any_scope, require_scope, TokenScope, ValidatedToken};
-use crate::crypto::cipher::{decrypt_credential, encrypt_credential, EncryptedBlob};
+use crate::api::middleware::{TokenScope, ValidatedToken, require_any_scope, require_scope};
+use crate::crypto::cipher::{EncryptedBlob, decrypt_credential, encrypt_credential};
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::keys::KeyPurpose;
 use crate::models::{CredentialMetadata, CredentialType};
@@ -18,10 +18,10 @@ use crate::vault::models::{
 };
 use crate::vault::storage::CredentialVault;
 use axum::{
+    Extension, Json,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -44,7 +44,13 @@ pub trait AuditLogger: Send + Sync {
     fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str);
     fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str);
     fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str);
-    fn log_decryption_attempt(&self, tenant_id: &str, user_id: &str, credential_id: &str, success: bool);
+    fn log_decryption_attempt(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        success: bool,
+    );
 }
 
 /// 默认审计日志记录器（打印到控制台）
@@ -54,28 +60,43 @@ impl AuditLogger for DefaultAuditLogger {
     fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         log::info!(
             "[AUDIT] Credential created - tenant: {}, user: {}, credential: {}",
-            tenant_id, user_id, credential_id
+            tenant_id,
+            user_id,
+            credential_id
         );
     }
 
     fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         log::info!(
             "[AUDIT] Credential accessed - tenant: {}, user: {}, credential: {}",
-            tenant_id, user_id, credential_id
+            tenant_id,
+            user_id,
+            credential_id
         );
     }
 
     fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         log::info!(
             "[AUDIT] Credential deleted - tenant: {}, user: {}, credential: {}",
-            tenant_id, user_id, credential_id
+            tenant_id,
+            user_id,
+            credential_id
         );
     }
 
-    fn log_decryption_attempt(&self, tenant_id: &str, user_id: &str, credential_id: &str, success: bool) {
+    fn log_decryption_attempt(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        success: bool,
+    ) {
         log::info!(
             "[AUDIT] Decryption attempt - tenant: {}, user: {}, credential: {}, success: {}",
-            tenant_id, user_id, credential_id, success
+            tenant_id,
+            user_id,
+            credential_id,
+            success
         );
     }
 }
@@ -209,8 +230,8 @@ async fn encrypt_credential_in_tee(
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
     // 序列化明文
-    let plaintext_bytes = serde_json::to_vec(plaintext)
-        .map_err(|e| format!("明文序列化失败: {}", e))?;
+    let plaintext_bytes =
+        serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {}", e))?;
 
     // 派生 L3 密钥
     // 使用 user_id.hash() 保持与解密流程一致
@@ -222,7 +243,11 @@ async fn encrypt_credential_in_tee(
 
         // 使用预生成的 credential_id 派生密钥，确保与存储的 ID 一致
         hierarchy
-            .derive_credential_key(&l2_key, credential_id.as_str(), KeyPurpose::CredentialEncryption)
+            .derive_credential_key(
+                &l2_key,
+                credential_id.as_str(),
+                KeyPurpose::CredentialEncryption,
+            )
             .map_err(|e| format!("L3 密钥派生失败: {}", e))?
     };
 
@@ -365,41 +390,32 @@ pub async fn decrypt_credential_endpoint(
     // 在 TEE 内解密密文
     let plaintext_bytes = match decrypt_credential_in_tee(&state, &entry).await {
         Ok(data) => {
-            state.audit_logger.log_decryption_attempt(
-                &token.tenant_id,
-                &token.user_id,
-                &id,
-                true,
-            );
+            state
+                .audit_logger
+                .log_decryption_attempt(&token.tenant_id, &token.user_id, &id, true);
             data
         }
         Err(e) => {
-            state.audit_logger.log_decryption_attempt(
-                &token.tenant_id,
-                &token.user_id,
-                &id,
-                false,
-            );
+            state
+                .audit_logger
+                .log_decryption_attempt(&token.tenant_id, &token.user_id, &id, false);
             return Err(ApiError::new("internal_error", e));
         }
     };
 
     // 解析明文为 JSON
-    let plaintext_data: serde_json::Value =
-        match serde_json::from_slice(&plaintext_bytes) {
-            Ok(v) => v,
-            Err(_) => {
-                match String::from_utf8(plaintext_bytes) {
-                    Ok(s) => serde_json::Value::String(s),
-                    Err(e) => {
-                        return Err(ApiError::new(
-                            "invalid_request",
-                            format!("Failed to decode plaintext as UTF-8: {}", e)
-                        ));
-                    }
-                }
+    let plaintext_data: serde_json::Value = match serde_json::from_slice(&plaintext_bytes) {
+        Ok(v) => v,
+        Err(_) => match String::from_utf8(plaintext_bytes) {
+            Ok(s) => serde_json::Value::String(s),
+            Err(e) => {
+                return Err(ApiError::new(
+                    "invalid_request",
+                    format!("Failed to decode plaintext as UTF-8: {}", e),
+                ));
             }
-        };
+        },
+    };
 
     Ok(Json(DecryptCredentialResponse {
         credential_id: entry.credential_id.as_str().to_string(),
@@ -429,10 +445,7 @@ async fn decrypt_credential_in_tee(
     let l3_key = {
         let hierarchy = state.key_hierarchy.write().await;
         let l2_key = hierarchy
-            .derive_user_vault_key(
-                entry.tenant_id.as_str(),
-                entry.user_id.hash(),
-            )
+            .derive_user_vault_key(entry.tenant_id.as_str(), entry.user_id.hash())
             .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
 
         // 注意：AES-GCM 是对称加密，解密时使用与加密相同的 KeyPurpose
@@ -447,10 +460,8 @@ async fn decrypt_credential_in_tee(
 
     // 执行解密
     let aad = format!("{}:{}", entry.tenant_id.as_str(), entry.user_id.hash());
-    let plaintext =
-        decrypt_credential(&l3_key, &blob, Some(aad.as_bytes())).map_err(|e| {
-            format!("解密失败: {:?}", e)
-        })?;
+    let plaintext = decrypt_credential(&l3_key, &blob, Some(aad.as_bytes()))
+        .map_err(|e| format!("解密失败: {:?}", e))?;
 
     Ok(plaintext)
 }
@@ -582,11 +593,9 @@ async fn encrypt_credential_update(
     credential_id: &CredentialId,
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
-    use crate::crypto::EncryptedBlob;
-
     // 序列化明文
-    let plaintext_bytes = serde_json::to_vec(plaintext)
-        .map_err(|e| format!("明文序列化失败: {}", e))?;
+    let plaintext_bytes =
+        serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {}", e))?;
 
     // 派生 L3 密钥
     // 使用 user_id.hash() 保持与解密流程一致
@@ -597,19 +606,20 @@ async fn encrypt_credential_update(
             .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
 
         hierarchy
-            .derive_credential_key(&l2_key, credential_id.as_str(), KeyPurpose::CredentialEncryption)
+            .derive_credential_key(
+                &l2_key,
+                credential_id.as_str(),
+                KeyPurpose::CredentialEncryption,
+            )
             .map_err(|e| format!("L3 密钥派生失败: {}", e))?
     };
 
     // 执行加密
     // 使用 user_id.hash() 构建 AAD，与解密流程一致
     let aad = format!("{}:{}", tenant_id, user_id.hash());
-    let blob = crate::crypto::cipher::encrypt_credential(
-        &l3_key,
-        &plaintext_bytes,
-        Some(aad.as_bytes()),
-    )
-    .map_err(|e| format!("加密失败: {}", e))?;
+    let blob =
+        crate::crypto::cipher::encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
+            .map_err(|e| format!("加密失败: {}", e))?;
 
     Ok(EncryptedPayload::from_blob(&blob))
 }
@@ -623,18 +633,30 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/credentials", get(list_credentials))
         .route("/credentials/:id", get(get_credential))
         .route("/credentials/:id", put(update_credential))
-        .route("/credentials/:id/decrypt", post(decrypt_credential_endpoint))
+        .route(
+            "/credentials/:id/decrypt",
+            post(decrypt_credential_endpoint),
+        )
         .route("/credentials/:id", delete(delete_credential))
-        .route("/credentials/:id/versions", get(crate::api::versions::get_version_history))
-        .route("/credentials/:id/versions/:version", get(crate::api::versions::get_version_detail))
-        .route("/credentials/:id/rollback", post(crate::api::versions::rollback_credential))
+        .route(
+            "/credentials/:id/versions",
+            get(crate::api::versions::get_version_history),
+        )
+        .route(
+            "/credentials/:id/versions/:version",
+            get(crate::api::versions::get_version_detail),
+        )
+        .route(
+            "/credentials/:id/rollback",
+            post(crate::api::versions::rollback_credential),
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::middleware::tests::create_mock_token;
     use crate::api::middleware::TokenScope;
+    use crate::api::middleware::tests::create_mock_token;
 
     #[test]
     fn test_scope_checking() {
@@ -654,11 +676,7 @@ mod tests {
     #[test]
     fn test_admin_scope_has_all_permissions() {
         // Admin scope 应该拥有所有权限
-        let token = create_mock_token(
-            "tenant_123",
-            "user_456",
-            vec![TokenScope::Admin],
-        );
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::Admin]);
 
         assert!(token.has_scope(&TokenScope::CredentialRead));
         assert!(token.has_scope(&TokenScope::CredentialWrite));
@@ -667,11 +685,7 @@ mod tests {
 
     #[test]
     fn test_any_scope_checking() {
-        let token = create_mock_token(
-            "tenant_123",
-            "user_456",
-            vec![TokenScope::CredentialWrite],
-        );
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
 
         assert!(token.has_any_scope(&[TokenScope::CredentialRead, TokenScope::CredentialWrite]));
         assert!(!token.has_any_scope(&[TokenScope::CredentialRead, TokenScope::CredentialDecrypt]));

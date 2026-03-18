@@ -7,17 +7,16 @@
 //! - 支持 RLS（行级安全）数据库隔离
 
 use axum::{
+    Json,
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
-use std::sync::Arc;
 
 use crate::api::context::{
-    CrossTenantErrorResponse, RequestContext, TenantIsolationError,
+    CrossTenantErrorResponse, RequestContext, RlsContext, TenantIsolationError,
 };
 use crate::api::middleware::ValidatedToken;
 
@@ -56,10 +55,7 @@ impl TenantIsolationConfig {
             enable_cross_tenant_check: true,
             enable_tenant_active_check: true,
             enable_rls_context: true,
-            public_paths: vec![
-                "/health".to_string(),
-                "/api/v1/health".to_string(),
-            ],
+            public_paths: vec!["/health".to_string(), "/api/v1/health".to_string()],
         }
     }
 
@@ -110,6 +106,7 @@ impl TenantIsolationState {
 /// 2. 创建 RequestContext 并注入到请求扩展
 /// 3. 验证租户隔离（阻止跨租户访问）
 /// 4. 可选：检查租户激活状态
+/// 5. 创建并注入 RlsContext（用于数据库 RLS）
 pub async fn tenant_isolation_middleware(
     State(state): State<TenantIsolationState>,
     mut request: Request,
@@ -151,6 +148,12 @@ pub async fn tenant_isolation_middleware(
     // 创建请求上下文
     let context = RequestContext::from_validated_token(&token);
 
+    // 创建 RLS 上下文（如果启用）
+    if state.config.enable_rls_context {
+        let rls_context = RlsContext::from_request_context(&context);
+        request.extensions_mut().insert(rls_context);
+    }
+
     // 注入请求上下文到请求扩展
     request.extensions_mut().insert(context);
 
@@ -162,12 +165,9 @@ pub async fn tenant_isolation_middleware(
 ///
 /// 用于需要验证路径参数中 tenant_id 的路由
 /// 例如: /api/v1/tenants/{tenant_id}/credentials
-pub async fn cross_tenant_check_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn cross_tenant_check_middleware(request: Request, next: Next) -> Response {
     // 从请求扩展中获取上下文
-    let context = match request.extensions().get::<RequestContext>() {
+    let _context = match request.extensions().get::<RequestContext>() {
         Some(ctx) => ctx.clone(),
         None => {
             return (
@@ -197,11 +197,14 @@ pub async fn cross_tenant_check_middleware(
 /// 租户隔离错误响应
 impl IntoResponse for TenantIsolationError {
     fn into_response(self) -> Response {
-        let (status, code, message) = match &self {
+        let (status, _code, message) = match &self {
             TenantIsolationError::CrossTenantAccessDenied { requested, actual } => (
                 StatusCode::FORBIDDEN,
                 "CROSS_TENANT_ACCESS_DENIED",
-                format!("跨租户访问被拒绝: 请求租户 '{}' 不匹配资源租户 '{}'", requested, actual),
+                format!(
+                    "跨租户访问被拒绝: 请求租户 '{}' 不匹配资源租户 '{}'",
+                    requested, actual
+                ),
             ),
             TenantIsolationError::MissingTenantContext => (
                 StatusCode::UNAUTHORIZED,
@@ -220,10 +223,8 @@ impl IntoResponse for TenantIsolationError {
             ),
         };
 
-        let response = CrossTenantErrorResponse::new(
-            format!("req_{}", uuid::Uuid::now_v7()),
-            message,
-        );
+        let response =
+            CrossTenantErrorResponse::new(format!("req_{}", uuid::Uuid::now_v7()), message);
 
         (status, Json(response)).into_response()
     }
@@ -284,11 +285,15 @@ impl RequestContextExt for Request {
     }
 
     fn tenant_id(&self) -> Option<&str> {
-        self.extensions().get::<RequestContext>().map(|c| c.tenant_id())
+        self.extensions()
+            .get::<RequestContext>()
+            .map(|c| c.tenant_id())
     }
 
     fn user_id(&self) -> Option<&str> {
-        self.extensions().get::<RequestContext>().map(|c| c.user_id())
+        self.extensions()
+            .get::<RequestContext>()
+            .map(|c| c.user_id())
     }
 
     fn has_scope(&self, scope: &str) -> bool {

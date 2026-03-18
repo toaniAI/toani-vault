@@ -6,5 +6,5 @@
 pub mod pool;
 pub mod schema;
 
-pub use pool::{DatabasePool, DatabaseConfig};
+pub use pool::{DatabaseConfig, DatabasePool};
 pub use schema::SchemaManager;

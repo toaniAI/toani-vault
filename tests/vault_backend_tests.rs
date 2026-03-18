@@ -42,7 +42,10 @@ mod vault_client_tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), VaultClientError::ConfigError(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            VaultClientError::ConfigError(_)
+        ));
     }
 
     #[test]
@@ -52,7 +55,10 @@ mod vault_client_tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), VaultClientError::ConfigError(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            VaultClientError::ConfigError(_)
+        ));
     }
 
     #[test]
@@ -121,9 +127,7 @@ mod vault_client_tests {
 
 #[cfg(test)]
 mod vault_backend_tests {
-    use vault_service::vault::backend::{
-        VaultHealthStatus, VaultStorageBackendBuilder,
-    };
+    use vault_service::vault::backend::{VaultHealthStatus, VaultStorageBackendBuilder};
     use vault_service::vault::client::VaultConfig;
 
     #[test]
@@ -157,13 +161,10 @@ mod vault_backend_tests {
 /// 测试模块：Vault 后端单元测试（无需 Vault 服务器）
 #[cfg(test)]
 mod vault_backend_unit_tests {
-    use vault_service::vault::client::VaultConfig;
-    use vault_service::vault::{
-        EncryptedPayload, TenantId, UserId, ServiceId,
-        VaultEntry,
-    };
-    use vault_service::models::CredentialType;
     use vault_service::crypto::constants;
+    use vault_service::models::CredentialType;
+    use vault_service::vault::client::VaultConfig;
+    use vault_service::vault::{EncryptedPayload, ServiceId, TenantId, UserId, VaultEntry};
 
     fn create_test_config() -> VaultConfig {
         VaultConfig {

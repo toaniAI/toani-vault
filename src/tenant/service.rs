@@ -41,12 +41,11 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{info, warn, error};
-
+use tracing::{error, info, warn};
 
 use super::{
-    DefaultRoles, FeatureFlags, PartialTenantConfig, QuotaLimits, Tenant, TenantConfig,
-    TenantConfigError, TenantConfigManager, TenantConfigStore, TenantId, TenantRole, TenantStatus,
+    DefaultRoles, PartialTenantConfig, Tenant, TenantConfig, TenantConfigError,
+    TenantConfigManager, TenantConfigStore, TenantId, TenantStatus,
 };
 
 /// 租户创建错误
@@ -240,10 +239,7 @@ pub trait TenantService: Send + Sync {
     async fn get_tenant(&self, tenant_id: &TenantId) -> Result<Option<Tenant>, TenantConfigError>;
 
     /// 根据名称查找租户
-    async fn find_tenant_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Option<Tenant>, TenantConfigError>;
+    async fn find_tenant_by_name(&self, name: &str) -> Result<Option<Tenant>, TenantConfigError>;
 
     /// 更新租户
     async fn update_tenant(
@@ -298,16 +294,15 @@ pub trait TenantService: Send + Sync {
 
 /// 内存租户存储
 pub struct MemoryTenantStorage {
-    tenants:
-        std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Tenant>>>,
+    tenants: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, Tenant>>>,
 }
 
 impl MemoryTenantStorage {
     pub fn new() -> Self {
         Self {
-            tenants: std::sync::Arc::new(tokio::sync::RwLock::new(
-                std::collections::HashMap::new(),
-            )),
+            tenants: std::sync::Arc::new(
+                tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            ),
         }
     }
 }
@@ -333,15 +328,9 @@ impl TenantService for MemoryTenantStorage {
         Ok(tenants.get(tenant_id.as_str()).cloned())
     }
 
-    async fn find_tenant_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Option<Tenant>, TenantConfigError> {
+    async fn find_tenant_by_name(&self, name: &str) -> Result<Option<Tenant>, TenantConfigError> {
         let tenants = self.tenants.read().await;
-        Ok(tenants
-            .values()
-            .find(|t| t.name == name)
-            .cloned())
+        Ok(tenants.values().find(|t| t.name == name).cloned())
     }
 
     async fn update_tenant(
@@ -430,9 +419,7 @@ impl TenantService for MemoryTenantStorage {
         let tenant = tenants
             .get_mut(tenant_id.as_str())
             .ok_or_else(|| TenantConfigError::NotFound(tenant_id.clone()))?;
-        tenant
-            .config
-            .merge(config, updated_by.unwrap_or_default());
+        tenant.config.merge(config, updated_by.unwrap_or_default());
         Ok(tenant.config.clone())
     }
 
@@ -443,7 +430,9 @@ impl TenantService for MemoryTenantStorage {
 
     async fn is_name_available(&self, name: &str) -> Result<bool, TenantConfigError> {
         let tenants = self.tenants.read().await;
-        Ok(!tenants.values().any(|t| t.name == name && t.deleted_at.is_none()))
+        Ok(!tenants
+            .values()
+            .any(|t| t.name == name && t.deleted_at.is_none()))
     }
 }
 
@@ -475,10 +464,7 @@ impl<S: TenantConfigStore> TenantManagerBuilder<S> {
         }
     }
 
-    pub fn with_tenant_storage(
-        mut self,
-        storage: std::sync::Arc<dyn TenantService>,
-    ) -> Self {
+    pub fn with_tenant_storage(mut self, storage: std::sync::Arc<dyn TenantService>) -> Self {
         self.tenant_storage = Some(storage);
         self
     }
@@ -498,9 +484,7 @@ impl<S: TenantConfigStore> TenantManagerBuilder<S> {
         self
     }
 
-    pub fn build(
-        self,
-    ) -> TenantManager<S> {
+    pub fn build(self) -> TenantManager<S> {
         let config_manager = TenantConfigManager::new(self.store);
         let tenant_storage = self
             .tenant_storage
@@ -558,9 +542,12 @@ impl<S: TenantConfigStore> TenantManager<S> {
         request.validate()?;
 
         // 检查名称是否可用
-        if !self.tenant_storage.is_name_available(&request.name).await.map_err(|e| {
-            TenantCreationError::StorageError(e.to_string())
-        })? {
+        if !self
+            .tenant_storage
+            .is_name_available(&request.name)
+            .await
+            .map_err(|e| TenantCreationError::StorageError(e.to_string()))?
+        {
             return Err(TenantCreationError::NameAlreadyExists(request.name.clone()));
         }
 
@@ -582,10 +569,17 @@ impl<S: TenantConfigStore> TenantManager<S> {
         let mut steps = Vec::new();
 
         // 步骤1: 保存租户配置
-        match self.config_manager.create_config(&tenant_id, config.clone()).await {
+        match self
+            .config_manager
+            .create_config(&tenant_id, config.clone())
+            .await
+        {
             Ok(_) => steps.push(InitializationStepResult::success("create_config")),
             Err(e) => {
-                steps.push(InitializationStepResult::failed("create_config", e.to_string()));
+                steps.push(InitializationStepResult::failed(
+                    "create_config",
+                    e.to_string(),
+                ));
                 return Err(TenantCreationError::ConfigError(e));
             }
         }
@@ -595,7 +589,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
             match self.initialize_database_schema(&tenant_id).await {
                 Ok(_) => steps.push(InitializationStepResult::success("init_schema")),
                 Err(e) => {
-                    steps.push(InitializationStepResult::failed("init_schema", e.to_string()));
+                    steps.push(InitializationStepResult::failed(
+                        "init_schema",
+                        e.to_string(),
+                    ));
                 }
             }
         }
@@ -605,7 +602,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
             match self.initialize_encryption_keys(&tenant_id).await {
                 Ok(_) => steps.push(InitializationStepResult::success("generate_keys")),
                 Err(e) => {
-                    steps.push(InitializationStepResult::failed("generate_keys", e.to_string()));
+                    steps.push(InitializationStepResult::failed(
+                        "generate_keys",
+                        e.to_string(),
+                    ));
                 }
             }
         }
@@ -615,7 +615,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
             match self.create_default_roles(&tenant_id).await {
                 Ok(_) => steps.push(InitializationStepResult::success("create_roles")),
                 Err(e) => {
-                    steps.push(InitializationStepResult::failed("create_roles", e.to_string()));
+                    steps.push(InitializationStepResult::failed(
+                        "create_roles",
+                        e.to_string(),
+                    ));
                 }
             }
         }
@@ -640,7 +643,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
         &self,
         tenant_id: &TenantId,
     ) -> Result<(), TenantProvisioningError> {
-        info!("Initializing database schema for tenant: {}", tenant_id.as_str());
+        info!(
+            "Initializing database schema for tenant: {}",
+            tenant_id.as_str()
+        );
 
         // 检查是否有数据库连接池
         match &self.db_pool {
@@ -656,7 +662,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
                         TenantProvisioningError::SchemaCreationFailed(e.to_string())
                     })?;
 
-                info!("Successfully created database schema for tenant: {}", tenant_id.as_str());
+                info!(
+                    "Successfully created database schema for tenant: {}",
+                    tenant_id.as_str()
+                );
                 Ok(())
             }
             None => {
@@ -673,7 +682,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
         &self,
         tenant_id: &TenantId,
     ) -> Result<(), TenantProvisioningError> {
-        info!("Initializing encryption keys for tenant: {}", tenant_id.as_str());
+        info!(
+            "Initializing encryption keys for tenant: {}",
+            tenant_id.as_str()
+        );
 
         // 检查是否有 Vault 客户端
         match &self.vault_client {
@@ -702,7 +714,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
                         TenantProvisioningError::VaultPathCreationFailed(e.to_string())
                     })?;
 
-                info!("Successfully created encryption key path for tenant: {}", tenant_id.as_str());
+                info!(
+                    "Successfully created encryption key path for tenant: {}",
+                    tenant_id.as_str()
+                );
                 Ok(())
             }
             None => {
@@ -735,7 +750,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
                         TenantProvisioningError::RoleCreationFailed(e.to_string())
                     })?;
 
-                info!("Successfully created default roles for tenant: {}", tenant_id.as_str());
+                info!(
+                    "Successfully created default roles for tenant: {}",
+                    tenant_id.as_str()
+                );
                 Ok(())
             }
             None => {
@@ -758,7 +776,10 @@ impl<S: TenantConfigStore> TenantManager<S> {
     }
 
     /// 获取租户配置
-    pub async fn get_config(&self, tenant_id: &TenantId) -> Result<TenantConfig, TenantConfigError> {
+    pub async fn get_config(
+        &self,
+        tenant_id: &TenantId,
+    ) -> Result<TenantConfig, TenantConfigError> {
         self.config_manager.get_config(tenant_id).await
     }
 
@@ -783,6 +804,7 @@ impl<S: TenantConfigStore> TenantManager<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tenant::FeatureFlags;
 
     #[test]
     fn test_create_tenant_request_validation() {
@@ -820,7 +842,9 @@ mod tests {
         let manager = TenantManager::new_simple(store);
 
         let request = CreateTenantRequest::new("Test Tenant").with_tier("pro");
-        let result = manager.create_tenant(request, Some("admin".to_string())).await;
+        let result = manager
+            .create_tenant(request, Some("admin".to_string()))
+            .await;
 
         assert!(result.is_ok());
         let result = result.unwrap();

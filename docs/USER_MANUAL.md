@@ -1,7 +1,7 @@
 # CredBridge 用户使用手册
 
 **版本**: v1.0
-**最后更新**: 2026-03-11
+**最后更新**: 2026-03-17
 **适用版本**: CredBridge MVP 1.0+
 
 ---
@@ -14,8 +14,9 @@
 4. [API 使用指南](#4-api-使用指南)
 5. [SDK 使用指南](#5-sdk-使用指南)
 6. [MCP Server 集成](#6-mcp-server-集成)
-7. [常见问题 FAQ](#7-常见问题-faq)
-8. [故障排查](#8-故障排查)
+7. [TEE Sandbox 使用指南](#7-tee-sandbox-使用指南)
+8. [常见问题 FAQ](#8-常见问题-faq)
+9. [故障排查](#9-故障排查)
 
 ---
 
@@ -35,6 +36,7 @@
 | **不可篡改审计日志** | 基于 immudb 的密码学证明日志，任何历史记录修改都会被立即发现 |
 | **人工审批流程** | Tier 0/1/2 三级风险分级，高风险操作需要用户实时确认 |
 | **多租户隔离** | Schema-per-Tenant + RLS 行级安全，满足 B2B SaaS 需求 |
+| **TEE Sandbox** | 基于 TEE 的安全浏览器自动化环境，支持凭证安全操作和数据提取 |
 
 ### 1.3 适用场景
 
@@ -65,7 +67,11 @@
 │  │ 密钥管理     │  │ Token 签发   │  │ 凭证解密(按需)  │   │
 │  │ (L0-L3)      │  │ PASETO v4    │  │ AES-256-GCM     │   │
 │  └──────────────┘  └──────────────┘  └─────────────────┘   │
-└────────────────────────────────────────────────────────────┘
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐   │
+│  │ Sandbox      │  │ 浏览器自动化 │  │ 数据提取       │   │
+│  │ (nsjail)     │  │ (Playwright) │  │ (安全导出)     │   │
+│  └──────────────┘  └──────────────┘  └─────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -324,6 +330,8 @@ credbridge token create \
      - `credential:write` - 创建/更新凭证
      - `credential:decrypt` - 解密凭证内容
      - `audit:read` - 读取审计日志
+     - `sandbox:read` - 读取沙箱会话
+     - `sandbox:write` - 创建/控制沙箱会话
      - `admin` - 所有权限
    - **过期时间**: 7天 / 30天 / 90天 / 永不过期
 
@@ -406,6 +414,7 @@ credbridge token create \
 - API Token 数量
 - 存储空间
 - API 调用次数
+- 沙箱会话数
 
 ---
 
@@ -429,6 +438,8 @@ Authorization: Bearer <paseto_v4_local_token>
 | `credential:decrypt` | 解密凭证获取明文 |
 | `credential:write` | 创建/更新凭证 |
 | `audit:read` | 读取审计日志 |
+| `sandbox:read` | 读取沙箱会话信息 |
+| `sandbox:write` | 创建/控制沙箱会话 |
 | `admin` | 所有管理权限 |
 
 ### 4.2 主要 API 端点
@@ -935,9 +946,338 @@ Claude: 我需要使用 CredBridge 来获取您的 Schwab 凭证。
 
 ---
 
-## 7. 常见问题 FAQ
+## 7. TEE Sandbox 使用指南
 
-### 7.1 一般问题
+### 7.1 什么是 TEE Sandbox
+
+**TEE Sandbox** 是 CredBridge 提供的基于可信执行环境（TEE）的安全浏览器自动化服务。它允许 AI Agent 在硬件隔离的环境中执行网页操作，而无需暴露用户的真实凭证。
+
+**核心能力**：
+- 在 TEE 内安全地执行浏览器自动化
+- 凭证在隔离环境中解密和使用
+- 支持截图和数据导出
+- 实时 WebSocket 控制
+
+**使用场景**：
+- 自动化登录金融网站查询账户信息
+- 安全地提取投资组合数据
+- 自动化操作 SaaS 平台
+- 任何需要凭证的网页自动化任务
+
+### 7.2 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    用户应用层                                │
+│              (你的 Node.js/TypeScript 应用)                  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ SDK API 调用
+┌──────────────────────────▼──────────────────────────────────┐
+│              CredBridge Gateway 层                           │
+│         (API 认证、请求路由、审计日志)                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ 安全通道
+┌──────────────────────────▼──────────────────────────────────┐
+│              TEE Sandbox 层 (Intel SGX)                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐    │
+│  │ 浏览器实例   │  │ 凭证解密     │  │ 自动化执行     │    │
+│  │ (Chromium)   │  │ (AES-256)    │  │ (Playwright)    │    │
+│  └──────────────┘  └──────────────┘  └─────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 7.3 使用流程
+
+**基本使用流程**：
+
+1. **创建凭证** - 在 CredBridge 中存储目标网站的登录凭证
+2. **生成 Token** - 创建具有 `sandbox:write` Scope 的 API Token
+3. **创建会话** - 调用 API 创建 TEE Sandbox 会话
+4. **执行操作** - 在会话中执行浏览器自动化操作
+5. **获取结果** - 截图或导出所需数据
+6. **关闭会话** - 释放资源
+
+### 7.4 快速开始
+
+#### 7.4.1 安装 Sandbox SDK
+
+```bash
+npm install @credbridge/sdk
+```
+
+#### 7.4.2 完整示例
+
+```typescript
+import { CredBridgeSDK } from '@credbridge/sdk';
+
+const sdk = new CredBridgeSDK({
+  baseUrl: 'https://api.credbridge.io',
+  token: 'v4.local.your-paseto-token',
+});
+
+async function queryPortfolio() {
+  // 1. 创建会话
+  const session = await sdk.sandbox.createSession({
+    serviceId: 'schwab',
+    credentialId: 'your-credential-id',
+  });
+
+  try {
+    // 2. 导航到登录页面
+    await sdk.sandbox.navigate(session.sessionId, 'https://www.schwab.com/login');
+
+    // 3. 等待登录完成（凭证在 TEE 内自动填充）
+    await sdk.sandbox.waitForSelector(session.sessionId, '.portfolio-summary', {
+      timeout: 60000,
+    });
+
+    // 4. 获取投资组合数据
+    const summary = await sdk.sandbox.executeScript(session.sessionId, `
+      return {
+        totalValue: document.querySelector('.total-value')?.textContent?.trim(),
+        dayChange: document.querySelector('.day-change')?.textContent?.trim(),
+      };
+    `);
+
+    // 5. 截图保存
+    const screenshot = await sdk.sandbox.takeScreenshot(session.sessionId, {
+      type: 'png',
+      fullPage: true,
+    });
+
+    console.log('Portfolio:', summary.result);
+    return { summary: summary.result, screenshot };
+
+  } finally {
+    // 6. 关闭会话
+    await sdk.sandbox.closeSession(session.sessionId);
+  }
+}
+
+queryPortfolio().catch(console.error);
+```
+
+### 7.5 会话管理
+
+#### 7.5.1 创建会话
+
+```typescript
+const session = await sdk.sandbox.createSession({
+  serviceId: 'schwab',           // 服务标识
+  credentialId: 'cred-123',      // 凭证 ID
+  viewportWidth: 1920,           // 视口宽度（可选）
+  viewportHeight: 1080,          // 视口高度（可选）
+  timeout: 60000,                // 超时时间（可选）
+});
+
+console.log('Session ID:', session.sessionId);
+console.log('Status:', session.status); // 'creating' -> 'ready'
+```
+
+#### 7.5.2 会话状态管理
+
+```typescript
+// 获取会话信息
+const info = await sdk.sandbox.getSession(sessionId);
+console.log('Status:', info.status);
+console.log('Current URL:', info.currentUrl);
+
+// 列出所有会话
+const { sessions, total } = await sdk.sandbox.listSessions();
+
+// 暂停会话
+await sdk.sandbox.pauseSession(sessionId);
+
+// 恢复会话
+await sdk.sandbox.resumeSession(sessionId);
+
+// 关闭会话
+await sdk.sandbox.closeSession(sessionId);
+```
+
+### 7.6 执行操作
+
+#### 7.6.1 支持的操作类型
+
+| 操作类型 | 说明 | 示例 |
+|---------|------|------|
+| `navigate` | 页面导航 | 访问登录页面 |
+| `click` | 点击元素 | 点击登录按钮 |
+| `fill` | 填充表单 | 输入用户名/密码 |
+| `get_text` | 获取文本 | 提取价格信息 |
+| `get_attribute` | 获取属性 | 获取链接 URL |
+| `execute_script` | 执行 JavaScript | 复杂数据提取 |
+| `wait_for_selector` | 等待元素 | 等待加载完成 |
+| `screenshot` | 截图 | 保存页面状态 |
+| `export_data` | 导出数据 | 批量提取表格数据 |
+
+#### 7.6.2 快捷操作
+
+```typescript
+// 导航
+await sdk.sandbox.navigate(sessionId, 'https://example.com');
+
+// 点击
+await sdk.sandbox.click(sessionId, '#submit-button');
+
+// 填充表单
+await sdk.sandbox.fill(sessionId, '#username', 'user@example.com');
+await sdk.sandbox.fill(sessionId, '#password', 'secret-password');
+
+// 获取文本
+const result = await sdk.sandbox.getText(sessionId, '.price-display');
+console.log('Price:', result.result);
+
+// 执行 JavaScript
+const data = await sdk.sandbox.executeScript(sessionId, `
+  return document.title;
+`);
+
+// 等待元素
+await sdk.sandbox.waitForSelector(sessionId, '.loading-complete', {
+  timeout: 30000,
+  visible: true,
+});
+```
+
+### 7.7 WebSocket 实时连接
+
+对于需要实时反馈的场景，使用 WebSocket 连接：
+
+```typescript
+import { SandboxWebSocketClient } from '@credbridge/sdk';
+
+const ws = new SandboxWebSocketClient({
+  baseUrl: 'https://api.credbridge.io',
+  token: 'v4.local.your-token',
+  sessionId: 'session-uuid',
+  credentialId: 'credential-uuid',
+  autoReconnect: true,
+});
+
+// 设置事件处理
+ws.onConnected = () => console.log('Connected');
+ws.onOperationProgress = (data) => {
+  console.log(`Progress: ${data.progress}%`);
+};
+
+// 连接
+await ws.connect();
+
+// 执行操作
+await ws.executeOperation({
+  operationType: 'navigate',
+  description: 'Go to dashboard',
+  parameters: { url: 'https://example.com/dashboard' },
+});
+
+// 断开连接
+ws.disconnect();
+```
+
+### 7.8 截图和数据导出
+
+#### 7.8.1 截图
+
+```typescript
+// 截取完整页面
+const screenshot = await sdk.sandbox.takeScreenshot(sessionId, {
+  type: 'png',
+  fullPage: true,
+});
+
+// 截取特定元素
+const elementShot = await sdk.sandbox.takeScreenshot(sessionId, {
+  selector: '#chart-container',
+  type: 'jpeg',
+  quality: 90,
+});
+
+// 保存截图
+const fs = require('fs');
+fs.writeFileSync('screenshot.png', Buffer.from(screenshot.data, 'base64'));
+```
+
+#### 7.8.2 数据导出
+
+```typescript
+// 导出表格数据
+const exportResult = await sdk.sandbox.exportData(sessionId, {
+  format: 'json',
+  selector: '.portfolio-table',
+  extractionRules: [
+    { name: 'symbol', selector: '.symbol-cell' },
+    { name: 'quantity', selector: '.quantity-cell' },
+    { name: 'price', selector: '.price-cell' },
+    { name: 'value', selector: '.value-cell' },
+  ],
+});
+
+console.log('Exported data:', exportResult.data);
+```
+
+### 7.9 最佳实践
+
+#### 7.9.1 始终使用 try-finally
+
+```typescript
+const session = await sdk.sandbox.createSession({
+  serviceId: 'schwab',
+  credentialId: 'cred-123',
+});
+
+try {
+  // 执行操作...
+} finally {
+  // 确保会话关闭，释放 TEE 资源
+  await sdk.sandbox.closeSession(session.sessionId);
+}
+```
+
+#### 7.9.2 合理设置超时
+
+```typescript
+// 根据操作复杂度设置合理的超时
+await sdk.sandbox.waitForSelector(sessionId, '.slow-loading-element', {
+  timeout: 60000, // 复杂页面可能需要更长时间
+});
+```
+
+#### 7.9.3 错误处理
+
+```typescript
+import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+
+try {
+  await sdk.sandbox.click(sessionId, '#button');
+} catch (error) {
+  if (error instanceof CredBridgeError) {
+    switch (error.code) {
+      case CredBridgeErrorCode.NotFound:
+        console.log('Element not found');
+        break;
+      case CredBridgeErrorCode.Timeout:
+        console.log('Operation timed out');
+        break;
+      case CredBridgeErrorCode.Unauthorized:
+        console.log('Session expired');
+        break;
+    }
+  }
+}
+```
+
+### 7.10 相关文档
+
+- [Sandbox SDK 详细指南](./SDK_SANDBOX_GUIDE.md) - 完整的 SDK 使用文档
+- [API 文档](./API.md) - RESTful API 参考
+- [OpenAPI 规范](./openapi/sandbox.yaml) - 完整的 API 规范
+
+---
+
+## 8. 常见问题 FAQ
+
+### 8.1 一般问题
 
 **Q: CredBridge 与 1Password 有什么区别？**
 
@@ -946,6 +1286,7 @@ A: CredBridge 专为 AI Agent 设计：
 - 支持 TEE 硬件隔离
 - 内置 AI 操作审计和人工审批流程
 - 可与 OpenClaw 等 AI 框架无缝集成
+- 提供 TEE Sandbox 安全浏览器自动化
 
 **Q: 我的凭证数据安全吗？**
 
@@ -955,6 +1296,7 @@ A: CredBridge 采用多层安全保护：
 - AES-256-GCM 加密
 - 零知识架构（服务器不接触明文）
 - 不可篡改审计日志
+- 所有凭证操作在 TEE 内执行
 
 **Q: 支持哪些 TEE 硬件？**
 
@@ -964,7 +1306,15 @@ A: 目前支持：
 - AWS Nitro Enclaves
 - 软件 TEE（开发测试用）
 
-### 7.2 使用问题
+**Q: 什么是 TEE Sandbox？**
+
+A: TEE Sandbox 是基于可信执行环境的安全浏览器自动化服务：
+- 在硬件隔离环境中执行浏览器操作
+- 凭证在 TEE 内解密，不会暴露给外部
+- 支持自动化登录、数据提取、截图等功能
+- 适用于金融、企业 SaaS 等敏感场景
+
+### 8.2 使用问题
 
 **Q: 如何重置密码？**
 
@@ -988,7 +1338,14 @@ A: 凭证过期后：
 - 在列表中标记为「已过期」
 - 可选择删除或更新过期时间
 
-### 7.3 技术问题
+**Q: Sandbox 会话有使用限制吗？**
+
+A: 是的，默认限制：
+- 单个会话最长运行 30 分钟
+- 每个租户最多 50 个并发会话
+- 创建会话需要 `sandbox:write` Scope
+
+### 8.3 技术问题
 
 **Q: 如何验证 TEE 状态？**
 
@@ -1016,8 +1373,19 @@ A: 是的，默认限制：
 - 凭证读取: 300/分钟
 - 凭证解密: 60/分钟
 - 审计日志查询: 60/分钟
+- 沙箱会话创建: 30/分钟
+- 沙箱操作执行: 120/分钟
 
-### 7.4 部署问题
+**Q: Sandbox 操作失败如何排查？**
+
+A:
+1. 检查会话状态是否正常
+2. 确认凭证 ID 正确且未过期
+3. 查看操作超时设置是否合理
+4. 检查目标网站是否可用
+5. 查看审计日志获取详细错误信息
+
+### 8.4 部署问题
 
 **Q: 如何备份凭证数据？**
 
@@ -1040,14 +1408,15 @@ A: 建议架构：
 - PostgreSQL 主从复制
 - Redis Cluster
 - 负载均衡器
+- 多个 TEE Sandbox 实例
 
 ---
 
-## 8. 故障排查
+## 9. 故障排查
 
-### 8.1 安装问题
+### 9.1 安装问题
 
-#### 8.1.1 TEE 检测失败
+#### 9.1.1 TEE 检测失败
 
 **症状**: `credbridge init` 显示 "TEE not detected"
 
@@ -1066,7 +1435,7 @@ ls -la /dev/sgx*
 credbridge init --tee-mode software
 ```
 
-#### 8.1.2 Docker 启动失败
+#### 9.1.2 Docker 启动失败
 
 **症状**: `docker-compose up` 报错
 
@@ -1084,9 +1453,9 @@ docker-compose logs vault-service
 docker-compose logs frontend
 ```
 
-### 8.2 认证问题
+### 9.2 认证问题
 
-#### 8.2.1 Token 无效
+#### 9.2.1 Token 无效
 
 **症状**: API 返回 `401 invalid_token`
 
@@ -1099,7 +1468,7 @@ docker-compose logs frontend
    ```
 4. 重新生成 Token
 
-#### 8.2.2 权限不足
+#### 9.2.2 权限不足
 
 **症状**: API 返回 `403 insufficient_scope`
 
@@ -1112,11 +1481,12 @@ docker-compose logs frontend
    - 读取凭证 → `credential:read`
    - 解密凭证 → `credential:decrypt`
    - 创建凭证 → `credential:write`
+   - 创建沙箱 → `sandbox:write`
 3. 生成新 Token 时添加所需 Scope
 
-### 8.3 凭证操作问题
+### 9.3 凭证操作问题
 
-#### 8.3.1 凭证解密失败
+#### 9.3.1 凭证解密失败
 
 **症状**: `decrypt_credential` 返回错误
 
@@ -1137,7 +1507,7 @@ credbridge restart
 credbridge verify
 ```
 
-#### 8.3.2 凭证找不到
+#### 9.3.2 凭证找不到
 
 **症状**: API 返回 `404 credential_not_found`
 
@@ -1150,9 +1520,54 @@ credbridge verify
    curl http://localhost:8080/api/v1/credentials
    ```
 
-### 8.4 审计日志问题
+### 9.4 Sandbox 问题
 
-#### 8.4.1 日志查询无结果
+#### 9.4.1 会话创建失败
+
+**症状**: 创建 Sandbox 会话返回错误
+
+**排查步骤**:
+1. 检查 Token 是否有 `sandbox:write` Scope
+2. 确认凭证 ID 存在且未过期
+3. 检查并发会话数是否达到上限
+4. 查看 TEE Sandbox 服务状态：
+   ```bash
+   docker-compose ps sandbox
+   ```
+
+#### 9.4.2 操作执行超时
+
+**症状**: 操作执行返回 timeout 错误
+
+**可能原因**:
+1. 目标网站加载缓慢
+2. 选择器定位失败
+3. 网络连接问题
+
+**解决方案**:
+```typescript
+// 增加超时时间
+await sdk.sandbox.waitForSelector(sessionId, '.element', {
+  timeout: 120000, // 2分钟
+});
+
+// 使用更可靠的选择器
+await sdk.sandbox.click(sessionId, '[data-testid="submit"]');
+```
+
+#### 9.4.3 WebSocket 连接失败
+
+**症状**: WebSocket 无法连接或频繁断开
+
+**排查步骤**:
+1. 检查网络连接
+2. 确认 Token 有效
+3. 检查会话是否已关闭
+4. 查看自动重连配置
+
+### 9.5 审计日志问题
+
+#### 9.5.1 日志查询无结果
 
 **症状**: 审计日志查询返回空列表
 
@@ -1166,7 +1581,7 @@ credbridge verify
 4. 检查审计日志权限：
    - 需要 `audit:read` 或 `admin` Scope
 
-#### 8.4.2 日志验证失败
+#### 9.5.2 日志验证失败
 
 **症状**: 日志验证 API 返回 `verification_failed`
 
@@ -1184,9 +1599,9 @@ docker-compose exec immudb immuadmin status
 credbridge audit resync
 ```
 
-### 8.5 性能问题
+### 9.6 性能问题
 
-#### 8.5.1 API 响应慢
+#### 9.6.1 API 响应慢
 
 **症状**: API 响应时间 > 1秒
 
@@ -1202,7 +1617,7 @@ credbridge audit resync
    curl http://localhost:8080/metrics
    ```
 
-#### 8.5.2 内存使用过高
+#### 9.6.2 内存使用过高
 
 **症状**: 服务内存使用持续增长
 
@@ -1214,7 +1629,7 @@ credbridge audit resync
    docker-compose restart vault-service
    ```
 
-### 8.6 获取帮助
+### 9.7 获取帮助
 
 如果以上排查步骤无法解决问题，请通过以下方式获取帮助：
 
@@ -1238,7 +1653,7 @@ credbridge audit resync
 
 ---
 
-### 8.7 故障排查快速检查清单 ✅
+### 9.8 故障排查快速检查清单 ✅
 
 使用以下检查清单进行系统性故障排查：
 
@@ -1260,6 +1675,11 @@ credbridge audit resync
 - [ ] TEE 驱动已加载 (`ls /dev/sgx*`)
 - [ ] CPU 支持 SGX (`grep sgx /proc/cpuinfo`)
 - [ ] 软件 TEE 降级模式可用 (`credbridge init --tee-mode software`)
+
+#### Sandbox 服务检查
+- [ ] Sandbox 服务正常运行 (`docker-compose ps sandbox`)
+- [ ] TEE Sandbox 功能已启用
+- [ ] 并发会话数未达上限
 
 #### 认证检查
 - [ ] Token 未过期
@@ -1305,22 +1725,28 @@ credbridge audit resync
 | HKDF | HMAC-based Extract-and-Expand Key Derivation Function |
 | MFA | Multi-Factor Authentication，多因素认证 |
 | MCP | Model Context Protocol，模型上下文协议 |
+| Sandbox | TEE 内的安全浏览器自动化环境 |
+| Session | 浏览器会话实例 |
+| Operation | 在会话中执行的单个操作 |
 
 ### B. 参考文档
 
-- [API 详细文档](../API.md) - RESTful API 完整参考
+- [API 详细文档](./API.md) - RESTful API 完整参考
 - [设计规范](./CredBridge_CN_设计规范_v1.0.md) - 系统设计文档
 - [架构设计](../_bmad-output/planning-artifacts/architecture.md) - 技术架构决策
 - [安全白皮书](https://credbridge.io/security) 🔗 - 外部链接（需网络访问）
 - [部署指南](../docker/README.md) - Docker 部署配置
 - [SDK 文档](./SDK_GUIDE.md) - TypeScript/Rust SDK 使用指南
+- [Sandbox SDK 指南](./SDK_SANDBOX_GUIDE.md) - Sandbox SDK 专用文档
 - [MCP 集成](./MCP_INTEGRATION.md) - Model Context Protocol 配置
+- [OpenAPI 规范](./openapi/sandbox.yaml) - Sandbox API 完整规范
 
 ### C. 更新日志
 
 | 版本 | 日期 | 变更内容 |
 |------|------|----------|
 | 1.0 | 2026-03-11 | 初始版本 |
+| 1.1 | 2026-03-17 | 添加 TEE Sandbox 使用指南 |
 
 ---
 

@@ -20,37 +20,30 @@
 //! - 激活/暂停/删除租户: `admin` scope
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post, put},
-    Json, Router,
+    routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
 use crate::tenant::{
-    CreateTenantRequest, FeatureFlags, PartialTenantConfig, QuotaLimits,
-    Tenant, TenantConfig, TenantConfigError, TenantConfigManager, TenantConfigStore,
-    TenantId as TenantIdType, TenantManager, TenantService, TenantSettings, TenantStatus,
+    CreateTenantRequest, FeatureFlags, PartialTenantConfig, QuotaLimits, Tenant, TenantConfig,
+    TenantConfigError, TenantConfigStore, TenantId as TenantIdType, TenantManager, TenantService,
+    TenantSettings,
 };
 
 /// API 状态
 #[derive(Clone)]
-pub struct TenantApiState<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-> {
+pub struct TenantApiState<S: TenantConfigStore + Clone + Send + Sync + 'static> {
     pub tenant_manager: Arc<TenantManager<S>>,
     pub tenant_service: Arc<dyn TenantService>,
 }
 
-impl<S: TenantConfigStore + Clone + Send + Sync + 'static>
-    TenantApiState<S>
-{
-    pub fn new(
-        tenant_manager: TenantManager<S>,
-        tenant_service: Arc<dyn TenantService>,
-    ) -> Self {
+impl<S: TenantConfigStore + Clone + Send + Sync + 'static> TenantApiState<S> {
+    pub fn new(tenant_manager: TenantManager<S>, tenant_service: Arc<dyn TenantService>) -> Self {
         Self {
             tenant_manager: Arc::new(tenant_manager),
             tenant_service,
@@ -268,18 +261,32 @@ pub struct FeatureFlagsUpdate {
 impl FeatureFlagsUpdate {
     fn into_feature_flags(self, base: &FeatureFlags) -> FeatureFlags {
         FeatureFlags {
-            enable_credential_encryption: self.enable_credential_encryption.unwrap_or(base.enable_credential_encryption),
-            enable_audit_logging: self.enable_audit_logging.unwrap_or(base.enable_audit_logging),
-            enable_token_revocation: self.enable_token_revocation.unwrap_or(base.enable_token_revocation),
+            enable_credential_encryption: self
+                .enable_credential_encryption
+                .unwrap_or(base.enable_credential_encryption),
+            enable_audit_logging: self
+                .enable_audit_logging
+                .unwrap_or(base.enable_audit_logging),
+            enable_token_revocation: self
+                .enable_token_revocation
+                .unwrap_or(base.enable_token_revocation),
             enable_mfa: self.enable_mfa.unwrap_or(base.enable_mfa),
-            enable_remote_attestation: self.enable_remote_attestation.unwrap_or(base.enable_remote_attestation),
-            enable_auto_rotation: self.enable_auto_rotation.unwrap_or(base.enable_auto_rotation),
+            enable_remote_attestation: self
+                .enable_remote_attestation
+                .unwrap_or(base.enable_remote_attestation),
+            enable_auto_rotation: self
+                .enable_auto_rotation
+                .unwrap_or(base.enable_auto_rotation),
             allow_cors: self.allow_cors.unwrap_or(base.allow_cors),
             enable_ip_whitelist: self.enable_ip_whitelist.unwrap_or(base.enable_ip_whitelist),
             enable_webhooks: self.enable_webhooks.unwrap_or(base.enable_webhooks),
             enable_sso: self.enable_sso.unwrap_or(base.enable_sso),
-            enable_custom_crypto: self.enable_custom_crypto.unwrap_or(base.enable_custom_crypto),
-            enable_advanced_audit: self.enable_advanced_audit.unwrap_or(base.enable_advanced_audit),
+            enable_custom_crypto: self
+                .enable_custom_crypto
+                .unwrap_or(base.enable_custom_crypto),
+            enable_advanced_audit: self
+                .enable_advanced_audit
+                .unwrap_or(base.enable_advanced_audit),
         }
     }
 }
@@ -314,13 +321,19 @@ impl QuotaLimitsUpdate {
         QuotaLimits {
             max_credentials: self.max_credentials.unwrap_or(base.max_credentials),
             max_tokens_per_user: self.max_tokens_per_user.unwrap_or(base.max_tokens_per_user),
-            max_requests_per_minute: self.max_requests_per_minute.unwrap_or(base.max_requests_per_minute),
+            max_requests_per_minute: self
+                .max_requests_per_minute
+                .unwrap_or(base.max_requests_per_minute),
             max_users: self.max_users.unwrap_or(base.max_users),
             max_connectors: self.max_connectors.unwrap_or(base.max_connectors),
             max_webhooks: self.max_webhooks.unwrap_or(base.max_webhooks),
             storage_quota_mb: self.storage_quota_mb.unwrap_or(base.storage_quota_mb),
-            audit_retention_days: self.audit_retention_days.unwrap_or(base.audit_retention_days),
-            max_token_ttl_seconds: self.max_token_ttl_seconds.unwrap_or(base.max_token_ttl_seconds),
+            audit_retention_days: self
+                .audit_retention_days
+                .unwrap_or(base.audit_retention_days),
+            max_token_ttl_seconds: self
+                .max_token_ttl_seconds
+                .unwrap_or(base.max_token_ttl_seconds),
             max_batch_size: self.max_batch_size.unwrap_or(base.max_batch_size),
         }
     }
@@ -353,11 +366,17 @@ impl TenantSettingsUpdate {
     fn into_settings(self, base: &TenantSettings) -> TenantSettings {
         TenantSettings {
             token_ttl_seconds: self.token_ttl_seconds.unwrap_or(base.token_ttl_seconds),
-            session_timeout_seconds: self.session_timeout_seconds.unwrap_or(base.session_timeout_seconds),
+            session_timeout_seconds: self
+                .session_timeout_seconds
+                .unwrap_or(base.session_timeout_seconds),
             max_login_attempts: self.max_login_attempts.unwrap_or(base.max_login_attempts),
-            lockout_duration_seconds: self.lockout_duration_seconds.unwrap_or(base.lockout_duration_seconds),
+            lockout_duration_seconds: self
+                .lockout_duration_seconds
+                .unwrap_or(base.lockout_duration_seconds),
             password_min_length: self.password_min_length.unwrap_or(base.password_min_length),
-            require_password_complexity: self.require_password_complexity.unwrap_or(base.require_password_complexity),
+            require_password_complexity: self
+                .require_password_complexity
+                .unwrap_or(base.require_password_complexity),
             require_mfa: self.require_mfa.unwrap_or(base.require_mfa),
             allowed_callback_urls: base.allowed_callback_urls.clone(),
             timezone: self.timezone.unwrap_or_else(|| base.timezone.clone()),
@@ -370,9 +389,15 @@ impl TenantSettingsUpdate {
 impl UpdateConfigRequest {
     fn into_partial_config(self, base_config: &TenantConfig) -> PartialTenantConfig {
         PartialTenantConfig {
-            feature_flags: self.feature_flags.map(|f| f.into_feature_flags(&base_config.feature_flags)),
-            quota_limits: self.quota_limits.map(|q| q.into_quota_limits(&base_config.quota_limits)),
-            settings: self.settings.map(|s| s.into_settings(&base_config.settings)),
+            feature_flags: self
+                .feature_flags
+                .map(|f| f.into_feature_flags(&base_config.feature_flags)),
+            quota_limits: self
+                .quota_limits
+                .map(|q| q.into_quota_limits(&base_config.quota_limits)),
+            settings: self
+                .settings
+                .map(|s| s.into_settings(&base_config.settings)),
         }
     }
 }
@@ -392,9 +417,7 @@ pub struct ErrorDetail {
 }
 
 /// 创建租户处理器
-pub async fn create_tenant_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
->(
+pub async fn create_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Json(request): Json<CreateTenantRequest>,
 ) -> Result<Json<CreateTenantResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -448,10 +471,7 @@ pub async fn create_tenant_handler<
 }
 
 /// 获取租户配置处理器
-pub async fn get_tenant_config_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->(
+pub async fn get_tenant_config_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Path(tenant_id): Path<String>,
 ) -> Result<Json<TenantConfigResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -509,10 +529,7 @@ pub async fn get_tenant_config_handler<
 }
 
 /// 更新租户配置处理器
-pub async fn update_tenant_config_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->(
+pub async fn update_tenant_config_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Path(tenant_id): Path<String>,
     Json(request): Json<UpdateConfigRequest>,
@@ -536,7 +553,7 @@ pub async fn update_tenant_config_handler<
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     }
                 })),
-            ))
+            ));
         }
         Err(_) => {
             return Err((
@@ -552,7 +569,7 @@ pub async fn update_tenant_config_handler<
                         "timestamp": chrono::Utc::now().to_rfc3339()
                     }
                 })),
-            ))
+            ));
         }
     };
 
@@ -614,10 +631,7 @@ pub async fn update_tenant_config_handler<
 }
 
 /// 获取租户列表处理器（管理员）
-pub async fn list_tenants_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->(
+pub async fn list_tenants_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match state.tenant_service.list_tenants().await {
@@ -653,16 +667,17 @@ pub async fn list_tenants_handler<
 }
 
 /// 激活租户处理器
-pub async fn activate_tenant_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->(
+pub async fn activate_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Path(tenant_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let tenant_id = TenantIdType::from(tenant_id);
 
-    match state.tenant_service.activate_tenant(&tenant_id, Some("api_user".to_string())).await {
+    match state
+        .tenant_service
+        .activate_tenant(&tenant_id, Some("api_user".to_string()))
+        .await
+    {
         Ok(tenant) => Ok(Json(json!({
             "success": true,
             "data": {
@@ -707,16 +722,16 @@ pub async fn activate_tenant_handler<
 }
 
 /// 暂停租户处理器
-pub async fn suspend_tenant_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->(
+pub async fn suspend_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Path(tenant_id): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let tenant_id = TenantIdType::from(tenant_id);
-    let reason = body.get("reason").and_then(|r| r.as_str()).map(String::from);
+    let reason = body
+        .get("reason")
+        .and_then(|r| r.as_str())
+        .map(String::from);
 
     match state
         .tenant_service
@@ -767,16 +782,17 @@ pub async fn suspend_tenant_handler<
 }
 
 /// 删除租户处理器
-pub async fn delete_tenant_handler<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->(
+pub async fn delete_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Path(tenant_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     let tenant_id = TenantIdType::from(tenant_id);
 
-    match state.tenant_service.delete_tenant(&tenant_id, Some("api_user".to_string())).await {
+    match state
+        .tenant_service
+        .delete_tenant(&tenant_id, Some("api_user".to_string()))
+        .await
+    {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(TenantConfigError::NotFound(_)) => Err((
             StatusCode::NOT_FOUND,
@@ -821,12 +837,13 @@ fn get_tier_from_config(config: &TenantConfig) -> String {
 }
 
 /// 创建租户管理路由
-pub fn tenant_routes<
-    S: TenantConfigStore + Clone + Send + Sync + 'static,
-    
->() -> Router<TenantApiState<S>> {
+pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
+-> Router<TenantApiState<S>> {
     Router::new()
-        .route("/tenants", post(create_tenant_handler::<S>).get(list_tenants_handler::<S>))
+        .route(
+            "/tenants",
+            post(create_tenant_handler::<S>).get(list_tenants_handler::<S>),
+        )
         .route(
             "/tenants/:id/config",
             get(get_tenant_config_handler::<S>).put(update_tenant_config_handler::<S>),

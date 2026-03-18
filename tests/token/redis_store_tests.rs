@@ -11,7 +11,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use vault_service::token::{
-    token_keys as keys, RedisTokenStore, TokenClaims, TokenMetadata, TokenStoreError,
+    RedisTokenStore, TokenClaims, TokenMetadata, TokenStoreError, token_keys as keys,
 };
 
 /// 获取当前 Unix 时间戳
@@ -95,12 +95,7 @@ async fn test_store_claims_success() {
     };
 
     let tenant_id = test_tenant_id();
-    let claims = TokenClaims::with_default_ttl(
-        "user_456",
-        &tenant_id,
-        "credential:write",
-        true,
-    );
+    let claims = TokenClaims::with_default_ttl("user_456", &tenant_id, "credential:write", true);
 
     // 存储 Claims
     let result = store.store_claims(&claims).await;
@@ -319,14 +314,26 @@ async fn test_cleanup_expired_tokens() {
     // 存储一个即将过期的 Token（1秒后过期）
     let jti_expired = test_jti();
     store
-        .store_token(&tenant_id, &jti_expired, "user_123", "credential:read", now + 1)
+        .store_token(
+            &tenant_id,
+            &jti_expired,
+            "user_123",
+            "credential:read",
+            now + 1,
+        )
         .await
         .unwrap();
 
     // 存储一个长期有效的 Token
     let jti_valid = test_jti();
     store
-        .store_token(&tenant_id, &jti_valid, "user_123", "credential:read", now + 3600)
+        .store_token(
+            &tenant_id,
+            &jti_valid,
+            "user_123",
+            "credential:read",
+            now + 3600,
+        )
         .await
         .unwrap();
 
@@ -410,10 +417,7 @@ async fn test_redis_keys_generation() {
         keys::revoked_tokens_key(tenant_id),
         "credbridge:tokens:test_tenant:revoked"
     );
-    assert_eq!(
-        keys::token_metadata_key(jti),
-        "credbridge:token:test_jti"
-    );
+    assert_eq!(keys::token_metadata_key(jti), "credbridge:token:test_jti");
 }
 
 #[tokio::test]
@@ -449,8 +453,5 @@ async fn test_from_url_success() {
 async fn test_from_url_invalid() {
     // 测试无效 URL
     let result = RedisTokenStore::from_url("invalid_url");
-    assert!(
-        result.is_err(),
-        "无效 URL 应返回错误"
-    );
+    assert!(result.is_err(), "无效 URL 应返回错误");
 }

@@ -254,7 +254,10 @@ fn test_partial_config_merge_flags_only() {
     assert!(config.feature_flags.enable_sso);
 
     // 配额未改变
-    assert_eq!(config.quota_limits.max_credentials, original_max_credentials);
+    assert_eq!(
+        config.quota_limits.max_credentials,
+        original_max_credentials
+    );
 }
 
 /// 测试配置验证
@@ -292,7 +295,10 @@ async fn test_memory_config_store_crud() {
     // 更新配置
     let mut updated_config = config.clone();
     updated_config.update("admin");
-    store.save_config(&tenant_id, &updated_config).await.unwrap();
+    store
+        .save_config(&tenant_id, &updated_config)
+        .await
+        .unwrap();
 
     let retrieved = store.get_config(&tenant_id).await.unwrap();
     assert_eq!(retrieved.version, 2);
@@ -543,12 +549,14 @@ fn test_config_serialization() {
 #[test]
 fn test_tenant_settings_with_metadata() {
     let mut settings = TenantSettings::default();
-    settings.metadata.insert(
-        "custom_key".to_string(),
-        "custom_value".to_string(),
-    );
+    settings
+        .metadata
+        .insert("custom_key".to_string(), "custom_value".to_string());
 
-    assert_eq!(settings.metadata.get("custom_key"), Some(&"custom_value".to_string()));
+    assert_eq!(
+        settings.metadata.get("custom_key"),
+        Some(&"custom_value".to_string())
+    );
 
     // 序列化保留元数据
     let json = serde_json::to_string(&settings).unwrap();
@@ -569,7 +577,9 @@ fn test_tenant_settings_callback_urls() {
     ];
 
     assert_eq!(settings.allowed_callback_urls.len(), 2);
-    assert!(settings
-        .allowed_callback_urls
-        .contains(&"https://app1.example.com/callback".to_string()));
+    assert!(
+        settings
+            .allowed_callback_urls
+            .contains(&"https://app1.example.com/callback".to_string())
+    );
 }

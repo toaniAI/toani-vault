@@ -3,10 +3,10 @@
 //! 提供数据库连接管理和配置。
 //! 支持 RLS（行级安全）上下文设置。
 
-use sqlx::postgres::{PgPoolOptions, PgPool, PgConnection};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{Postgres, Transaction, pool::PoolConnection};
-use thiserror::Error;
 use std::time::Duration;
+use thiserror::Error;
 
 use crate::utils::sql::escape_sql_string;
 
@@ -97,10 +97,14 @@ impl DatabaseConfig {
     /// 验证配置
     pub fn validate(&self) -> Result<(), DatabaseError> {
         if self.url.is_empty() {
-            return Err(DatabaseError::ConfigError("Database URL is empty".to_string()));
+            return Err(DatabaseError::ConfigError(
+                "Database URL is empty".to_string(),
+            ));
         }
         if self.max_connections == 0 {
-            return Err(DatabaseError::ConfigError("Max connections must be greater than 0".to_string()));
+            return Err(DatabaseError::ConfigError(
+                "Max connections must be greater than 0".to_string(),
+            ));
         }
         Ok(())
     }
@@ -215,7 +219,8 @@ impl DatabasePool {
         rls_context: &R,
     ) -> Result<sqlx::Transaction<'_, Postgres>, DatabaseError> {
         // 开启事务
-        let mut tx = self.pool
+        let mut tx = self
+            .pool
             .begin()
             .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
@@ -263,9 +268,18 @@ impl DatabasePool {
         rls_context: &R,
     ) -> Result<(), DatabaseError> {
         let sqls = [
-            format!("SET app.current_tenant_id = '{}'", escape_sql_string(rls_context.tenant_id())),
-            format!("SET app.current_user_id = '{}'", escape_sql_string(rls_context.user_id())),
-            format!("SET app.current_scopes = '{}'", escape_sql_string(&rls_context.scopes().join(","))),
+            format!(
+                "SET app.current_tenant_id = '{}'",
+                escape_sql_string(rls_context.tenant_id())
+            ),
+            format!(
+                "SET app.current_user_id = '{}'",
+                escape_sql_string(rls_context.user_id())
+            ),
+            format!(
+                "SET app.current_scopes = '{}'",
+                escape_sql_string(&rls_context.scopes().join(","))
+            ),
             format!("SET app.is_admin = '{}'", rls_context.is_admin()),
         ];
 
@@ -309,7 +323,11 @@ impl DatabasePool {
 
         Ok(RlsStatus {
             tables_with_rls: result.iter().map(|(name, _, _)| name.clone()).collect(),
-            forced_tables: result.iter().filter(|(_, _, forced)| *forced).map(|(name, _, _)| name.clone()).collect(),
+            forced_tables: result
+                .iter()
+                .filter(|(_, _, forced)| *forced)
+                .map(|(name, _, _)| name.clone())
+                .collect(),
         })
     }
 }
@@ -327,7 +345,9 @@ impl RlsStatus {
     /// 检查所有关键表是否都启用了 RLS
     pub fn is_fully_protected(&self) -> bool {
         let required_tables = ["credentials", "scope_tokens", "audit_logs", "user_roles"];
-        required_tables.iter().all(|t| self.tables_with_rls.contains(&t.to_string()))
+        required_tables
+            .iter()
+            .all(|t| self.tables_with_rls.contains(&t.to_string()))
     }
 }
 
@@ -343,10 +363,18 @@ mod tests {
     }
 
     impl RlsContextData for TestRlsContext {
-        fn tenant_id(&self) -> &str { &self.tenant_id }
-        fn user_id(&self) -> &str { &self.user_id }
-        fn scopes(&self) -> &[String] { &self.scopes }
-        fn is_admin(&self) -> bool { self.is_admin }
+        fn tenant_id(&self) -> &str {
+            &self.tenant_id
+        }
+        fn user_id(&self) -> &str {
+            &self.user_id
+        }
+        fn scopes(&self) -> &[String] {
+            &self.scopes
+        }
+        fn is_admin(&self) -> bool {
+            self.is_admin
+        }
     }
 
     #[test]
@@ -366,7 +394,10 @@ mod tests {
 
     #[test]
     fn test_sql_escape() {
-        assert_eq!(escape_sql_string("test' OR '1'='1"), "test\\' OR \\'1\\'=\\'1");
+        assert_eq!(
+            escape_sql_string("test' OR '1'='1"),
+            "test\\' OR \\'1\\'=\\'1"
+        );
         assert_eq!(escape_sql_string("test\\value"), "test\\\\value");
         assert_eq!(escape_sql_string("test\nvalue"), "test\\nvalue");
     }

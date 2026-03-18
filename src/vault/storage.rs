@@ -6,6 +6,7 @@
 //! - 仅授权用户可访问其租户数据
 
 use super::models::*;
+use super::version::CredentialVersion;
 use crate::models::CredentialMetadata;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -23,7 +24,10 @@ pub trait StorageBackend: Send + Sync {
     fn get(&self, credential_id: &CredentialId) -> Result<Option<VaultEntry>, VaultError>;
 
     /// 根据 ID 获取凭证元数据（不含加密载荷）
-    fn get_metadata(&self, credential_id: &CredentialId) -> Result<Option<CredentialMetadata>, VaultError>;
+    fn get_metadata(
+        &self,
+        credential_id: &CredentialId,
+    ) -> Result<Option<CredentialMetadata>, VaultError>;
 
     /// 查询用户的所有凭证（仅元数据）
     fn query(
@@ -44,6 +48,22 @@ pub trait StorageBackend: Send + Sync {
 
     /// 更新凭证条目
     fn update(&self, entry: &VaultEntry) -> Result<(), VaultError>;
+
+    /// 创建版本记录
+    fn create_version_record(&self, version: &CredentialVersion) -> Result<(), VaultError>;
+
+    /// 获取版本历史
+    fn get_version_history(
+        &self,
+        credential_id: &CredentialId,
+    ) -> Result<Vec<CredentialVersion>, VaultError>;
+
+    /// 获取指定版本
+    fn get_version(
+        &self,
+        credential_id: &CredentialId,
+        version: u32,
+    ) -> Result<Option<CredentialVersion>, VaultError>;
 }
 
 /// 内存存储实现（用于测试和开发）
@@ -56,6 +76,9 @@ pub struct InMemoryStorage {
     /// 按租户和用户索引（用于快速查询）
     /// tenant_id -> user_hash -> Vec<credential_id>
     index: Arc<RwLock<HashMap<String, HashMap<String, Vec<String>>>>>,
+
+    /// 版本历史存储：credential_id -> version -> CredentialVersion
+    versions: Arc<RwLock<HashMap<String, HashMap<u32, CredentialVersion>>>>,
 }
 
 impl InMemoryStorage {
@@ -64,6 +87,7 @@ impl InMemoryStorage {
         Self {
             entries: Arc::new(RwLock::new(HashMap::new())),
             index: Arc::new(RwLock::new(HashMap::new())),
+            versions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -79,9 +103,10 @@ impl InMemoryStorage {
         user_id: &UserId,
         credential_id: &CredentialId,
     ) -> Result<(), VaultError> {
-        let mut index = self.index.write().map_err(|_| {
-            VaultError::StorageError("Index lock poisoned".to_string())
-        })?;
+        let mut index = self
+            .index
+            .write()
+            .map_err(|_| VaultError::StorageError("Index lock poisoned".to_string()))?;
 
         let (t_key, u_key) = Self::build_index_key(tenant_id, user_id);
 
@@ -102,9 +127,10 @@ impl InMemoryStorage {
         user_id: &UserId,
         credential_id: &CredentialId,
     ) -> Result<(), VaultError> {
-        let mut index = self.index.write().map_err(|_| {
-            VaultError::StorageError("Index lock poisoned".to_string())
-        })?;
+        let mut index = self
+            .index
+            .write()
+            .map_err(|_| VaultError::StorageError("Index lock poisoned".to_string()))?;
 
         let (t_key, u_key) = Self::build_index_key(tenant_id, user_id);
 
@@ -123,9 +149,10 @@ impl InMemoryStorage {
         tenant_id: &TenantId,
         user_id: &UserId,
     ) -> Result<Vec<String>, VaultError> {
-        let index = self.index.read().map_err(|_| {
-            VaultError::StorageError("Index lock poisoned".to_string())
-        })?;
+        let index = self
+            .index
+            .read()
+            .map_err(|_| VaultError::StorageError("Index lock poisoned".to_string()))?;
 
         let (t_key, u_key) = Self::build_index_key(tenant_id, user_id);
 
@@ -138,9 +165,10 @@ impl InMemoryStorage {
 
     /// 获取租户的所有条目数量
     pub fn tenant_entry_count(&self, tenant_id: &TenantId) -> Result<usize, VaultError> {
-        let index = self.index.read().map_err(|_| {
-            VaultError::StorageError("Index lock poisoned".to_string())
-        })?;
+        let index = self
+            .index
+            .read()
+            .map_err(|_| VaultError::StorageError("Index lock poisoned".to_string()))?;
 
         Ok(index
             .get(tenant_id.as_str())
@@ -150,12 +178,14 @@ impl InMemoryStorage {
 
     /// 清空所有数据（仅用于测试）
     pub fn clear(&self) -> Result<(), VaultError> {
-        let mut entries = self.entries.write().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
-        let mut index = self.index.write().map_err(|_| {
-            VaultError::StorageError("Index lock poisoned".to_string())
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
+        let mut index = self
+            .index
+            .write()
+            .map_err(|_| VaultError::StorageError("Index lock poisoned".to_string()))?;
 
         entries.clear();
         index.clear();
@@ -173,9 +203,10 @@ impl Default for InMemoryStorage {
 #[async_trait]
 impl StorageBackend for InMemoryStorage {
     fn store(&self, entry: &VaultEntry) -> Result<(), VaultError> {
-        let mut entries = self.entries.write().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         // 存储条目
         entries.insert(entry.credential_id.as_str().to_string(), entry.clone());
@@ -188,17 +219,22 @@ impl StorageBackend for InMemoryStorage {
     }
 
     fn get(&self, credential_id: &CredentialId) -> Result<Option<VaultEntry>, VaultError> {
-        let entries = self.entries.read().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let entries = self
+            .entries
+            .read()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         Ok(entries.get(credential_id.as_str()).cloned())
     }
 
-    fn get_metadata(&self, credential_id: &CredentialId) -> Result<Option<CredentialMetadata>, VaultError> {
-        let entries = self.entries.read().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+    fn get_metadata(
+        &self,
+        credential_id: &CredentialId,
+    ) -> Result<Option<CredentialMetadata>, VaultError> {
+        let entries = self
+            .entries
+            .read()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         Ok(entries
             .get(credential_id.as_str())
@@ -211,9 +247,10 @@ impl StorageBackend for InMemoryStorage {
         user_id: &UserId,
         filter: &CredentialFilter,
     ) -> Result<CredentialQueryResult, VaultError> {
-        let entries = self.entries.read().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let entries = self
+            .entries
+            .read()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         let credential_ids = self.get_user_credential_ids(tenant_id, user_id)?;
         let mut result = Vec::new();
@@ -259,9 +296,10 @@ impl StorageBackend for InMemoryStorage {
     }
 
     fn delete(&self, credential_id: &CredentialId) -> Result<bool, VaultError> {
-        let mut entries = self.entries.write().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         if let Some(entry) = entries.get_mut(credential_id.as_str()) {
             entry.mark_deleted();
@@ -272,9 +310,10 @@ impl StorageBackend for InMemoryStorage {
     }
 
     fn purge(&self, credential_id: &CredentialId) -> Result<bool, VaultError> {
-        let mut entries = self.entries.write().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         if let Some(entry) = entries.remove(credential_id.as_str()) {
             // 从索引中移除
@@ -287,22 +326,24 @@ impl StorageBackend for InMemoryStorage {
     }
 
     fn exists(&self, credential_id: &CredentialId) -> Result<bool, VaultError> {
-        let entries = self.entries.read().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let entries = self
+            .entries
+            .read()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         Ok(entries.contains_key(credential_id.as_str()))
     }
 
     fn update(&self, entry: &VaultEntry) -> Result<(), VaultError> {
-        let mut entries = self.entries.write().map_err(|_| {
-            VaultError::StorageError("Entries lock poisoned".to_string())
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|_| VaultError::StorageError("Entries lock poisoned".to_string()))?;
 
         // 检查条目是否存在
         if !entries.contains_key(entry.credential_id.as_str()) {
             return Err(VaultError::CredentialNotFound(
-                entry.credential_id.as_str().to_string()
+                entry.credential_id.as_str().to_string(),
             ));
         }
 
@@ -310,6 +351,59 @@ impl StorageBackend for InMemoryStorage {
         entries.insert(entry.credential_id.as_str().to_string(), entry.clone());
 
         Ok(())
+    }
+
+    fn create_version_record(&self, version: &CredentialVersion) -> Result<(), VaultError> {
+        let mut versions = self
+            .versions
+            .write()
+            .map_err(|_| VaultError::StorageError("Versions lock poisoned".to_string()))?;
+
+        let credential_versions = versions
+            .entry(version.credential_id.clone())
+            .or_insert_with(HashMap::new);
+
+        credential_versions.insert(version.version, version.clone());
+
+        Ok(())
+    }
+
+    fn get_version_history(
+        &self,
+        credential_id: &CredentialId,
+    ) -> Result<Vec<CredentialVersion>, VaultError> {
+        let versions = self
+            .versions
+            .read()
+            .map_err(|_| VaultError::StorageError("Versions lock poisoned".to_string()))?;
+
+        let result = versions
+            .get(credential_id.as_str())
+            .map(|credential_versions| {
+                let mut version_list: Vec<CredentialVersion> =
+                    credential_versions.values().cloned().collect();
+                // 按版本号排序
+                version_list.sort_by_key(|v| v.version);
+                version_list
+            })
+            .unwrap_or_default();
+
+        Ok(result)
+    }
+
+    fn get_version(
+        &self,
+        credential_id: &CredentialId,
+        version: u32,
+    ) -> Result<Option<CredentialVersion>, VaultError> {
+        let versions = self
+            .versions
+            .read()
+            .map_err(|_| VaultError::StorageError("Versions lock poisoned".to_string()))?;
+
+        Ok(versions
+            .get(credential_id.as_str())
+            .and_then(|credential_versions| credential_versions.get(&version).cloned()))
     }
 }
 
@@ -351,6 +445,42 @@ impl CredentialVault {
         encrypted_payload.validate()?;
 
         let entry = VaultEntry::new(
+            request.tenant_id,
+            request.user_id,
+            request.service_id,
+            request.credential_type,
+            encrypted_payload,
+            request.expires_at,
+        );
+
+        self.backend.store(&entry)?;
+
+        Ok(entry)
+    }
+
+    /// 创建凭证（使用预生成的 credential_id）
+    ///
+    /// 用于修复加密流程中 credential_id 不一致的问题：
+    /// 加密时需要先知道将要使用的 credential_id，以确保密钥派生参数一致
+    ///
+    /// # Arguments
+    /// * `request` - 创建请求
+    /// * `encrypted_payload` - 加密后的凭证数据
+    /// * `credential_id` - 预生成的凭证 ID
+    ///
+    /// # Returns
+    /// * `Ok(VaultEntry)` - 创建的凭证条目
+    pub fn create_credential_with_id(
+        &self,
+        request: CreateCredentialRequest,
+        encrypted_payload: EncryptedPayload,
+        credential_id: CredentialId,
+    ) -> Result<VaultEntry, VaultError> {
+        // 验证加密载荷格式
+        encrypted_payload.validate()?;
+
+        let entry = VaultEntry::with_credential_id(
+            credential_id,
             request.tenant_id,
             request.user_id,
             request.service_id,
@@ -522,7 +652,9 @@ impl CredentialVault {
         expires_at: Option<Option<u64>>,
     ) -> Result<VaultEntry, VaultError> {
         // 先获取现有条目验证权限
-        let mut entry = self.backend.get(credential_id)?
+        let mut entry = self
+            .backend
+            .get(credential_id)?
             .ok_or_else(|| VaultError::CredentialNotFound(credential_id.as_str().to_string()))?;
 
         // 验证租户隔离
@@ -547,6 +679,168 @@ impl CredentialVault {
 
         Ok(entry)
     }
+
+    /// 更新凭证（带版本控制）
+    ///
+    /// # Arguments
+    /// * `credential_id` - 凭证 ID
+    /// * `tenant_id` - 租户 ID（用于权限验证）
+    /// * `user_id` - 用户 ID（用于权限验证）
+    /// * `encrypted_payload` - 新的加密载荷
+    /// * `change_reason` - 变更原因
+    ///
+    /// # Returns
+    /// * `Ok(UpdateResult)` - 更新结果
+    pub fn update_credential_with_version(
+        &self,
+        credential_id: &CredentialId,
+        tenant_id: &TenantId,
+        user_id: &UserId,
+        encrypted_payload: EncryptedPayload,
+        change_reason: Option<String>,
+    ) -> Result<UpdateResult, VaultError> {
+        use super::version::CredentialVersion;
+
+        // 先获取现有条目验证权限
+        let mut entry = self
+            .backend
+            .get(credential_id)?
+            .ok_or_else(|| VaultError::CredentialNotFound(credential_id.as_str().to_string()))?;
+
+        // 验证租户隔离
+        entry.verify_tenant_access(tenant_id, user_id)?;
+
+        let previous_version = entry.version;
+
+        // 将当前版本保存到版本历史
+        let version_record = CredentialVersion::new(
+            credential_id.as_str().to_string(),
+            entry.version,
+            entry.encrypted_payload.clone(),
+            change_reason.clone(),
+            Some(user_id.hash().to_string()),
+        );
+        self.backend.create_version_record(&version_record)?;
+
+        // 更新凭证内容
+        encrypted_payload.validate()?;
+        entry.encrypted_payload = encrypted_payload;
+
+        // 增加版本号
+        entry.increment_version();
+
+        // 保存更新
+        self.backend.update(&entry)?;
+
+        Ok(UpdateResult {
+            credential_id: credential_id.as_str().to_string(),
+            previous_version,
+            new_version: entry.version,
+            service_id: entry.service_id.as_str().to_string(),
+            credential_type: entry.credential_type.as_str().to_string(),
+        })
+    }
+
+    /// 获取版本历史
+    pub fn get_version_history(
+        &self,
+        credential_id: &CredentialId,
+    ) -> Result<Vec<super::version::CredentialVersion>, VaultError> {
+        self.backend.get_version_history(credential_id)
+    }
+
+    /// 获取指定版本
+    pub fn get_version(
+        &self,
+        credential_id: &CredentialId,
+        version: u32,
+    ) -> Result<Option<super::version::CredentialVersion>, VaultError> {
+        self.backend.get_version(credential_id, version)
+    }
+
+    /// 回滚到指定版本
+    pub fn rollback_credential(
+        &self,
+        credential_id: &CredentialId,
+        tenant_id: &TenantId,
+        user_id: &UserId,
+        target_version: u32,
+        reason: &str,
+    ) -> Result<RollbackResult, VaultError> {
+        use super::version::CredentialVersion;
+
+        // 获取当前凭证验证权限
+        let mut entry = self
+            .backend
+            .get(credential_id)?
+            .ok_or_else(|| VaultError::CredentialNotFound(credential_id.as_str().to_string()))?;
+
+        // 验证租户隔离
+        entry.verify_tenant_access(tenant_id, user_id)?;
+
+        let current_version = entry.version;
+
+        // 验证目标版本
+        if target_version < 1 || target_version >= current_version {
+            return Err(VaultError::InvalidVersion {
+                message: format!(
+                    "无效的目标版本: {}, 当前版本: {}",
+                    target_version, current_version
+                ),
+            });
+        }
+
+        // 获取目标版本记录
+        let target_record = self
+            .backend
+            .get_version(credential_id, target_version)?
+            .ok_or_else(|| VaultError::VersionNotFound {
+                credential_id: credential_id.as_str().to_string(),
+                version: target_version,
+            })?;
+
+        // 将当前版本保存到历史
+        let current_version_record = CredentialVersion::new(
+            credential_id.as_str().to_string(),
+            entry.version,
+            entry.encrypted_payload.clone(),
+            Some(format!("rollback: {}", reason)),
+            Some(user_id.hash().to_string()),
+        );
+        self.backend
+            .create_version_record(&current_version_record)?;
+
+        // 复制目标版本的加密载荷到当前凭证
+        entry.encrypted_payload = target_record.encrypted_payload;
+
+        // 增加版本号（回滚后创建新版本）
+        entry.increment_version();
+
+        // 保存更新
+        self.backend.update(&entry)?;
+
+        Ok(RollbackResult {
+            credential_id: credential_id.as_str().to_string(),
+            previous_version: current_version,
+            current_version: entry.version,
+        })
+    }
+}
+
+/// 更新结果
+pub struct UpdateResult {
+    pub credential_id: String,
+    pub previous_version: u32,
+    pub new_version: u32,
+    pub service_id: String,
+    pub credential_type: String,
+}
+
+/// 回滚结果
+pub struct RollbackResult {
+    pub credential_id: String,
+    pub previous_version: u32,
+    pub current_version: u32,
 }
 
 /// 获取当前 Unix 时间戳（秒）
@@ -628,7 +922,10 @@ mod tests {
         // 获取
         let retrieved = storage.get(&entry.credential_id).unwrap();
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().credential_id.as_str(), entry.credential_id.as_str());
+        assert_eq!(
+            retrieved.unwrap().credential_id.as_str(),
+            entry.credential_id.as_str()
+        );
 
         // 获取元数据
         let metadata = storage.get_metadata(&entry.credential_id).unwrap();
@@ -691,31 +988,37 @@ mod tests {
         storage.store(&entry3).unwrap();
 
         // 查询 tenant_1, user_a
-        let result = storage.query(
-            &TenantId::new("tenant_1"),
-            &UserId::from_hash(entry1.user_id.hash()),
-            &CredentialFilter::default(),
-        ).unwrap();
+        let result = storage
+            .query(
+                &TenantId::new("tenant_1"),
+                &UserId::from_hash(entry1.user_id.hash()),
+                &CredentialFilter::default(),
+            )
+            .unwrap();
 
         assert_eq!(result.total, 1);
         assert_eq!(result.credentials[0].service_id, "service_1");
 
         // 查询 tenant_1, user_b
-        let result = storage.query(
-            &TenantId::new("tenant_1"),
-            &UserId::from_hash(entry2.user_id.hash()),
-            &CredentialFilter::default(),
-        ).unwrap();
+        let result = storage
+            .query(
+                &TenantId::new("tenant_1"),
+                &UserId::from_hash(entry2.user_id.hash()),
+                &CredentialFilter::default(),
+            )
+            .unwrap();
 
         assert_eq!(result.total, 1);
         assert_eq!(result.credentials[0].service_id, "service_2");
 
         // 查询 tenant_2
-        let result = storage.query(
-            &TenantId::new("tenant_2"),
-            &UserId::from_hash(entry3.user_id.hash()),
-            &CredentialFilter::default(),
-        ).unwrap();
+        let result = storage
+            .query(
+                &TenantId::new("tenant_2"),
+                &UserId::from_hash(entry3.user_id.hash()),
+                &CredentialFilter::default(),
+            )
+            .unwrap();
 
         assert_eq!(result.total, 1);
         assert_eq!(result.credentials[0].service_id, "service_3");
@@ -765,7 +1068,9 @@ mod tests {
             service_id: Some(ServiceId::new("schwab")),
             ..Default::default()
         };
-        let result = storage.query(&tenant_id, &UserId::from_hash(user_id.hash()), &filter).unwrap();
+        let result = storage
+            .query(&tenant_id, &UserId::from_hash(user_id.hash()), &filter)
+            .unwrap();
         assert_eq!(result.total, 1);
         assert_eq!(result.credentials[0].service_id, "schwab");
 
@@ -774,9 +1079,14 @@ mod tests {
             credential_type: Some(CredentialType::ApiKey),
             ..Default::default()
         };
-        let result = storage.query(&tenant_id, &UserId::from_hash(user_id.hash()), &filter).unwrap();
+        let result = storage
+            .query(&tenant_id, &UserId::from_hash(user_id.hash()), &filter)
+            .unwrap();
         assert_eq!(result.total, 1);
-        assert_eq!(result.credentials[0].credential_type, CredentialType::ApiKey);
+        assert_eq!(
+            result.credentials[0].credential_type,
+            CredentialType::ApiKey
+        );
     }
 
     #[test]
@@ -792,28 +1102,34 @@ mod tests {
             expires_at: None,
         };
 
-        let entry = vault.create_credential(request, create_test_payload()).unwrap();
+        let entry = vault
+            .create_credential(request, create_test_payload())
+            .unwrap();
 
         // 验证创建成功
         assert!(!entry.credential_id.as_str().is_empty());
         assert_eq!(entry.service_id.as_str(), "schwab");
 
         // 获取元数据
-        let metadata = vault.get_credential_metadata(
-            &entry.credential_id,
-            &TenantId::new("tenant_123"),
-            &UserId::from_hash(entry.user_id.hash()),
-        ).unwrap();
+        let metadata = vault
+            .get_credential_metadata(
+                &entry.credential_id,
+                &TenantId::new("tenant_123"),
+                &UserId::from_hash(entry.user_id.hash()),
+            )
+            .unwrap();
 
         assert!(metadata.is_some());
         assert_eq!(metadata.unwrap().service_id, "schwab");
 
         // 获取完整凭证
-        let full = vault.get_credential(
-            &entry.credential_id,
-            &TenantId::new("tenant_123"),
-            &UserId::from_hash(entry.user_id.hash()),
-        ).unwrap();
+        let full = vault
+            .get_credential(
+                &entry.credential_id,
+                &TenantId::new("tenant_123"),
+                &UserId::from_hash(entry.user_id.hash()),
+            )
+            .unwrap();
 
         assert!(full.is_some());
     }
@@ -831,14 +1147,17 @@ mod tests {
             CredentialType::UsernamePassword,
             create_test_payload(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         // 正确租户访问
-        let metadata = vault.get_credential_metadata(
-            &entry.credential_id,
-            &TenantId::new("tenant_123"),
-            &UserId::from_hash(entry.user_id.hash()),
-        ).unwrap();
+        let metadata = vault
+            .get_credential_metadata(
+                &entry.credential_id,
+                &TenantId::new("tenant_123"),
+                &UserId::from_hash(entry.user_id.hash()),
+            )
+            .unwrap();
         assert!(metadata.is_some());
 
         // 错误租户访问应该失败
@@ -865,7 +1184,8 @@ mod tests {
             CredentialType::UsernamePassword,
             create_test_payload(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         create_credential(
             &vault,
@@ -875,14 +1195,17 @@ mod tests {
             CredentialType::ApiKey,
             create_test_payload(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         // 列出凭证
-        let result = vault.list_credentials(
-            &tenant_id,
-            &UserId::from_hash(user_id.hash()),
-            CredentialFilter::default(),
-        ).unwrap();
+        let result = vault
+            .list_credentials(
+                &tenant_id,
+                &UserId::from_hash(user_id.hash()),
+                CredentialFilter::default(),
+            )
+            .unwrap();
 
         assert_eq!(result.total, 2);
     }
@@ -902,31 +1225,38 @@ mod tests {
             CredentialType::UsernamePassword,
             create_test_payload(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         // 软删除
-        let deleted = vault.delete_credential(
-            &entry.credential_id,
-            &tenant_id,
-            &UserId::from_hash(user_id.hash()),
-        ).unwrap();
+        let deleted = vault
+            .delete_credential(
+                &entry.credential_id,
+                &tenant_id,
+                &UserId::from_hash(user_id.hash()),
+            )
+            .unwrap();
         assert!(deleted);
 
         // 获取元数据（仍存在，但标记为删除）
-        let metadata = vault.get_credential_metadata(
-            &entry.credential_id,
-            &tenant_id,
-            &UserId::from_hash(user_id.hash()),
-        ).unwrap();
+        let metadata = vault
+            .get_credential_metadata(
+                &entry.credential_id,
+                &tenant_id,
+                &UserId::from_hash(user_id.hash()),
+            )
+            .unwrap();
         assert!(metadata.is_some());
         assert!(metadata.unwrap().is_deleted);
 
         // 物理删除
-        let purged = vault.purge_credential(
-            &entry.credential_id,
-            &tenant_id,
-            &UserId::from_hash(user_id.hash()),
-        ).unwrap();
+        let purged = vault
+            .purge_credential(
+                &entry.credential_id,
+                &tenant_id,
+                &UserId::from_hash(user_id.hash()),
+            )
+            .unwrap();
         assert!(purged);
 
         // 确认不存在
@@ -960,15 +1290,16 @@ mod tests {
         }
 
         // 等待所有线程完成
-        let ids: Vec<String> = handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect();
+        let ids: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
         // 验证所有条目都存在
         assert_eq!(ids.len(), 10);
         for id in ids {
-            assert!(storage.exists(&CredentialId::from_string(id).unwrap()).unwrap());
+            assert!(
+                storage
+                    .exists(&CredentialId::from_string(id).unwrap())
+                    .unwrap()
+            );
         }
     }
 }

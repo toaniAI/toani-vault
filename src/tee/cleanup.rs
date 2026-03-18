@@ -22,8 +22,8 @@
 use crate::crypto::constants::KEY_LENGTH;
 use crate::tee::keys::{CachedKeyEntry, UserKeyCache};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 use zeroize::Zeroize;
 
 /// 清理调度器配置
@@ -292,10 +292,7 @@ impl KeyCleaner {
     /// # 安全说明
     ///
     /// 确保旧密钥不会残留在内存中
-    pub fn replace_key_material(
-        old_key: &mut [u8; KEY_LENGTH],
-        new_key: &[u8; KEY_LENGTH],
-    ) {
+    pub fn replace_key_material(old_key: &mut [u8; KEY_LENGTH], new_key: &[u8; KEY_LENGTH]) {
         // 先清零旧密钥
         old_key.zeroize();
 

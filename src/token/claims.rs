@@ -185,23 +185,17 @@ impl TokenClaims {
     /// 获取剩余有效时间（秒）
     pub fn remaining_ttl(&self) -> u64 {
         let now = current_timestamp();
-        if now >= self.exp {
-            0
-        } else {
-            self.exp - now
-        }
+        if now >= self.exp { 0 } else { self.exp - now }
     }
 
     /// 序列化为 JSON 字符串
     pub fn to_json(&self) -> Result<String, ClaimsError> {
-        serde_json::to_string(self)
-            .map_err(|e| ClaimsError::SerializationError(e.to_string()))
+        serde_json::to_string(self).map_err(|e| ClaimsError::SerializationError(e.to_string()))
     }
 
     /// 从 JSON 字符串反序列化
     pub fn from_json(json: &str) -> Result<Self, ClaimsError> {
-        serde_json::from_str(json)
-            .map_err(|e| ClaimsError::DeserializationError(e.to_string()))
+        serde_json::from_str(json).map_err(|e| ClaimsError::DeserializationError(e.to_string()))
     }
 
     /// 解析 scope 为权限列表
@@ -286,15 +280,19 @@ impl ScopeValidator {
 
         // 检查特定权限
         match required_scope {
-            scopes::CREDENTIAL_READ => token_scopes.contains(&scopes::CREDENTIAL_READ)
-                || token_scopes.contains(&scopes::CREDENTIAL_DECRYPT)
-                || token_scopes.contains(&scopes::CREDENTIAL_WRITE)
-                || token_scopes.contains(&scopes::ADMIN),
+            scopes::CREDENTIAL_READ => {
+                token_scopes.contains(&scopes::CREDENTIAL_READ)
+                    || token_scopes.contains(&scopes::CREDENTIAL_DECRYPT)
+                    || token_scopes.contains(&scopes::CREDENTIAL_WRITE)
+                    || token_scopes.contains(&scopes::ADMIN)
+            }
             scopes::CREDENTIAL_DECRYPT => {
-                token_scopes.contains(&scopes::CREDENTIAL_DECRYPT) || token_scopes.contains(&scopes::ADMIN)
+                token_scopes.contains(&scopes::CREDENTIAL_DECRYPT)
+                    || token_scopes.contains(&scopes::ADMIN)
             }
             scopes::CREDENTIAL_WRITE => {
-                token_scopes.contains(&scopes::CREDENTIAL_WRITE) || token_scopes.contains(&scopes::ADMIN)
+                token_scopes.contains(&scopes::CREDENTIAL_WRITE)
+                    || token_scopes.contains(&scopes::ADMIN)
             }
             scopes::CREDENTIAL_DELETE => {
                 token_scopes.contains(&scopes::CREDENTIAL_DELETE)
@@ -302,7 +300,8 @@ impl ScopeValidator {
                     || token_scopes.contains(&scopes::ADMIN)
             }
             scopes::TOKEN_MANAGE => {
-                token_scopes.contains(&scopes::TOKEN_MANAGE) || token_scopes.contains(&scopes::ADMIN)
+                token_scopes.contains(&scopes::TOKEN_MANAGE)
+                    || token_scopes.contains(&scopes::ADMIN)
             }
             scopes::AUDIT_READ => {
                 token_scopes.contains(&scopes::AUDIT_READ) || token_scopes.contains(&scopes::ADMIN)
@@ -318,13 +317,7 @@ mod tests {
 
     #[test]
     fn test_token_claims_new() {
-        let claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
 
         assert_eq!(claims.iss, "credbridge-vault");
         assert_eq!(claims.sub, "user_123");
@@ -338,12 +331,8 @@ mod tests {
 
     #[test]
     fn test_token_claims_with_default_ttl() {
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            false,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", false);
 
         let expected_exp = claims.iat.unwrap() + DEFAULT_TOKEN_TTL_SECONDS;
         assert_eq!(claims.exp, expected_exp);
@@ -351,26 +340,14 @@ mod tests {
 
     #[test]
     fn test_validate_valid_claims() {
-        let claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
 
         assert!(claims.validate("tenant_456").is_ok());
     }
 
     #[test]
     fn test_validate_invalid_issuer() {
-        let mut claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let mut claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
         claims.iss = "invalid-issuer".to_string();
 
         assert_eq!(
@@ -381,13 +358,7 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_audience() {
-        let claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
 
         assert_eq!(
             claims.validate("wrong_tenant"),
@@ -400,13 +371,7 @@ mod tests {
 
     #[test]
     fn test_validate_expired() {
-        let mut claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let mut claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
         // 设置为已过期
         claims.exp = 1; // 过去的 Unix 时间戳
 
@@ -415,13 +380,7 @@ mod tests {
 
     #[test]
     fn test_is_expired() {
-        let mut claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let mut claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
 
         assert!(!claims.is_expired());
 
@@ -432,13 +391,7 @@ mod tests {
 
     #[test]
     fn test_remaining_ttl() {
-        let claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-            900,
-        );
+        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
 
         let ttl = claims.remaining_ttl();
         assert!(ttl > 0 && ttl <= 900);
@@ -479,13 +432,7 @@ mod tests {
 
     #[test]
     fn test_has_scope() {
-        let claims = TokenClaims::new(
-            "user_123",
-            "tenant_456",
-            "credential:read admin",
-            true,
-            900,
-        );
+        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read admin", true, 900);
 
         assert!(claims.has_scope("credential:read"));
         assert!(claims.has_scope("admin"));
@@ -496,8 +443,14 @@ mod tests {
     fn test_scope_validator_admin() {
         let scopes = vec!["admin"];
         assert!(ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_READ));
-        assert!(ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_DECRYPT));
-        assert!(ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_WRITE));
+        assert!(ScopeValidator::can_access(
+            &scopes,
+            scopes::CREDENTIAL_DECRYPT
+        ));
+        assert!(ScopeValidator::can_access(
+            &scopes,
+            scopes::CREDENTIAL_WRITE
+        ));
         assert!(ScopeValidator::can_access(&scopes, scopes::TOKEN_MANAGE));
         assert!(ScopeValidator::can_access(&scopes, scopes::AUDIT_READ));
     }
@@ -506,15 +459,24 @@ mod tests {
     fn test_scope_validator_read_only() {
         let scopes = vec!["credential:read"];
         assert!(ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_READ));
-        assert!(!ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_DECRYPT));
-        assert!(!ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_WRITE));
+        assert!(!ScopeValidator::can_access(
+            &scopes,
+            scopes::CREDENTIAL_DECRYPT
+        ));
+        assert!(!ScopeValidator::can_access(
+            &scopes,
+            scopes::CREDENTIAL_WRITE
+        ));
     }
 
     #[test]
     fn test_scope_validator_hierarchy() {
         // write 包含 delete 权限
         let scopes = vec!["credential:write"];
-        assert!(ScopeValidator::can_access(&scopes, scopes::CREDENTIAL_DELETE));
+        assert!(ScopeValidator::can_access(
+            &scopes,
+            scopes::CREDENTIAL_DELETE
+        ));
 
         // decrypt 包含 read 权限
         let scopes = vec!["credential:decrypt"];

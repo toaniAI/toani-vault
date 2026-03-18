@@ -13,9 +13,9 @@
 //! - `Mrenclave`: 仅当前版本 Enclave 可解封（严格模式）
 //! - `Mrsigner`: 同一签名者的不同版本 Enclave 可解封（兼容模式）
 
+use crate::crypto::CryptoError;
 use crate::crypto::constants::KEY_LENGTH;
-use crate::crypto::{CryptoError, KeyHandle};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::ZeroizeOnDrop;
 
 /// 密封策略
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -230,7 +230,7 @@ impl SealedData {
         let mut offset = 0;
 
         // 版本号
-        let version = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        let _version = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
         offset += 2;
 
         // 策略
@@ -378,8 +378,8 @@ impl SealingService {
         policy: SealPolicy,
     ) -> Result<SealedData, CryptoError> {
         use aes_gcm::{
-            aead::{Aead, AeadCore, KeyInit, OsRng},
             Aes256Gcm,
+            aead::{Aead, AeadCore, KeyInit, OsRng},
         };
 
         // 获取 Sealing Key
@@ -438,8 +438,8 @@ impl SealingService {
     /// 使用 Sealing Key 解密密封数据包
     pub fn unseal_data(&self, sealed_data: &SealedData) -> Result<Vec<u8>, CryptoError> {
         use aes_gcm::{
-            aead::{Aead, KeyInit},
             Aes256Gcm, Nonce,
+            aead::{Aead, KeyInit},
         };
 
         // 检查是否可以解封
@@ -505,10 +505,7 @@ fn simulate_egetkey(
     use ring::hmac;
 
     // 使用 HMAC-SHA256 模拟硬件密钥派生
-    let key = hmac::Key::new(
-        hmac::HMAC_SHA256,
-        b"CredBridge Simulated Sealing Key Root",
-    );
+    let key = hmac::Key::new(hmac::HMAC_SHA256, b"CredBridge Simulated Sealing Key Root");
 
     let policy_bytes = policy.as_str().as_bytes();
     let mut data = Vec::with_capacity(16 + 2 + policy_bytes.len());
@@ -561,9 +558,8 @@ impl SealedStorage {
         let file_path = format!("{}/{}.sealed", self.path, key);
         let bytes = data.to_bytes();
 
-        std::fs::write(&file_path, &bytes).map_err(|e| {
-            CryptoError::EncryptionError(format!("写入密封数据失败: {}", e))
-        })?;
+        std::fs::write(&file_path, &bytes)
+            .map_err(|e| CryptoError::EncryptionError(format!("写入密封数据失败: {}", e)))?;
 
         Ok(())
     }
@@ -571,9 +567,8 @@ impl SealedStorage {
     /// 读取密封数据
     pub fn load(&self, key: &str) -> Result<SealedData, CryptoError> {
         let file_path = format!("{}/{}.sealed", self.path, key);
-        let bytes = std::fs::read(&file_path).map_err(|e| {
-            CryptoError::DecryptionError(format!("读取密封数据失败: {}", e))
-        })?;
+        let bytes = std::fs::read(&file_path)
+            .map_err(|e| CryptoError::DecryptionError(format!("读取密封数据失败: {}", e)))?;
 
         SealedData::from_bytes(&bytes)
     }
@@ -581,9 +576,8 @@ impl SealedStorage {
     /// 删除密封数据
     pub fn delete(&self, key: &str) -> Result<(), CryptoError> {
         let file_path = format!("{}/{}.sealed", self.path, key);
-        std::fs::remove_file(&file_path).map_err(|e| {
-            CryptoError::EncryptionError(format!("删除密封数据失败: {}", e))
-        })?;
+        std::fs::remove_file(&file_path)
+            .map_err(|e| CryptoError::EncryptionError(format!("删除密封数据失败: {}", e)))?;
 
         Ok(())
     }

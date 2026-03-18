@@ -19,13 +19,11 @@
 //! - **不可否认**: ECDSA 签名提供不可否认性
 //! - **证书链**: 完整的 PCK 证书链验证
 
-use crate::crypto::CryptoError;
 use crate::tee::{
-    attestation::{AttestationError, AttestationResult, Quote, ReportData, SGX_MEASUREMENT_LEN},
+    attestation::{AttestationError, AttestationResult, ReportData, SGX_MEASUREMENT_LEN},
     enclave::{Enclave, EnclaveError},
 };
-use ring::digest::{digest, SHA256};
-use ring::signature::{self, UnparsedPublicKey, ECDSA_P256_SHA256_FIXED};
+use ring::digest::{SHA256, digest};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,10 +32,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const DCAP_SERVICE_VERSION: &str = "1.0.0";
 
 /// Intel PCS 基础 URL（生产环境）
-pub const INTEL_PCS_BASE_URL_PROD: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
+pub const INTEL_PCS_BASE_URL_PROD: &str =
+    "https://api.trustedservices.intel.com/sgx/certification/v4";
 
 /// Intel PCS 基础 URL（测试环境）
-pub const INTEL_PCS_BASE_URL_TEST: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
+pub const INTEL_PCS_BASE_URL_TEST: &str =
+    "https://api.trustedservices.intel.com/sgx/certification/v4";
 
 /// PCK 证书链最大长度
 pub const MAX_PCK_CERT_CHAIN_LEN: usize = 4096;
@@ -98,8 +98,12 @@ impl std::fmt::Display for DcapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DcapError::QuoteGenerationFailed(msg) => write!(f, "Quote generation failed: {}", msg),
-            DcapError::QuoteVerificationFailed(msg) => write!(f, "Quote verification failed: {}", msg),
-            DcapError::PcsCommunicationFailed(msg) => write!(f, "PCS communication failed: {}", msg),
+            DcapError::QuoteVerificationFailed(msg) => {
+                write!(f, "Quote verification failed: {}", msg)
+            }
+            DcapError::PcsCommunicationFailed(msg) => {
+                write!(f, "PCS communication failed: {}", msg)
+            }
             DcapError::CertificateVerificationFailed(msg) => {
                 write!(f, "Certificate verification failed: {}", msg)
             }
@@ -120,7 +124,9 @@ impl From<AttestationError> for DcapError {
     fn from(e: AttestationError) -> Self {
         match e {
             AttestationError::QuoteGenerationFailed(msg) => DcapError::QuoteGenerationFailed(msg),
-            AttestationError::QuoteVerificationFailed(msg) => DcapError::QuoteVerificationFailed(msg),
+            AttestationError::QuoteVerificationFailed(msg) => {
+                DcapError::QuoteVerificationFailed(msg)
+            }
             AttestationError::SignatureVerificationFailed => DcapError::SignatureVerificationFailed,
             AttestationError::MeasurementMismatch => DcapError::MeasurementMismatch,
             AttestationError::InvalidQuoteFormat => DcapError::InvalidQuoteFormat,
@@ -198,6 +204,7 @@ pub struct DcapService {
 
 /// 缓存的 Quote
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct CachedQuote {
     /// Quote 数据
     quote: DcapQuote,
@@ -211,6 +218,7 @@ struct CachedQuote {
 
 /// 已验证的 Enclave 记录
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct VerifiedEnclaveRecord {
     /// MRENCLAVE
     mrenclave: [u8; SGX_MEASUREMENT_LEN],
@@ -434,7 +442,14 @@ impl std::fmt::Debug for DcapService {
         f.debug_struct("DcapService")
             .field("config", &self.config)
             .field("root_cert_len", &self.root_cert.len())
-            .field("has_cached_quote", &self.cached_quote.read().map(|q| q.is_some()).unwrap_or(false))
+            .field(
+                "has_cached_quote",
+                &self
+                    .cached_quote
+                    .read()
+                    .map(|q| q.is_some())
+                    .unwrap_or(false),
+            )
             .field("verified_enclave_count", &self.verified_enclave_count())
             .finish()
     }
@@ -589,7 +604,9 @@ impl DcapService {
                 }
             }
         }
-        Err(DcapError::QuoteGenerationFailed("No valid cached quote".to_string()))
+        Err(DcapError::QuoteGenerationFailed(
+            "No valid cached quote".to_string(),
+        ))
     }
 
     /// 获取认证报告
@@ -662,7 +679,10 @@ impl DcapService {
         offset += 2;
 
         let epid_group_id = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -673,7 +693,10 @@ impl DcapService {
         offset += 2;
 
         let xeid = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -693,7 +716,10 @@ impl DcapService {
             return Err(DcapError::InvalidQuoteFormat);
         }
         let signature_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -731,7 +757,10 @@ impl DcapService {
         offset += 16;
 
         let miscselect = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]);
         offset += 4;
 
@@ -789,7 +818,9 @@ impl DcapService {
             isvprodid,
             isvsvn,
             reserved4,
-            report_data: ReportData { data: report_data_bytes },
+            report_data: ReportData {
+                data: report_data_bytes,
+            },
         })
     }
 
@@ -806,7 +837,10 @@ impl DcapService {
             return Err(DcapError::InvalidQuoteFormat);
         }
         let qe_report_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -825,7 +859,10 @@ impl DcapService {
             return Err(DcapError::InvalidQuoteFormat);
         }
         let auth_data_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -837,7 +874,10 @@ impl DcapService {
 
         // QE Certification Data
         let cert_data_len = u32::from_le_bytes([
-            bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
         ]) as usize;
         offset += 4;
 
@@ -933,8 +973,11 @@ impl DcapService {
     }
 
     /// 构建认证报告
-    fn build_attestation_report(&self, quote: &DcapQuote) -> Result<DcapAttestationReport, DcapError> {
-        use base64::{engine::general_purpose::STANDARD, Engine};
+    fn build_attestation_report(
+        &self,
+        quote: &DcapQuote,
+    ) -> Result<DcapAttestationReport, DcapError> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
 
         let quote_bytes = self.quote_to_bytes(quote)?;
         let quote_b64 = STANDARD.encode(&quote_bytes);
@@ -1020,7 +1063,10 @@ impl DcapService {
     }
 
     /// 生成模拟签名
-    fn generate_simulated_signature(&self, report_body: &DcapReportBody) -> Result<DcapQuoteSignature, DcapError> {
+    fn generate_simulated_signature(
+        &self,
+        report_body: &DcapReportBody,
+    ) -> Result<DcapQuoteSignature, DcapError> {
         let report_hash = digest(&SHA256, &self.report_body_to_bytes(report_body)?);
 
         let mut r = [0u8; 32];
@@ -1029,7 +1075,7 @@ impl DcapService {
         // SHA256 produces 32 bytes, split into two halves for r and s
         r.copy_from_slice(&hash_bytes[..32]);
         s.copy_from_slice(&hash_bytes[..32]); // Use same bytes for s, XOR with constant for variation
-        for (i, b) in s.iter_mut().enumerate() {
+        for (_i, b) in s.iter_mut().enumerate() {
             *b ^= 0x5C; // XOR with constant to derive s from r
         }
 
@@ -1071,8 +1117,9 @@ fn parse_pem_cert(pem: &str) -> Result<Vec<u8>, DcapError> {
         base64_content.push_str(line);
     }
 
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    STANDARD.decode(&base64_content)
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    STANDARD
+        .decode(&base64_content)
         .map_err(|e| DcapError::ConfigurationError(format!("Invalid PEM: {}", e)))
 }
 
@@ -1250,7 +1297,10 @@ mod tests {
 
         // 验证应该失败
         let result = service.verify_attestation(&quote_bytes, None);
-        assert!(matches!(result.unwrap_err(), DcapError::MeasurementMismatch));
+        assert!(matches!(
+            result.unwrap_err(),
+            DcapError::MeasurementMismatch
+        ));
     }
 
     #[test]

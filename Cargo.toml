@@ -16,6 +16,9 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 # 图像处理
 image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 
+# Chrome DevTools Protocol
+chromiumoxide = { version = "0.7", features = ["tokio-runtime"], optional = true }
+
 # CSV 处理
 csv = "1.3"
 
@@ -99,7 +102,7 @@ version = "1"
 features = ["full", "rt-multi-thread"]
 
 [features]
-default = []
+default = ["screenshot-cdp"]
 # 严格生产模式：禁止调试功能
 strict-production = []
 # 允许调试模式（即使在发布构建中）
@@ -108,6 +111,8 @@ allow-debug = []
 rls-tests = []
 # RLS 性能基准测试
 rls-benchmark = []
+# 截图 CDP 支持（使用 chromiumoxide）
+screenshot-cdp = ["chromiumoxide"]
 
 [[test]]
 name = "paseto_tests"

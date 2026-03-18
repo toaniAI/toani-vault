@@ -123,9 +123,9 @@
 //! 4. **完整性验证**: 支持验证整个审计链的完整性
 
 pub mod events;
-pub mod recorder;
 pub mod immudb_client;
 pub mod immudb_store;
+pub mod recorder;
 
 // 公开导出 - 审计事件
 pub use events::{

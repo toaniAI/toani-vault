@@ -16,20 +16,18 @@
 //! 所有端点需要 Scope: `audit:read` 或 `admin`
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::sync::Arc;
 
 use crate::api::audit_models::*;
 use crate::api::middleware::{TokenScope, ValidatedToken};
-use crate::audit::{
-    AuditAction, AuditEntry, AuditFilter, AuditRecorder, MemoryAuditStorage, Outcome,
-    SignedAuditEntry, VerificationProof,
-};
+use crate::audit::{AuditFilter, MemoryAuditStorage, SignedAuditEntry, VerificationProof};
 
 /// 审计 API 状态
 #[derive(Clone)]
@@ -40,7 +38,9 @@ pub struct AuditApiState {
 
 impl std::fmt::Debug for AuditApiState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AuditApiState").field("storage", &"<dyn AuditStorage>").finish()
+        f.debug_struct("AuditApiState")
+            .field("storage", &"<dyn AuditStorage>")
+            .finish()
     }
 }
 
@@ -50,7 +50,12 @@ impl std::fmt::Debug for AuditApiState {
 #[async_trait::async_trait]
 pub trait AuditStorage: Send + Sync {
     /// 查询审计日志
-    async fn query(&self, filter: AuditFilter, offset: usize, limit: usize) -> Result<(Vec<SignedAuditEntry>, u64), String>;
+    async fn query(
+        &self,
+        filter: AuditFilter,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<SignedAuditEntry>, u64), String>;
 
     /// 按 ID 获取审计条目
     async fn get_by_id(&self, id: &str) -> Result<Option<SignedAuditEntry>, String>;
@@ -59,7 +64,8 @@ pub trait AuditStorage: Send + Sync {
     async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String>;
 
     /// 获取验证证明
-    async fn get_verification_proof(&self, index: u64) -> Result<Option<VerificationProof>, String>;
+    async fn get_verification_proof(&self, index: u64)
+    -> Result<Option<VerificationProof>, String>;
 
     /// 验证条目
     async fn verify_entry(&self, index: u64) -> Result<bool, String>;
@@ -71,7 +77,7 @@ pub trait AuditStorage: Send + Sync {
 /// 内存审计存储适配器
 #[derive(Clone)]
 pub struct MemoryAuditStorageAdapter {
-    storage: Arc<std::sync::Mutex<MemoryAuditStorage>>,
+    storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>,
 }
 
 impl std::fmt::Debug for MemoryAuditStorageAdapter {
@@ -86,18 +92,25 @@ impl MemoryAuditStorageAdapter {
     /// 创建新的内存存储适配器
     pub fn new(storage: MemoryAuditStorage) -> Self {
         Self {
-            storage: Arc::new(std::sync::Mutex::new(storage)),
+            storage: Arc::new(tokio::sync::Mutex::new(storage)),
         }
     }
 }
 
 #[async_trait::async_trait]
 impl AuditStorage for MemoryAuditStorageAdapter {
-    async fn query(&self, filter: AuditFilter, offset: usize, limit: usize) -> Result<(Vec<SignedAuditEntry>, u64), String> {
-        let storage = self.storage.lock().map_err(|e| e.to_string())?;
+    async fn query(
+        &self,
+        filter: AuditFilter,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<SignedAuditEntry>, u64), String> {
+        let storage = self.storage.lock().await;
 
         // 获取所有条目
-        let all_entries = storage.query_recent(100_000).map_err(|e| format!("{:?}", e))?;
+        let all_entries = storage
+            .query_recent(100_000)
+            .map_err(|e| format!("{:?}", e))?;
 
         // 过滤
         let filtered: Vec<_> = all_entries
@@ -145,34 +158,35 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         let total = filtered.len() as u64;
 
         // 分页
-        let paged: Vec<_> = filtered
-            .into_iter()
-            .skip(offset)
-            .take(limit)
-            .collect();
+        let paged: Vec<_> = filtered.into_iter().skip(offset).take(limit).collect();
 
         Ok((paged, total))
     }
 
     async fn get_by_id(&self, id: &str) -> Result<Option<SignedAuditEntry>, String> {
-        let storage = self.storage.lock().map_err(|e| e.to_string())?;
+        let storage = self.storage.lock().await;
         // 搜索所有条目
-        let all_entries = storage.query_recent(100_000).map_err(|e| format!("{:?}", e))?;
+        let all_entries = storage
+            .query_recent(100_000)
+            .map_err(|e| format!("{:?}", e))?;
         Ok(all_entries.into_iter().find(|e| e.entry.id == id))
     }
 
     async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String> {
-        let storage = self.storage.lock().map_err(|e| e.to_string())?;
+        let storage = self.storage.lock().await;
         storage.get_by_index(index).map_err(|e| format!("{:?}", e))
     }
 
-    async fn get_verification_proof(&self, _index: u64) -> Result<Option<VerificationProof>, String> {
+    async fn get_verification_proof(
+        &self,
+        _index: u64,
+    ) -> Result<Option<VerificationProof>, String> {
         // 内存存储不支持验证证明
         Ok(None)
     }
 
     async fn verify_entry(&self, index: u64) -> Result<bool, String> {
-        let storage = self.storage.lock().map_err(|e| e.to_string())?;
+        let storage = self.storage.lock().await;
 
         // 获取条目
         let entry = storage.get_by_index(index).map_err(|e| e.to_string())?;
@@ -236,7 +250,9 @@ pub async fn list_audit_logs(
     if !has_audit_permission(&token) {
         return (
             StatusCode::FORBIDDEN,
-            Json(AuditLogListResponse::error("权限不足：需要 audit:read 或 admin 权限")),
+            Json(AuditLogListResponse::error(
+                "权限不足：需要 audit:read 或 admin 权限",
+            )),
         )
             .into_response();
     }
@@ -262,10 +278,15 @@ pub async fn list_audit_logs(
     };
 
     // 查询
-    match state.storage.query(filter, params.offset(), params.page_size).await {
+    match state
+        .storage
+        .query(filter, params.offset(), params.page_size)
+        .await
+    {
         Ok((entries, total)) => {
             let items: Vec<AuditLogListItem> = entries.iter().map(AuditLogListItem::from).collect();
-            let response = AuditLogListResponse::success(items, total, params.page, params.page_size);
+            let response =
+                AuditLogListResponse::success(items, total, params.page, params.page_size);
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
@@ -302,7 +323,9 @@ pub async fn get_audit_log_detail(
     if !has_audit_permission(&token) {
         return (
             StatusCode::FORBIDDEN,
-            Json(AuditLogDetailResponse::error("权限不足：需要 audit:read 或 admin 权限")),
+            Json(AuditLogDetailResponse::error(
+                "权限不足：需要 audit:read 或 admin 权限",
+            )),
         )
             .into_response();
     }
@@ -413,18 +436,16 @@ pub async fn export_audit_logs(
     if !has_audit_permission(&token) {
         return (
             StatusCode::FORBIDDEN,
-            Json(AuditExportResponse::error("权限不足：需要 audit:read 或 admin 权限")),
+            Json(AuditExportResponse::error(
+                "权限不足：需要 audit:read 或 admin 权限",
+            )),
         )
             .into_response();
     }
 
     // 验证参数
     if let Err(e) = params.validate() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(AuditExportResponse::error(e)),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(AuditExportResponse::error(e))).into_response();
     }
 
     // 构建过滤器
@@ -451,7 +472,7 @@ pub async fn export_audit_logs(
     };
 
     // 生成导出内容
-    let (content, content_type) = match params.format {
+    let (content, _content_type) = match params.format {
         ExportFormat::Json => {
             let json = match serde_json::to_string_pretty(&entries) {
                 Ok(j) => j,
@@ -472,14 +493,14 @@ pub async fn export_audit_logs(
     };
 
     // 计算完整性哈希
-    use ring::digest::{digest, SHA256};
+    use ring::digest::{SHA256, digest};
     let integrity_hash = hex::encode(digest(&SHA256, content.as_bytes()).as_ref());
 
     // 生成导出 ID
     let export_id = uuid::Uuid::now_v7().to_string();
 
     // Base64 编码内容
-    let content_base64 = base64::encode(&content);
+    let content_base64 = STANDARD.encode(&content);
 
     let data = AuditExportData {
         export_id,
@@ -573,7 +594,9 @@ pub async fn verify_audit_log(
     if !has_audit_permission(&token) {
         return (
             StatusCode::FORBIDDEN,
-            Json(AuditVerifyResponse::error("权限不足：需要 audit:read 或 admin 权限")),
+            Json(AuditVerifyResponse::error(
+                "权限不足：需要 audit:read 或 admin 权限",
+            )),
         )
             .into_response();
     }
@@ -692,6 +715,7 @@ fn current_timestamp_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audit::events::{AuditAction, AuditEntry, Outcome};
 
     fn create_test_token() -> ValidatedToken {
         ValidatedToken {

@@ -54,7 +54,7 @@ impl HardwareRootKey {
         Self {
             key_material: sealing_key,
             source: RootKeySource::SgxSealingKey,
-            mrsigner: [0u8; 32], // 实际实现中从 Enclave 报告获取
+            mrsigner: [0u8; 32],  // 实际实现中从 Enclave 报告获取
             mrenclave: [0u8; 32], // 实际实现中从 Enclave 报告获取
         }
     }

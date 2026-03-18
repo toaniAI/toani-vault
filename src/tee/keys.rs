@@ -16,7 +16,7 @@ use crate::crypto::constants::KEY_LENGTH;
 use crate::crypto::{CryptoError, KeyHandle};
 use crate::tee::sealing::{SealPolicy, SealedStorage, SealingService};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -395,7 +395,7 @@ impl UserKeyCache {
     ///
     /// 用于 Enclave 关闭时彻底清理
     pub fn clear(&mut self) {
-        for (key, entry) in &self.entries {
+        for (_key, entry) in &self.entries {
             entry.secure_clear();
         }
         self.entries.clear();
@@ -491,8 +491,12 @@ impl std::fmt::Display for KeyManagerError {
             KeyManagerError::KeyNotFound => write!(f, "Key not found in cache"),
             KeyManagerError::CacheFull => write!(f, "Key cache is full"),
             KeyManagerError::SealingFailed(msg) => write!(f, "Sealing failed: {}", msg),
-            KeyManagerError::MrsignerMismatch => write!(f, "MRSIGNER mismatch - incompatible enclave"),
-            KeyManagerError::MrenclaveMismatch => write!(f, "MRENCLAVE mismatch - enclave identity changed"),
+            KeyManagerError::MrsignerMismatch => {
+                write!(f, "MRSIGNER mismatch - incompatible enclave")
+            }
+            KeyManagerError::MrenclaveMismatch => {
+                write!(f, "MRENCLAVE mismatch - enclave identity changed")
+            }
             KeyManagerError::InvalidMetadata => write!(f, "Invalid key metadata"),
             KeyManagerError::StorageError(msg) => write!(f, "Storage error: {}", msg),
             KeyManagerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
@@ -587,7 +591,9 @@ impl KeyManager {
     /// # 安全说明
     ///
     /// 如果 MRSIGNER 不匹配，返回错误（防止未授权 Enclave 访问）
-    pub fn restore_master_key(&self) -> Result<([u8; KEY_LENGTH], MasterKeyMetadata), KeyManagerError> {
+    pub fn restore_master_key(
+        &self,
+    ) -> Result<([u8; KEY_LENGTH], MasterKeyMetadata), KeyManagerError> {
         // 检查是否存在
         if !self.storage.exists(MASTER_KEY_STORAGE_ID) {
             return Err(KeyManagerError::KeyNotFound);
@@ -695,11 +701,17 @@ mod tests {
         let metadata = MasterKeyMetadata::new(SealPolicy::Mrsigner, mrsigner1, mrenclave, 1);
 
         // 相同 MRSIGNER - 应该通过
-        assert!(metadata.verify_compatibility(&mrsigner1, &[0xFFu8; 32]).is_ok());
+        assert!(
+            metadata
+                .verify_compatibility(&mrsigner1, &[0xFFu8; 32])
+                .is_ok()
+        );
 
         // 不同 MRSIGNER - 应该失败
         assert!(matches!(
-            metadata.verify_compatibility(&mrsigner2, &[0xFFu8; 32]).unwrap_err(),
+            metadata
+                .verify_compatibility(&mrsigner2, &[0xFFu8; 32])
+                .unwrap_err(),
             KeyManagerError::MrsignerMismatch
         ));
     }
@@ -714,11 +726,17 @@ mod tests {
         let metadata = MasterKeyMetadata::new(SealPolicy::Mrenclave, mrsigner, mrenclave1, 1);
 
         // 相同 MRENCLAVE - 应该通过
-        assert!(metadata.verify_compatibility(&mrsigner, &mrenclave1).is_ok());
+        assert!(
+            metadata
+                .verify_compatibility(&mrsigner, &mrenclave1)
+                .is_ok()
+        );
 
         // 不同 MRENCLAVE - 应该失败
         assert!(matches!(
-            metadata.verify_compatibility(&mrsigner, &mrenclave2).unwrap_err(),
+            metadata
+                .verify_compatibility(&mrsigner, &mrenclave2)
+                .unwrap_err(),
             KeyManagerError::MrenclaveMismatch
         ));
     }

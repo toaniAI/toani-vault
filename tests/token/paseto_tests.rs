@@ -3,7 +3,8 @@
 //! 测试 Token 签发、验证、过期和 Scope 权限验证
 
 use vault_service::token::{
-    ClaimsError, PasetoKey, PasetoToken, ScopeValidator, TokenClaims, TokenError, TokenValidationResult, quick_verify, scopes,
+    ClaimsError, PasetoKey, PasetoToken, ScopeValidator, TokenClaims, TokenError,
+    TokenValidationResult, quick_verify, scopes,
 };
 
 /// 模拟撤销检查器
@@ -63,12 +64,8 @@ mod token_generation_tests {
         let key1 = PasetoToken::generate_key();
         let key2 = PasetoToken::generate_key();
 
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token1 = PasetoToken::sign(&claims, &key1).unwrap();
         let token2 = PasetoToken::sign(&claims, &key2).unwrap();
@@ -109,12 +106,8 @@ mod token_generation_tests {
 
     #[test]
     fn test_default_ttl_is_15_minutes() {
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let expected_exp = claims.iat.unwrap() + 900; // 15 minutes
         assert_eq!(claims.exp, expected_exp);
@@ -141,12 +134,8 @@ mod token_verification_tests {
     #[test]
     fn test_verify_valid_token() {
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
         let result = PasetoToken::verify(&token, &key, "tenant_456");
@@ -161,12 +150,8 @@ mod token_verification_tests {
     #[test]
     fn test_verify_wrong_audience_fails() {
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
         let result = PasetoToken::verify(&token, &key, "wrong_tenant");
@@ -177,12 +162,8 @@ mod token_verification_tests {
     #[test]
     fn test_verify_tampered_token_fails() {
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
 
@@ -203,7 +184,7 @@ mod token_verification_tests {
             "invalid",
             "v4.local",
             "v4.local.",
-            "v3.local.payload", // wrong version
+            "v3.local.payload",  // wrong version
             "v4.public.payload", // wrong purpose
             "",
         ];
@@ -225,12 +206,8 @@ mod token_expiration_tests {
     #[test]
     fn test_expired_token_fails_verification() {
         let key = PasetoToken::generate_key();
-        let mut claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let mut claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         // 设置过期时间为过去
         claims.exp = 1; // Unix epoch + 1 second
@@ -244,12 +221,8 @@ mod token_expiration_tests {
 
     #[test]
     fn test_is_expired_method() {
-        let mut claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let mut claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         // 未过期
         assert!(!claims.is_expired());
@@ -291,12 +264,8 @@ mod token_expiration_tests {
     #[test]
     fn test_quick_verify_expired() {
         let key = PasetoToken::generate_key();
-        let mut claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let mut claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         // 强制过期
         claims.exp = 1;
@@ -306,8 +275,9 @@ mod token_expiration_tests {
 
         // 检查返回的是 Expired 或 Invalid(包含过期信息)
         match &result {
-            TokenValidationResult::Expired => {},
-            TokenValidationResult::Invalid(msg) if msg.contains("expired") || msg.contains("Exp") => {},
+            TokenValidationResult::Expired => {}
+            TokenValidationResult::Invalid(msg)
+                if msg.contains("expired") || msg.contains("Exp") => {}
             _ => panic!("Expected Expired, got {:?}", result),
         }
     }
@@ -319,12 +289,8 @@ mod scope_verification_tests {
     #[test]
     fn test_single_scope() {
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
         let verified = PasetoToken::verify(&token, &key, "tenant_456").unwrap();
@@ -358,43 +324,75 @@ mod scope_verification_tests {
     fn test_admin_scope_has_all_permissions() {
         let token_scopes = vec!["admin"];
 
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_READ));
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_DECRYPT));
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_WRITE));
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_DELETE));
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::TOKEN_MANAGE));
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::AUDIT_READ));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_READ
+        ));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_DECRYPT
+        ));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_WRITE
+        ));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_DELETE
+        ));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::TOKEN_MANAGE
+        ));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::AUDIT_READ
+        ));
     }
 
     #[test]
     fn test_read_only_scope() {
         let token_scopes = vec!["credential:read"];
 
-        assert!(ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_READ));
-        assert!(!ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_DECRYPT));
-        assert!(!ScopeValidator::can_access(&token_scopes, scopes::CREDENTIAL_WRITE));
-        assert!(!ScopeValidator::can_access(&token_scopes, scopes::TOKEN_MANAGE));
+        assert!(ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_READ
+        ));
+        assert!(!ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_DECRYPT
+        ));
+        assert!(!ScopeValidator::can_access(
+            &token_scopes,
+            scopes::CREDENTIAL_WRITE
+        ));
+        assert!(!ScopeValidator::can_access(
+            &token_scopes,
+            scopes::TOKEN_MANAGE
+        ));
     }
 
     #[test]
     fn test_scope_hierarchy() {
         // decrypt 包含 read
         let decrypt_scopes = vec!["credential:decrypt"];
-        assert!(ScopeValidator::can_access(&decrypt_scopes, scopes::CREDENTIAL_READ));
+        assert!(ScopeValidator::can_access(
+            &decrypt_scopes,
+            scopes::CREDENTIAL_READ
+        ));
 
         // write 包含 delete
         let write_scopes = vec!["credential:write"];
-        assert!(ScopeValidator::can_access(&write_scopes, scopes::CREDENTIAL_DELETE));
+        assert!(ScopeValidator::can_access(
+            &write_scopes,
+            scopes::CREDENTIAL_DELETE
+        ));
     }
 
     #[test]
     fn test_has_any_scope() {
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read admin",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read admin", true);
 
         assert!(claims.has_any_scope(&["credential:read", "credential:write"]));
         assert!(claims.has_any_scope(&["admin", "nonexistent"]));
@@ -424,12 +422,8 @@ mod revocation_tests {
     fn test_revocable_token_validator() {
         let mut checker = MockRevocationChecker::new();
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
 
@@ -443,12 +437,8 @@ mod revocation_tests {
     fn test_revocable_token_validator_revoked() {
         let mut checker = MockRevocationChecker::new();
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
 
@@ -490,12 +480,7 @@ mod key_derivation_tests {
         let master_key = [0x42; 32];
         let token_key = PasetoToken::derive_key_from_master(&master_key, "tenant_1").unwrap();
 
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_1",
-            "credential:read",
-            true,
-        );
+        let claims = TokenClaims::with_default_ttl("user_123", "tenant_1", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &token_key).unwrap();
         let verified = PasetoToken::verify(&token, &token_key, "tenant_1").unwrap();
@@ -538,7 +523,10 @@ mod error_handling_tests {
         let claims_error = ClaimsError::Expired;
         let token_error: TokenError = claims_error.into();
 
-        assert!(matches!(token_error, TokenError::ClaimsError(ClaimsError::Expired)));
+        assert!(matches!(
+            token_error,
+            TokenError::ClaimsError(ClaimsError::Expired)
+        ));
     }
 }
 
@@ -562,12 +550,8 @@ mod serialization_tests {
 
     #[test]
     fn test_claims_json_structure() {
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            false,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", false);
 
         let json = claims.to_json().unwrap();
 
@@ -624,7 +608,10 @@ mod integration_tests {
         // 6. 验证 Scope
         assert!(verified.has_scope("credential:read"));
         assert!(verified.has_scope("credential:decrypt"));
-        assert!(ScopeValidator::can_access(&verified.scopes(), "credential:read"));
+        assert!(ScopeValidator::can_access(
+            &verified.scopes(),
+            "credential:read"
+        ));
 
         // 7. 验证未过期
         assert!(!verified.is_expired());
@@ -636,21 +623,13 @@ mod integration_tests {
         let key = PasetoToken::generate_key();
 
         // 租户 A 的 Token
-        let claims_a = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_a",
-            "credential:read",
-            true,
-        );
+        let claims_a =
+            TokenClaims::with_default_ttl("user_123", "tenant_a", "credential:read", true);
         let token_a = PasetoToken::sign(&claims_a, &key).unwrap();
 
         // 租户 B 的 Token
-        let claims_b = TokenClaims::with_default_ttl(
-            "user_456",
-            "tenant_b",
-            "credential:write",
-            true,
-        );
+        let claims_b =
+            TokenClaims::with_default_ttl("user_456", "tenant_b", "credential:write", true);
         let token_b = PasetoToken::sign(&claims_b, &key).unwrap();
 
         // 租户 A 的 Token 不能用租户 B 的 audience 验证
@@ -674,17 +653,20 @@ mod integration_tests {
         let token1 = PasetoToken::sign(
             &TokenClaims::with_default_ttl(user_id, tenant_id, "credential:read", true),
             &key,
-        ).unwrap();
+        )
+        .unwrap();
 
         let token2 = PasetoToken::sign(
             &TokenClaims::with_default_ttl(user_id, tenant_id, "credential:write", true),
             &key,
-        ).unwrap();
+        )
+        .unwrap();
 
         let token3 = PasetoToken::sign(
             &TokenClaims::with_default_ttl(user_id, tenant_id, "admin", true),
             &key,
-        ).unwrap();
+        )
+        .unwrap();
 
         // 每个 Token 都有唯一的 jti
         let v1 = PasetoToken::verify(&token1, &key, tenant_id).unwrap();

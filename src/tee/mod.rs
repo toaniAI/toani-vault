@@ -69,55 +69,53 @@ pub mod attestation;
 pub mod challenge;
 pub mod cleanup;
 pub mod dcap;
+pub mod driver_verify;
 pub mod enclave;
 pub mod keys;
 pub mod quote;
+pub mod sandbox;
 pub mod sealing;
+pub mod upgrade;
 
 // 公开导出 - Enclave
-pub use enclave::{
-    CacheStats, Enclave, EnclaveConfig, EnclaveError, EnclaveState, EnclaveStats,
-};
+pub use enclave::{CacheStats, Enclave, EnclaveConfig, EnclaveError, EnclaveState, EnclaveStats};
 
 // 公开导出 - Sealing
-pub use sealing::{
-    SealPolicy, SealedData, SealedStorage, SealingKey, SealingService,
-};
+pub use sealing::{SealPolicy, SealedData, SealedStorage, SealingKey, SealingService};
 
 // 公开导出 - Attestation
 pub use attestation::{
-    AttestationError, AttestationResult, AttestationService, AttestationSession, AttestationState,
-    EcdsaPublicKey, EcdsaSignature, Quote, QuoteSignature, ReportBody, ReportData,
-    ATTESTATION_PROTOCOL_VERSION, CHALLENGE_DEFAULT_TTL, ECDSA_P256_PUBLIC_KEY_LEN,
-    ECDSA_P256_SIGNATURE_LEN, MAX_QUOTE_LEN, SGX_MEASUREMENT_LEN, SGX_QUOTE_TYPE_ECDSA_256,
-    SGX_QUOTE_VERSION, SGX_REPORT_DATA_LEN,
+    ATTESTATION_PROTOCOL_VERSION, AttestationError, AttestationResult, AttestationService,
+    AttestationSession, AttestationState, CHALLENGE_DEFAULT_TTL, ECDSA_P256_PUBLIC_KEY_LEN,
+    ECDSA_P256_SIGNATURE_LEN, EcdsaPublicKey, EcdsaSignature, MAX_QUOTE_LEN, Quote, QuoteSignature,
+    ReportBody, ReportData, SGX_MEASUREMENT_LEN, SGX_QUOTE_TYPE_ECDSA_256, SGX_QUOTE_VERSION,
+    SGX_REPORT_DATA_LEN,
 };
 
 // 公开导出 - DCAP
 pub use dcap::{
-    CertificateInfo, DcapAttestationReport, DcapConfig, DcapError, DcapQuote, DcapQuoteSignature,
-    DcapReportBody, DcapService, EcdsaSignatureDcap, DCAP_SERVICE_VERSION, INTEL_PCS_BASE_URL_PROD,
+    CertificateInfo, DCAP_SERVICE_VERSION, DcapAttestationReport, DcapConfig, DcapError, DcapQuote,
+    DcapQuoteSignature, DcapReportBody, DcapService, EcdsaSignatureDcap, INTEL_PCS_BASE_URL_PROD,
     INTEL_PCS_BASE_URL_TEST, MAX_PCK_CERT_CHAIN_LEN,
 };
 
 // 公开导出 - Quote
 pub use quote::{
-    ParsedQuote, ParsedReportBody, QuoteMetadata, QuoteParseError, QuoteParser, QuoteSerializeError,
-    QuoteSerializer, QuoteValidationError, QuoteValidator,
+    ParsedQuote, ParsedReportBody, QuoteMetadata, QuoteParseError, QuoteParser,
+    QuoteSerializeError, QuoteSerializer, QuoteValidationError, QuoteValidator,
 };
 
 // 公开导出 - Challenge
 pub use challenge::{
-    Challenge, ChallengeError, ChallengeMetadata, ChallengeProtocol, ChallengeResponse,
-    ChallengeStatus, ProverProtocol, SecureChannel, CHANNEL_KEY_LENGTH, CHALLENGE_LENGTH,
-    CHALLENGE_PROTOCOL_VERSION, DEFAULT_CHALLENGE_TTL, MAX_CONCURRENT_CHALLENGES,
+    CHALLENGE_LENGTH, CHALLENGE_PROTOCOL_VERSION, CHANNEL_KEY_LENGTH, Challenge, ChallengeError,
+    ChallengeMetadata, ChallengeProtocol, ChallengeResponse, ChallengeStatus,
+    DEFAULT_CHALLENGE_TTL, MAX_CONCURRENT_CHALLENGES, ProverProtocol, SecureChannel,
 };
 
 // 公开导出 - Keys (内存安全与密钥管理)
 pub use keys::{
-    CacheStatistics, CachedKeyEntry, KeyManager, KeyManagerError,
-    KeyType, MasterKeyMetadata, ProtectedKeyMaterial, UserKeyCache,
-    DEFAULT_KEY_TTL_SECONDS, MASTER_KEY_STORAGE_ID,
+    CacheStatistics, CachedKeyEntry, DEFAULT_KEY_TTL_SECONDS, KeyManager, KeyManagerError, KeyType,
+    MASTER_KEY_STORAGE_ID, MasterKeyMetadata, ProtectedKeyMaterial, UserKeyCache,
 };
 
 // 公开导出 - Cleanup (密钥清理策略)

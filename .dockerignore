@@ -19,7 +19,6 @@
 
 # Rust / Cargo
 target/
-Cargo.lock
 **/*.rs.bk
 *.pdb
 

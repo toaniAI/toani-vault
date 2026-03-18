@@ -12,9 +12,9 @@ use vault_service::tee::attestation::{
     Quote, ReportBody, ReportData, SGX_MEASUREMENT_LEN, SGX_REPORT_DATA_LEN,
 };
 use vault_service::tee::challenge::{
-    Challenge, ChallengeError, ChallengeMetadata, ChallengeProtocol, ChallengeResponse,
-    ChallengeStatus, ProverProtocol, SecureChannel, CHANNEL_KEY_LENGTH, CHALLENGE_LENGTH,
-    DEFAULT_CHALLENGE_TTL,
+    CHALLENGE_LENGTH, CHANNEL_KEY_LENGTH, Challenge, ChallengeError, ChallengeMetadata,
+    ChallengeProtocol, ChallengeResponse, ChallengeStatus, DEFAULT_CHALLENGE_TTL, ProverProtocol,
+    SecureChannel,
 };
 use vault_service::tee::{Enclave, EnclaveConfig};
 

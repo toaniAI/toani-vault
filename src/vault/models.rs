@@ -113,7 +113,7 @@ impl UserId {
 
     /// 计算用户 ID 哈希（SHA-256）
     fn compute_hash(raw: &str) -> String {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         let digest = ring::digest::digest(&ring::digest::SHA256, raw.as_bytes());
         URL_SAFE_NO_PAD.encode(digest.as_ref())
     }
@@ -246,7 +246,7 @@ impl EncryptedPayload {
         auth_tag: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Self {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
         Self {
             version,
@@ -272,7 +272,7 @@ impl EncryptedPayload {
 
     /// 获取 nonce 字节
     pub fn nonce_bytes(&self) -> Result<Vec<u8>, VaultError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.nonce)
             .map_err(|e| VaultError::SerializationError(format!("nonce decode failed: {}", e)))
@@ -280,7 +280,7 @@ impl EncryptedPayload {
 
     /// 获取 auth_tag 字节
     pub fn auth_tag_bytes(&self) -> Result<Vec<u8>, VaultError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.auth_tag)
             .map_err(|e| VaultError::SerializationError(format!("auth_tag decode failed: {}", e)))
@@ -288,7 +288,7 @@ impl EncryptedPayload {
 
     /// 获取密文字节
     pub fn ciphertext_bytes(&self) -> Result<Vec<u8>, VaultError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.ciphertext)
             .map_err(|e| VaultError::SerializationError(format!("ciphertext decode failed: {}", e)))
@@ -347,7 +347,7 @@ impl EncryptedPayload {
 
 impl Default for EncryptedPayload {
     fn default() -> Self {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
         Self {
             version: constants::PROTOCOL_VERSION,
@@ -486,7 +486,11 @@ impl VaultEntry {
     }
 
     /// 验证租户访问权限
-    pub fn verify_tenant_access(&self, tenant_id: &TenantId, user_id: &UserId) -> Result<(), VaultError> {
+    pub fn verify_tenant_access(
+        &self,
+        tenant_id: &TenantId,
+        user_id: &UserId,
+    ) -> Result<(), VaultError> {
         // 验证租户匹配
         if self.tenant_id != *tenant_id {
             return Err(VaultError::TenantIsolationViolation {
@@ -580,8 +584,7 @@ fn current_timestamp() -> u64 {
 /// 将 Unix 时间戳转换为 ISO 8601 格式
 fn timestamp_to_iso8601(timestamp: u64) -> String {
     use chrono::{DateTime, Utc};
-    let datetime = DateTime::from_timestamp(timestamp as i64, 0)
-        .unwrap_or_else(|| Utc::now());
+    let datetime = DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_else(|| Utc::now());
     datetime.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
@@ -727,14 +730,24 @@ mod tests {
         );
 
         // 正确的租户和用户
-        assert!(entry
-            .verify_tenant_access(&TenantId::new("tenant_123"), &UserId::from_hash(entry.user_id.hash()))
-            .is_ok());
+        assert!(
+            entry
+                .verify_tenant_access(
+                    &TenantId::new("tenant_123"),
+                    &UserId::from_hash(entry.user_id.hash())
+                )
+                .is_ok()
+        );
 
         // 错误的租户
-        assert!(entry
-            .verify_tenant_access(&TenantId::new("wrong_tenant"), &UserId::from_hash(entry.user_id.hash()))
-            .is_err());
+        assert!(
+            entry
+                .verify_tenant_access(
+                    &TenantId::new("wrong_tenant"),
+                    &UserId::from_hash(entry.user_id.hash())
+                )
+                .is_err()
+        );
     }
 
     #[test]

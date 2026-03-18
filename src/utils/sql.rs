@@ -22,7 +22,10 @@ mod tests {
 
     #[test]
     fn test_sql_escape_quotes() {
-        assert_eq!(escape_sql_string("test' OR '1'='1"), "test\\' OR \\'1\\'=\\'1");
+        assert_eq!(
+            escape_sql_string("test' OR '1'='1"),
+            "test\\' OR \\'1\\'=\\'1"
+        );
     }
 
     #[test]

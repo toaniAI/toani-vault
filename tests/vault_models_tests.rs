@@ -4,8 +4,8 @@
 
 use vault_service::models::CredentialType;
 use vault_service::vault::{
-    models::{CreateCredentialRequest, CredentialFilter, EncryptedPayload, VaultEntry},
     CredentialId, CredentialVault, ServiceId, TenantId, UserId,
+    models::{CreateCredentialRequest, CredentialFilter, EncryptedPayload, VaultEntry},
 };
 
 // 辅助函数：创建测试用加密载荷
@@ -254,10 +254,7 @@ fn test_uuid_v7_time_sorting() {
     // 第一个 ID 的时间戳应该小于或等于最后一个 ID
     let first = ids.first().unwrap().as_str();
     let last = ids.last().unwrap().as_str();
-    assert!(
-        first <= last,
-        "按时间排序后，第一个应该小于等于最后一个"
-    );
+    assert!(first <= last, "按时间排序后，第一个应该小于等于最后一个");
 
     // 所有 ID 应该是唯一的
     let unique: std::collections::HashSet<_> = ids.iter().map(|id| id.as_str()).collect();
@@ -327,11 +324,7 @@ fn test_credential_filtering() {
         ..Default::default()
     };
     let result = vault
-        .list_credentials(
-            &tenant_id,
-            &UserId::from_hash(user_id.hash()),
-            filter,
-        )
+        .list_credentials(&tenant_id, &UserId::from_hash(user_id.hash()), filter)
         .expect("应该能查询凭证");
     assert_eq!(result.total, 1);
     assert_eq!(result.credentials[0].service_id, "schwab");
@@ -342,14 +335,13 @@ fn test_credential_filtering() {
         ..Default::default()
     };
     let result = vault
-        .list_credentials(
-            &tenant_id,
-            &UserId::from_hash(user_id.hash()),
-            filter,
-        )
+        .list_credentials(&tenant_id, &UserId::from_hash(user_id.hash()), filter)
         .expect("应该能查询凭证");
     assert_eq!(result.total, 1);
-    assert_eq!(result.credentials[0].credential_type, CredentialType::ApiKey);
+    assert_eq!(
+        result.credentials[0].credential_type,
+        CredentialType::ApiKey
+    );
 }
 
 /// 测试：凭证过期检查

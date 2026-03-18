@@ -6,8 +6,8 @@
 //! - 支持数据库 RLS（行级安全）上下文设置
 
 use axum::{
-    extract::{FromRef, FromRequestParts, Request},
-    http::{request::Parts, StatusCode},
+    extract::{FromRequestParts, Request},
+    http::{StatusCode, request::Parts},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -89,7 +89,11 @@ impl RequestContext {
             tenant_id: token.tenant_id.clone(),
             user_id: token.user_id.clone(),
             token_id: token.token_id.clone(),
-            scopes: token.scopes.iter().map(|s| s.as_str().to_string()).collect(),
+            scopes: token
+                .scopes
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect(),
             request_id: generate_request_id(),
         }
     }
@@ -190,14 +194,10 @@ where
     type Rejection = (StatusCode, &'static str);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts
-            .extensions
-            .get::<RequestContext>()
-            .cloned()
-            .ok_or((
-                StatusCode::UNAUTHORIZED,
-                "Missing request context - authentication required",
-            ))
+        parts.extensions.get::<RequestContext>().cloned().ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing request context - authentication required",
+        ))
     }
 }
 
@@ -266,8 +266,14 @@ impl RlsContext {
     /// 这些语句应该在连接获取后立即执行
     pub fn to_sql_statements(&self) -> Vec<String> {
         vec![
-            format!("SET app.current_tenant_id = '{}'", escape_sql_string(&self.tenant_id)),
-            format!("SET app.current_user_id = '{}'", escape_sql_string(&self.user_id)),
+            format!(
+                "SET app.current_tenant_id = '{}'",
+                escape_sql_string(&self.tenant_id)
+            ),
+            format!(
+                "SET app.current_user_id = '{}'",
+                escape_sql_string(&self.user_id)
+            ),
             format!(
                 "SET app.current_scopes = '{}'",
                 escape_sql_string(&self.scopes.join(","))
@@ -309,9 +315,17 @@ impl TenantQueryBuilder {
     /// 自动添加 WHERE tenant_id = ? 条件
     pub fn build(&self) -> (String, Vec<String>) {
         let query = if self.base_query.to_uppercase().contains("WHERE") {
-            format!("{} AND tenant_id = '{}'", self.base_query, escape_sql_string(&self.tenant_id))
+            format!(
+                "{} AND tenant_id = '{}'",
+                self.base_query,
+                escape_sql_string(&self.tenant_id)
+            )
         } else {
-            format!("{} WHERE tenant_id = '{}'", self.base_query, escape_sql_string(&self.tenant_id))
+            format!(
+                "{} WHERE tenant_id = '{}'",
+                self.base_query,
+                escape_sql_string(&self.tenant_id)
+            )
         };
 
         (query, vec![self.tenant_id.clone()])
@@ -327,10 +341,7 @@ impl TenantQueryBuilder {
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum TenantIsolationError {
     #[error("跨租户访问被拒绝: 请求租户 {requested} 不匹配资源租户 {actual}")]
-    CrossTenantAccessDenied {
-        requested: String,
-        actual: String,
-    },
+    CrossTenantAccessDenied { requested: String, actual: String },
 
     #[error("租户上下文缺失")]
     MissingTenantContext,
@@ -428,7 +439,9 @@ pub struct MemoryTenantStorage {
 impl MemoryTenantStorage {
     pub fn new() -> Self {
         Self {
-            tenants: std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            tenants: std::sync::Arc::new(
+                tokio::sync::RwLock::new(std::collections::HashMap::new()),
+            ),
         }
     }
 
@@ -502,7 +515,10 @@ mod tests {
 
     #[test]
     fn test_sql_escape() {
-        assert_eq!(escape_sql_string("test' OR '1'='1"), "test\\' OR \\'1\\'=\\'1");
+        assert_eq!(
+            escape_sql_string("test' OR '1'='1"),
+            "test\\' OR \\'1\\'=\\'1"
+        );
         assert_eq!(escape_sql_string("test\\value"), "test\\\\value");
     }
 
@@ -518,7 +534,10 @@ mod tests {
 
     #[test]
     fn test_tenant_query_builder_with_existing_where() {
-        let builder = TenantQueryBuilder::new("tenant_123", "SELECT * FROM credentials WHERE is_active = true");
+        let builder = TenantQueryBuilder::new(
+            "tenant_123",
+            "SELECT * FROM credentials WHERE is_active = true",
+        );
         let (query, _params) = builder.build();
 
         assert!(query.contains("WHERE is_active = true"));

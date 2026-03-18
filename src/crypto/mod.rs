@@ -3,14 +3,17 @@
 //! 实现四层密钥层次架构（L0-L3）和 AES-256-GCM 加密
 
 pub mod cipher;
+pub mod constant_time;
+pub mod enclave_key;
 pub mod hkdf;
+pub mod key_derivation;
+pub mod key_rotation;
 pub mod keys;
 
-pub use cipher::{decrypt_credential, encrypt_credential, EncryptedBlob};
+pub use cipher::{EncryptedBlob, decrypt_credential, encrypt_credential};
+pub use enclave_key::{EnclaveKeyManager, KeyAlgorithm, KeyConfig, KeyState, Signature};
 pub use hkdf::KeyHierarchy;
-pub use keys::{
-    CredentialKey, EnclaveMasterKey, HardwareRootKey, KeyPurpose, UserVaultKey,
-};
+pub use keys::{CredentialKey, EnclaveMasterKey, HardwareRootKey, KeyPurpose, UserVaultKey};
 
 use thiserror::Error;
 
@@ -80,8 +83,8 @@ pub mod constants {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::constants::*;
+    use super::*;
 
     #[test]
     fn test_constants() {

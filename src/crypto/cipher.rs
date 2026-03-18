@@ -5,12 +5,12 @@
 //! - 96-bit 随机 nonce
 //! - 128-bit auth tag
 
+use super::CryptoError;
 use super::constants::{NONCE_LENGTH, PROTOCOL_VERSION};
 use super::keys::CredentialKey;
-use super::CryptoError;
 use aes_gcm::{
-    aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce as AesGcmNonce,
+    aead::{Aead, KeyInit, Payload},
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,7 +52,7 @@ impl EncryptedBlob {
         ciphertext: Vec<u8>,
         aad_hash: Option<String>,
     ) -> Self {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 
         Self {
             version,
@@ -67,7 +67,7 @@ impl EncryptedBlob {
 
     /// 获取 nonce 字节
     pub fn nonce_bytes(&self) -> Result<Vec<u8>, CryptoError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.nonce)
             .map_err(|_| CryptoError::InvalidCiphertext)
@@ -75,7 +75,7 @@ impl EncryptedBlob {
 
     /// 获取 auth_tag 字节
     pub fn auth_tag_bytes(&self) -> Result<Vec<u8>, CryptoError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.auth_tag)
             .map_err(|_| CryptoError::InvalidCiphertext)
@@ -83,7 +83,7 @@ impl EncryptedBlob {
 
     /// 获取密文字节
     pub fn ciphertext_bytes(&self) -> Result<Vec<u8>, CryptoError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.ciphertext)
             .map_err(|_| CryptoError::InvalidCiphertext)
@@ -120,7 +120,7 @@ pub fn encrypt_credential(
     plaintext: &[u8],
     aad: Option<&[u8]>,
 ) -> Result<EncryptedBlob, CryptoError> {
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use rand::RngCore;
 
     // 生成随机 nonce (96-bit)
@@ -137,7 +137,13 @@ pub fn encrypt_credential(
     // 执行加密
     let ciphertext = if let Some(aad_data) = aad {
         cipher
-            .encrypt(nonce, Payload { msg: plaintext, aad: aad_data })
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: aad_data,
+                },
+            )
             .map_err(|_| CryptoError::EncryptionError("Encryption failed".to_string()))?
     } else {
         cipher
@@ -214,7 +220,13 @@ pub fn decrypt_credential(
     // 执行解密
     let plaintext = if let Some(aad_data) = aad {
         cipher
-            .decrypt(nonce, Payload { msg: ciphertext.as_slice(), aad: aad_data })
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: ciphertext.as_slice(),
+                    aad: aad_data,
+                },
+            )
             .map_err(|_| CryptoError::AuthenticationFailed)?
     } else {
         cipher
@@ -264,7 +276,11 @@ impl DecryptionContext {
     }
 
     /// 解密单个凭证
-    pub fn decrypt(&self, key: &CredentialKey, blob: &EncryptedBlob) -> Result<Vec<u8>, CryptoError> {
+    pub fn decrypt(
+        &self,
+        key: &CredentialKey,
+        blob: &EncryptedBlob,
+    ) -> Result<Vec<u8>, CryptoError> {
         decrypt_credential(key, blob, Some(&self.aad_template))
     }
 }
@@ -280,7 +296,9 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
         let l3_key = hierarchy
             .derive_credential_key(&l2_key, "cred_789", KeyPurpose::CredentialEncryption)
             .unwrap();
@@ -333,7 +351,9 @@ mod tests {
         let l0 = HardwareRootKey::for_simulation().unwrap();
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
         let l3_decrypt_key = hierarchy
             .derive_credential_key(&l2_key, "cred_789", KeyPurpose::CredentialDecryption)
             .unwrap();
@@ -355,7 +375,9 @@ mod tests {
         let l0 = HardwareRootKey::for_simulation().unwrap();
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
         let wrong_key = hierarchy
             .derive_credential_key(&l2_key, "different_cred", KeyPurpose::CredentialDecryption)
             .unwrap();

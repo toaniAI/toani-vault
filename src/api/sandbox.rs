@@ -12,25 +12,20 @@
 //! - POST   /api/v1/sandbox/sessions/:id/export   - 导出数据
 
 use crate::api::context::{ApiContext, RequestContext};
-use crate::api::middleware::{require_any_scope, require_scope, TokenScope, ValidatedToken};
+use crate::api::middleware::{TokenScope, ValidatedToken};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
 use crate::api::websocket::handle_socket;
 use crate::tee::sandbox::{
     config::SandboxConfig,
     error::SandboxError,
     pool::{NsjailSandboxPool, SandboxPool},
-    session::{ActiveNsjailSession, SandboxSession},
-    types::{
-        ExecutionResult, OperationRequest, OperationStatus, OperationType, SessionContext,
-        SessionId, SessionRequest, SessionStatus,
-    },
-    SandboxHealth, SandboxId,
+    types::{OperationRequest, OperationType, SessionId, SessionRequest},
 };
 use axum::{
+    Extension, Json,
     extract::{Path, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Extension, Json,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -280,11 +275,7 @@ pub async fn create_session(
 
             info!("Session {} created successfully", response.session_id);
 
-            (
-                StatusCode::CREATED,
-                Json(ApiSuccessResponse::new(response)),
-            )
-                .into_response()
+            (StatusCode::CREATED, Json(ApiSuccessResponse::new(response))).into_response()
         }
         Err(e) => {
             error!("Failed to create session: {}", e);
@@ -335,6 +326,7 @@ pub async fn get_session(
         Ok(session) => {
             let context = session.context();
             let status = session.status().await;
+            let last_activity = *context.last_activity_at.read().await;
 
             let response = SessionDetailResponse {
                 session_id: context.session_id.into(),
@@ -346,7 +338,7 @@ pub async fn get_session(
                 status: format!("{:?}", status).to_lowercase(),
                 created_at: context.created_at.to_string(),
                 expires_at: context.expires_at.to_string(),
-                last_activity_at: context.last_activity_at.to_string(),
+                last_activity_at: last_activity.to_string(),
                 is_expired: context.is_expired(),
             };
 
@@ -387,7 +379,7 @@ pub async fn execute_operation(
                 "Invalid operation type: {}",
                 request.operation_type
             ))
-            .into_response()
+            .into_response();
         }
     };
 
@@ -636,10 +628,11 @@ pub async fn export_data(
 /// 检查 Scope
 async fn check_scope(token: &ValidatedToken, required: TokenScope) -> Result<(), Response> {
     if !token.has_scope(&required) {
-        return Err(
-            ApiErrorResponse::forbidden(format!("Missing required scope: {}", required.as_str()))
-                .into_response(),
-        );
+        return Err(ApiErrorResponse::forbidden(format!(
+            "Missing required scope: {}",
+            required.as_str()
+        ))
+        .into_response());
     }
     Ok(())
 }
@@ -672,20 +665,28 @@ fn map_sandbox_error(error: SandboxError) -> Response {
             crate::tee::sandbox::error::SessionError::NotFound { .. } => {
                 (ErrorCode::NotFound, e.to_string(), StatusCode::NOT_FOUND)
             }
-            crate::tee::sandbox::error::SessionError::Expired { .. } => {
-                (ErrorCode::InvalidRequest, e.to_string(), StatusCode::BAD_REQUEST)
-            }
-            crate::tee::sandbox::error::SessionError::InvalidState { .. } => {
-                (ErrorCode::InvalidRequest, e.to_string(), StatusCode::BAD_REQUEST)
-            }
-            crate::tee::sandbox::error::SessionError::MaxSessionsReached { .. } => {
-                (ErrorCode::ServiceUnavailable, e.to_string(), StatusCode::SERVICE_UNAVAILABLE)
-            }
-            _ => (ErrorCode::InternalError, e.to_string(), StatusCode::INTERNAL_SERVER_ERROR),
+            crate::tee::sandbox::error::SessionError::Expired { .. } => (
+                ErrorCode::InvalidRequest,
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            ),
+            crate::tee::sandbox::error::SessionError::InvalidState { .. } => (
+                ErrorCode::InvalidRequest,
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            ),
+            crate::tee::sandbox::error::SessionError::MaxSessionsReached { .. } => (
+                ErrorCode::ServiceUnavailable,
+                e.to_string(),
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            _ => (
+                ErrorCode::InternalError,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         },
-        SandboxError::Security(e) => {
-            (ErrorCode::Forbidden, e.to_string(), StatusCode::FORBIDDEN)
-        }
+        SandboxError::Security(e) => (ErrorCode::Forbidden, e.to_string(), StatusCode::FORBIDDEN),
         _ => (
             ErrorCode::InternalError,
             error.to_string(),
@@ -714,7 +715,10 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions/:id/screenshot", post(take_screenshot))
         .route("/sandbox/sessions/:id/export", post(export_data))
         // WebSocket 实时连接
-        .route("/sandbox/sessions/:id/ws/:credential_id", get(websocket_upgrade))
+        .route(
+            "/sandbox/sessions/:id/ws/:credential_id",
+            get(websocket_upgrade),
+        )
 }
 
 /// WebSocket 升级处理器
@@ -732,8 +736,7 @@ async fn websocket_upgrade(
     // 直接使用 WebSocketUpgrade 的 on_upgrade 方法
     ws.on_upgrade(move |socket| async move {
         // 创建简化的 ApiContext
-        let ctx = ApiContext::from_request_context(
-            &RequestContext::from_validated_token(&token));
+        let ctx = ApiContext::from_request_context(&RequestContext::from_validated_token(&token));
 
         handle_socket(socket, ctx, session_id, credential_id, token).await;
     })
@@ -747,9 +750,18 @@ mod tests {
 
     #[test]
     fn test_parse_operation_type() {
-        assert!(matches!(parse_operation_type("navigate"), Some(OperationType::Navigate)));
-        assert!(matches!(parse_operation_type("click"), Some(OperationType::Click)));
-        assert!(matches!(parse_operation_type("screenshot"), Some(OperationType::Screenshot)));
+        assert!(matches!(
+            parse_operation_type("navigate"),
+            Some(OperationType::Navigate)
+        ));
+        assert!(matches!(
+            parse_operation_type("click"),
+            Some(OperationType::Click)
+        ));
+        assert!(matches!(
+            parse_operation_type("screenshot"),
+            Some(OperationType::Screenshot)
+        ));
         assert!(parse_operation_type("invalid").is_none());
     }
 

@@ -3,15 +3,15 @@
 //! 测试审计查询 API 的所有端点
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
-    Router,
 };
 use tower::ServiceExt;
 use uuid::Uuid;
 
 use vault_service::api::{
-    audit::{audit_routes, AuditApiState, MemoryAuditStorageAdapter},
+    audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
     audit_models::*,
     middleware::{TokenScope, ValidatedToken},
 };

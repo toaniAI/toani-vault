@@ -35,6 +35,7 @@ use tracing::info;
 use credbridge_mcp_server::{McpServerConfig, McpServerState, TransportMode};
 use credbridge_mcp_server::tools::CredBridgeTools;
 use credbridge_mcp_server::handlers::ToolHandler;
+use credbridge_mcp_server::sse::{self, SessionManager, SseAppState};
 
 /// MCP Server 主入口
 #[tokio::main]
@@ -109,22 +110,26 @@ async fn run_stdio_server(state: Arc<McpServerState>) -> Result<()> {
 
 /// 运行 SSE 模式 MCP Server
 async fn run_sse_server(state: Arc<McpServerState>, config: &McpServerConfig) -> Result<()> {
-    use axum::{
-        routing::{get, post},
-        Router,
-    };
     use std::net::SocketAddr;
 
     // 创建工具处理器
-    let tools = CredBridgeTools::new(state);
+    let tools = CredBridgeTools::new(state.clone());
     let handler = ToolHandler::new(tools);
 
-    // 创建路由
-    let app = Router::new()
-        .route("/health", get(health_handler))
-        .route("/sse", get(sse_handler))
-        .route("/message", post(message_handler))
-        .with_state(handler);
+    // 创建 Session 管理器
+    let sessions = Arc::new(SessionManager::new());
+
+    // 创建 SSE 应用状态
+    let sse_state = SseAppState {
+        sessions,
+        handler,
+    };
+
+    // 创建 SSE Router
+    let sse_router = sse::create_sse_router(sse_state);
+
+    // 创建主应用
+    let app = sse_router;
 
     let addr: SocketAddr = format!("{}:{}", config.sse_bind_addr, config.sse_port)
         .parse()
@@ -139,19 +144,4 @@ async fn run_sse_server(state: Arc<McpServerState>, config: &McpServerConfig) ->
         .context("Server error")?;
 
     Ok(())
-}
-
-/// 健康检查处理器
-async fn health_handler() -> &'static str {
-    "OK"
-}
-
-/// SSE 连接处理器
-async fn sse_handler() -> impl axum::response::IntoResponse {
-    "SSE endpoint - not yet implemented"
-}
-
-/// 消息处理器
-async fn message_handler() -> impl axum::response::IntoResponse {
-    "Message endpoint - not yet implemented"
 }

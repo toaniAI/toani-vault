@@ -3,9 +3,7 @@
 //! 提供多租户 Schema 的创建、管理和删除功能。
 //! 使用 Schema-per-Tenant 模式实现数据隔离。
 
-use super::pool::{DatabasePool, DatabaseError};
-use sqlx::Postgres;
-use sqlx::migrate::MigrateDatabase;
+use super::pool::{DatabaseError, DatabasePool};
 
 /// Schema 管理器
 pub struct SchemaManager {
@@ -146,10 +144,7 @@ impl SchemaManager {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
 
         // 创建 Schema
-        let create_schema_sql = format!(
-            "CREATE SCHEMA IF NOT EXISTS \"{}\"",
-            schema_name
-        );
+        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", schema_name);
 
         sqlx::query(&create_schema_sql)
             .execute(self.db.pool())
@@ -160,7 +155,11 @@ impl SchemaManager {
         let set_path_sql = format!("SET search_path TO \"{}\"", schema_name);
 
         // 在事务中执行所有 SQL
-        let mut tx = self.db.pool().begin().await
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
+            .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
         // 设置 search_path
@@ -175,7 +174,8 @@ impl SchemaManager {
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {}", e)))?;
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
         tracing::info!("Created tenant schema: {}", schema_name);
@@ -189,7 +189,11 @@ impl SchemaManager {
     pub async fn create_default_roles(&self, tenant_id: &str) -> Result<(), DatabaseError> {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
 
-        let mut tx = self.db.pool().begin().await
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
+            .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
         // 设置 search_path
@@ -205,7 +209,8 @@ impl SchemaManager {
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to create roles: {}", e)))?;
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
         tracing::info!("Created default roles for tenant: {}", tenant_id);
@@ -238,7 +243,7 @@ impl SchemaManager {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
 
         let result: Option<(bool,)> = sqlx::query_as(
-            "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)"
+            "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
         )
         .bind(&schema_name)
         .fetch_optional(self.db.pool())
@@ -254,7 +259,13 @@ impl SchemaManager {
         // 替换可能的非法字符
         let safe_id = tenant_id
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>();
         format!("tenant_{}", safe_id)
     }

@@ -7,10 +7,10 @@
 //! - 请求上下文注入
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
@@ -19,8 +19,8 @@ use vault_service::api::{
     context::{RequestContext, TenantId},
     middleware::{TokenScope, ValidatedToken},
     tenant_middleware::{
-        tenant_isolation_middleware, validate_path_tenant_id, RequestContextExt,
-        TenantIsolationConfig, TenantIsolationState,
+        RequestContextExt, TenantIsolationConfig, TenantIsolationState,
+        tenant_isolation_middleware, validate_path_tenant_id,
     },
 };
 
@@ -51,7 +51,10 @@ fn create_test_router() -> Router {
 
     Router::new()
         .route("/api/v1/credentials", get(test_handler))
-        .route("/api/v1/tenants/:tenant_id/credentials", get(tenant_path_handler))
+        .route(
+            "/api/v1/tenants/:tenant_id/credentials",
+            get(tenant_path_handler),
+        )
         .route_layer(axum::middleware::from_fn_with_state(
             state,
             tenant_isolation_middleware,
@@ -89,7 +92,11 @@ async fn test_tenant_context_extraction_from_token() {
     let app = create_test_router();
 
     // 创建包含 ValidatedToken 的请求
-    let token = create_test_token("tenant_abc123", "user_xyz789", vec![TokenScope::CredentialRead]);
+    let token = create_test_token(
+        "tenant_abc123",
+        "user_xyz789",
+        vec![TokenScope::CredentialRead],
+    );
     let (mut parts, body) = Request::builder()
         .uri("/api/v1/credentials")
         .body(Body::empty())
@@ -111,7 +118,11 @@ async fn test_cross_tenant_access_blocked() {
     let app = create_test_router();
 
     // 创建 Token，租户ID 为 tenant_abc123
-    let token = create_test_token("tenant_abc123", "user_xyz789", vec![TokenScope::CredentialRead]);
+    let token = create_test_token(
+        "tenant_abc123",
+        "user_xyz789",
+        vec![TokenScope::CredentialRead],
+    );
 
     // 但请求路径中尝试访问 tenant_different 的资源
     let request = Request::builder()
@@ -135,7 +146,11 @@ async fn test_same_tenant_access_allowed() {
     let app = create_test_router();
 
     // 创建 Token，租户ID 为 tenant_abc123
-    let token = create_test_token("tenant_abc123", "user_xyz789", vec![TokenScope::CredentialRead]);
+    let token = create_test_token(
+        "tenant_abc123",
+        "user_xyz789",
+        vec![TokenScope::CredentialRead],
+    );
 
     // 请求相同租户的资源
     let request = Request::builder()
@@ -156,7 +171,11 @@ async fn test_same_tenant_access_allowed() {
 
 #[tokio::test]
 async fn test_request_context_extensions() {
-    let token = create_test_token("tenant_test", "user_test", vec![TokenScope::CredentialRead, TokenScope::Admin]);
+    let token = create_test_token(
+        "tenant_test",
+        "user_test",
+        vec![TokenScope::CredentialRead, TokenScope::Admin],
+    );
     let context = RequestContext::from_validated_token(&token);
 
     // 验证上下文内容
@@ -172,30 +191,31 @@ async fn test_tenant_id_extractor() {
     use http::request::Parts;
 
     // 创建带上下文的 Parts
-    let token = create_test_token("tenant_extractor_test", "user_test", vec![TokenScope::CredentialRead]);
+    let token = create_test_token(
+        "tenant_extractor_test",
+        "user_test",
+        vec![TokenScope::CredentialRead],
+    );
     let context = RequestContext::from_validated_token(&token);
 
-    let request = Request::builder()
-        .uri("/test")
-        .body(Body::empty())
-        .unwrap();
+    let request = Request::builder().uri("/test").body(Body::empty()).unwrap();
 
     let (mut parts, _body) = request.into_parts();
     parts.extensions.insert(context);
 
     // 提取 TenantId
-    let tenant_id = TenantId::from_request_parts(&mut parts,
-        &(),
-    )
-    .await
-    .unwrap();
+    let tenant_id = TenantId::from_request_parts(&mut parts, &()).await.unwrap();
 
     assert_eq!(tenant_id.as_str(), "tenant_extractor_test");
 }
 
 #[tokio::test]
 async fn test_validate_path_tenant_id_success() {
-    let token = create_test_token("tenant_match", "user_test", vec![TokenScope::CredentialRead]);
+    let token = create_test_token(
+        "tenant_match",
+        "user_test",
+        vec![TokenScope::CredentialRead],
+    );
     let context = RequestContext::from_validated_token(&token);
 
     // 匹配的租户ID应该通过
@@ -266,14 +286,16 @@ async fn test_rls_context_sql_generation() {
         tenant_id: "tenant_123".to_string(),
         user_id: "user_456".to_string(),
         scopes: vec!["read".to_string(), "write".to_string()],
+        is_admin: false,
     };
 
     let statements = ctx.to_sql_statements();
 
-    assert_eq!(statements.len(), 3);
+    assert_eq!(statements.len(), 4);
     assert!(statements[0].contains("SET app.current_tenant_id = 'tenant_123'"));
     assert!(statements[1].contains("SET app.current_user_id = 'user_456'"));
     assert!(statements[2].contains("SET app.current_scopes = 'read,write'"));
+    assert!(statements[3].contains("SET app.is_admin = 'false'"));
 }
 
 #[tokio::test]

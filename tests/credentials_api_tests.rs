@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 use tower::ServiceExt;
 
 use vault_service::api::credentials::{
-    create_credential, delete_credential, decrypt_credential_endpoint, get_credential,
-    list_credentials, AppState, AuditLogger, DefaultAuditLogger,
+    AppState, AuditLogger, DefaultAuditLogger, create_credential, decrypt_credential_endpoint,
+    delete_credential, get_credential, list_credentials,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::crypto::hkdf::KeyHierarchy;
@@ -59,7 +59,10 @@ fn test_router(state: AppState, token: ValidatedToken) -> axum::Router {
         .route("/api/v1/credentials", post(create_credential))
         .route("/api/v1/credentials", get(list_credentials))
         .route("/api/v1/credentials/:id", get(get_credential))
-        .route("/api/v1/credentials/:id/decrypt", post(decrypt_credential_endpoint))
+        .route(
+            "/api/v1/credentials/:id/decrypt",
+            post(decrypt_credential_endpoint),
+        )
         .route("/api/v1/credentials/:id", delete(delete_credential))
         .layer(axum::Extension(token))
         .with_state(state)
@@ -70,11 +73,7 @@ fn test_router(state: AppState, token: ValidatedToken) -> axum::Router {
 async fn test_create_credential_success_with_write_scope() {
     let state = setup_test_state().await;
     // 只要有 write scope，API 会尝试处理请求（即使后续加密可能失败）
-    let token = create_test_token(
-        "tenant_123",
-        "user_456",
-        vec![TokenScope::CredentialWrite],
-    );
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
 
     let app = test_router(state, token);
 
@@ -130,11 +129,7 @@ async fn test_create_credential_missing_scope() {
 #[tokio::test]
 async fn test_list_credentials() {
     let state = setup_test_state().await;
-    let token = create_test_token(
-        "tenant_123",
-        "user_456",
-        vec![TokenScope::CredentialRead],
-    );
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
 
     let app = test_router(state, token);
 

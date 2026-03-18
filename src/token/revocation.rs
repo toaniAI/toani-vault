@@ -27,8 +27,8 @@
 //! revoker.revoke_by_scope("tenant_123", "admin").await.unwrap();
 //! ```
 
-use super::redis_store::{RedisTokenStore, TokenMetadata, TokenStoreError};
 use super::paseto::TokenRevocationChecker;
+use super::redis_store::{RedisTokenStore, TokenStoreError};
 use thiserror::Error;
 
 /// 撤销错误类型
@@ -390,7 +390,10 @@ impl TokenRevoker {
     ///
     /// # 返回值
     /// - `Ok((活跃数, 撤销数))`: Token 统计
-    pub async fn get_revocation_stats(&self, tenant_id: &str) -> Result<(u64, u64), RevocationError> {
+    pub async fn get_revocation_stats(
+        &self,
+        tenant_id: &str,
+    ) -> Result<(u64, u64), RevocationError> {
         let active_count = self.store.get_active_count(tenant_id).await?;
         let revoked_count = self.store.get_revoked_count(tenant_id).await?;
         Ok((active_count, revoked_count))
@@ -406,7 +409,9 @@ impl MemoryRevocationChecker {
     /// 创建新的内存撤销检查器
     pub fn new() -> Self {
         Self {
-            revoked_jtis: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            revoked_jtis: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::new(),
+            )),
         }
     }
 

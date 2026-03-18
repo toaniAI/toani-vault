@@ -23,7 +23,9 @@
 
 pub mod api;
 pub mod audit;
+pub mod connector;
 pub mod crypto;
+pub mod mcp;
 pub mod models;
 pub mod services;
 pub mod tee;
@@ -34,32 +36,47 @@ pub mod vault;
 
 // 重新导出核心类型
 pub use crypto::{
-    constants, decrypt_credential, encrypt_credential, CryptoError, CredentialKey, EncryptedBlob,
-    EnclaveMasterKey, HardwareRootKey, KeyHandle, KeyHierarchy, KeyPurpose, UserVaultKey,
+    CredentialKey, CryptoError, EnclaveMasterKey, EncryptedBlob, HardwareRootKey, KeyHandle,
+    KeyHierarchy, KeyPurpose, UserVaultKey, constant_time, constants, decrypt_credential,
+    encrypt_credential, key_derivation, key_rotation,
 };
 
-pub use tee::{Enclave, EnclaveState};
+pub use tee::{Enclave, EnclaveState, driver_verify, upgrade};
+
+// 重新导出 MCP 模块
+pub use mcp::token_storage;
 
 // 重新导出 Token 模块
 pub use token::{
-    PasetoKey, PasetoToken, TokenClaims, TokenError, TokenValidationResult,
-    scopes, DEFAULT_TOKEN_TTL_SECONDS,
+    DEFAULT_TOKEN_TTL_SECONDS, PasetoKey, PasetoToken, TokenClaims, TokenError,
+    TokenValidationResult, scopes,
 };
 
 // 重新导出 Vault 模块
 pub use vault::{
-    backend::{check_vault_health, VaultBackendError, VaultHealthStatus, VaultStorageBackend, VaultStorageBackendBuilder},
+    CredentialId, CredentialVault, EncryptedPayload, ServiceId, TenantId, UserId, VaultEntry,
+    VaultError,
+    backend::{
+        VaultBackendError, VaultHealthStatus, VaultStorageBackend, VaultStorageBackendBuilder,
+        check_vault_health,
+    },
     client::{VaultClientError, VaultConfig, VaultCredentialData, VaultKvClient},
-    CredentialId, CredentialVault, EncryptedPayload, ServiceId, TenantId, UserId,
-    VaultEntry, VaultError,
 };
 
 // 重新导出审计模块
 pub use audit::{
-    AuditAction, AuditEntry, AuditFilter, AuditLogChain, AuditRecorder, AuditReport,
-    AuditStats, MemoryAuditStorage, Outcome, PiiRedactor, RecorderError, RedactedParam, RiskTier,
-    SignedAuditEntry, SigningKeyPair, hash_user_id,
-    create_memory_storage, is_high_risk_action,
+    AuditAction, AuditEntry, AuditFilter, AuditLogChain, AuditRecorder, AuditReport, AuditStats,
+    MemoryAuditStorage, Outcome, PiiRedactor, RecorderError, RedactedParam, RiskTier,
+    SignedAuditEntry, SigningKeyPair, create_memory_storage, hash_user_id, is_high_risk_action,
+};
+
+// 重新导出 Connector 模块
+pub use connector::{
+    Connector, ConnectorConfig, ConnectorError, ConnectorRegistry, ConnectorResult, NopConnector,
+    ValidatedParams, ValidationError,
+    http::{HttpConnector, HttpConnectorConfig},
+    timeout::{TimeoutConfig, TimeoutError, TimeoutWrapper},
+    validator::{CompositeValidator, SchemaValidator, ValidationRule, ValidatorBuilder},
 };
 
 /// 库版本

@@ -4,8 +4,8 @@
 //! 支持 Merkle Tree 哈希和数字签名
 
 use super::events::{AuditEntry, AuditEventId, Outcome};
-use ring::digest::{digest, SHA256};
-use ring::signature::{self, Ed25519KeyPair, KeyPair, UnparsedPublicKey, ED25519};
+use ring::digest::{SHA256, digest};
+use ring::signature::{ED25519, Ed25519KeyPair, KeyPair, UnparsedPublicKey};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
@@ -56,10 +56,7 @@ pub struct SignedAuditEntry {
     pub prev_hash: [u8; 32],
 
     /// 数字签名
-    #[serde(
-        serialize_with = "serialize_vec",
-        deserialize_with = "deserialize_vec"
-    )]
+    #[serde(serialize_with = "serialize_vec", deserialize_with = "deserialize_vec")]
     pub signature: Vec<u8>,
 
     /// 签名者的公钥指纹
@@ -139,8 +136,7 @@ impl SignedAuditEntry {
             merkle_root: hex::encode(self.merkle_root),
         };
 
-        serde_json::to_string(&ser)
-            .map_err(|e| RecorderError::SerializationError(e.to_string()))
+        serde_json::to_string(&ser).map_err(|e| RecorderError::SerializationError(e.to_string()))
     }
 }
 
@@ -225,7 +221,14 @@ impl AuditLogChain {
 
     /// 获取最近的 N 个条目
     pub fn recent(&self, n: usize) -> Vec<&SignedAuditEntry> {
-        self.entries.iter().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect()
+        self.entries
+            .iter()
+            .rev()
+            .take(n)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
     }
 
     /// 验证链的完整性
@@ -247,7 +250,8 @@ impl AuditLogChain {
             // 验证签名 (Ed25519)
             let public_key_unparsed = UnparsedPublicKey::new(&ED25519, public_key);
             // 签名数据结构: SHA256(content_hash + prev_hash)
-            let combined_data = [entry.content_hash.as_slice(), entry.prev_hash.as_slice()].concat();
+            let combined_data =
+                [entry.content_hash.as_slice(), entry.prev_hash.as_slice()].concat();
             let combined_hash = digest(&SHA256, &combined_data);
             match public_key_unparsed.verify(combined_hash.as_ref(), &entry.signature) {
                 Ok(_) => {}
@@ -274,8 +278,14 @@ impl AuditLogChain {
             .collect();
 
         let total_count = filtered.len();
-        let success_count = filtered.iter().filter(|e| e.entry.outcome.is_success()).count();
-        let failure_count = filtered.iter().filter(|e| e.entry.outcome.is_failure()).count();
+        let success_count = filtered
+            .iter()
+            .filter(|e| e.entry.outcome.is_success())
+            .count();
+        let failure_count = filtered
+            .iter()
+            .filter(|e| e.entry.outcome.is_failure())
+            .count();
 
         AuditReport {
             total_entries: total_count,
@@ -326,14 +336,11 @@ impl SigningKeyPair {
     pub fn generate() -> Result<Self, RecorderError> {
         // 使用 ring 生成 Ed25519 密钥对
         let rng = ring::rand::SystemRandom::new();
-        let pkcs8_bytes =
-            Ed25519KeyPair::generate_pkcs8(&rng)
-                .map_err(|e| RecorderError::KeyError(format!("密钥生成失败: {:?}", e)))?;
+        let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng)
+            .map_err(|e| RecorderError::KeyError(format!("密钥生成失败: {:?}", e)))?;
 
-        let key_pair =
-            Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref()).map_err(|e| {
-                RecorderError::KeyError(format!("密钥解析失败: {:?}", e))
-            })?;
+        let key_pair = Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref())
+            .map_err(|e| RecorderError::KeyError(format!("密钥解析失败: {:?}", e)))?;
 
         let public_key = key_pair.public_key().as_ref().to_vec();
         let fingerprint = Self::compute_fingerprint(&public_key);
@@ -363,10 +370,8 @@ impl SigningKeyPair {
 
     /// 对数据进行签名
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, RecorderError> {
-        let key_pair =
-            Ed25519KeyPair::from_pkcs8(&self.private_key).map_err(|e| {
-                RecorderError::SigningError(format!("密钥加载失败: {:?}", e))
-            })?;
+        let key_pair = Ed25519KeyPair::from_pkcs8(&self.private_key)
+            .map_err(|e| RecorderError::SigningError(format!("密钥加载失败: {:?}", e)))?;
 
         let signature = key_pair.sign(data);
         Ok(signature.as_ref().to_vec())
@@ -419,9 +424,10 @@ impl AuditRecorder {
     /// # 返回值
     /// 返回签名后的审计条目
     pub fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, RecorderError> {
-        let mut chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let mut chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
 
         let log_index = chain.current_index();
         let content_hash = entry.content_hash();
@@ -456,11 +462,7 @@ impl AuditRecorder {
     }
 
     /// 计算 Merkle Tree 根哈希
-    fn compute_merkle_root(
-        &self,
-        chain: &AuditLogChain,
-        new_content_hash: [u8; 32],
-    ) -> [u8; 32] {
+    fn compute_merkle_root(&self, chain: &AuditLogChain, new_content_hash: [u8; 32]) -> [u8; 32] {
         let last_hash = chain.last_hash();
         let combined = [last_hash.as_slice(), new_content_hash.as_slice()].concat();
         let digest = digest(&SHA256, &combined);
@@ -479,33 +481,37 @@ impl AuditRecorder {
 
     /// 按索引获取条目
     pub fn get_entry(&self, index: u64) -> Result<Option<SignedAuditEntry>, RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
         Ok(chain.get(index).cloned())
     }
 
     /// 获取最近的条目
     pub fn recent_entries(&self, n: usize) -> Result<Vec<SignedAuditEntry>, RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
         Ok(chain.recent(n).into_iter().cloned().collect())
     }
 
     /// 获取当前 Merkle Tree 根哈希
     pub fn merkle_root(&self) -> Result<[u8; 32], RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
         Ok(chain.merkle_root())
     }
 
     /// 验证审计链完整性
     pub fn verify_chain(&self) -> Result<bool, RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
         chain.verify_chain(&self.signing_key.public_key)
     }
 
@@ -525,25 +531,28 @@ impl AuditRecorder {
         start_time: Option<u64>,
         end_time: Option<u64>,
     ) -> Result<AuditReport, RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
         Ok(chain.generate_report(start_time, end_time))
     }
 
     /// 获取条目总数
     pub fn entry_count(&self) -> Result<usize, RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
         Ok(chain.len())
     }
 
     /// 导出所有条目为 JSON
     pub fn export_json(&self) -> Result<String, RecorderError> {
-        let chain = self.chain.lock().map_err(|e| {
-            RecorderError::StorageError(format!("锁获取失败: {}", e))
-        })?;
+        let chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
 
         // 克隆条目以拥有所有权
         let entries: Vec<SignedAuditEntry> = chain.entries.iter().cloned().collect();
@@ -581,9 +590,15 @@ impl MemoryAuditStorage {
     }
 
     /// 按结果筛选事件
-    pub fn query_by_outcome(&self, outcome: Outcome) -> Result<Vec<SignedAuditEntry>, RecorderError> {
+    pub fn query_by_outcome(
+        &self,
+        outcome: Outcome,
+    ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
         let all = self.recorder.recent_entries(self.recorder.entry_count()?)?;
-        Ok(all.into_iter().filter(|e| e.entry.outcome == outcome).collect())
+        Ok(all
+            .into_iter()
+            .filter(|e| e.entry.outcome == outcome)
+            .collect())
     }
 
     /// 验证链完整性
@@ -772,7 +787,11 @@ mod tests {
 
         // 记录成功和失败的事件
         for i in 0..5 {
-            let outcome = if i % 2 == 0 { Outcome::Success } else { Outcome::Failure };
+            let outcome = if i % 2 == 0 {
+                Outcome::Success
+            } else {
+                Outcome::Failure
+            };
             let entry = AuditEntry::new(
                 &format!("user_{}", i),
                 "session",

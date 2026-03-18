@@ -20,9 +20,9 @@
 
 use super::client::{VaultClientError, VaultConfig, VaultCredentialData, VaultKvClient};
 use super::models::*;
+use super::version::CredentialVersion;
 use crate::models::CredentialMetadata;
 use crate::vault::storage::StorageBackend;
-use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 
@@ -102,12 +102,9 @@ impl VaultStorageBackend {
 
     /// 将 VaultEntry 转换为 VaultCredentialData
     fn entry_to_data(entry: &VaultEntry) -> Result<VaultCredentialData, VaultBackendError> {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-
         let encrypted_payload = format!(
             "{}.{}",
-            entry.encrypted_payload.ciphertext,
-            entry.encrypted_payload.auth_tag
+            entry.encrypted_payload.ciphertext, entry.encrypted_payload.auth_tag
         );
 
         Ok(VaultCredentialData::new(
@@ -135,6 +132,7 @@ impl VaultStorageBackend {
         VaultEntry {
             credential_id: CredentialId::from_string(data.credential_id.clone())
                 .unwrap_or_else(|_| CredentialId::new()),
+            version: 1, // 新创建的凭证版本为 1
             tenant_id: TenantId::new(data.tenant_id.clone()),
             user_id: UserId::from_hash(data.user_id_hash.clone()),
             service_id: ServiceId::new(data.service_id.clone()),
@@ -164,7 +162,12 @@ impl VaultStorageBackend {
             kdf: data.kdf.clone(),
             nonce: data.nonce.clone(),
             auth_tag: data.auth_tag.clone(),
-            ciphertext: data.encrypted_payload.split('.').next().unwrap_or("").to_string(),
+            ciphertext: data
+                .encrypted_payload
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .to_string(),
         })
     }
 }
@@ -172,18 +175,19 @@ impl VaultStorageBackend {
 impl StorageBackend for VaultStorageBackend {
     fn store(&self, entry: &VaultEntry) -> Result<(), VaultError> {
         // 转换为 Vault 数据格式
-        let data = Self::entry_to_data(entry)
-            .map_err(|e| VaultError::StorageError(e.to_string()))?;
+        let data =
+            Self::entry_to_data(entry).map_err(|e| VaultError::StorageError(e.to_string()))?;
 
         let json_data = data
             .to_json()
             .map_err(|e| VaultError::SerializationError(e.to_string()))?;
 
         // 写入 Vault
-        self.block_on(
-            self.client
-                .write_secret(entry.tenant_id.as_str(), entry.credential_id.as_str(), &json_data),
-        )
+        self.block_on(self.client.write_secret(
+            entry.tenant_id.as_str(),
+            entry.credential_id.as_str(),
+            &json_data,
+        ))
         .map_err(|e| VaultError::StorageError(e.to_string()))?;
 
         Ok(())
@@ -196,15 +200,12 @@ impl StorageBackend for VaultStorageBackend {
 
         // 首先尝试从所有可能的租户中查找
         // 实际实现中应该使用索引或缓存来优化
-        let tenant_ids = self.list_all_tenants().map_err(|e| {
-            VaultError::StorageError(format!("Failed to list tenants: {}", e))
-        })?;
+        let tenant_ids = self
+            .list_all_tenants()
+            .map_err(|e| VaultError::StorageError(format!("Failed to list tenants: {}", e)))?;
 
         for tenant_id in tenant_ids {
-            match self.block_on(
-                self.client
-                    .read_secret(&tenant_id, credential_id.as_str()),
-            ) {
+            match self.block_on(self.client.read_secret(&tenant_id, credential_id.as_str())) {
                 Ok(json_data) => {
                     let data: VaultCredentialData = VaultCredentialData::from_json(json_data)
                         .map_err(|e| {
@@ -219,7 +220,9 @@ impl StorageBackend for VaultStorageBackend {
 
                     return Ok(Some(Self::data_to_entry(&data, encrypted_payload)));
                 }
-                Err(VaultBackendError::ClientError(VaultClientError::SecretNotFound(_))) => continue,
+                Err(VaultBackendError::ClientError(VaultClientError::SecretNotFound(_))) => {
+                    continue;
+                }
                 Err(e) => return Err(VaultError::StorageError(e.to_string())),
             }
         }
@@ -285,10 +288,7 @@ impl StorageBackend for VaultStorageBackend {
 
         let total = credentials.len();
 
-        Ok(CredentialQueryResult {
-            credentials,
-            total,
-        })
+        Ok(CredentialQueryResult { credentials, total })
     }
 
     fn delete(&self, credential_id: &CredentialId) -> Result<bool, VaultError> {
@@ -297,19 +297,17 @@ impl StorageBackend for VaultStorageBackend {
             entry.mark_deleted();
 
             // 更新 Vault 中的记录
-            let data = Self::entry_to_data(&entry)
-                .map_err(|e| VaultError::StorageError(e.to_string()))?;
+            let data =
+                Self::entry_to_data(&entry).map_err(|e| VaultError::StorageError(e.to_string()))?;
             let json_data = data
                 .to_json()
                 .map_err(|e| VaultError::SerializationError(e.to_string()))?;
 
-            self.block_on(
-                self.client.write_secret(
-                    entry.tenant_id.as_str(),
-                    credential_id.as_str(),
-                    &json_data,
-                ),
-            )
+            self.block_on(self.client.write_secret(
+                entry.tenant_id.as_str(),
+                credential_id.as_str(),
+                &json_data,
+            ))
             .map_err(|e| VaultError::StorageError(e.to_string()))?;
 
             Ok(true)
@@ -320,14 +318,19 @@ impl StorageBackend for VaultStorageBackend {
 
     fn purge(&self, credential_id: &CredentialId) -> Result<bool, VaultError> {
         // 物理删除：从 Vault 中永久移除
-        let tenant_ids = self.list_all_tenants().map_err(|e| {
-            VaultError::StorageError(format!("Failed to list tenants: {}", e))
-        })?;
+        let tenant_ids = self
+            .list_all_tenants()
+            .map_err(|e| VaultError::StorageError(format!("Failed to list tenants: {}", e)))?;
 
         for tenant_id in tenant_ids {
-            match self.block_on(self.client.delete_secret(&tenant_id, credential_id.as_str())) {
+            match self.block_on(
+                self.client
+                    .delete_secret(&tenant_id, credential_id.as_str()),
+            ) {
                 Ok(_) => return Ok(true),
-                Err(VaultBackendError::ClientError(VaultClientError::SecretNotFound(_))) => continue,
+                Err(VaultBackendError::ClientError(VaultClientError::SecretNotFound(_))) => {
+                    continue;
+                }
                 Err(e) => return Err(VaultError::StorageError(e.to_string())),
             }
         }
@@ -347,27 +350,51 @@ impl StorageBackend for VaultStorageBackend {
         // 检查条目是否存在
         if !self.exists(&entry.credential_id)? {
             return Err(VaultError::CredentialNotFound(
-                entry.credential_id.as_str().to_string()
+                entry.credential_id.as_str().to_string(),
             ));
         }
 
         // 更新 Vault 中的记录
-        let data = Self::entry_to_data(entry)
-            .map_err(|e| VaultError::StorageError(e.to_string()))?;
+        let data =
+            Self::entry_to_data(entry).map_err(|e| VaultError::StorageError(e.to_string()))?;
         let json_data = data
             .to_json()
             .map_err(|e| VaultError::SerializationError(e.to_string()))?;
 
-        self.block_on(
-            self.client.write_secret(
-                entry.tenant_id.as_str(),
-                entry.credential_id.as_str(),
-                &json_data,
-            ),
-        )
+        self.block_on(self.client.write_secret(
+            entry.tenant_id.as_str(),
+            entry.credential_id.as_str(),
+            &json_data,
+        ))
         .map_err(|e| VaultError::StorageError(e.to_string()))?;
 
         Ok(())
+    }
+
+    fn create_version_record(&self, _version: &CredentialVersion) -> Result<(), VaultError> {
+        // Vault 后端不支持版本历史记录
+        // 版本历史由 Vault 的内置版本控制处理
+        Ok(())
+    }
+
+    fn get_version_history(
+        &self,
+        credential_id: &CredentialId,
+    ) -> Result<Vec<CredentialVersion>, VaultError> {
+        // Vault 后端不支持版本历史记录
+        // 返回空列表
+        let _ = credential_id;
+        Ok(Vec::new())
+    }
+
+    fn get_version(
+        &self,
+        credential_id: &CredentialId,
+        version: u32,
+    ) -> Result<Option<CredentialVersion>, VaultError> {
+        // Vault 后端不支持版本历史记录
+        let _ = (credential_id, version);
+        Ok(None)
     }
 }
 
@@ -405,9 +432,9 @@ impl VaultStorageBackendBuilder {
 
     /// 构建 Vault 存储后端
     pub async fn build(self) -> Result<VaultStorageBackend, VaultBackendError> {
-        let config = self.config.ok_or_else(|| {
-            VaultBackendError::ConfigError("Vault config not set".to_string())
-        })?;
+        let config = self
+            .config
+            .ok_or_else(|| VaultBackendError::ConfigError("Vault config not set".to_string()))?;
 
         VaultStorageBackend::new(config).await
     }
@@ -420,7 +447,9 @@ impl Default for VaultStorageBackendBuilder {
 }
 
 /// Vault 健康检查
-pub async fn check_vault_health(config: &VaultConfig) -> Result<VaultHealthStatus, VaultClientError> {
+pub async fn check_vault_health(
+    config: &VaultConfig,
+) -> Result<VaultHealthStatus, VaultClientError> {
     use std::time::Duration;
     use tokio::time::timeout;
 

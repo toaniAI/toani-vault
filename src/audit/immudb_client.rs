@@ -3,7 +3,7 @@
 //! 提供与 immudb 不可篡改数据库的交互能力
 //! 支持审计日志的持久化存储和完整性验证
 
-use super::events::{AuditAction, AuditEntry, AuditEventId, Outcome, RiskTier};
+use super::events::{AuditAction, Outcome, RiskTier};
 use super::recorder::{RecorderError, SignedAuditEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -337,7 +337,7 @@ impl ImmuDbClient {
     /// 1. 从 immudb 检索指定键的条目
     /// 2. 获取包含证明
     /// 3. 验证数据完整性
-    pub async fn get_entry(&self, key: &str) -> Result<Option<ImmuDbAuditEntry>, RecorderError> {
+    pub async fn get_entry(&self, _key: &str) -> Result<Option<ImmuDbAuditEntry>, RecorderError> {
         self.ensure_connected()?;
 
         // 模拟检索逻辑
@@ -459,7 +459,7 @@ impl ImmuDbClient {
 
     /// 计算创世状态哈希
     fn compute_genesis_state_hash() -> String {
-        use ring::digest::{digest, SHA256};
+        use ring::digest::{SHA256, digest};
         let genesis_data = b"CredBridge ImmuDb Genesis Block";
         let digest = digest(&SHA256, genesis_data);
         hex::encode(digest.as_ref())
@@ -467,9 +467,12 @@ impl ImmuDbClient {
 
     /// 计算下一个状态哈希
     fn compute_next_state_hash(&self, signed_entry: &SignedAuditEntry) -> String {
-        use ring::digest::{digest, SHA256};
+        use ring::digest::{SHA256, digest};
 
-        let prev_hash = self.state_hash.clone().unwrap_or_else(|| Self::compute_genesis_state_hash());
+        let prev_hash = self
+            .state_hash
+            .clone()
+            .unwrap_or_else(|| Self::compute_genesis_state_hash());
         let entry_hash = hex::encode(signed_entry.content_hash);
 
         let combined = format!("{}:{}", prev_hash, entry_hash);
@@ -508,9 +511,13 @@ impl ImmuDbStorage {
     }
 
     /// 存储审计条目
-    pub async fn store(&mut self, entry: &SignedAuditEntry) -> Result<ImmuDbAuditEntry, RecorderError> {
+    pub async fn store(
+        &mut self,
+        entry: &SignedAuditEntry,
+    ) -> Result<ImmuDbAuditEntry, RecorderError> {
         let immu_entry = self.client.store_entry(entry).await?;
-        self.cache.insert(immu_entry.key.clone(), immu_entry.clone());
+        self.cache
+            .insert(immu_entry.key.clone(), immu_entry.clone());
         Ok(immu_entry)
     }
 
@@ -525,7 +532,10 @@ impl ImmuDbStorage {
     }
 
     /// 查询条目
-    pub async fn query(&self, options: &QueryOptions) -> Result<Vec<ImmuDbAuditEntry>, RecorderError> {
+    pub async fn query(
+        &self,
+        options: &QueryOptions,
+    ) -> Result<Vec<ImmuDbAuditEntry>, RecorderError> {
         self.client.query(options).await
     }
 
@@ -583,7 +593,7 @@ fn current_timestamp_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audit::{AuditEntry, AuditAction, Outcome};
+    use crate::audit::{AuditAction, AuditEntry, Outcome};
 
     fn create_test_config() -> ImmuDbConfig {
         ImmuDbConfig {

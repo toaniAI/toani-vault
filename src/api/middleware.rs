@@ -6,17 +6,17 @@
 //! - Scope 权限控制
 
 use axum::{
+    Json,
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::token_blacklist::{TokenBlacklist, TokenStore};
+use super::token_blacklist::TokenStore;
 
 /// Token Scope 定义
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -165,6 +165,7 @@ fn extract_token_from_header(request: &Request) -> Result<String, AuthError> {
 
 /// Token 默认黑名单 TTL（秒）
 /// 设置为 Token 最大有效期 + 缓冲时间，确保过期 Token 不会永远留在黑名单
+#[allow(dead_code)]
 const TOKEN_BLACKLIST_TTL_SECONDS: u64 = 900; // 15 分钟
 
 /// 验证 Token（使用 pasetors）
@@ -201,12 +202,12 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
     use time::OffsetDateTime;
 
     // 创建对称密钥
-    let sk: SymmetricKey<_> = SymmetricKey::from(secret_key)
-        .map_err(|_| "无效的密钥长度".to_string())?;
+    let sk: SymmetricKey<_> =
+        SymmetricKey::from(secret_key).map_err(|_| "无效的密钥长度".to_string())?;
 
     // 解析未受信任的 Token
-    let untrusted = UntrustedToken::try_from(token)
-        .map_err(|e| format!("Token 解析失败: {:?}", e))?;
+    let untrusted =
+        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {:?}", e))?;
 
     // 验证 Token
     let validation_rules = ClaimsValidationRules::new();
@@ -214,7 +215,8 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
         .map_err(|e| format!("解密失败: {:?}", e))?;
 
     // 获取 Claims
-    let claims = trusted_token.payload_claims()
+    let claims = trusted_token
+        .payload_claims()
         .ok_or("Token 不包含 payload claims")?;
 
     // 提取声明
@@ -232,32 +234,26 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
 
     // 解析 exp（ISO 8601 格式）
     let expires_at = match claims.get_claim("exp").and_then(|v| v.as_str()) {
-        Some(s) => {
-            OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
-                .map(|dt| dt.unix_timestamp() as u64)
-                .map_err(|_| "无法解析 exp 时间".to_string())
-        }
+        Some(s) => OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
+            .map(|dt| dt.unix_timestamp() as u64)
+            .map_err(|_| "无法解析 exp 时间".to_string()),
         None => Err("Token 缺少 exp 声明".to_string()),
     }?;
 
     // 解析 iat（ISO 8601 格式）
     let issued_at = match claims.get_claim("iat").and_then(|v| v.as_str()) {
-        Some(s) => {
-            OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
-                .map(|dt| dt.unix_timestamp() as u64)
-                .unwrap_or_else(|_| {
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                })
-        }
-        None => {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        }
+        Some(s) => OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
+            .map(|dt| dt.unix_timestamp() as u64)
+            .unwrap_or_else(|_| {
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            }),
+        None => SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
     };
 
     let scope_str = claims
@@ -275,8 +271,8 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
     }
 
     // 解析租户 ID 和用户 ID
-    let (tenant_id, user_id) = parse_subject(&subject)
-        .map_err(|e| format!("解析 subject 失败: {}", e.message))?;
+    let (tenant_id, user_id) =
+        parse_subject(&subject).map_err(|e| format!("解析 subject 失败: {}", e.message))?;
 
     Ok(ValidatedToken {
         token_id,
@@ -398,7 +394,10 @@ pub fn require_any_scope(
                 "insufficient_scope",
                 format!(
                     "缺少必需的 scope，需要以下任一: {:?}，当前 scopes: {:?}",
-                    required_scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                    required_scopes
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
                     token.scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>()
                 ),
             ))

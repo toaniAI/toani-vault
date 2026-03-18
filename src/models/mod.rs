@@ -50,6 +50,8 @@ pub struct CredentialMetadata {
     pub expires_at: Option<String>,
     /// 是否已删除
     pub is_deleted: bool,
+    /// 版本号
+    pub version: u32,
 }
 
 /// 加密凭证存储格式

@@ -684,10 +684,7 @@ pub struct TenantConfigManager<S: TenantConfigStore> {
 impl<S: TenantConfigStore> TenantConfigManager<S> {
     /// 创建新的配置管理器
     pub fn new(store: S) -> Self {
-        Self {
-            store,
-            cache: None,
-        }
+        Self { store, cache: None }
     }
 
     /// 启用缓存
@@ -697,7 +694,10 @@ impl<S: TenantConfigStore> TenantConfigManager<S> {
     }
 
     /// 获取租户配置
-    pub async fn get_config(&self, tenant_id: &TenantId) -> Result<TenantConfig, TenantConfigError> {
+    pub async fn get_config(
+        &self,
+        tenant_id: &TenantId,
+    ) -> Result<TenantConfig, TenantConfigError> {
         // 先尝试从缓存获取
         if let Some(cache) = &self.cache {
             if let Some(config) = cache.get(tenant_id).await {
@@ -728,7 +728,9 @@ impl<S: TenantConfigStore> TenantConfigManager<S> {
         }
 
         // 验证配置
-        config.validate().map_err(TenantConfigError::ValidationError)?;
+        config
+            .validate()
+            .map_err(TenantConfigError::ValidationError)?;
 
         // 保存配置
         self.store.save_config(tenant_id, &config).await?;
@@ -752,7 +754,9 @@ impl<S: TenantConfigStore> TenantConfigManager<S> {
         config.merge(partial, updater_id);
 
         // 验证配置
-        config.validate().map_err(TenantConfigError::ValidationError)?;
+        config
+            .validate()
+            .map_err(TenantConfigError::ValidationError)?;
 
         // 保存配置
         self.store.save_config(tenant_id, &config).await?;
@@ -821,20 +825,21 @@ impl RedisTenantConfigCache {
 #[async_trait]
 impl TenantConfigCache for RedisTenantConfigCache {
     async fn get(&self, _tenant_id: &TenantId) -> Option<TenantConfig> {
-        // TODO: 实现 Redis 获取
+        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
+        // 需要: Redis 连接池和序列化/反序列化逻辑
         None
     }
 
     async fn set(&self, _tenant_id: &TenantId, _config: &TenantConfig) {
-        // TODO: 实现 Redis 设置
+        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
     }
 
     async fn delete(&self, _tenant_id: &TenantId) {
-        // TODO: 实现 Redis 删除
+        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
     }
 
     async fn clear(&self) {
-        // TODO: 实现 Redis 清空
+        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
     }
 }
 

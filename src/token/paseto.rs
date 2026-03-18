@@ -32,7 +32,7 @@ use super::claims::{ClaimsError, TokenClaims};
 use pasetors::claims::{Claims, ClaimsValidationRules};
 use pasetors::keys::{Generate, SymmetricKey};
 use pasetors::token::{TrustedToken, UntrustedToken};
-use pasetors::{local, Local, version4::V4};
+use pasetors::{Local, local, version4::V4};
 use std::convert::TryFrom;
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -125,9 +125,7 @@ impl PasetoToken {
         use ring::hmac;
 
         if master_key.len() != 32 {
-            return Err(TokenError::KeyError(
-                "主密钥必须是 32 字节".to_string(),
-            ));
+            return Err(TokenError::KeyError("主密钥必须是 32 字节".to_string()));
         }
 
         let key = hmac::Key::new(hmac::HMAC_SHA256, master_key);
@@ -151,35 +149,51 @@ impl PasetoToken {
         // 创建 PASETO Claims
         // 注意：Claims::new() 会自动设置 iat, nbf, exp 为 1 小时后
         // 我们需要覆盖这些值
-        let mut paseto_claims = Claims::new_expires_in(
-            &std::time::Duration::from_secs(claims.remaining_ttl())
-        ).map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        let mut paseto_claims =
+            Claims::new_expires_in(&std::time::Duration::from_secs(claims.remaining_ttl()))
+                .map_err(|e| TokenError::PasetoError(e.to_string()))?;
 
         // 覆盖标准声明
-        paseto_claims.issuer(&claims.iss).map_err(|e| TokenError::PasetoError(e.to_string()))?;
-        paseto_claims.subject(&claims.sub).map_err(|e| TokenError::PasetoError(e.to_string()))?;
-        paseto_claims.audience(&claims.aud).map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .issuer(&claims.iss)
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .subject(&claims.sub)
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .audience(&claims.aud)
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
 
         // 将 Unix 时间戳转换为 RFC 3339 格式
         let exp_rfc3339 = unix_to_rfc3339(claims.exp);
-        paseto_claims.expiration(&exp_rfc3339).map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .expiration(&exp_rfc3339)
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
 
         if let Some(iat) = claims.iat {
             let iat_rfc3339 = unix_to_rfc3339(iat);
-            paseto_claims.issued_at(&iat_rfc3339).map_err(|e| TokenError::PasetoError(e.to_string()))?;
+            paseto_claims
+                .issued_at(&iat_rfc3339)
+                .map_err(|e| TokenError::PasetoError(e.to_string()))?;
         }
 
         if let Some(nbf) = claims.nbf {
             let nbf_rfc3339 = unix_to_rfc3339(nbf);
-            paseto_claims.not_before(&nbf_rfc3339).map_err(|e| TokenError::PasetoError(e.to_string()))?;
+            paseto_claims
+                .not_before(&nbf_rfc3339)
+                .map_err(|e| TokenError::PasetoError(e.to_string()))?;
         }
 
-        paseto_claims.token_identifier(&claims.jti).map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .token_identifier(&claims.jti)
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
 
         // 添加自定义声明
-        paseto_claims.add_additional("scope", claims.scope.as_str())
+        paseto_claims
+            .add_additional("scope", claims.scope.as_str())
             .map_err(|e| TokenError::PasetoError(e.to_string()))?;
-        paseto_claims.add_additional("mfa_verified", claims.mfa_verified)
+        paseto_claims
+            .add_additional("mfa_verified", claims.mfa_verified)
             .map_err(|e| TokenError::PasetoError(e.to_string()))?;
 
         // 创建对称密钥
@@ -187,12 +201,8 @@ impl PasetoToken {
             .map_err(|e| TokenError::KeyError(format!("密钥创建失败: {}", e)))?;
 
         // 构建 Token
-        let token = local::encrypt(
-            &symmetric_key,
-            &paseto_claims,
-            None,
-            None
-        ).map_err(|e| TokenError::SigningError(e.to_string()))?;
+        let token = local::encrypt(&symmetric_key, &paseto_claims, None, None)
+            .map_err(|e| TokenError::SigningError(e.to_string()))?;
 
         Ok(token)
     }
@@ -212,8 +222,8 @@ impl PasetoToken {
         expected_audience: &str,
     ) -> Result<TokenClaims, TokenError> {
         // 解析未受信任的 Token
-        let untrusted = UntrustedToken::<Local, V4>::try_from(token)
-            .map_err(|_| TokenError::InvalidFormat)?;
+        let untrusted =
+            UntrustedToken::<Local, V4>::try_from(token).map_err(|_| TokenError::InvalidFormat)?;
 
         // 创建对称密钥
         let symmetric_key = SymmetricKey::<V4>::from(key.as_bytes())
@@ -226,20 +236,17 @@ impl PasetoToken {
         // 注意：subject 在 claims.validate() 中验证
 
         // 验证 Token
-        let trusted: TrustedToken = local::decrypt(
-            &symmetric_key,
-            &untrusted,
-            &validation_rules,
-            None,
-            None
-        ).map_err(|e| {
-            let msg = e.to_string();
-            if msg.contains("expired") {
-                TokenError::Expired
-            } else {
-                TokenError::VerificationError(msg)
-            }
-        })?;
+        let trusted: TrustedToken =
+            local::decrypt(&symmetric_key, &untrusted, &validation_rules, None, None).map_err(
+                |e| {
+                    let msg = e.to_string();
+                    if msg.contains("expired") {
+                        TokenError::Expired
+                    } else {
+                        TokenError::VerificationError(msg)
+                    }
+                },
+            )?;
 
         // 提取 Claims
         let claims = Self::extract_claims(&trusted)?;
@@ -252,12 +259,14 @@ impl PasetoToken {
 
     /// 从 TrustedToken 提取 Claims
     fn extract_claims(trusted: &TrustedToken) -> Result<TokenClaims, TokenError> {
-        let paseto_claims = trusted.payload_claims()
+        let paseto_claims = trusted
+            .payload_claims()
             .ok_or_else(|| TokenError::VerificationError("缺少 payload claims".to_string()))?;
 
         // 从 JSON Value 提取声明
         let get_string = |key: &str| -> Result<String, TokenError> {
-            paseto_claims.get_claim(key)
+            paseto_claims
+                .get_claim(key)
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .ok_or_else(|| TokenError::VerificationError(format!("缺少 {}", key)))
@@ -274,21 +283,25 @@ impl PasetoToken {
         let exp = rfc3339_to_unix(&exp_str)
             .ok_or_else(|| TokenError::VerificationError("无效的 exp 格式".to_string()))?;
 
-        let iat = paseto_claims.get_claim("iat")
+        let iat = paseto_claims
+            .get_claim("iat")
             .and_then(|v| v.as_str())
             .and_then(rfc3339_to_unix);
 
-        let nbf = paseto_claims.get_claim("nbf")
+        let nbf = paseto_claims
+            .get_claim("nbf")
             .and_then(|v| v.as_str())
             .and_then(rfc3339_to_unix);
 
         // 提取自定义声明
-        let scope = paseto_claims.get_claim("scope")
+        let scope = paseto_claims
+            .get_claim("scope")
             .and_then(|v| v.as_str())
             .ok_or_else(|| TokenError::VerificationError("缺少 scope".to_string()))?
             .to_string();
 
-        let mfa_verified = paseto_claims.get_claim("mfa_verified")
+        let mfa_verified = paseto_claims
+            .get_claim("mfa_verified")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
@@ -312,7 +325,9 @@ fn unix_to_rfc3339(timestamp: u64) -> String {
 
     let datetime = OffsetDateTime::from_unix_timestamp(timestamp as i64)
         .unwrap_or_else(|_| OffsetDateTime::now_utc());
-    datetime.format(&Rfc3339).unwrap_or_else(|_| timestamp.to_string())
+    datetime
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| timestamp.to_string())
 }
 
 /// 将 RFC 3339 格式转换为 Unix 时间戳
@@ -451,12 +466,8 @@ mod tests {
     #[test]
     fn test_sign_and_verify() {
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         // 签发 Token
         let token = PasetoToken::sign(&claims, &key).unwrap();
@@ -477,12 +488,8 @@ mod tests {
     #[test]
     fn test_verify_wrong_audience() {
         let key = PasetoToken::generate_key();
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key).unwrap();
 
@@ -496,12 +503,8 @@ mod tests {
         let key1 = PasetoToken::generate_key();
         let key2 = PasetoToken::generate_key();
 
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let token = PasetoToken::sign(&claims, &key1).unwrap();
 

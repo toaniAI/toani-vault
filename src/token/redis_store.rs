@@ -290,11 +290,7 @@ impl RedisTokenStore {
     /// # 返回值
     /// - `Ok(())`: 撤销成功
     /// - `Err(TokenStoreError)`: 撤销失败
-    pub async fn revoke_token(
-        &self,
-        tenant_id: &str,
-        jti: &str,
-    ) -> Result<(), TokenStoreError> {
+    pub async fn revoke_token(&self, tenant_id: &str, jti: &str) -> Result<(), TokenStoreError> {
         let mut conn = self.get_connection().await?;
 
         // 1. 从活跃集合移除
@@ -345,7 +341,9 @@ impl RedisTokenStore {
 
         let _: () = conn.hset(&metadata_key, "data", metadata_json).await?;
         let _: () = conn.hset(&metadata_key, "revoked", "true").await?;
-        let _: () = conn.hset(&metadata_key, "revoked_at", now.to_string()).await?;
+        let _: () = conn
+            .hset(&metadata_key, "revoked_at", now.to_string())
+            .await?;
 
         Ok(())
     }
@@ -463,11 +461,7 @@ impl RedisTokenStore {
     /// # 参数
     /// - `tenant_id`: 租户 ID
     /// - `jti`: Token 唯一标识符
-    pub async fn delete_token(
-        &self,
-        tenant_id: &str,
-        jti: &str,
-    ) -> Result<(), TokenStoreError> {
+    pub async fn delete_token(&self, tenant_id: &str, jti: &str) -> Result<(), TokenStoreError> {
         let mut conn = self.get_connection().await?;
 
         let active_key = keys::active_tokens_key(tenant_id);
@@ -534,12 +528,8 @@ mod tests {
 
     #[test]
     fn test_token_metadata_from_claims() {
-        let claims = TokenClaims::with_default_ttl(
-            "user_123",
-            "tenant_456",
-            "credential:read",
-            true,
-        );
+        let claims =
+            TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
         let metadata = TokenMetadata::from_claims(&claims);
 

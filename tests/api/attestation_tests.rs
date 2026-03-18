@@ -9,9 +9,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-use vault_service::api::{
-    attestation_routes, init_attestation_api, AttestationApiConfig,
-};
+use vault_service::api::{AttestationApiConfig, attestation_routes, init_attestation_api};
 
 /// 创建测试用的认证 API 状态
 fn create_test_state() -> std::sync::Arc<vault_service::api::AttestationState> {
@@ -306,5 +304,10 @@ async fn test_replay_protection() {
 
     // 第二次验证应该失败，因为挑战已经被使用
     assert!(!second_json["verified"].as_bool().unwrap());
-    assert!(second_json["error"].as_str().unwrap().contains("Challenge not found"));
+    assert!(
+        second_json["error"]
+            .as_str()
+            .unwrap()
+            .contains("Challenge not found")
+    );
 }

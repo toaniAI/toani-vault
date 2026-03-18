@@ -6,7 +6,8 @@
 use super::constants::KEY_LENGTH;
 use super::keys::{CredentialKey, EnclaveMasterKey, HardwareRootKey, KeyPurpose, UserVaultKey};
 use super::{CryptoError, KeyHandle};
-use ring::hkdf::{Salt, HKDF_SHA256};
+use ring::hkdf::{HKDF_SHA256, Salt};
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use zeroize::Zeroize;
 
@@ -20,7 +21,7 @@ pub const KEY_DERIVATION_VERSION: u32 = 1;
 pub const KEY_ROTATION_INTERVAL_SECONDS: u64 = 90 * 24 * 60 * 60;
 
 /// 密钥版本信息
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct KeyVersion {
     /// 主版本号（重大变更）
     pub major: u32,
@@ -303,6 +304,7 @@ impl KeyHierarchy {
     }
 
     /// 派生密钥句柄（确定性派生，用于缓存查找）
+    #[allow(dead_code)]
     fn derive_key_handle(&self, tenant_id: &str, user_id: &str) -> KeyHandle {
         self.derive_key_handle_with_version(tenant_id, user_id)
     }
@@ -473,8 +475,8 @@ pub mod utils {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::keys::RootKeySource;
+    use super::*;
 
     #[test]
     fn test_initialize_master_key() {
@@ -494,7 +496,9 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         assert_eq!(l2_key.tenant_id(), "tenant_123");
         assert_eq!(l2_key.user_id_hash(), "hash:user_456:v1");
@@ -506,7 +510,9 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         let l3_key = hierarchy
             .derive_credential_key(&l2_key, "cred_789", KeyPurpose::CredentialEncryption)
@@ -522,7 +528,9 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         let credential_ids = vec![
             "cred_1".to_string(),
@@ -531,7 +539,11 @@ mod tests {
         ];
 
         let l3_keys = hierarchy
-            .derive_credential_keys_batch(&l2_key, &credential_ids, KeyPurpose::CredentialEncryption)
+            .derive_credential_keys_batch(
+                &l2_key,
+                &credential_ids,
+                KeyPurpose::CredentialEncryption,
+            )
             .unwrap();
 
         assert_eq!(l3_keys.len(), 3);
@@ -557,8 +569,12 @@ mod tests {
         hierarchy1.initialize_master_key(&l0_1).unwrap();
         hierarchy2.initialize_master_key(&l0_2).unwrap();
 
-        let l2_1 = hierarchy1.derive_user_vault_key("tenant_123", "user_456").unwrap();
-        let l2_2 = hierarchy2.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_1 = hierarchy1
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
+        let l2_2 = hierarchy2
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         // 相同输入应该产生相同的密钥
         assert_eq!(l2_1.as_bytes(), l2_2.as_bytes());
@@ -571,8 +587,12 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_user1 = hierarchy.derive_user_vault_key("tenant_123", "user_1").unwrap();
-        let l2_user2 = hierarchy.derive_user_vault_key("tenant_123", "user_2").unwrap();
+        let l2_user1 = hierarchy
+            .derive_user_vault_key("tenant_123", "user_1")
+            .unwrap();
+        let l2_user2 = hierarchy
+            .derive_user_vault_key("tenant_123", "user_2")
+            .unwrap();
 
         assert_ne!(l2_user1.as_bytes(), l2_user2.as_bytes());
     }
@@ -584,8 +604,12 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_tenant1 = hierarchy.derive_user_vault_key("tenant_1", "user_456").unwrap();
-        let l2_tenant2 = hierarchy.derive_user_vault_key("tenant_2", "user_456").unwrap();
+        let l2_tenant1 = hierarchy
+            .derive_user_vault_key("tenant_1", "user_456")
+            .unwrap();
+        let l2_tenant2 = hierarchy
+            .derive_user_vault_key("tenant_2", "user_456")
+            .unwrap();
 
         assert_ne!(l2_tenant1.as_bytes(), l2_tenant2.as_bytes());
     }
@@ -597,7 +621,9 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         let l3_cred1 = hierarchy
             .derive_credential_key(&l2_key, "cred_1", KeyPurpose::CredentialEncryption)
@@ -616,7 +642,9 @@ mod tests {
         let mut hierarchy = KeyHierarchy::new();
         hierarchy.initialize_master_key(&l0).unwrap();
 
-        let l2_key = hierarchy.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         let l3_encrypt = hierarchy
             .derive_credential_key(&l2_key, "cred_789", KeyPurpose::CredentialEncryption)
@@ -695,12 +723,16 @@ mod tests {
         // 版本 1
         let mut hierarchy_v1 = KeyHierarchy::with_version(1, 0);
         hierarchy_v1.initialize_master_key(&l0).unwrap();
-        let l2_v1 = hierarchy_v1.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_v1 = hierarchy_v1
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         // 版本 2
         let mut hierarchy_v2 = KeyHierarchy::with_version(2, 0);
         hierarchy_v2.initialize_master_key(&l0).unwrap();
-        let l2_v2 = hierarchy_v2.derive_user_vault_key("tenant_123", "user_456").unwrap();
+        let l2_v2 = hierarchy_v2
+            .derive_user_vault_key("tenant_123", "user_456")
+            .unwrap();
 
         // 不同版本应该产生不同的密钥
         assert_ne!(l2_v1.as_bytes(), l2_v2.as_bytes());

@@ -12,13 +12,7 @@
 //! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - 速率限制请求数/窗口 (默认: 100)
 //! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - 速率限制窗口（秒）(默认: 60)
 
-use axum::{
-    http::StatusCode,
-    middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::get,
-    Extension, Json, Router,
-};
+use axum::{Extension, Json, Router, http::StatusCode, response::IntoResponse, routing::get};
 use serde::Serialize;
 use serde_json::json;
 use std::env;
@@ -27,29 +21,33 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::{self, TraceLayer};
-use tracing::{info, Level};
+use tracing::{Level, info};
 
 // CredBridge 内部模块
 use vault_service::api::{
-    credentials::{routes as credential_routes, AppState as CredentialAppState, DefaultAuditLogger},
-    audit::{audit_routes, AuditApiState, MemoryAuditStorageAdapter},
-    auth::{auth_routes, AuthApiState},
-    tenant::{tenant_routes, TenantApiState},
-    attestation::{attestation_routes, init_attestation_api, AttestationApiConfig, AttestationState},
-    rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
-    middleware::auth_middleware,
-    token_blacklist::create_token_store,
-    sandbox::{sandbox_routes, SandboxState},
     API_BASE_PATH,
+    attestation::{
+        AttestationApiConfig, AttestationState, attestation_routes, init_attestation_api,
+    },
+    audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
+    auth::{AuthApiState, auth_routes},
+    credentials::{
+        AppState as CredentialAppState, DefaultAuditLogger, routes as credential_routes,
+    },
+    middleware::auth_middleware,
+    rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
+    sandbox::{SandboxState, sandbox_routes},
+    tenant::{TenantApiState, tenant_routes},
+    token_blacklist::create_token_store,
 };
+use vault_service::audit::MemoryAuditStorage;
 use vault_service::crypto::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
 use vault_service::tee::{Enclave, EnclaveConfig};
-use vault_service::vault::storage::CredentialVault;
 use vault_service::tenant::{
-    MemoryTenantConfigStore, TenantManager, TenantService, MemoryTenantStorage,
+    MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
 };
-use vault_service::audit::MemoryAuditStorage;
+use vault_service::vault::storage::CredentialVault;
 
 /// API 根响应
 #[derive(Debug, Serialize)]
@@ -176,7 +174,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 显示速率限制配置
     let rate_limit_config = RateLimitConfig::from_env();
-    info!("🛡️  速率限制: {}/{}秒/IP", rate_limit_config.requests_per_window, rate_limit_config.window_seconds);
+    info!(
+        "🛡️  速率限制: {}/{}秒/IP",
+        rate_limit_config.requests_per_window, rate_limit_config.window_seconds
+    );
 
     // 初始化应用状态
     let app_state = initialize_app_state(&config).await?;
@@ -189,7 +190,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     info!("✅ 服务器启动成功！");
-    info!("📚 API 文档: http://{}:{}/api/v1/", config.host, config.port);
+    info!(
+        "📚 API 文档: http://{}:{}/api/v1/",
+        config.host, config.port
+    );
     info!("💊 健康检查: http://{}:{}/health", config.host, config.port);
     info!("");
 
@@ -236,8 +240,8 @@ async fn initialize_app_state(
     let vault = Arc::new(CredentialVault::new_in_memory());
 
     // 初始化审计日志存储
-    let audit_storage = MemoryAuditStorage::new(100_000)
-        .map_err(|e| format!("创建审计存储失败: {:?}", e))?;
+    let audit_storage =
+        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?;
     let audit_storage_adapter = MemoryAuditStorageAdapter::new(audit_storage);
 
     // 创建凭证 API 状态
@@ -266,7 +270,10 @@ async fn initialize_app_state(
     }) {
         Ok(state) => Some(state),
         Err(e) => {
-            eprintln!("[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {}", e);
+            eprintln!(
+                "[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {}",
+                e
+            );
             None
         }
     };
@@ -299,7 +306,8 @@ async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::
     use vault_service::tee::sandbox::config::SandboxConfig;
 
     let config = SandboxConfig::default();
-    let state = SandboxState::new(config).await
+    let state = SandboxState::new(config)
+        .await
         .map_err(|e| format!("沙箱初始化失败: {:?}", e))?;
 
     Ok(state)
@@ -345,9 +353,7 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
 
 /// 创建 CORS 层
 fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
-    let cors = CorsLayer::new()
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = CorsLayer::new().allow_methods(Any).allow_headers(Any);
 
     if config.environment == Environment::Production {
         // 生产环境使用更严格的 CORS 配置
@@ -366,9 +372,9 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
                         Some(tower_http::cors::AllowOrigin::list(origins))
                     }
                 })
-                .unwrap_or_else(|| tower_http::cors::AllowOrigin::exact(
-                    "https://credbridge.io".parse().unwrap()
-                )),
+                .unwrap_or_else(|| {
+                    tower_http::cors::AllowOrigin::exact("https://credbridge.io".parse().unwrap())
+                }),
         )
     } else {
         // 开发环境允许所有来源
@@ -388,8 +394,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     // ========== 受保护的路由（需要认证） ==========
 
     // 凭证管理路由
-    let credential_routes = credential_routes()
-        .with_state(app_state.credential_state.clone());
+    let credential_routes = credential_routes().with_state(app_state.credential_state.clone());
 
     // 审计日志路由
     let audit_routes = audit_routes(app_state.audit_state.clone());
@@ -404,8 +409,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         tenant_manager: Arc::new(tenant_manager),
         tenant_service,
     };
-    let tenant_routes = tenant_routes::<MemoryTenantConfigStore>()
-        .with_state(tenant_api_state);
+    let tenant_routes = tenant_routes::<MemoryTenantConfigStore>().with_state(tenant_api_state);
 
     // 认证中间件层
     let auth_layer = axum::middleware::from_fn_with_state(
@@ -435,10 +439,8 @@ fn build_api_routes(app_state: AppState) -> Router {
 
     // 沙箱路由（需要认证）- 创建新的 auth_layer
     let sandbox_routes = if let Some(ref sandbox_state) = app_state.sandbox_state {
-        let sandbox_auth_layer = axum::middleware::from_fn_with_state(
-            (token_store, secret_key),
-            auth_middleware,
-        );
+        let sandbox_auth_layer =
+            axum::middleware::from_fn_with_state((token_store, secret_key), auth_middleware);
         let routes = sandbox_routes()
             .with_state(sandbox_state.clone())
             .layer(sandbox_auth_layer);
@@ -561,8 +563,16 @@ credbridge_enclave_state{{}} {}
         env!("CARGO_PKG_VERSION"),
         state.config.environment.as_str(),
         timestamp,
-        if state.attestation_state.is_some() { 1 } else { 0 },
-        if state.attestation_state.is_some() { 1 } else { 0 },
+        if state.attestation_state.is_some() {
+            1
+        } else {
+            0
+        },
+        if state.attestation_state.is_some() {
+            1
+        } else {
+            0
+        },
     );
 
     (

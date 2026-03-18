@@ -4,6 +4,9 @@
 
 pub mod handlers;
 pub mod tools;
+pub mod sse;
+pub mod auth;
+pub mod message_queue;
 
 use std::sync::Arc;
 

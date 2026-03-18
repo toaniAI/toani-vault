@@ -20,22 +20,20 @@
 //! ```
 
 use crate::tee::{
-    attestation::{AttestationService, AttestationState as TeeAttestationState},
-    challenge::{Challenge, ChallengeError, ChallengeMetadata, ChallengeProtocol, ChallengeResponse, ChallengeStatus, ProverProtocol},
-    dcap::{
-        DcapConfig, DcapService,
-        INTEL_PCS_BASE_URL_PROD, INTEL_PCS_BASE_URL_TEST,
-    },
+    attestation::AttestationService,
+    challenge::{ChallengeMetadata, ChallengeProtocol, ChallengeResponse, ProverProtocol},
+    dcap::{DcapConfig, DcapService, INTEL_PCS_BASE_URL_PROD, INTEL_PCS_BASE_URL_TEST},
     enclave::{Enclave, EnclaveConfig},
     quote::QuoteSerializer,
 };
 use axum::{
+    Router,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
-    Router,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -287,9 +285,7 @@ pub struct HealthResponse {
 /// GET /api/v1/attestation/quote
 ///
 /// 返回当前的 DCAP Quote，包含 MRENCLAVE 和 MRSIGNER
-async fn get_quote(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
+async fn get_quote(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
     let dcap_service = match state.dcap_service.read() {
         Ok(service) => service,
         Err(_) => {
@@ -305,36 +301,34 @@ async fn get_quote(
     };
 
     match dcap_service.get_current_quote() {
-        Ok(quote) => {
-            match QuoteSerializer::serialize(&quote) {
-                Ok(quote_bytes) => {
-                    let quote_b64 = base64::encode(&quote_bytes);
-                    (
-                        StatusCode::OK,
-                        Json(QuoteResponse {
-                            success: true,
-                            data: Some(QuoteData {
-                                version: quote.version,
-                                sign_type: quote.sign_type,
-                                mrenclave: hex::encode(&quote.report_body.mrenclave),
-                                mrsigner: hex::encode(&quote.report_body.mrsigner),
-                                timestamp: quote.timestamp,
-                                quote_b64,
-                            }),
-                            error: None,
-                        }),
-                    )
-                }
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+        Ok(quote) => match QuoteSerializer::serialize(&quote) {
+            Ok(quote_bytes) => {
+                let quote_b64 = STANDARD.encode(&quote_bytes);
+                (
+                    StatusCode::OK,
                     Json(QuoteResponse {
-                        success: false,
-                        data: None,
-                        error: Some(format!("Failed to serialize quote: {}", e)),
+                        success: true,
+                        data: Some(QuoteData {
+                            version: quote.version,
+                            sign_type: quote.sign_type,
+                            mrenclave: hex::encode(quote.report_body.mrenclave),
+                            mrsigner: hex::encode(quote.report_body.mrsigner),
+                            timestamp: quote.timestamp,
+                            quote_b64,
+                        }),
+                        error: None,
                     }),
-                ),
+                )
             }
-        }
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(QuoteResponse {
+                    success: false,
+                    data: None,
+                    error: Some(format!("Failed to serialize quote: {}", e)),
+                }),
+            ),
+        },
         Err(e) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(QuoteResponse {
@@ -373,7 +367,7 @@ async fn verify_quote(
     };
 
     // 解码 Quote
-    let quote_bytes = match base64::decode(&request.quote_b64) {
+    let quote_bytes = match STANDARD.decode(&request.quote_b64) {
         Ok(bytes) => bytes,
         Err(e) => {
             return (
@@ -391,7 +385,11 @@ async fn verify_quote(
     };
 
     // 验证 nonce（如果提供）
-    let nonce = request.nonce.as_ref().map(|n| base64::decode(n).ok()).flatten();
+    let nonce = request
+        .nonce
+        .as_ref()
+        .map(|n| STANDARD.decode(n).ok())
+        .flatten();
 
     // 执行验证
     match dcap_service.verify_attestation(&quote_bytes, nonce.as_deref()) {
@@ -425,9 +423,7 @@ async fn verify_quote(
 /// GET /api/v1/attestation/report
 ///
 /// 返回详细的认证报告
-async fn get_report(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
+async fn get_report(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
     let dcap_service = match state.dcap_service.read() {
         Ok(service) => service,
         Err(_) => {
@@ -556,24 +552,25 @@ async fn create_challenge(
         extra: std::collections::HashMap::new(),
     };
 
-    let challenge = match challenge_protocol.generate_challenge(request.enclave_id.clone(), Some(metadata)) {
-        Ok(c) => c,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ChallengeResponseData {
-                    success: false,
-                    challenge_id: String::new(),
-                    nonce: String::new(),
-                    quote_b64: String::new(),
-                    expires_at: 0,
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    error: Some(format!("Failed to generate challenge: {}", e)),
-                }),
-            );
-        }
-    };
+    let challenge =
+        match challenge_protocol.generate_challenge(request.enclave_id.clone(), Some(metadata)) {
+            Ok(c) => c,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ChallengeResponseData {
+                        success: false,
+                        challenge_id: String::new(),
+                        nonce: String::new(),
+                        quote_b64: String::new(),
+                        expires_at: 0,
+                        mrenclave: String::new(),
+                        mrsigner: String::new(),
+                        error: Some(format!("Failed to generate challenge: {}", e)),
+                    }),
+                );
+            }
+        };
 
     // 使用 Prover 协议生成 Quote
     let prover_protocol = match state.prover_protocol.read() {
@@ -623,7 +620,7 @@ async fn create_challenge(
             success: true,
             challenge_id: challenge.id.clone(),
             nonce: hex::encode(&challenge.nonce),
-            quote_b64: base64::encode(&quote_bytes),
+            quote_b64: STANDARD.encode(&quote_bytes),
             expires_at: challenge.expires_at,
             mrenclave: hex::encode(&challenge_response.quote.mrenclave()),
             mrsigner: hex::encode(&challenge_response.quote.mrsigner()),
@@ -642,7 +639,7 @@ async fn verify_challenge_response(
     Json(request): Json<VerifyChallengeResponseRequest>,
 ) -> impl IntoResponse {
     // 解码 Quote
-    let quote_bytes = match base64::decode(&request.quote_b64) {
+    let quote_bytes = match STANDARD.decode(&request.quote_b64) {
         Ok(bytes) => bytes,
         Err(e) => {
             return (
@@ -749,9 +746,7 @@ async fn verify_challenge_response(
 /// GET /api/v1/attestation/status
 ///
 /// 返回当前 Enclave 的认证状态（已认证/待验证/已过期）
-async fn get_attestation_status(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
+async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
     let enclave = match state.enclave.read() {
         Ok(enclave) => enclave,
         Err(_) => {
@@ -807,9 +802,17 @@ async fn get_attestation_status(
                 let max_age = state.config.quote_max_age;
 
                 if age > max_age {
-                    (ApiAttestationStatus::Expired, false, Some(quote.timestamp + max_age))
+                    (
+                        ApiAttestationStatus::Expired,
+                        false,
+                        Some(quote.timestamp + max_age),
+                    )
                 } else {
-                    (ApiAttestationStatus::Authenticated, true, Some(quote.timestamp + max_age))
+                    (
+                        ApiAttestationStatus::Authenticated,
+                        true,
+                        Some(quote.timestamp + max_age),
+                    )
                 }
             }
             Err(_) => (ApiAttestationStatus::PendingVerification, false, None),
@@ -837,9 +840,7 @@ async fn get_attestation_status(
 /// POST /api/v1/attestation/refresh
 ///
 /// 生成新的 Quote 并更新缓存
-async fn refresh_quote(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
+async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
     let dcap_service = match state.dcap_service.write() {
         Ok(service) => service,
         Err(_) => {
@@ -871,28 +872,26 @@ async fn refresh_quote(
     };
 
     match dcap_service.refresh_quote(&*enclave) {
-        Ok(quote) => {
-            match QuoteSerializer::serialize(&quote) {
-                Ok(quote_bytes) => (
-                    StatusCode::OK,
-                    Json(RefreshResponse {
-                        success: true,
-                        new_quote_b64: Some(base64::encode(&quote_bytes)),
-                        timestamp: quote.timestamp,
-                        error: None,
-                    }),
-                ),
-                Err(e) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(RefreshResponse {
-                        success: false,
-                        new_quote_b64: None,
-                        timestamp: 0,
-                        error: Some(format!("Failed to serialize quote: {}", e)),
-                    }),
-                ),
-            }
-        }
+        Ok(quote) => match QuoteSerializer::serialize(&quote) {
+            Ok(quote_bytes) => (
+                StatusCode::OK,
+                Json(RefreshResponse {
+                    success: true,
+                    new_quote_b64: Some(STANDARD.encode(&quote_bytes)),
+                    timestamp: quote.timestamp,
+                    error: None,
+                }),
+            ),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(RefreshResponse {
+                    success: false,
+                    new_quote_b64: None,
+                    timestamp: 0,
+                    error: Some(format!("Failed to serialize quote: {}", e)),
+                }),
+            ),
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(RefreshResponse {
@@ -910,9 +909,7 @@ async fn refresh_quote(
 /// GET /api/v1/attestation/health
 ///
 /// 返回认证服务健康状态
-async fn health_check(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
+async fn health_check(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
     let enclave_state = match state.enclave.read() {
         Ok(enclave) => enclave.state().to_string(),
         Err(_) => "unknown".to_string(),
@@ -953,7 +950,7 @@ fn _generate_challenge() -> Vec<u8> {
 
 /// 生成挑战 ID（用于测试）
 fn _generate_challenge_id(challenge: &[u8]) -> String {
-    use ring::digest::{digest, SHA256};
+    use ring::digest::{SHA256, digest};
     let hash = digest(&SHA256, challenge);
     format!("chal_{}", hex::encode(&hash.as_ref()[..8]))
 }
@@ -994,8 +991,8 @@ pub fn init_attestation_api(
         ..Default::default()
     };
 
-    let dcap_service =
-        DcapService::new(dcap_config).map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
+    let dcap_service = DcapService::new(dcap_config)
+        .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
 
     // 初始化 DCAP（生成 Quote）
     dcap_service
@@ -1003,12 +1000,11 @@ pub fn init_attestation_api(
         .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
 
     // 创建认证服务
-    let attestation_service = AttestationService::new()
-        .allow_simulation(config.simulation_mode);
+    let attestation_service = AttestationService::new().allow_simulation(config.simulation_mode);
 
     // 创建挑战-响应协议处理器
-    let challenge_protocol = ChallengeProtocol::new(attestation_service.clone())
-        .with_ttl(config.quote_max_age);
+    let challenge_protocol =
+        ChallengeProtocol::new(attestation_service.clone()).with_ttl(config.quote_max_age);
 
     // 创建 Prover 协议处理器
     let prover_protocol = ProverProtocol::new(attestation_service.clone());

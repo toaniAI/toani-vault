@@ -26,14 +26,14 @@
 
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Path, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::Response,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::{interval, timeout};
@@ -42,13 +42,7 @@ use uuid::Uuid;
 
 use crate::api::context::ApiContext;
 use crate::api::middleware::ValidatedToken;
-use crate::tee::sandbox::{
-    types::{
-        AuditLogEntry, ExecutionResult, OperationRequest, OperationStatus, OperationType,
-        SessionId, SessionStatus,
-    },
-    SandboxPool, SessionRequest,
-};
+use crate::tee::sandbox::types::{ExecutionResult, OperationRequest, OperationType, SessionId};
 
 /// 客户端消息类型
 #[derive(Debug, Clone, Deserialize)]
@@ -183,6 +177,7 @@ pub enum ServerMessage {
 
 /// WebSocket连接状态
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ConnectionState {
     /// 会话ID
     session_id: SessionId,
@@ -232,9 +227,7 @@ pub async fn sandbox_websocket_handler(
         session_id, credential_id
     );
 
-    ws.on_upgrade(move |socket| {
-        handle_socket(socket, ctx, session_id, credential_id, token)
-    })
+    ws.on_upgrade(move |socket| handle_socket(socket, ctx, session_id, credential_id, token))
 }
 
 /// 处理WebSocket连接
@@ -326,7 +319,7 @@ pub async fn handle_socket(
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
 
     // 启动心跳任务
-    let heartbeat_tx = tx.clone();
+    let _heartbeat_tx = tx.clone();
     let heartbeat_interval = config.heartbeat_interval;
     let heartbeat_handle = tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(heartbeat_interval));
@@ -506,7 +499,7 @@ async fn handle_message(
                 Ok(image_data) => ServerMessage::ScreenshotResult {
                     request_id: req_id,
                     success: true,
-                    image_data: Some(base64::encode(&image_data)),
+                    image_data: Some(STANDARD.encode(&image_data)),
                     format: Some("png".to_string()),
                     error: None,
                     timestamp: chrono::Utc::now().to_rfc3339(),
@@ -555,9 +548,10 @@ async fn send_message(
 fn parse_token_subject(token: &ValidatedToken) -> Option<(Uuid, Uuid)> {
     // 从token中直接获取tenant_id和user_id
     // 格式: "tenant_id:user_id"
-    if let (Ok(tenant_id), Ok(user_id)) =
-        (Uuid::parse_str(&token.tenant_id), Uuid::parse_str(&token.user_id))
-    {
+    if let (Ok(tenant_id), Ok(user_id)) = (
+        Uuid::parse_str(&token.tenant_id),
+        Uuid::parse_str(&token.user_id),
+    ) {
         return Some((tenant_id, user_id));
     }
     None
@@ -586,7 +580,7 @@ async fn execute_operation_with_timeout(
     timeout_secs: u64,
     tx: mpsc::Sender<ServerMessage>,
 ) -> Result<ExecutionResult, Box<dyn std::error::Error + Send + Sync>> {
-    let start = std::time::Instant::now();
+    let _start = std::time::Instant::now();
     let op_id = operation.operation_id.to_string();
     let op_type = operation.operation_type.to_string();
 
@@ -630,8 +624,9 @@ async fn execute_operation(
 ) -> Result<ExecutionResult, Box<dyn std::error::Error + Send + Sync>> {
     let start = std::time::Instant::now();
 
-    // TODO: 实际调用沙箱会话执行操作
-    // 这里使用模拟实现
+    // TODO(#TEE-107): 实际调用沙箱会话执行操作
+    // 需要: WebSocket 与沙箱会话池集成
+    // 当前: 使用模拟实现进行开发测试
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let execution_time_ms = start.elapsed().as_millis() as u64;
@@ -654,17 +649,17 @@ async fn take_screenshot(
     _state: &ConnectionState,
     _ctx: &ApiContext,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // TODO: 实际调用沙箱截图功能
-    // 这里返回一个1x1像素的PNG图片作为模拟
+    // TODO(#TEE-108): 实际调用沙箱截图功能
+    // 需要: 集成 ScreenshotService
+    // 当前: 返回一个1x1像素的PNG图片作为模拟
     let png_data = vec![
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
         0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
         0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 pixel
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, // IDAT chunk
-        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-        0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
-        0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, // IEND chunk
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44,
+        0x41, // IDAT chunk
+        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD,
+        0x8D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, // IEND chunk
         0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
     Ok(png_data)
@@ -676,11 +671,23 @@ mod tests {
 
     #[test]
     fn test_parse_operation_type() {
-        assert!(matches!(parse_operation_type("navigate"), OperationType::Navigate));
-        assert!(matches!(parse_operation_type("click"), OperationType::Click));
+        assert!(matches!(
+            parse_operation_type("navigate"),
+            OperationType::Navigate
+        ));
+        assert!(matches!(
+            parse_operation_type("click"),
+            OperationType::Click
+        ));
         assert!(matches!(parse_operation_type("fill"), OperationType::Fill));
-        assert!(matches!(parse_operation_type("screenshot"), OperationType::Screenshot));
-        assert!(matches!(parse_operation_type("unknown"), OperationType::Custom));
+        assert!(matches!(
+            parse_operation_type("screenshot"),
+            OperationType::Screenshot
+        ));
+        assert!(matches!(
+            parse_operation_type("unknown"),
+            OperationType::Custom
+        ));
     }
 
     #[test]

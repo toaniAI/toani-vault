@@ -258,10 +258,7 @@ impl fmt::Display for Operation {
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ScopeError {
     #[error("权限不足: 需要 {required}, 实际拥有 {actual}")]
-    InsufficientScope {
-        required: String,
-        actual: String,
-    },
+    InsufficientScope { required: String, actual: String },
 
     #[error("无效的 Scope: {0}")]
     InvalidScope(String),
@@ -308,7 +305,7 @@ impl ScopeSet {
                     return Err(ScopeError::ParseError(format!(
                         "未知的 Scope: {}",
                         scope_str
-                    )))
+                    )));
                 }
             }
         }
@@ -583,10 +580,22 @@ mod tests {
 
     #[test]
     fn test_scope_from_str() {
-        assert_eq!(Scope::from_str("credential:read"), Some(Scope::CredentialRead));
-        assert_eq!(Scope::from_str("credential:decrypt"), Some(Scope::CredentialDecrypt));
-        assert_eq!(Scope::from_str("credential:write"), Some(Scope::CredentialWrite));
-        assert_eq!(Scope::from_str("credential:delete"), Some(Scope::CredentialDelete));
+        assert_eq!(
+            Scope::from_str("credential:read"),
+            Some(Scope::CredentialRead)
+        );
+        assert_eq!(
+            Scope::from_str("credential:decrypt"),
+            Some(Scope::CredentialDecrypt)
+        );
+        assert_eq!(
+            Scope::from_str("credential:write"),
+            Some(Scope::CredentialWrite)
+        );
+        assert_eq!(
+            Scope::from_str("credential:delete"),
+            Some(Scope::CredentialDelete)
+        );
         assert_eq!(Scope::from_str("token:manage"), Some(Scope::TokenManage));
         assert_eq!(Scope::from_str("audit:read"), Some(Scope::AuditRead));
         assert_eq!(Scope::from_str("admin"), Some(Scope::Admin));
@@ -754,7 +763,11 @@ mod tests {
         assert!(checker.can_execute(&Operation::ReadCredential));
 
         // 可以访问允许的凭证
-        assert!(checker.check_permission(&Operation::ReadCredential, Some("cred_123")).is_ok());
+        assert!(
+            checker
+                .check_permission(&Operation::ReadCredential, Some("cred_123"))
+                .is_ok()
+        );
 
         // 不能访问其他凭证
         let result = checker.check_permission(&Operation::ReadCredential, Some("cred_999"));

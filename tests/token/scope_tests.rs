@@ -43,10 +43,22 @@ fn test_scope_from_str_valid() {
     // Given: 有效的 scope 字符串
     // When: 解析为 Scope
     // Then: 返回正确的 Scope 枚举
-    assert_eq!(Scope::from_str("credential:read"), Some(Scope::CredentialRead));
-    assert_eq!(Scope::from_str("credential:decrypt"), Some(Scope::CredentialDecrypt));
-    assert_eq!(Scope::from_str("credential:write"), Some(Scope::CredentialWrite));
-    assert_eq!(Scope::from_str("credential:delete"), Some(Scope::CredentialDelete));
+    assert_eq!(
+        Scope::from_str("credential:read"),
+        Some(Scope::CredentialRead)
+    );
+    assert_eq!(
+        Scope::from_str("credential:decrypt"),
+        Some(Scope::CredentialDecrypt)
+    );
+    assert_eq!(
+        Scope::from_str("credential:write"),
+        Some(Scope::CredentialWrite)
+    );
+    assert_eq!(
+        Scope::from_str("credential:delete"),
+        Some(Scope::CredentialDelete)
+    );
     assert_eq!(Scope::from_str("token:manage"), Some(Scope::TokenManage));
     assert_eq!(Scope::from_str("audit:read"), Some(Scope::AuditRead));
     assert_eq!(Scope::from_str("admin"), Some(Scope::Admin));
@@ -97,7 +109,10 @@ fn test_credential_read_cannot_access_decrypt() {
     let can_access = scope.can_access(&Operation::DecryptCredential);
 
     // Then: 拒绝访问
-    assert!(!can_access, "credential:read 不应该允许 DecryptCredential 操作");
+    assert!(
+        !can_access,
+        "credential:read 不应该允许 DecryptCredential 操作"
+    );
 }
 
 #[test]
@@ -110,8 +125,14 @@ fn test_credential_decrypt_can_access_decrypt_and_read() {
     let can_read = scope.can_access(&Operation::ReadCredential);
 
     // Then: 允许访问 decrypt 和 read 操作
-    assert!(can_decrypt, "credential:decrypt 应该允许 DecryptCredential 操作");
-    assert!(can_read, "credential:decrypt 应该隐式允许 ReadCredential 操作");
+    assert!(
+        can_decrypt,
+        "credential:decrypt 应该允许 DecryptCredential 操作"
+    );
+    assert!(
+        can_read,
+        "credential:decrypt 应该隐式允许 ReadCredential 操作"
+    );
 }
 
 #[test]
@@ -124,8 +145,14 @@ fn test_credential_write_can_access_write_operations() {
     let can_update = scope.can_access(&Operation::UpdateCredential);
 
     // Then: 允许创建和更新
-    assert!(can_create, "credential:write 应该允许 CreateCredential 操作");
-    assert!(can_update, "credential:write 应该允许 UpdateCredential 操作");
+    assert!(
+        can_create,
+        "credential:write 应该允许 CreateCredential 操作"
+    );
+    assert!(
+        can_update,
+        "credential:write 应该允许 UpdateCredential 操作"
+    );
 }
 
 #[test]
@@ -137,7 +164,10 @@ fn test_credential_delete_can_access_delete() {
     let can_delete = scope.can_access(&Operation::DeleteCredential);
 
     // Then: 允许删除
-    assert!(can_delete, "credential:delete 应该允许 DeleteCredential 操作");
+    assert!(
+        can_delete,
+        "credential:delete 应该允许 DeleteCredential 操作"
+    );
 }
 
 #[test]
@@ -146,15 +176,42 @@ fn test_admin_can_access_all_operations() {
     let scope = Scope::Admin;
 
     // When/Then: 检查所有操作都允许
-    assert!(scope.can_access(&Operation::ReadCredential), "admin 应该允许 ReadCredential");
-    assert!(scope.can_access(&Operation::DecryptCredential), "admin 应该允许 DecryptCredential");
-    assert!(scope.can_access(&Operation::CreateCredential), "admin 应该允许 CreateCredential");
-    assert!(scope.can_access(&Operation::UpdateCredential), "admin 应该允许 UpdateCredential");
-    assert!(scope.can_access(&Operation::DeleteCredential), "admin 应该允许 DeleteCredential");
-    assert!(scope.can_access(&Operation::ManageToken), "admin 应该允许 ManageToken");
-    assert!(scope.can_access(&Operation::RevokeToken), "admin 应该允许 RevokeToken");
-    assert!(scope.can_access(&Operation::RefreshToken), "admin 应该允许 RefreshToken");
-    assert!(scope.can_access(&Operation::ReadAudit), "admin 应该允许 ReadAudit");
+    assert!(
+        scope.can_access(&Operation::ReadCredential),
+        "admin 应该允许 ReadCredential"
+    );
+    assert!(
+        scope.can_access(&Operation::DecryptCredential),
+        "admin 应该允许 DecryptCredential"
+    );
+    assert!(
+        scope.can_access(&Operation::CreateCredential),
+        "admin 应该允许 CreateCredential"
+    );
+    assert!(
+        scope.can_access(&Operation::UpdateCredential),
+        "admin 应该允许 UpdateCredential"
+    );
+    assert!(
+        scope.can_access(&Operation::DeleteCredential),
+        "admin 应该允许 DeleteCredential"
+    );
+    assert!(
+        scope.can_access(&Operation::ManageToken),
+        "admin 应该允许 ManageToken"
+    );
+    assert!(
+        scope.can_access(&Operation::RevokeToken),
+        "admin 应该允许 RevokeToken"
+    );
+    assert!(
+        scope.can_access(&Operation::RefreshToken),
+        "admin 应该允许 RefreshToken"
+    );
+    assert!(
+        scope.can_access(&Operation::ReadAudit),
+        "admin 应该允许 ReadAudit"
+    );
 }
 
 #[test]
@@ -475,14 +532,18 @@ fn test_permission_engine_credential_access_trait() {
     assert!(engine.can_access_credential("cred_123").is_ok());
     assert!(engine.can_access_credential("cred_999").is_err());
 
-    assert!(engine
-        .can_execute_on_credential(&Operation::ReadCredential, "cred_123")
-        .is_ok());
+    assert!(
+        engine
+            .can_execute_on_credential(&Operation::ReadCredential, "cred_123")
+            .is_ok()
+    );
 
     // 没有写权限
-    assert!(engine
-        .can_execute_on_credential(&Operation::CreateCredential, "cred_123")
-        .is_err());
+    assert!(
+        engine
+            .can_execute_on_credential(&Operation::CreateCredential, "cred_123")
+            .is_err()
+    );
 }
 
 // ============================================================================
@@ -501,7 +562,11 @@ fn test_batch_permission_checker() {
     let mut checker = BatchPermissionChecker::new(engine);
 
     // When: 批量检查多个凭证
-    let credential_ids = vec!["cred_1".to_string(), "cred_2".to_string(), "cred_3".to_string()];
+    let credential_ids = vec![
+        "cred_1".to_string(),
+        "cred_2".to_string(),
+        "cred_3".to_string(),
+    ];
     let results = checker.check_all_credentials(Operation::ReadCredential, &credential_ids);
 
     // Then: cred_1 和 cred_2 允许，cred_3 拒绝
@@ -548,8 +613,7 @@ fn test_extended_restricted_context_credentials() {
 #[test]
 fn test_extended_restricted_context_operations() {
     // Given: 带操作限制的上下文
-    let context =
-        ExtendedRestrictedContext::new().with_operations(vec![Operation::ReadCredential]);
+    let context = ExtendedRestrictedContext::new().with_operations(vec![Operation::ReadCredential]);
 
     // When/Then: 检查操作执行
     assert!(context.can_execute(&Operation::ReadCredential).is_ok());
@@ -608,7 +672,10 @@ fn test_permission_policy_strict() {
 fn test_scope_constants() {
     // 验证常量与枚举值一致
     assert_eq!(scope_constants::CREDENTIAL_READ, Scope::CredentialRead);
-    assert_eq!(scope_constants::CREDENTIAL_DECRYPT, Scope::CredentialDecrypt);
+    assert_eq!(
+        scope_constants::CREDENTIAL_DECRYPT,
+        Scope::CredentialDecrypt
+    );
     assert_eq!(scope_constants::CREDENTIAL_WRITE, Scope::CredentialWrite);
     assert_eq!(scope_constants::CREDENTIAL_DELETE, Scope::CredentialDelete);
     assert_eq!(scope_constants::TOKEN_MANAGE, Scope::TokenManage);
@@ -648,12 +715,16 @@ fn test_full_permission_flow() {
     assert!(checker.can_access_credential("cred_999").is_err());
 
     // Step 8: 综合权限检查
-    assert!(checker
-        .check_permission(&Operation::ReadCredential, Some("cred_123"))
-        .is_ok());
-    assert!(checker
-        .check_permission(&Operation::DecryptCredential, Some("cred_456"))
-        .is_ok());
+    assert!(
+        checker
+            .check_permission(&Operation::ReadCredential, Some("cred_123"))
+            .is_ok()
+    );
+    assert!(
+        checker
+            .check_permission(&Operation::DecryptCredential, Some("cred_456"))
+            .is_ok()
+    );
 
     // 尝试访问不允许的凭证
     let result = checker.check_permission(&Operation::ReadCredential, Some("cred_999"));
@@ -743,8 +814,11 @@ fn test_operation_helper_methods() {
 #[test]
 fn test_access_request_builder() {
     // 测试 AccessRequest 构建器
-    let request = AccessRequest::credential(Operation::ReadCredential, "cred_123")
-        .with_context(AccessContext::new().with_ip("192.168.1.1").with_risk_level(1));
+    let request = AccessRequest::credential(Operation::ReadCredential, "cred_123").with_context(
+        AccessContext::new()
+            .with_ip("192.168.1.1")
+            .with_risk_level(1),
+    );
 
     assert_eq!(request.resource_type, ResourceType::Credential);
     assert_eq!(request.resource_id, "cred_123");

@@ -10,9 +10,9 @@ use vault_service::tee::{
     },
     enclave::{Enclave, EnclaveConfig},
     quote::{
-        utils::{format_mrenclave, format_mrsigner},
         ParsedQuote, QuoteMetadata, QuoteParseError, QuoteParser, QuoteSerializeError,
         QuoteSerializer, QuoteValidationError, QuoteValidator,
+        utils::{format_mrenclave, format_mrsigner},
     },
 };
 
@@ -52,7 +52,11 @@ mod dcap_service_tests {
         let enclave = create_initialized_enclave();
 
         let result = service.initialize(&enclave);
-        assert!(result.is_ok(), "Initialize should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Initialize should succeed: {:?}",
+            result.err()
+        );
 
         let quote = result.unwrap();
         assert_eq!(quote.version, 3);
@@ -103,7 +107,11 @@ mod dcap_service_tests {
         let quote_bytes = QuoteSerializer::serialize(&quote).expect("Failed to serialize quote");
 
         let result = service.verify_attestation(&quote_bytes, None);
-        assert!(result.is_ok(), "Should verify valid quote: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should verify valid quote: {:?}",
+            result.err()
+        );
 
         let report = result.unwrap();
         assert!(report.result.success);
@@ -129,7 +137,9 @@ mod dcap_service_tests {
         // Wait a bit to ensure different timestamp
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        let quote2 = service.refresh_quote(&enclave).expect("Failed to refresh quote");
+        let quote2 = service
+            .refresh_quote(&enclave)
+            .expect("Failed to refresh quote");
 
         // New quote should have different timestamp
         assert!(
@@ -231,7 +241,9 @@ mod dcap_service_tests {
         let quote = service.get_current_quote().expect("Failed to get quote");
         let quote_bytes = QuoteSerializer::serialize(&quote).expect("Failed to serialize");
 
-        service.verify_attestation(&quote_bytes, None).expect("Verify failed");
+        service
+            .verify_attestation(&quote_bytes, None)
+            .expect("Verify failed");
 
         assert_eq!(service.verified_enclave_count(), 1);
     }
@@ -306,7 +318,10 @@ mod quote_parser_tests {
     fn test_quote_parser_insufficient_data() {
         let result = QuoteParser::parse(&[0u8; 100]);
         assert!(
-            matches!(result.unwrap_err(), QuoteParseError::InsufficientData { .. }),
+            matches!(
+                result.unwrap_err(),
+                QuoteParseError::InsufficientData { .. }
+            ),
             "Should fail with insufficient data"
         );
     }
@@ -315,7 +330,10 @@ mod quote_parser_tests {
     fn test_quote_parser_extract_mrenclave_insufficient_data() {
         let result = QuoteParser::extract_mrenclave(&[0u8; 50]);
         assert!(
-            matches!(result.unwrap_err(), QuoteParseError::InsufficientData { .. }),
+            matches!(
+                result.unwrap_err(),
+                QuoteParseError::InsufficientData { .. }
+            ),
             "Should fail with insufficient data for MRENCLAVE extraction"
         );
     }
@@ -362,7 +380,8 @@ mod quote_serializer_tests {
 
         let quote = service.get_current_quote().expect("Failed to get quote");
 
-        let b64 = QuoteSerializer::serialize_to_base64(&quote).expect("Failed to serialize to base64");
+        let b64 =
+            QuoteSerializer::serialize_to_base64(&quote).expect("Failed to serialize to base64");
         assert!(!b64.is_empty());
         // Base64 should be valid
         assert!(base64::decode(&b64).is_ok());
@@ -385,7 +404,11 @@ mod quote_validator_tests {
         let validator = QuoteValidator::new();
 
         let result = validator.validate(&parsed);
-        assert!(result.is_ok(), "Should validate valid quote: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should validate valid quote: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -398,7 +421,11 @@ mod quote_validator_tests {
         let validator = QuoteValidator::new();
 
         let result = validator.validate_dcap(&quote);
-        assert!(result.is_ok(), "Should validate DCAP quote: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should validate DCAP quote: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -414,7 +441,10 @@ mod quote_validator_tests {
         let result = validator.validate_dcap(&quote);
 
         assert!(
-            matches!(result.unwrap_err(), QuoteValidationError::VersionMismatch { .. }),
+            matches!(
+                result.unwrap_err(),
+                QuoteValidationError::VersionMismatch { .. }
+            ),
             "Should fail with version mismatch"
         );
     }
@@ -564,7 +594,9 @@ mod integration_tests {
         let quote = service.initialize(&enclave).expect("Initialize failed");
 
         // 4. 获取认证报告
-        let report = service.get_attestation_report().expect("Failed to get report");
+        let report = service
+            .get_attestation_report()
+            .expect("Failed to get report");
 
         // 5. 验证报告包含正确的测量值
         assert_eq!(report.result.mrenclave, enclave.mrenclave());
@@ -652,7 +684,10 @@ mod error_handling_tests {
     #[test]
     fn test_quote_parse_error_display() {
         let errors = vec![
-            QuoteParseError::InsufficientData { expected: 100, actual: 50 },
+            QuoteParseError::InsufficientData {
+                expected: 100,
+                actual: 50,
+            },
             QuoteParseError::InvalidReportBodySize(200),
             QuoteParseError::InvalidVersion(99),
             QuoteParseError::InvalidSignType(99),
@@ -668,8 +703,14 @@ mod error_handling_tests {
     #[test]
     fn test_quote_validation_error_display() {
         let errors = vec![
-            QuoteValidationError::VersionMismatch { expected: 3, actual: 99 },
-            QuoteValidationError::SignTypeMismatch { expected: 2, actual: 99 },
+            QuoteValidationError::VersionMismatch {
+                expected: 3,
+                actual: 99,
+            },
+            QuoteValidationError::SignTypeMismatch {
+                expected: 2,
+                actual: 99,
+            },
             QuoteValidationError::InvalidMrenclave,
             QuoteValidationError::InvalidMrsigner,
             QuoteValidationError::MissingSignature,

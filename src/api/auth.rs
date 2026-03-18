@@ -6,13 +6,13 @@
 //! - POST /api/v1/tokens - 创建新 Token
 
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json, Router,
-    routing::{post, get},
+    routing::{get, post},
 };
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{DEFAULT_COST, hash, verify};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -57,11 +57,11 @@ impl MemoryUserStore {
 
         // 使用 bcrypt 哈希密码（在编译时生成哈希值）
         // admin123 的 bcrypt 哈希
-        let admin_password_hash = hash("admin123", DEFAULT_COST)
-            .expect("Failed to hash admin password");
+        let admin_password_hash =
+            hash("admin123", DEFAULT_COST).expect("Failed to hash admin password");
         // user123 的 bcrypt 哈希
-        let user_password_hash = hash("user123", DEFAULT_COST)
-            .expect("Failed to hash user password");
+        let user_password_hash =
+            hash("user123", DEFAULT_COST).expect("Failed to hash user password");
 
         // 添加默认测试用户
         users.insert(
@@ -91,8 +91,8 @@ impl MemoryUserStore {
 impl AuthApiState {
     /// 创建认证 API 状态
     pub fn new() -> Self {
-        use rand::rngs::OsRng;
         use rand::RngCore;
+        use rand::rngs::OsRng;
 
         // 生成随机密钥（使用密码学安全的 OsRng）
         let mut secret_key = vec![0u8; 32];
@@ -108,13 +108,13 @@ impl AuthApiState {
 impl MemoryUserStore {
     /// 验证用户凭据
     pub fn verify_user(&self, username: &str, password: &str) -> Option<UserInfo> {
-        self.users.get(username).and_then(|user| {
-            match verify(password, &user.password_hash) {
+        self.users
+            .get(username)
+            .and_then(|user| match verify(password, &user.password_hash) {
                 Ok(true) => Some(user.clone()),
                 Ok(false) => None,
                 Err(_) => None,
-            }
-        })
+            })
     }
 
     /// 获取用户信息
@@ -270,7 +270,10 @@ pub async fn login_handler(
     Json(request): Json<LoginRequest>,
 ) -> Response {
     // 验证用户凭据
-    let user = match state.user_store.verify_user(&request.username, &request.password) {
+    let user = match state
+        .user_store
+        .verify_user(&request.username, &request.password)
+    {
         Some(u) => u,
         None => {
             return (
@@ -279,7 +282,8 @@ pub async fn login_handler(
                     error: "invalid_credentials".to_string(),
                     error_description: "用户名或密码错误".to_string(),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -299,7 +303,8 @@ pub async fn login_handler(
                     error: "token_generation_failed".to_string(),
                     error_description: format!("Token 生成失败: {}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -313,7 +318,8 @@ pub async fn login_handler(
                     error: "token_generation_failed".to_string(),
                     error_description: format!("Refresh Token 生成失败: {}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -341,7 +347,8 @@ pub async fn login_handler(
             expires_in: 900,
             user: user_response,
         }),
-    ).into_response()
+    )
+        .into_response()
 }
 
 /// Token 创建处理器
@@ -353,7 +360,8 @@ pub async fn create_token_handler(
     let user_id = request.user_id.unwrap_or_else(|| "anonymous".to_string());
 
     // 解析 Scope
-    let scopes: Vec<TokenScope> = request.scopes
+    let scopes: Vec<TokenScope> = request
+        .scopes
         .iter()
         .filter_map(|s| TokenScope::from_str(s))
         .collect();
@@ -365,7 +373,8 @@ pub async fn create_token_handler(
                 error: "invalid_scope".to_string(),
                 error_description: "至少需要一个有效的 scope".to_string(),
             }),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let expires_in = request.expires_in.unwrap_or(900);
@@ -386,7 +395,8 @@ pub async fn create_token_handler(
                     error: "token_generation_failed".to_string(),
                     error_description: format!("Token 生成失败: {}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -397,7 +407,8 @@ pub async fn create_token_handler(
 
     let token_id = Uuid::now_v7().to_string();
 
-    let scope = scopes.iter()
+    let scope = scopes
+        .iter()
         .map(|s| s.as_str())
         .collect::<Vec<_>>()
         .join(" ");
@@ -413,7 +424,8 @@ pub async fn create_token_handler(
             issued_at: now,
             expires_at: now + expires_in,
         }),
-    ).into_response()
+    )
+        .into_response()
 }
 
 /// Token 刷新处理器
@@ -422,7 +434,7 @@ pub async fn refresh_handler(
     Json(request): Json<RefreshTokenRequest>,
 ) -> Response {
     // 验证 Refresh Token
-    let (user_id, tenant_id) = match verify_refresh_token(&request.refresh_token) {
+    let (user_id, _tenant_id) = match verify_refresh_token(&request.refresh_token) {
         Ok((uid, tid)) => (uid, tid),
         Err(e) => {
             return (
@@ -431,7 +443,8 @@ pub async fn refresh_handler(
                     error: "invalid_refresh_token".to_string(),
                     error_description: format!("Refresh Token 无效: {}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -445,7 +458,8 @@ pub async fn refresh_handler(
                     error: "user_not_found".to_string(),
                     error_description: "用户不存在".to_string(),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -465,7 +479,8 @@ pub async fn refresh_handler(
                     error: "token_generation_failed".to_string(),
                     error_description: format!("Token 生成失败: {}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -479,7 +494,8 @@ pub async fn refresh_handler(
                     error: "token_generation_failed".to_string(),
                     error_description: format!("Refresh Token 生成失败: {}", e),
                 }),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -491,7 +507,8 @@ pub async fn refresh_handler(
             token_type: "Bearer".to_string(),
             expires_in: 900,
         }),
-    ).into_response()
+    )
+        .into_response()
 }
 
 /// Token 验证处理器
@@ -501,7 +518,9 @@ pub async fn verify_token_handler(
 ) -> Response {
     match verify_paseto_token(&request.token, &state.secret_key) {
         Ok(validated) => {
-            let scopes: Vec<String> = validated.scopes.iter()
+            let scopes: Vec<String> = validated
+                .scopes
+                .iter()
                 .map(|s| s.as_str().to_string())
                 .collect();
 
@@ -515,28 +534,26 @@ pub async fn verify_token_handler(
                     scopes: Some(scopes),
                     expires_at: Some(validated.expires_at),
                 }),
-            ).into_response()
+            )
+                .into_response()
         }
-        Err(e) => {
-            (
-                StatusCode::OK,
-                Json(VerifyTokenResponse {
-                    valid: false,
-                    token_id: None,
-                    user_id: None,
-                    tenant_id: None,
-                    scopes: None,
-                    expires_at: None,
-                }),
-            ).into_response()
-        }
+        Err(_e) => (
+            StatusCode::OK,
+            Json(VerifyTokenResponse {
+                valid: false,
+                token_id: None,
+                user_id: None,
+                tenant_id: None,
+                scopes: None,
+                expires_at: None,
+            }),
+        )
+            .into_response(),
     }
 }
 
 /// 获取当前用户信息处理器
-pub async fn current_user_handler(
-    State(state): State<AuthApiState>,
-) -> Response {
+pub async fn current_user_handler(State(_state): State<AuthApiState>) -> Response {
     // 注意：此处理器应该由认证中间件保护
     // 返回示例用户信息用于测试
     (
@@ -547,7 +564,8 @@ pub async fn current_user_handler(
             "username": "admin",
             "scopes": ["admin"]
         })),
-    ).into_response()
+    )
+        .into_response()
 }
 
 // ============================================================================
@@ -562,17 +580,17 @@ fn generate_paseto_token(
     scopes: &[TokenScope],
     expires_in: u64,
 ) -> Result<String, String> {
+    use pasetors::claims::Claims;
     use pasetors::keys::SymmetricKey;
     use pasetors::local;
-    use pasetors::claims::Claims;
     use pasetors::version4::V4;
-    use std::time::{SystemTime, UNIX_EPOCH, Duration};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     // 创建对称密钥
-    let sk: SymmetricKey<V4> = SymmetricKey::from(secret_key)
-        .map_err(|e| format!("无效的密钥：{:?}", e))?;
+    let sk: SymmetricKey<V4> =
+        SymmetricKey::from(secret_key).map_err(|e| format!("无效的密钥：{:?}", e))?;
 
-    let now = SystemTime::now()
+    let _now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time before Unix epoch")
         .as_secs();
@@ -582,46 +600,51 @@ fn generate_paseto_token(
         .map_err(|e| format!("创建 Claims 失败：{:?}", e))?;
 
     // 设置标准声明
-    claims.issuer("credbridge-vault")
+    claims
+        .issuer("credbridge-vault")
         .map_err(|e| format!("设置 iss 失败：{:?}", e))?;
-    claims.subject(&format!("{}:{}", tenant_id, user_id))
+    claims
+        .subject(&format!("{}:{}", tenant_id, user_id))
         .map_err(|e| format!("设置 sub 失败：{:?}", e))?;
-    claims.audience(tenant_id)
+    claims
+        .audience(tenant_id)
         .map_err(|e| format!("设置 aud 失败：{:?}", e))?;
-    claims.token_identifier(&Uuid::now_v7().to_string())
+    claims
+        .token_identifier(&Uuid::now_v7().to_string())
         .map_err(|e| format!("设置 jti 失败：{:?}", e))?;
 
     // 添加自定义声明（scope）
-    let scope_str = scopes.iter()
+    let scope_str = scopes
+        .iter()
         .map(|s| s.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    claims.add_additional("scope", serde_json::json!(scope_str))
+    claims
+        .add_additional("scope", serde_json::json!(scope_str))
         .map_err(|e| format!("添加 scope 失败：{:?}", e))?;
 
     // 加密 Token
-    let token = local::encrypt(&sk, &claims, None, None)
-        .map_err(|e| format!("Token 加密失败：{:?}", e))?;
+    let token =
+        local::encrypt(&sk, &claims, None, None).map_err(|e| format!("Token 加密失败：{:?}", e))?;
 
     Ok(token.to_string())
 }
 
-
 /// 验证 PASETO Token
 fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken, String> {
+    use pasetors::claims::ClaimsValidationRules;
     use pasetors::keys::SymmetricKey;
     use pasetors::local;
     use pasetors::token::UntrustedToken;
-    use pasetors::claims::ClaimsValidationRules;
     use time::OffsetDateTime;
 
     // 创建对称密钥
-    let sk: SymmetricKey<_> = SymmetricKey::from(secret_key)
-        .map_err(|e| format!("无效的密钥: {:?}", e))?;
+    let sk: SymmetricKey<_> =
+        SymmetricKey::from(secret_key).map_err(|e| format!("无效的密钥: {:?}", e))?;
 
     // 解析 Token
-    let untrusted = UntrustedToken::try_from(token)
-        .map_err(|e| format!("Token 解析失败: {:?}", e))?;
+    let untrusted =
+        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {:?}", e))?;
 
     // 解密验证（使用默认验证规则自动验证 exp）
     let validation_rules = ClaimsValidationRules::new();
@@ -629,30 +652,32 @@ fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken,
         .map_err(|e| format!("Token 验证失败: {:?}", e))?;
 
     // 提取 Claims
-    let claims = trusted.payload_claims()
+    let claims = trusted
+        .payload_claims()
         .ok_or("Token 缺少 payload claims")?;
 
-    let token_id = claims.get_claim("jti")
+    let token_id = claims
+        .get_claim("jti")
         .and_then(|v| v.as_str())
         .ok_or("Token 缺少 jti")?
         .to_string();
 
-    let subject = claims.get_claim("sub")
+    let subject = claims
+        .get_claim("sub")
         .and_then(|v| v.as_str())
         .ok_or("Token 缺少 sub")?
         .to_string();
 
     // 解析 exp（ISO 8601 格式）
     let expires_at = match claims.get_claim("exp").and_then(|v| v.as_str()) {
-        Some(s) => {
-            OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
-                .map(|dt| dt.unix_timestamp() as u64)
-                .map_err(|_| "无法解析 exp 时间")
-        }
+        Some(s) => OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
+            .map(|dt| dt.unix_timestamp() as u64)
+            .map_err(|_| "无法解析 exp 时间"),
         None => Err("Token 缺少 exp"),
     }?;
 
-    let issued_at = claims.get_claim("iat")
+    let issued_at = claims
+        .get_claim("iat")
         .and_then(|v| v.as_str())
         .and_then(|s| {
             OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
@@ -661,7 +686,8 @@ fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken,
         })
         .unwrap_or(now_timestamp());
 
-    let scope_str = claims.get_claim("scope")
+    let scope_str = claims
+        .get_claim("scope")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -767,8 +793,7 @@ mod tests {
         let key = get_test_key();
         let scopes = vec![TokenScope::CredentialRead, TokenScope::CredentialDecrypt];
 
-        let token = generate_paseto_token(&key, "user-001", "tenant-001", &scopes, 900)
-            .unwrap();
+        let token = generate_paseto_token(&key, "user-001", "tenant-001", &scopes, 900).unwrap();
 
         let validated = verify_paseto_token(&token, &key);
         if let Err(ref e) = validated {

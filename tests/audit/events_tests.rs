@@ -3,9 +3,9 @@
 //! EP4-Story4.1 审计事件记录功能的集成测试
 
 use vault_service::audit::{
-    AuditAction, AuditEntry, AuditFilter, AuditRecorder, MemoryAuditStorage, Outcome,
-    PiiRedactor, RedactedParam, RiskTier, SignedAuditEntry, hash_user_id, create_memory_storage,
-    is_high_risk_action, AuditStats,
+    AuditAction, AuditEntry, AuditFilter, AuditRecorder, AuditStats, MemoryAuditStorage, Outcome,
+    PiiRedactor, RedactedParam, RiskTier, SignedAuditEntry, create_memory_storage, hash_user_id,
+    is_high_risk_action,
 };
 
 /// 测试：审计条目创建和基本属性
@@ -35,7 +35,11 @@ fn test_audit_entry_creation_and_properties() {
     assert!(entry.timestamp > 0, "Timestamp should be set");
 
     // 验证自动风险等级
-    assert_eq!(entry.risk_tier, RiskTier::High, "CredentialDecrypt should be High risk");
+    assert_eq!(
+        entry.risk_tier,
+        RiskTier::High,
+        "CredentialDecrypt should be High risk"
+    );
 }
 
 /// 测试：风险等级自动分配
@@ -93,9 +97,19 @@ fn test_high_risk_action_detection() {
         );
 
         let entry = AuditEntry::new(
-            "user_hash", "session", "service", *action, Outcome::Success, "mrenclave", "jti",
+            "user_hash",
+            "session",
+            "service",
+            *action,
+            Outcome::Success,
+            "mrenclave",
+            "jti",
         );
-        assert!(entry.is_high_risk(), "Entry for {:?} should be high risk", action);
+        assert!(
+            entry.is_high_risk(),
+            "Entry for {:?} should be high risk",
+            action
+        );
     }
 
     let low_risk_actions = vec![
@@ -109,9 +123,19 @@ fn test_high_risk_action_detection() {
 
     for action in &low_risk_actions {
         let entry = AuditEntry::new(
-            "user_hash", "session", "service", *action, Outcome::Success, "mrenclave", "jti",
+            "user_hash",
+            "session",
+            "service",
+            *action,
+            Outcome::Success,
+            "mrenclave",
+            "jti",
         );
-        assert!(!entry.is_high_risk(), "Entry for {:?} should not be high risk", action);
+        assert!(
+            !entry.is_high_risk(),
+            "Entry for {:?} should not be high risk",
+            action
+        );
     }
 }
 
@@ -127,7 +151,10 @@ fn test_audit_entry_serialization() {
         "mrenclave_measurement",
         "jti_token",
     )
-    .with_param("credential_id", RedactedParam::Plain("cred_123".to_string()))
+    .with_param(
+        "credential_id",
+        RedactedParam::Plain("cred_123".to_string()),
+    )
     .with_param("ssn", RedactedParam::SsnRedacted)
     .with_error("Test error message")
     .with_client_ip_hash("ip_hash_abc")
@@ -153,17 +180,44 @@ fn test_audit_entry_serialization() {
 #[test]
 fn test_pii_redaction() {
     // 测试各种脱敏类型
-    assert_eq!(PiiRedactor::redact_ssn("123-45-6789").to_string(), "[SSN_REDACTED]");
-    assert_eq!(PiiRedactor::redact_password("secret123").to_string(), "[PASSWORD_REDACTED]");
-    assert_eq!(PiiRedactor::redact_api_key("api_key_abc").to_string(), "[API_KEY_REDACTED]");
-    assert_eq!(PiiRedactor::redact_credit_card("4111111111111111").to_string(), "[CREDIT_CARD_REDACTED]");
-    assert_eq!(PiiRedactor::redact_email("user@example.com").to_string(), "[EMAIL_REDACTED]");
-    assert_eq!(PiiRedactor::redact_phone("+1-555-123-4567").to_string(), "[PHONE_REDACTED]");
-    assert_eq!(PiiRedactor::redact_address("123 Main St").to_string(), "[ADDRESS_REDACTED]");
-    assert_eq!(PiiRedactor::redact_key("private_key_xyz").to_string(), "[KEY_REDACTED]");
+    assert_eq!(
+        PiiRedactor::redact_ssn("123-45-6789").to_string(),
+        "[SSN_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_password("secret123").to_string(),
+        "[PASSWORD_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_api_key("api_key_abc").to_string(),
+        "[API_KEY_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_credit_card("4111111111111111").to_string(),
+        "[CREDIT_CARD_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_email("user@example.com").to_string(),
+        "[EMAIL_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_phone("+1-555-123-4567").to_string(),
+        "[PHONE_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_address("123 Main St").to_string(),
+        "[ADDRESS_REDACTED]"
+    );
+    assert_eq!(
+        PiiRedactor::redact_key("private_key_xyz").to_string(),
+        "[KEY_REDACTED]"
+    );
 
     // 测试不敏感数据保留
-    assert_eq!(PiiRedactor::plain("normal_value").to_string(), "normal_value");
+    assert_eq!(
+        PiiRedactor::plain("normal_value").to_string(),
+        "normal_value"
+    );
 }
 
 /// 测试：PII 自动脱敏
@@ -240,7 +294,10 @@ fn test_user_id_hashing() {
 
     // 不同输入产生不同哈希
     let hash3 = hash_user_id("user_456");
-    assert_ne!(hash1, hash3, "Different user IDs should produce different hashes");
+    assert_ne!(
+        hash1, hash3,
+        "Different user IDs should produce different hashes"
+    );
 
     // SHA-256 哈希长度为 64 个十六进制字符
     assert_eq!(hash1.len(), 64, "SHA-256 hash should be 64 hex characters");
@@ -273,7 +330,10 @@ fn test_audit_entry_content_hash() {
         "jti",
     );
     let hash2 = entry2.content_hash();
-    assert_ne!(hash, hash2, "Different entries should have different content hashes");
+    assert_ne!(
+        hash, hash2,
+        "Different entries should have different content hashes"
+    );
 }
 
 /// 测试：审计记录器创建和基本操作
@@ -315,11 +375,26 @@ fn test_signed_audit_entry_verification() {
 
     // 验证签名后的条目属性
     assert!(signed.log_index < 1000, "Log index should be reasonable");
-    assert_eq!(signed.content_hash.len(), 32, "Content hash should be 32 bytes");
-    assert_eq!(signed.prev_hash.len(), 32, "Previous hash should be 32 bytes");
-    assert_eq!(signed.merkle_root.len(), 32, "Merkle root should be 32 bytes");
+    assert_eq!(
+        signed.content_hash.len(),
+        32,
+        "Content hash should be 32 bytes"
+    );
+    assert_eq!(
+        signed.prev_hash.len(),
+        32,
+        "Previous hash should be 32 bytes"
+    );
+    assert_eq!(
+        signed.merkle_root.len(),
+        32,
+        "Merkle root should be 32 bytes"
+    );
     assert!(!signed.signature.is_empty(), "Should have signature");
-    assert!(!signed.signer_fingerprint.is_empty(), "Should have signer fingerprint");
+    assert!(
+        !signed.signer_fingerprint.is_empty(),
+        "Should have signer fingerprint"
+    );
 }
 
 /// 测试：审计链完整性验证
@@ -422,7 +497,11 @@ fn test_audit_report_generation() {
 
     // 记录混合结果的事件
     for i in 0..10 {
-        let outcome = if i % 3 == 0 { Outcome::Failure } else { Outcome::Success };
+        let outcome = if i % 3 == 0 {
+            Outcome::Failure
+        } else {
+            Outcome::Success
+        };
         let entry = AuditEntry::new(
             &format!("user_{}", i),
             "session",
@@ -436,7 +515,9 @@ fn test_audit_report_generation() {
     }
 
     // 生成报告
-    let report = recorder.generate_report(None, None).expect("Should generate report");
+    let report = recorder
+        .generate_report(None, None)
+        .expect("Should generate report");
     assert_eq!(report.total_entries, 10);
     assert_eq!(report.success_count, 6); // 1,2,4,5,7,8 (not divisible by 3)
     assert_eq!(report.failure_count, 4); // 0,3,6,9 (divisible by 3)
@@ -455,7 +536,10 @@ fn test_audit_entry_with_params() {
         "mrenclave",
         "jti",
     )
-    .with_param("credential_id", RedactedParam::Plain("cred_123".to_string()))
+    .with_param(
+        "credential_id",
+        RedactedParam::Plain("cred_123".to_string()),
+    )
     .with_param("ssn", RedactedParam::SsnRedacted)
     .with_param("password", RedactedParam::PasswordRedacted)
     .with_param("api_key", RedactedParam::ApiKeyRedacted);
@@ -559,8 +643,14 @@ fn test_risk_tier_enum() {
 /// 测试：审计操作类型显示
 #[test]
 fn test_audit_action_display() {
-    assert_eq!(AuditAction::CredentialDecrypt.to_string(), "credential_decrypt");
-    assert_eq!(AuditAction::CredentialAccess.to_string(), "credential_access");
+    assert_eq!(
+        AuditAction::CredentialDecrypt.to_string(),
+        "credential_decrypt"
+    );
+    assert_eq!(
+        AuditAction::CredentialAccess.to_string(),
+        "credential_access"
+    );
     assert_eq!(AuditAction::TokenIssue.to_string(), "token_issue");
     assert_eq!(AuditAction::TokenValidate.to_string(), "token_validate");
     assert_eq!(AuditAction::AuditQuery.to_string(), "audit_query");
@@ -725,8 +815,10 @@ fn test_audit_tamper_resistance() {
     for i in 1..recent.len() {
         // 当前条目的 prev_hash 应该等于前一个条目的 content_hash
         assert_eq!(
-            recent[i].prev_hash, recent[i-1].content_hash,
-            "Chain link {} should reference previous entry", i
+            recent[i].prev_hash,
+            recent[i - 1].content_hash,
+            "Chain link {} should reference previous entry",
+            i
         );
     }
 }
@@ -746,8 +838,14 @@ fn test_audit_entry_with_client_info() {
     .with_client_ip_hash("hash_of_192.168.1.1")
     .with_user_agent_hash("hash_of_user_agent_string");
 
-    assert_eq!(entry.client_ip_hash, Some("hash_of_192.168.1.1".to_string()));
-    assert_eq!(entry.user_agent_hash, Some("hash_of_user_agent_string".to_string()));
+    assert_eq!(
+        entry.client_ip_hash,
+        Some("hash_of_192.168.1.1".to_string())
+    );
+    assert_eq!(
+        entry.user_agent_hash,
+        Some("hash_of_user_agent_string".to_string())
+    );
 }
 
 /// 测试：审计记录器的公钥获取

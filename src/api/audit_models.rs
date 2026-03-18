@@ -14,9 +14,8 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use crate::audit::events::{AuditAction, Outcome, RedactedParam, RiskTier};
+use crate::audit::events::{AuditAction, Outcome, RiskTier};
 use crate::audit::recorder::SignedAuditEntry;
 
 /// 审计日志查询请求参数
@@ -222,7 +221,12 @@ pub struct AuditLogListData {
 
 impl AuditLogListResponse {
     /// 创建成功响应
-    pub fn success(items: Vec<AuditLogListItem>, total: u64, page: usize, page_size: usize) -> Self {
+    pub fn success(
+        items: Vec<AuditLogListItem>,
+        total: u64,
+        page: usize,
+        page_size: usize,
+    ) -> Self {
         let total_pages = ((total as f64) / (page_size as f64)).ceil() as usize;
         Self {
             success: true,
@@ -672,16 +676,13 @@ mod tests {
             .with_end_time(1000);
         assert!(req.validate().is_err());
 
-        let req = AuditLogQueryRequest::new()
-            .with_pagination(0, 20);
+        let req = AuditLogQueryRequest::new().with_pagination(0, 20);
         assert!(req.validate().is_err());
 
-        let req = AuditLogQueryRequest::new()
-            .with_pagination(1, 0);
+        let req = AuditLogQueryRequest::new().with_pagination(1, 0);
         assert!(req.validate().is_err());
 
-        let req = AuditLogQueryRequest::new()
-            .with_pagination(1, 1001);
+        let req = AuditLogQueryRequest::new().with_pagination(1, 1001);
         assert!(req.validate().is_err());
 
         let req = AuditLogQueryRequest::new()
@@ -718,19 +719,16 @@ mod tests {
 
     #[test]
     fn test_audit_export_request_validation() {
-        let req = AuditExportRequest::new()
-            .with_time_range(2000, 1000);
+        let req = AuditExportRequest::new().with_time_range(2000, 1000);
         assert!(req.validate().is_err());
 
         // 测试超过 90 天的范围
         let start = 1000u64;
         let end = start + 91 * 24 * 60 * 60 * 1000;
-        let req = AuditExportRequest::new()
-            .with_time_range(start, end);
+        let req = AuditExportRequest::new().with_time_range(start, end);
         assert!(req.validate().is_err());
 
-        let req = AuditExportRequest::new()
-            .with_time_range(1000, 2000);
+        let req = AuditExportRequest::new().with_time_range(1000, 2000);
         assert!(req.validate().is_ok());
     }
 
