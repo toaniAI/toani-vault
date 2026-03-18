@@ -8,6 +8,18 @@ kind: pipeline
 name: backend-build
 type: docker
 
+trigger:
+  ref:
+    - refs/heads/branch_dev
+    - refs/heads/branch_test
+    - refs/tags/*
+  event:
+    - push
+    - tag
+  paths:
+    exclude:
+      - frontend/**
+
 steps:
   # Rust 构建
   - name: rust build
@@ -176,10 +188,93 @@ trigger:
     - tag
 
 ---
+# Frontend Testing Pipeline
+kind: pipeline
+type: docker
+name: frontend-testing
+
+trigger:
+  ref:
+    include:
+      - refs/heads/branch_dev
+      - refs/heads/branch_test
+  event:
+    - push
+    - pull_request
+  paths:
+    include:
+      - frontend/**
+
+steps:
+  - name: setup
+    image: hub.bitkinetic.com/public/node:20-alpine
+    pull: always
+    commands:
+      - cd frontend && npm ci
+
+  - name: lint check
+    image: hub.bitkinetic.com/public/node:20-alpine
+    depends_on:
+      - setup
+    commands:
+      - cd frontend && npm run lint
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
+
+  - name: format check
+    image: hub.bitkinetic.com/public/node:20-alpine
+    depends_on:
+      - setup
+    commands:
+      - cd frontend && npm run format:check
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
+
+  - name: typescript check
+    image: hub.bitkinetic.com/public/node:20-alpine
+    depends_on:
+      - setup
+    commands:
+      - cd frontend && npx tsc --noEmit
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
+
+  - name: build check
+    image: hub.bitkinetic.com/public/node:20-alpine
+    depends_on:
+      - lint check
+      - format check
+      - typescript check
+    commands:
+      - cd frontend && npm run build
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
+
+---
 # Frontend Pipeline
 kind: pipeline
 name: frontend-build
 type: docker
+
+trigger:
+  ref:
+    - refs/heads/branch_dev
+    - refs/heads/branch_test
+    - refs/tags/*
+  event:
+    - push
+    - tag
+  paths:
+    include:
+      - frontend/**
 
 steps:
   # Docker build dev/test
@@ -300,6 +395,18 @@ name: backend-testing
 depends_on:
   - backend-build
 
+trigger:
+  ref:
+    include:
+      - refs/heads/branch_dev
+      - refs/heads/branch_test
+  event:
+    - push
+    - pull_request
+  paths:
+    exclude:
+      - frontend/**
+
 steps:
   - name: setup
     image: hub.bitkinetic.com/public/rust:1.75-bullseye
@@ -340,15 +447,6 @@ steps:
       ref:
         - refs/heads/branch_dev
         - refs/heads/branch_test
-
-trigger:
-  ref:
-    include:
-      - refs/heads/branch_dev
-      - refs/heads/branch_test
-  event:
-    - push
-    - pull_request
 
 ---
 # Notify Pipeline
