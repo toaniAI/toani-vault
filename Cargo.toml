@@ -93,6 +93,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 日期时间
 chrono = { version = "0.4", features = ["serde"] }
 
+# 锁定传递依赖版本以兼容 Rust 1.85
+home = "=0.5.9"
+orion = "=0.17.8"
+
 # 系统调用
 libc = "0.2"
 
