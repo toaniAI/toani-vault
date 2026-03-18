@@ -1,0 +1,9 @@
+environment: dev
+namespace: suna
+cluster: hk
+
+vault:
+  enabled: false
+
+externalSecrets:
+  enabled: false

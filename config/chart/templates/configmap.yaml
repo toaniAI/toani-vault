@@ -1,0 +1,19 @@
+{{/*
+ConfigMap for CredBridge configuration
+根据 cluster 值选择加载不同的配置文件目录
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "credbridge-config.configMapName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "credbridge-config.labels" . | nindent 4 }}
+data:
+{{- if eq .Values.cluster "hk" }}
+  {{- (.Files.Glob "config-hk/*").AsConfig | nindent 2 }}
+{{- else if eq .Values.cluster "us" }}
+  {{- (.Files.Glob "config-us/*").AsConfig | nindent 2 }}
+{{- else }}
+  {{- (.Files.Glob "config-hk/*").AsConfig | nindent 2 }}
+{{- end }}

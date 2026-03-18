@@ -1,0 +1,20 @@
+environment: grey
+namespace: suna
+cluster: hk
+
+vault:
+  enabled: true
+  address: "https://vault.bitkinetic.com"
+  path: "secret/data/credbridge/grey"
+  secrets:
+    keys:
+      - DATABASE_URL
+      - REDIS_URL
+      - VAULT_TOKEN
+      - JWT_SECRET
+      - ENCRYPTION_KEY
+      - API_SECRET
+
+externalSecrets:
+  enabled: true
+  refreshInterval: "1h"

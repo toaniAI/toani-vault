@@ -1,0 +1,46 @@
+# CredBridge Dev Environment Configuration
+# 此配置文件通过 drone 部署时直接推送到集群
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+# 数据库配置
+database:
+  url: "postgres://credbridge_dev:${DATABASE_PASSWORD}@postgres:5432/credbridge_dev"
+  pool_size: 10
+  timeout_seconds: 30
+
+# Redis 缓存
+redis:
+  url: "redis://redis:6379/0"
+  pool_size: 10
+
+# Vault 配置
+vault:
+  addr: "http://vault:8200"
+  token: "${VAULT_TOKEN}"
+  kv_path: "secret/dev"
+
+# 日志配置
+log:
+  level: "debug"
+  format: "json"
+
+# 安全配置
+security:
+  jwt_secret: "${JWT_SECRET}"
+  token_expiry: 3600
+  encryption_key: "${ENCRYPTION_KEY}"
+
+# CORS 配置
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "https://dev.credbridge.local"
+
+# API 限流
+rate_limit:
+  requests_per_minute: 100
+  burst: 10
