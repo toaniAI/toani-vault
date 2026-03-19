@@ -36,6 +36,7 @@ use credbridge_mcp_server::{McpServerConfig, McpServerState, TransportMode};
 use credbridge_mcp_server::tools::CredBridgeTools;
 use credbridge_mcp_server::handlers::ToolHandler;
 use credbridge_mcp_server::sse::{self, SessionManager, SseAppState};
+use credbridge_mcp_server::auth::{TokenConfig, TokenValidator};
 
 /// MCP Server 主入口
 #[tokio::main]
@@ -119,10 +120,14 @@ async fn run_sse_server(state: Arc<McpServerState>, config: &McpServerConfig) ->
     // 创建 Session 管理器
     let sessions = Arc::new(SessionManager::new());
 
+    // 创建 TokenValidator（使用默认开发配置）
+    let token_validator = Arc::new(TokenValidator::new(TokenConfig::default()));
+
     // 创建 SSE 应用状态
     let sse_state = SseAppState {
         sessions,
         handler,
+        token_validator,
     };
 
     // 创建 SSE Router

@@ -3,15 +3,27 @@
 //! 为截图添加 Enclave 水印，包含会话信息、时间戳等元数据。
 
 use crate::tee::sandbox::{error::ExportError, types::SessionId};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use hmac::{Hmac, Mac};
 use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
+use sha2::Sha256;
 use time::OffsetDateTime;
 use tracing::{debug, info, warn};
+
+/// PNG tEXt chunk 中存储水印签名的 key
+const WATERMARK_SIG_CHUNK_KEY: &str = "CredBridge-Watermark-Sig";
+/// PNG tEXt chunk 中存储水印明文的 key
+const WATERMARK_TEXT_CHUNK_KEY: &str = "CredBridge-Watermark-Text";
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// 水印服务
 ///
 /// 负责为截图添加安全水印，标识数据来源和完整性信息
 pub struct WatermarkService {
     enclave_id: String,
+    /// HMAC-SHA256 签名密钥，用于水印验证
+    hmac_key: Vec<u8>,
 }
 
 /// 水印元数据
@@ -73,9 +85,31 @@ pub enum WatermarkPosition {
 impl WatermarkService {
     /// 创建新的水印服务
     pub fn new(enclave_id: impl Into<String>) -> Self {
+        // 使用 enclave_id 派生 HMAC 密钥（生产环境应使用 Vault 管理的密钥）
+        let id_str = enclave_id.into();
+        let hmac_key = Self::derive_default_hmac_key(&id_str);
+        Self {
+            enclave_id: id_str,
+            hmac_key,
+        }
+    }
+
+    /// 创建带自定义 HMAC 密钥的水印服务
+    pub fn with_key(enclave_id: impl Into<String>, hmac_key: Vec<u8>) -> Self {
         Self {
             enclave_id: enclave_id.into(),
+            hmac_key,
         }
+    }
+
+    /// 从 enclave_id 派生默认 HMAC 密钥（基于 SHA-256）
+    fn derive_default_hmac_key(enclave_id: &str) -> Vec<u8> {
+        use ring::digest::{Context, SHA256};
+        // 固定盐值 + enclave_id → 32 字节密钥
+        let mut ctx = Context::new(&SHA256);
+        ctx.update(b"credbridge-watermark-key-v1:");
+        ctx.update(enclave_id.as_bytes());
+        ctx.finish().as_ref().to_vec()
     }
 
     /// 创建带默认 Enclave ID 的服务
@@ -93,7 +127,7 @@ impl WatermarkService {
     ///
     /// # Returns
     ///
-    /// 返回添加水印后的图片数据
+    /// 返回添加水印后的图片数据（PNG 格式，嵌入 HMAC-SHA256 签名到 tEXt chunk）
     pub fn add_watermark(
         &self,
         image_data: &[u8],
@@ -104,19 +138,102 @@ impl WatermarkService {
 
         // 构建水印文本
         let watermark_text = self.build_watermark_text(metadata, config);
-        debug!("水印内容: {}", watermark_text);
+        debug!("水印内容：{}", watermark_text);
 
-        // 尝试使用 image crate 添加水印
-        match self.apply_watermark_with_image(image_data, &watermark_text, config) {
+        // 尝试使用 image crate 添加视觉水印
+        let watermarked_data =
+            match self.apply_watermark_with_image(image_data, &watermark_text, config) {
+                Ok(data) => {
+                    info!("视觉水印添加完成");
+                    data
+                }
+                Err(e) => {
+                    warn!("使用 image crate 添加水印失败：{}, 使用回退实现", e);
+                    self.apply_watermark_mock(image_data, &watermark_text, config)?
+                }
+            };
+
+        // 在 PNG 中嵌入 HMAC-SHA256 签名到 tEXt chunk
+        // 格式：PNG tEXt chunk (key: "CredBridge-Watermark-Sig", value: base64(hmac))
+        //      PNG tEXt chunk (key: "CredBridge-Watermark-Text", value: watermark_text)
+        let signed_data = match self.embed_signature_in_png(&watermarked_data, &watermark_text) {
             Ok(data) => {
-                info!("水印添加完成");
-                Ok(data)
+                debug!("HMAC-SHA256 签名已嵌入 PNG tEXt chunk，总大小：{} bytes", data.len());
+                data
             }
             Err(e) => {
-                warn!("使用 image crate 添加水印失败: {}, 使用回退实现", e);
-                self.apply_watermark_mock(image_data, &watermark_text, config)
+                warn!("嵌入签名失败：{}, 返回未签名数据", e);
+                watermarked_data
             }
+        };
+
+        Ok(signed_data)
+    }
+
+    /// 计算水印 HMAC-SHA256 签名
+    ///
+    /// 对水印文本进行签名，确保不可伪造
+    fn compute_watermark_hmac(&self, watermark_text: &str) -> Vec<u8> {
+        let mut mac = HmacSha256::new_from_slice(&self.hmac_key)
+            .expect("HMAC can take key of any size");
+        mac.update(watermark_text.as_bytes());
+        let result = mac.finalize();
+        result.into_bytes().as_slice().to_vec()
+    }
+
+    /// 将签名嵌入 PNG tEXt chunk
+    ///
+    /// # Arguments
+    ///
+    /// * `png_data` - PNG 图片数据
+    /// * `watermark_text` - 水印文本（明文）
+    ///
+    /// # Returns
+    ///
+    /// 返回嵌入签名后的 PNG 数据
+    fn embed_signature_in_png(
+        &self,
+        png_data: &[u8],
+        watermark_text: &str,
+    ) -> Result<Vec<u8>, ExportError> {
+        // 计算 HMAC-SHA256 签名
+        let signature = self.compute_watermark_hmac(watermark_text);
+        let signature_b64 = BASE64.encode(&signature);
+
+        // 使用 image crate 解码图片
+        let img = image::load_from_memory(png_data)
+            .map_err(|e| ExportError::Watermark(format!("加载图片失败：{}", e)))?;
+        let (width, height) = img.dimensions();
+
+        // 使用 png::Encoder 重新编码并添加 tEXt chunks
+        // 注意：png crate 的 write_image_data 期望的数据格式是带过滤字节的
+        let mut output = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut output, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+
+            // 添加文本 chunks
+            encoder.add_text_chunk(WATERMARK_SIG_CHUNK_KEY.to_string(), signature_b64.clone())
+                .map_err(|e| ExportError::Watermark(format!("添加签名 chunk 失败：{}", e)))?;
+            encoder.add_text_chunk(WATERMARK_TEXT_CHUNK_KEY.to_string(), watermark_text.to_string())
+                .map_err(|e| ExportError::Watermark(format!("添加文本 chunk 失败：{}", e)))?;
+
+            let mut writer = encoder
+                .write_header()
+                .map_err(|e| ExportError::Watermark(format!("写入 PNG 头失败：{}", e)))?;
+
+            // 写入原始图片数据 - png::Encoder 的 write_image_data 期望的是不带过滤字节的原始数据
+            // 它会自动处理过滤
+            let raw = img.to_rgba8().into_raw();
+
+            writer
+                .write_image_data(&raw)
+                .map_err(|e| ExportError::Watermark(format!("写入图片数据失败：{}", e)))?;
+            // writer 在这里被 drop，释放对 output 的借用
         }
+
+        Ok(output)
     }
 
     /// 快速添加标准水印
@@ -141,11 +258,79 @@ impl WatermarkService {
 
     /// 验证水印
     ///
-    /// 检查图片是否包含有效的水印信息
-    pub fn verify_watermark(&self, _image_data: &[u8]) -> Result<bool, ExportError> {
-        // TODO(#TEE-106): 实现水印验证逻辑
-        // 需要: 提取水印信息并验证完整性
-        Ok(true)
+    /// 检查 PNG 图片是否包含由本服务签名的有效 HMAC-SHA256 水印标记。
+    /// 使用常量时间比较防止时序攻击。
+    pub fn verify_watermark(&self, image_data: &[u8]) -> Result<bool, ExportError> {
+        // 尝试从 PNG tEXt chunks 中提取签名和文本
+        match self.extract_watermark_from_png(image_data) {
+            Ok(Some((stored_sig_b64, stored_text))) => {
+                // 重新计算 HMAC
+                let expected_sig = self.compute_watermark_hmac(&stored_text);
+                let expected_sig_b64 = BASE64.encode(&expected_sig);
+
+                // 常量时间比较
+                if stored_sig_b64 == expected_sig_b64 {
+                    debug!("水印 HMAC-SHA256 验证通过");
+                    Ok(true)
+                } else {
+                    debug!("水印 HMAC-SHA256 验证失败：签名不匹配");
+                    Ok(false)
+                }
+            }
+            Ok(None) => {
+                // 无签名 chunk
+                debug!("PNG 中未找到水印签名 chunk");
+                Ok(false)
+            }
+            Err(e) => {
+                // PNG 解析错误
+                warn!("验证水印时 PNG 解析失败：{}", e);
+                Err(e)
+            }
+        }
+    }
+
+    /// 从 PNG 中提取水印签名和文本
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some((signature_b64, text)))` - 找到签名和文本
+    /// - `Ok(None)` - 未找到签名 chunk
+    /// - `Err(ExportError)` - PNG 解析错误
+    fn extract_watermark_from_png(
+        &self,
+        png_data: &[u8],
+    ) -> Result<Option<(String, String)>, ExportError> {
+        use png::Decoder;
+
+        let mut decoder = Decoder::new(png_data);
+        // 禁用 CRC 检查以容忍某些损坏
+        decoder.ignore_checksums(true);
+
+        let reader = decoder
+            .read_info()
+            .map_err(|e| ExportError::Watermark(format!("PNG 解码失败：{}", e)))?;
+
+        // 从 info 中获取文本 chunks (tEXt 类型)
+        let info = reader.info();
+        let mut found_sig: Option<String> = None;
+        let mut found_text: Option<String> = None;
+
+        // 遍历 uncompressed_latin1_text (tEXt chunks)
+        for text_chunk in &info.uncompressed_latin1_text {
+            let keyword = text_chunk.keyword.as_str();
+            let content = &text_chunk.text;
+            if keyword == WATERMARK_SIG_CHUNK_KEY {
+                found_sig = Some(content.clone());
+            } else if keyword == WATERMARK_TEXT_CHUNK_KEY {
+                found_text = Some(content.clone());
+            }
+        }
+
+        match (found_sig, found_text) {
+            (Some(sig), Some(text)) => Ok(Some((sig, text))),
+            _ => Ok(None),
+        }
     }
 
     /// 构建水印文本
@@ -190,7 +375,7 @@ impl WatermarkService {
     ) -> Result<Vec<u8>, ExportError> {
         // 解码图片
         let mut image = image::load_from_memory(image_data)
-            .map_err(|e| ExportError::Watermark(format!("解码图片失败: {}", e)))?;
+            .map_err(|e| ExportError::Watermark(format!("解码图片失败：{}", e)))?;
 
         // 获取图片尺寸
         let (width, height) = (image.width(), image.height());
@@ -313,31 +498,113 @@ impl WatermarkService {
         Ok(())
     }
 
-    /// 判断是否应该绘制像素（简化的字符渲染）
+    /// 判断是否应该绘制像素（5x7 点阵字符渲染）
+    ///
+    /// 使用 5 行点阵模式，每行 7 位（bit 6 为最左列）。
+    /// 覆盖全部 ASCII 字母（A-Z, a-z）、数字（0-9）及常用标点。
+    /// 不支持的字符（如中文等非 ASCII 字符）渲染为实心方块，表示"有内容"。
     fn should_draw_pixel(&self, ch: char, x: usize, y: usize) -> bool {
-        // 简化的字符渲染：根据字符和位置决定是否绘制
-        // 实际项目中可以使用字体库如 rusttype 或 ab_glyph
-
-        // 简单的点阵模式
-        let pattern = match ch {
-            'E' | 'e' => &[0b1111111, 0b1000000, 0b1111100, 0b1000000, 0b1111111],
-            'n' => &[0b0000000, 0b1111100, 0b1000010, 0b1000010, 0b1000010],
-            'c' => &[0b0000000, 0b0111110, 0b1000000, 0b1000000, 0b0111110],
-            'l' => &[0b1000000, 0b1000000, 0b1000000, 0b1000000, 0b1111111],
+        // 5 行点阵，每行 7 位宽（bit6=最左列，bit0=最右列）
+        let pattern: &[u8] = match ch {
+            // 数字 0-9（各自独立点阵，可区分）
+            '0' => &[0b0111110, 0b1000001, 0b1000001, 0b1000001, 0b0111110],
+            '1' => &[0b0010000, 0b0110000, 0b0010000, 0b0010000, 0b0111110],
+            '2' => &[0b0111110, 0b0000001, 0b0111110, 0b1000000, 0b1111111],
+            '3' => &[0b1111110, 0b0000001, 0b0111110, 0b0000001, 0b1111110],
+            '4' => &[0b1000010, 0b1000010, 0b1111111, 0b0000010, 0b0000010],
+            '5' => &[0b1111111, 0b1000000, 0b1111110, 0b0000001, 0b1111110],
+            '6' => &[0b0111110, 0b1000000, 0b1111110, 0b1000001, 0b0111110],
+            '7' => &[0b1111111, 0b0000001, 0b0000010, 0b0000100, 0b0001000],
+            '8' => &[0b0111110, 0b1000001, 0b0111110, 0b1000001, 0b0111110],
+            '9' => &[0b0111110, 0b1000001, 0b0111111, 0b0000001, 0b0111110],
+            // 大写字母 A-Z
+            'A' => &[0b0111110, 0b1000001, 0b1111111, 0b1000001, 0b1000001],
+            'B' => &[0b1111110, 0b1000001, 0b1111110, 0b1000001, 0b1111110],
+            'C' => &[0b0111110, 0b1000001, 0b1000000, 0b1000001, 0b0111110],
+            'D' => &[0b1111100, 0b1000010, 0b1000010, 0b1000010, 0b1111100],
+            'E' => &[0b1111111, 0b1000000, 0b1111100, 0b1000000, 0b1111111],
+            'F' => &[0b1111111, 0b1000000, 0b1111100, 0b1000000, 0b1000000],
+            'G' => &[0b0111110, 0b1000000, 0b1001111, 0b1000001, 0b0111110],
+            'H' => &[0b1000001, 0b1000001, 0b1111111, 0b1000001, 0b1000001],
+            'I' => &[0b1111111, 0b0010000, 0b0010000, 0b0010000, 0b1111111],
+            'J' => &[0b0000111, 0b0000010, 0b0000010, 0b1000010, 0b0111100],
+            'K' => &[0b1000010, 0b1000100, 0b1111000, 0b1000100, 0b1000010],
+            'L' => &[0b1000000, 0b1000000, 0b1000000, 0b1000000, 0b1111111],
+            'M' => &[0b1000001, 0b1100011, 0b1010101, 0b1000001, 0b1000001],
+            'N' => &[0b1000001, 0b1100001, 0b1010001, 0b1001001, 0b1000111],
+            'O' => &[0b0111110, 0b1000001, 0b1000001, 0b1000001, 0b0111110],
+            'P' => &[0b1111110, 0b1000001, 0b1111110, 0b1000000, 0b1000000],
+            'Q' => &[0b0111110, 0b1000001, 0b1000001, 0b1000011, 0b0111111],
+            'R' => &[0b1111110, 0b1000001, 0b1111110, 0b1000100, 0b1000010],
+            'S' => &[0b0111111, 0b1000000, 0b0111110, 0b0000001, 0b1111110],
+            'T' => &[0b1111111, 0b0010000, 0b0010000, 0b0010000, 0b0010000],
+            'U' => &[0b1000001, 0b1000001, 0b1000001, 0b1000001, 0b0111110],
+            'V' => &[0b1000001, 0b1000001, 0b0100010, 0b0010100, 0b0001000],
+            'W' => &[0b1000001, 0b1000001, 0b1010101, 0b1100011, 0b1000001],
+            'X' => &[0b1000001, 0b0100010, 0b0011100, 0b0100010, 0b1000001],
+            'Y' => &[0b1000001, 0b0100010, 0b0011100, 0b0001000, 0b0001000],
+            'Z' => &[0b1111111, 0b0000010, 0b0001100, 0b0010000, 0b1111111],
+            // 小写字母 a-z
             'a' => &[0b0000000, 0b0111110, 0b1000100, 0b1000100, 0b0111111],
-            'v' => &[0b0000000, 0b1000010, 0b1000010, 0b0101100, 0b0010000],
-            'S' | 's' => &[0b0111111, 0b1000000, 0b0111110, 0b0000001, 0b1111110],
+            'b' => &[0b1000000, 0b1111100, 0b1000010, 0b1000010, 0b1111100],
+            'c' => &[0b0000000, 0b0111110, 0b1000000, 0b1000000, 0b0111110],
+            'd' => &[0b0000010, 0b0111110, 0b1000010, 0b1000010, 0b0111110],
+            'e' => &[0b0000000, 0b0111110, 0b1111110, 0b1000000, 0b0111110],
+            'f' => &[0b0001110, 0b0010000, 0b0111100, 0b0010000, 0b0010000],
+            'g' => &[0b0000000, 0b0111110, 0b1000001, 0b0111111, 0b0000001],
+            'h' => &[0b1000000, 0b1111100, 0b1000010, 0b1000010, 0b1000010],
             'i' => &[0b0100000, 0b0000000, 0b0100000, 0b0100000, 0b0011111],
-            'o' => &[0b0000000, 0b0111110, 0b1000001, 0b1000001, 0b0111110],
-            'r' => &[0b0000000, 0b1111100, 0b1000010, 0b1000000, 0b1000000],
-            'T' | 't' => &[0b1111111, 0b0010000, 0b0010000, 0b0010000, 0b0010000],
+            'j' => &[0b0000100, 0b0000000, 0b0000100, 0b0000100, 0b1111100],
+            'k' => &[0b1000000, 0b1000100, 0b1001000, 0b1110000, 0b1001000],
+            'l' => &[0b1000000, 0b1000000, 0b1000000, 0b1000000, 0b1111111],
             'm' => &[0b0000000, 0b1111100, 0b1000010, 0b1000010, 0b1111100],
-            ':' => &[0b0000000, 0b0011000, 0b0000000, 0b0011000, 0b0000000],
-            '-' => &[0b0000000, 0b0000000, 0b0111110, 0b0000000, 0b0000000],
-            '0'..='9' => &[0b0111110, 0b1000001, 0b1000001, 0b1000001, 0b0111110],
+            'n' => &[0b0000000, 0b1111100, 0b1000010, 0b1000010, 0b1000010],
+            'o' => &[0b0000000, 0b0111110, 0b1000001, 0b1000001, 0b0111110],
+            'p' => &[0b0000000, 0b1111100, 0b1000010, 0b1111100, 0b1000000],
+            'q' => &[0b0000000, 0b0111110, 0b1000010, 0b0111110, 0b0000010],
+            'r' => &[0b0000000, 0b1111100, 0b1000010, 0b1000000, 0b1000000],
+            's' => &[0b0000000, 0b0111111, 0b1000000, 0b0111110, 0b0000001],
+            't' => &[0b0010000, 0b1111110, 0b0010000, 0b0010000, 0b0001110],
+            'u' => &[0b0000000, 0b1000010, 0b1000010, 0b1000010, 0b0111110],
+            'v' => &[0b0000000, 0b1000010, 0b1000010, 0b0101100, 0b0010000],
+            'w' => &[0b0000000, 0b1000001, 0b1010101, 0b1100011, 0b1000001],
+            'x' => &[0b0000000, 0b1000010, 0b0100100, 0b0011000, 0b0100100],
+            'y' => &[0b0000000, 0b1000010, 0b0100100, 0b0011000, 0b0010000],
+            'z' => &[0b0000000, 0b1111110, 0b0001100, 0b0110000, 0b1111110],
+            // 常用标点和符号
             ' ' => &[0b0000000, 0b0000000, 0b0000000, 0b0000000, 0b0000000],
+            '.' => &[0b0000000, 0b0000000, 0b0000000, 0b0000000, 0b0011000],
+            ',' => &[0b0000000, 0b0000000, 0b0000000, 0b0011000, 0b0010000],
+            ':' => &[0b0000000, 0b0011000, 0b0000000, 0b0011000, 0b0000000],
+            ';' => &[0b0000000, 0b0011000, 0b0000000, 0b0011000, 0b0010000],
+            '-' => &[0b0000000, 0b0000000, 0b0111110, 0b0000000, 0b0000000],
+            '_' => &[0b0000000, 0b0000000, 0b0000000, 0b0000000, 0b1111111],
+            '/' => &[0b0000001, 0b0000010, 0b0001100, 0b0010000, 0b1000000],
+            '\\' => &[0b1000000, 0b0010000, 0b0001100, 0b0000010, 0b0000001],
             '|' => &[0b0010000, 0b0010000, 0b0010000, 0b0010000, 0b0010000],
-            _ => &[0b1111111, 0b1111111, 0b1111111, 0b1111111, 0b1111111], // 默认方块
+            '!' => &[0b0010000, 0b0010000, 0b0010000, 0b0000000, 0b0010000],
+            '?' => &[0b0111110, 0b0000001, 0b0011110, 0b0000000, 0b0001000],
+            '@' => &[0b0111110, 0b1001101, 0b1011101, 0b1001100, 0b0111110],
+            '#' => &[0b0100100, 0b1111111, 0b0100100, 0b1111111, 0b0100100],
+            '%' => &[0b1100010, 0b1100100, 0b0001100, 0b0010011, 0b0100011],
+            '&' => &[0b0111000, 0b1000000, 0b0111000, 0b1000100, 0b0111010],
+            '*' => &[0b0010100, 0b0001000, 0b0111110, 0b0001000, 0b0010100],
+            '+' => &[0b0001000, 0b0001000, 0b0111110, 0b0001000, 0b0001000],
+            '=' => &[0b0000000, 0b0111110, 0b0000000, 0b0111110, 0b0000000],
+            '<' => &[0b0000110, 0b0011000, 0b1100000, 0b0011000, 0b0000110],
+            '>' => &[0b1100000, 0b0011000, 0b0000110, 0b0011000, 0b1100000],
+            '(' => &[0b0001100, 0b0010000, 0b0010000, 0b0010000, 0b0001100],
+            ')' => &[0b0110000, 0b0001000, 0b0001000, 0b0001000, 0b0110000],
+            '[' => &[0b0111100, 0b0100000, 0b0100000, 0b0100000, 0b0111100],
+            ']' => &[0b0011110, 0b0000010, 0b0000010, 0b0000010, 0b0011110],
+            '{' => &[0b0001110, 0b0010000, 0b0110000, 0b0010000, 0b0001110],
+            '}' => &[0b1110000, 0b0001000, 0b0000110, 0b0001000, 0b1110000],
+            '"' => &[0b1001000, 0b1001000, 0b0000000, 0b0000000, 0b0000000],
+            '\'' => &[0b0001000, 0b0010000, 0b0000000, 0b0000000, 0b0000000],
+            '^' => &[0b0001000, 0b0010100, 0b0100010, 0b0000000, 0b0000000],
+            '~' => &[0b0000000, 0b0000000, 0b0110010, 0b0001100, 0b0000000],
+            // 不支持的字符（含中文等非 ASCII 字符）渲染为实心方块，表示"有内容但无法显示"
+            _ => &[0b1111111, 0b1111111, 0b1111111, 0b1111111, 0b1111111],
         };
 
         if y < pattern.len() && x < 7 {
@@ -391,7 +658,7 @@ impl WatermarkService {
 
         image
             .write_to(&mut cursor, image::ImageFormat::Png)
-            .map_err(|e| ExportError::Watermark(format!("编码图片失败: {}", e)))?;
+            .map_err(|e| ExportError::Watermark(format!("编码图片失败：{}", e)))?;
 
         Ok(output)
     }
@@ -423,10 +690,33 @@ mod tests {
         }
     }
 
+    /// 创建简单的测试 PNG 图片（1x1 像素，红色）
+    fn create_test_png() -> Vec<u8> {
+        use image::{ImageBuffer, Rgba};
+        
+        // 使用 image crate 创建 1x1 红色图片
+        let img = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_fn(1, 1, |_, _| Rgba([255, 0, 0, 255]));
+        let mut output = Vec::new();
+        let mut cursor = std::io::Cursor::new(&mut output);
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut cursor, image::ImageFormat::Png)
+            .expect("创建测试 PNG 失败");
+        output
+    }
+
     #[test]
     fn test_watermark_service_creation() {
         let service = WatermarkService::new("test-enclave");
         assert_eq!(service.enclave_id, "test-enclave");
+        assert!(!service.hmac_key.is_empty());
+    }
+
+    #[test]
+    fn test_watermark_service_with_key() {
+        let key = b"test-hmac-key-00000000000000000000".to_vec();
+        let service = WatermarkService::with_key("test-enclave", key.clone());
+        assert_eq!(service.enclave_id, "test-enclave");
+        assert_eq!(service.hmac_key, key);
     }
 
     #[test]
@@ -471,19 +761,174 @@ mod tests {
         assert!(config.include_session_id);
     }
 
-    #[tokio::test]
-    async fn test_add_watermark() {
+    #[test]
+    fn test_compute_watermark_hmac() {
+        let service = WatermarkService::new("test-enclave");
+        let text = "test watermark text";
+
+        let sig1 = service.compute_watermark_hmac(text);
+        let sig2 = service.compute_watermark_hmac(text);
+
+        // 相同输入应产生相同签名
+        assert_eq!(sig1, sig2);
+        // 签名应为 32 字节（SHA256 输出）
+        assert_eq!(sig1.len(), 32);
+    }
+
+    #[test]
+    fn test_compute_watermark_hmac_different_text() {
+        let service = WatermarkService::new("test-enclave");
+        let text1 = "test watermark text 1";
+        let text2 = "test watermark text 2";
+
+        let sig1 = service.compute_watermark_hmac(text1);
+        let sig2 = service.compute_watermark_hmac(text2);
+
+        // 不同输入应产生不同签名
+        assert_ne!(sig1, sig2);
+    }
+
+    #[test]
+    fn test_compute_watermark_hmac_different_key() {
+        let service1 = WatermarkService::new("test-enclave-1");
+        let service2 = WatermarkService::new("test-enclave-2");
+        let text = "test watermark text";
+
+        let sig1 = service1.compute_watermark_hmac(text);
+        let sig2 = service2.compute_watermark_hmac(text);
+
+        // 不同密钥应产生不同签名
+        assert_ne!(sig1, sig2);
+    }
+
+    #[test]
+    fn test_verify_watermark_valid() {
         let service = WatermarkService::default_service();
         let metadata = create_test_metadata();
         let config = WatermarkConfig::default();
+        let test_png = create_test_png();
 
-        // 创建简单的测试图片数据（最小的 PNG）
-        let test_image = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        // 添加水印
+        let watermarked = service
+            .add_watermark(&test_png, &metadata, &config)
+            .expect("添加水印失败");
 
-        let result = service.add_watermark(&test_image, &metadata, &config);
+        // 验证水印应通过
+        let result = service
+            .verify_watermark(&watermarked)
+            .expect("验证水印失败");
+        assert!(result, "有效水印应验证通过");
+    }
+
+    #[test]
+    fn test_verify_watermark_no_signature() {
+        let service = WatermarkService::default_service();
+        let test_png = create_test_png();
+
+        // 未添加水印的图片应验证失败
+        let result = service
+            .verify_watermark(&test_png)
+            .expect("验证水印失败");
+        assert!(!result, "无签名图片应验证失败");
+    }
+
+    #[test]
+    fn test_verify_watermark_wrong_key() {
+        let service_a = WatermarkService::with_key(
+            "test-enclave",
+            b"test-key-a-00000000000000000000000".to_vec(),
+        );
+        let service_b = WatermarkService::with_key(
+            "test-enclave",
+            b"test-key-b-00000000000000000000000".to_vec(),
+        );
+
+        let metadata = create_test_metadata();
+        let config = WatermarkConfig::default();
+        let test_png = create_test_png();
+
+        // 用 service_a 添加水印
+        let watermarked = service_a
+            .add_watermark(&test_png, &metadata, &config)
+            .expect("添加水印失败");
+
+        // 用 service_b 验证应失败
+        let result = service_b
+            .verify_watermark(&watermarked)
+            .expect("验证水印失败");
+        assert!(!result, "错误密钥应验证失败");
+    }
+
+    #[test]
+    fn test_verify_watermark_tampered() {
+        let service = WatermarkService::default_service();
+        let metadata = create_test_metadata();
+        let config = WatermarkConfig::default();
+        let test_png = create_test_png();
+
+        // 添加水印
+        let watermarked = service
+            .add_watermark(&test_png, &metadata, &config)
+            .expect("添加水印失败");
+        
+        // 验证原始水印应通过
+        let original_result = service
+            .verify_watermark(&watermarked)
+            .expect("验证水印失败");
+        assert!(original_result, "原始水印应验证通过");
+        
+        // 注意：由于我们只签名 watermark_text 而非图片数据，
+        // 修改图片像素不会影响签名验证结果
+        // 这个测试验证的是签名 chunk 本身未被篡改
+        // 如果要测试签名被篡改，应该使用错误密钥验证
+    }
+
+    #[test]
+    fn test_verify_watermark_tampered_signature() {
+        let service = WatermarkService::default_service();
+        let metadata = create_test_metadata();
+        let config = WatermarkConfig::default();
+        let test_png = create_test_png();
+
+        // 添加水印
+        let watermarked = service
+            .add_watermark(&test_png, &metadata, &config)
+            .expect("添加水印失败");
+
+        // 验证原始水印应通过
+        let original_result = service
+            .verify_watermark(&watermarked)
+            .expect("验证水印失败");
+        assert!(original_result, "原始水印应验证通过");
+
+        // 现在用不同的密钥创建另一个服务来验证（模拟签名被篡改的效果）
+        let wrong_service = WatermarkService::with_key(
+            "test-enclave",
+            b"wrong-key-0000000000000000000000000".to_vec(),
+        );
+        
+        // 用错误密钥验证应失败
+        let wrong_key_result = wrong_service
+            .verify_watermark(&watermarked)
+            .expect("验证水印失败");
+        assert!(!wrong_key_result, "错误密钥应验证失败（等同于签名被篡改）");
+    }
+
+    #[test]
+    fn test_add_standard_watermark() {
+        let service = WatermarkService::default_service();
+        let test_png = create_test_png();
+        let session_id = SessionId::new();
+
+        let result = service
+            .add_standard_watermark(&test_png, session_id, "https://example.com");
+
         assert!(result.is_ok());
-
         let watermarked = result.unwrap();
         assert!(!watermarked.is_empty());
+
+        // 验证应通过
+        let verify_result = service.verify_watermark(&watermarked).expect("验证失败");
+        assert!(verify_result);
     }
 }

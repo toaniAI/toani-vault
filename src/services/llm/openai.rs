@@ -118,11 +118,11 @@ impl OpenAiCompatibleClient {
         let messages = vec![
             OpenAiMessage {
                 role: "system".to_string(),
-                content: request.system_prompt.clone(),
+                content: MessageContent::Text(request.system_prompt.clone()),
             },
             OpenAiMessage {
                 role: "user".to_string(),
-                content: request.user_message.clone(),
+                content: MessageContent::Text(request.user_message.clone()),
             },
         ];
 
@@ -144,19 +144,25 @@ impl OpenAiCompatibleClient {
     fn convert_image_request(&self, request: &ChatRequestWithImage) -> OpenAiChatRequest {
         let system_message = OpenAiMessage {
             role: "system".to_string(),
-            content: request.base.system_prompt.clone(),
+            content: MessageContent::Text(request.base.system_prompt.clone()),
         };
 
-        let _image_url = format!(
+        let image_url = format!(
             "data:{};base64,{}",
             request.image_mime_type, request.image_base64
         );
 
-        let user_content = request.base.user_message.clone();
-
+        // 构建 content array：文本 + 图片
         let user_message = OpenAiMessage {
             role: "user".to_string(),
-            content: user_content, // 简化处理，实际应使用 content array
+            content: MessageContent::Parts(vec![
+                ContentPart::Text {
+                    text: request.base.user_message.clone(),
+                },
+                ContentPart::ImageUrl {
+                    image_url: ImageUrlContent { url: image_url },
+                },
+            ]),
         };
 
         OpenAiChatRequest {
@@ -236,11 +242,26 @@ impl LlmProvider for OpenAiCompatibleClient {
             openai_response.usage.total_tokens
         );
 
-        let content = openai_response
+        // 检查 choices 是否为空，区分正常空结果和错误情况
+        let choice = openai_response
             .choices
             .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
+            .ok_or_else(|| LlmError::InvalidRequest("API returned empty choices (possible rate limiting, content filtering, or model error)".to_string()))?;
+
+        let content = match &choice.message.content {
+            MessageContent::Text(s) => s.clone(),
+            MessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|p| {
+                    if let ContentPart::Text { text } = p {
+                        Some(text.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+        };
 
         Ok(ChatResponse {
             content,
@@ -250,10 +271,7 @@ impl LlmProvider for OpenAiCompatibleClient {
                 completion_tokens: openai_response.usage.completion_tokens,
                 total_tokens: openai_response.usage.total_tokens,
             },
-            finish_reason: openai_response
-                .choices
-                .first()
-                .and_then(|c| c.finish_reason.clone()),
+            finish_reason: choice.finish_reason.clone(),
             raw_response: Some(body),
         })
     }
@@ -304,7 +322,20 @@ impl LlmProvider for OpenAiCompatibleClient {
         let content = openai_response
             .choices
             .first()
-            .map(|c| c.message.content.clone())
+            .map(|c| match &c.message.content {
+                MessageContent::Text(s) => s.clone(),
+                MessageContent::Parts(parts) => parts
+                    .iter()
+                    .filter_map(|p| {
+                        if let ContentPart::Text { text } = p {
+                            Some(text.as_str())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(""),
+            })
             .unwrap_or_default();
 
         Ok(ChatResponse {
@@ -418,11 +449,40 @@ struct OpenAiChatRequest {
     response_format: Option<OpenAiResponseFormat>,
 }
 
+/// OpenAI 消息 content 枚举，支持纯文本和多部分数组
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum MessageContent {
+    /// 纯文本内容
+    Text(String),
+    /// 多部分内容（文本 + 图片等）
+    Parts(Vec<ContentPart>),
+}
+
+/// Content 数组中的单个部分
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum ContentPart {
+    /// 文本部分
+    #[serde(rename = "text")]
+    Text { text: String },
+    /// 图片 URL 部分
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrlContent },
+}
+
+/// 图片 URL 内容
+#[derive(Debug, Serialize, Deserialize)]
+struct ImageUrlContent {
+    /// 图片 URL（支持 data: URI）
+    url: String,
+}
+
 /// OpenAI 消息
 #[derive(Debug, Serialize, Deserialize)]
 struct OpenAiMessage {
     role: String,
-    content: String,
+    content: MessageContent,
 }
 
 /// OpenAI 响应格式

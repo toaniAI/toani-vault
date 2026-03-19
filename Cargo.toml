@@ -16,6 +16,13 @@ subtle = "2.5"
 constant_time_eq = "0.3"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 
+# HMAC 和 SHA2
+hmac = "0.12"
+sha2 = "0.10"
+
+# PNG 操作
+png = "0.17"
+
 # 图像处理
 image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 
@@ -104,9 +111,16 @@ orion = "=0.17.8"
 libc = "0.2"
 
 # 异步运行时
-[dependencies.tokio]
-version = "1"
-features = ["full", "rt-multi-thread"]
+tokio = { version = "1", features = ["full", "rt-multi-thread"] }
+
+# TLS 支持（用于 HTTPS 连接）
+tokio-rustls = "0.26"
+rustls = "0.23"
+webpki-roots = "0.26"
+
+# macOS Keychain 支持（仅 macOS）
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "2.11"
 
 [features]
 default = ["screenshot-cdp"]

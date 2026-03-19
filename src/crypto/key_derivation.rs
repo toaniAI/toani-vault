@@ -399,18 +399,18 @@ fn generate_key_handle(key_material: &[u8]) -> KeyHandle {
     handle
 }
 
-/// PBKDF2-HMAC-SHA256 实现（简化版）
+/// PBKDF2-HMAC-SHA256 实现（ring 标准实现）
+///
+/// 使用 ring::pbkdf2 实现符合 RFC 2898 的 PBKDF2-HMAC-SHA256
 fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, output: &mut [u8]) {
-    // 在实际实现中使用标准的 PBKDF2 实现
-    // 这里简化处理，仅用于演示
-    let mut data = Vec::new();
-    data.extend_from_slice(password);
-    data.extend_from_slice(salt);
-    data.extend_from_slice(&iterations.to_be_bytes());
+    use ring::pbkdf2;
+    use std::num::NonZeroU32;
 
-    let hash = digest(&SHA256, &data);
-    let len = output.len().min(hash.as_ref().len());
-    output[..len].copy_from_slice(&hash.as_ref()[..len]);
+    static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
+
+    let n = NonZeroU32::new(iterations)
+        .unwrap_or_else(|| NonZeroU32::new(600_000).expect("600_000 is non-zero"));
+    pbkdf2::derive(PBKDF2_ALG, n, salt, password, output);
 }
 
 /// 获取随机字节
@@ -605,5 +605,26 @@ mod tests {
             .with_hsm_random(hsm);
 
         assert_eq!(deriver.key_version().major, 1);
+    }
+
+    #[test]
+    fn test_pbkdf2_is_not_single_hash() {
+        // 验证 PBKDF2 迭代次数参数有效：不同迭代次数产生不同输出
+        let mut output1 = [0u8; 32];
+        let mut output2 = [0u8; 32];
+        pbkdf2_hmac_sha256(b"password", b"salt_value", 1_000, &mut output1);
+        pbkdf2_hmac_sha256(b"password", b"salt_value", 100_000, &mut output2);
+        // 迭代次数不同，输出应该不同（证明 iterations 参数被正确使用）
+        assert_ne!(output1, output2, "不同迭代次数的 PBKDF2 输出应当不同");
+    }
+
+    #[test]
+    fn test_pbkdf2_deterministic() {
+        // 相同输入产生相同输出（确定性）
+        let mut output1 = [0u8; 32];
+        let mut output2 = [0u8; 32];
+        pbkdf2_hmac_sha256(b"test_password", b"test_salt", 10_000, &mut output1);
+        pbkdf2_hmac_sha256(b"test_password", b"test_salt", 10_000, &mut output2);
+        assert_eq!(output1, output2, "相同输入的 PBKDF2 输出应当相同");
     }
 }

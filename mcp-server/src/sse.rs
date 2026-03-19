@@ -90,8 +90,8 @@ pub struct SessionState {
     pub tx: mpsc::Sender<SseMessage>,
     /// 接收客户端消息通道
     pub msg_tx: mpsc::Sender<McpRequest>,
-    /// 最后活跃时间
-    pub last_activity: Instant,
+    /// 最后活跃时间（使用 Mutex 以便在 Arc 中修改）
+    pub last_activity: tokio::sync::Mutex<Instant>,
     /// SSE 连接是否活跃
     pub sse_connected: bool,
 }
@@ -143,7 +143,7 @@ impl SessionManager {
             claims,
             tx,
             msg_tx,
-            last_activity: Instant::now(),
+            last_activity: tokio::sync::Mutex::new(Instant::now()),
             sse_connected: true,
         });
 
@@ -169,7 +169,10 @@ impl SessionManager {
         let now = Instant::now();
         let expired: Vec<String> = sessions
             .iter()
-            .filter(|(_, s)| now.duration_since(s.last_activity) > SESSION_IDLE_TIMEOUT)
+            .filter(|(_, s)| {
+                let last_activity = s.last_activity.blocking_lock();
+                now.duration_since(*last_activity) > SESSION_IDLE_TIMEOUT
+            })
             .map(|(id, _)| id.clone())
             .collect();
 
@@ -214,6 +217,9 @@ pub enum SseError {
     #[error("Invalid message format: {0}")]
     InvalidMessage(String),
 
+    #[error("Invalid session ID: {0}")]
+    InvalidSessionId(String),
+
     #[error("Connection lost")]
     ConnectionLost,
 
@@ -231,6 +237,7 @@ impl IntoResponse for SseError {
             SseError::TokenExpired => (StatusCode::UNAUTHORIZED, self.to_string()),
             SseError::QueueFull => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             SseError::InvalidMessage(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            SseError::InvalidSessionId(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             SseError::ConnectionLost => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             SseError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
@@ -285,8 +292,8 @@ pub async fn sse_handler(
         }
     })?;
 
-    // 验证 mcp:connect scope
-    if !claims.has_scope(crate::auth::SCOPE_MCP_CONNECT) {
+    // 验证 mcp:connect scope - 使用 TokenValidator.can_connect_mcp() 而非直接检查 claims
+    if !state.token_validator.can_connect_mcp(&claims) {
         return Err(SseError::AuthFailed(
             "Missing required scope: mcp:connect".to_string(),
         ));
@@ -379,7 +386,13 @@ pub async fn message_handler(
     Query(params): Query<MessageQueryParams>,
     State(state): State<SseAppState>,
     Json(payload): Json<serde_json::Value>,
-) -> Json<MessageResponse> {
+) -> Result<Json<MessageResponse>, SseError> {
+    // 验证 session_id 不为空
+    if params.session_id.trim().is_empty() {
+        warn!("Received message with empty session_id");
+        return Err(SseError::InvalidSessionId("session_id cannot be empty".to_string()));
+    }
+
     debug!("Message received for session: {}", params.session_id);
 
     // 提取消息 ID
@@ -394,31 +407,30 @@ pub async fn message_handler(
         message_id, params.session_id
     );
 
-    // 获取对应的 session，将请求转发到消息队列
-    if let Some(session) = state.sessions.get_session(&params.session_id).await {
-        let mcp_request = McpRequest {
-            id: message_id.clone(),
-            session_id: params.session_id.clone(),
-            payload,
-        };
+    // 获取对应的 session - 不存在时返回 404
+    let session = state.sessions.get_session(&params.session_id).await
+        .ok_or_else(|| {
+            warn!("No active session found for session_id: {}", params.session_id);
+            SseError::SessionNotFound(params.session_id.clone())
+        })?;
 
-        if let Err(e) = session.msg_tx.send(mcp_request).await {
-            warn!(
-                "Failed to dispatch message {} to session {}: {}",
-                message_id, params.session_id, e
-            );
-        }
-    } else {
-        warn!(
-            "No active session found for session_id: {}",
-            params.session_id
-        );
-    }
+    // 直接调用 ToolHandler 处理 MCP 请求
+    let response_value = state.handler.dispatch_jsonrpc(&message_id, &payload).await;
 
-    Json(MessageResponse {
+    // 将响应通过 session.tx 推送回 SSE 通道
+    let msg = SseMessage::Message { data: response_value };
+    session.tx.send(msg).await.map_err(|e| {
+        warn!("Failed to send response to session {}: {}", params.session_id, e);
+        SseError::ConnectionLost
+    })?;
+
+    // 更新 session 最后活跃时间
+    *session.last_activity.lock().await = Instant::now();
+
+    Ok(Json(MessageResponse {
         accepted: true,
         message_id,
-    })
+    }))
 }
 
 /// 健康检查处理器

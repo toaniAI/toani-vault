@@ -25,6 +25,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -804,44 +805,120 @@ pub trait TenantConfigCache: Send + Sync {
     async fn clear(&self);
 }
 
-/// Redis 缓存实现（示例结构）
+/// Redis 租户配置缓存实现
+///
+/// 使用 Redis String 类型存储序列化后的 TenantConfig，
+/// key 格式为 `credbridge:tenant:config:{tenant_id}`。
 pub struct RedisTenantConfigCache {
-    // Redis 连接将在这里实现
-    _marker: std::marker::PhantomData<()>,
-}
-
-impl Default for RedisTenantConfigCache {
-    fn default() -> Self {
-        Self::new()
-    }
+    client: redis::Client,
+    ttl_seconds: u64,
 }
 
 impl RedisTenantConfigCache {
-    pub fn new() -> Self {
-        Self {
-            _marker: std::marker::PhantomData,
-        }
+    /// 创建 Redis 缓存实例
+    ///
+    /// # Arguments
+    /// * `redis_url` - Redis 连接字符串，如 "redis://127.0.0.1:6379"
+    /// * `ttl_seconds` - 缓存 TTL（秒），推荐 300（5 分钟）
+    pub fn new(redis_url: &str, ttl_seconds: u64) -> Result<Self, redis::RedisError> {
+        let client = redis::Client::open(redis_url)?;
+        Ok(Self {
+            client,
+            ttl_seconds,
+        })
+    }
+
+    /// 构建 Redis key
+    fn cache_key(tenant_id: &TenantId) -> String {
+        format!("credbridge:tenant:config:{}", tenant_id.as_str())
     }
 }
 
 #[async_trait]
 impl TenantConfigCache for RedisTenantConfigCache {
-    async fn get(&self, _tenant_id: &TenantId) -> Option<TenantConfig> {
-        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
-        // 需要: Redis 连接池和序列化/反序列化逻辑
-        None
+    async fn get(&self, tenant_id: &TenantId) -> Option<TenantConfig> {
+        let mut conn = self.client.get_multiplexed_async_connection().await.ok()?;
+        let key = Self::cache_key(tenant_id);
+        let data: Option<String> = conn.get(&key).await.ok()?;
+        data.and_then(|s| serde_json::from_str(&s).ok())
     }
 
-    async fn set(&self, _tenant_id: &TenantId, _config: &TenantConfig) {
-        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
+    async fn set(&self, tenant_id: &TenantId, config: &TenantConfig) {
+        let mut conn = match self.client.get_multiplexed_async_connection().await {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("[TENANT-CONFIG] Failed to get Redis connection: {}", e);
+                return;
+            }
+        };
+        let key = Self::cache_key(tenant_id);
+        match serde_json::to_string(config) {
+            Ok(data) => {
+                // 确保 TTL 至少为 1 秒，避免 ttl_seconds=0 时 Redis 写入静默丢弃
+                let ttl = if self.ttl_seconds == 0 {
+                    log::warn!("[TENANT-CONFIG] Redis TTL 为 0，默认使用 1 秒");
+                    1u64
+                } else {
+                    self.ttl_seconds
+                };
+                let _: Result<(), _> = conn.set_ex(&key, &data, ttl).await;
+            }
+            Err(e) => {
+                log::error!("[TENANT-CONFIG] Failed to serialize tenant config: {}", e);
+            }
+        }
     }
 
-    async fn delete(&self, _tenant_id: &TenantId) {
-        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
+    async fn delete(&self, tenant_id: &TenantId) {
+        let mut conn = match self.client.get_multiplexed_async_connection().await {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let key = Self::cache_key(tenant_id);
+        let _: Result<(), _> = conn.del(&key).await;
     }
 
     async fn clear(&self) {
-        // TODO(#INFRA-101): 实现 Redis 租户配置缓存
+        // 使用 SCAN 迭代删除所有 credbridge:tenant:config:* 键，避免 KEYS 阻塞
+        let mut conn = match self.client.get_multiplexed_async_connection().await {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("[TENANT-CONFIG] Failed to get Redis connection for clear: {}", e);
+                return;
+            }
+        };
+        let pattern = "credbridge:tenant:config:*";
+        let mut cursor: u64 = 0;
+        loop {
+            let scan_result: redis::RedisResult<(u64, Vec<String>)> = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(pattern)
+                .arg("COUNT")
+                .arg(100)
+                .query_async(&mut conn)
+                .await;
+            
+            match scan_result
+            {
+                Ok((next_cursor, keys)) => {
+                    if !keys.is_empty() {
+                        let deleted: Result<(), _> = conn.del(keys).await;
+                        if let Err(e) = deleted {
+                            log::error!("[TENANT-CONFIG] Failed to delete keys: {}", e);
+                        }
+                    }
+                    cursor = next_cursor;
+                    if cursor == 0 {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("[TENANT-CONFIG] SCAN command failed: {}", e);
+                    break;
+                }
+            }
+        }
     }
 }
 

@@ -64,11 +64,13 @@ fn generate_expired_token() -> String {
 
 /// 创建测试用的 SSE App State
 fn create_test_state() -> SseAppState {
+    use credbridge_mcp_server::auth::{TokenConfig, TokenValidator};
     let state = Arc::new(McpServerState::new_in_memory().unwrap());
     let tools = CredBridgeTools::new(state);
     SseAppState {
         sessions: Arc::new(SessionManager::new()),
         handler: ToolHandler::new(tools),
+        token_validator: Arc::new(TokenValidator::new(TokenConfig::default())),
     }
 }
 
@@ -200,7 +202,18 @@ async fn test_sse_connection_duplicate_session() {
 #[tokio::test]
 async fn test_message_post_valid() {
     let state = create_test_state();
-    let app = create_sse_router(state);
+    let validator = create_test_validator();
+    let session_id = "test_session_msg";
+    let token = generate_valid_token(&validator, session_id);
+
+    // 先建立 SSE 连接注册 session
+    let app = create_sse_router(state.clone());
+    let request = build_sse_request(session_id, &token);
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 等待 session 注册完成
+    sleep(Duration::from_millis(50)).await;
 
     let payload = json!({
         "id": "msg_001",
@@ -209,7 +222,8 @@ async fn test_message_post_valid() {
         "params": {}
     });
 
-    let request = build_message_request("test_session_msg", payload);
+    let app = create_sse_router(state.clone());
+    let request = build_message_request(session_id, payload);
     let response = app.oneshot(request).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
@@ -244,7 +258,18 @@ async fn test_message_post_invalid_json() {
 #[tokio::test]
 async fn test_message_post_missing_id() {
     let state = create_test_state();
-    let app = create_sse_router(state);
+    let validator = create_test_validator();
+    let session_id = "test_session";
+    let token = generate_valid_token(&validator, session_id);
+
+    // 先建立 SSE 连接注册 session
+    let app = create_sse_router(state.clone());
+    let request = build_sse_request(session_id, &token);
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 等待 session 注册完成
+    sleep(Duration::from_millis(50)).await;
 
     let payload = json!({
         "jsonrpc": "2.0",
@@ -252,7 +277,8 @@ async fn test_message_post_missing_id() {
         "params": {}
     });
 
-    let request = build_message_request("test_session", payload);
+    let app = create_sse_router(state.clone());
+    let request = build_message_request(session_id, payload);
     let response = app.oneshot(request).await.unwrap();
 
     // 应该返回成功，但 message_id 为 "unknown"

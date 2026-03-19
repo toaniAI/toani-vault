@@ -1,0 +1,45 @@
+# CredBridge 认证测试 Token
+
+**生成时间**: 2026-03-20 07:46
+
+## 登录凭证
+
+**测试用户**:
+- 用户名：`admin`
+- 密码：`admin123`
+
+**普通用户**:
+- 用户名：`user`
+- 密码：`user123`
+
+## 测试 Token
+
+```
+v4.local.-A1V5MHG3X3dScbQlo--1wfujCSEu3GEo1dWT-N0XUROSO8Alwy9N3FE9BjDCzvgU1hvi-_xICYwGApJQudoJaluUPk7AdqmXg2Jugp-vfW6hBiWRVNEO5vU4-YY-WQ4wdwRMWk4yLeiY9MT5aXlbaSSm8G9BcOIXOA-7usQozLf_jEuinWVGLdXmtBcC-S_OohoutzxYEOn5-mawZtdcGqhRQdvICOmvk53ws84MBlS9DxbDVbH5A9eluQwZLiOiyK1enUHk5B02O8R0praxSABdUfqeQ-KhFT9BJrNH919LidZR3XKWqYf-J4yIpuG5b4iHg5efJQIjEaBlU9s5l6db0R_DLUe3d2D9U92t4J15M97Pgi3tM6Ziw9TS2kB0eDoJ2bI9DVmJEXh7DqHBNA5
+```
+
+**Token 信息**:
+- 用户 ID: `user-001`
+- 租户 ID: `tenant-001`
+- 角色：`admin`
+- 权限：`admin` (所有权限)
+- 有效期：900 秒（15 分钟）
+
+## 使用方法
+
+### CLI 配置
+```bash
+credbridge config init --url http://localhost:8080 --token "<token>"
+```
+
+### curl 测试
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:8080/api/v1/credentials
+```
+
+## API 端点
+
+- 健康检查：`GET http://localhost:8080/health`
+- 凭证列表：`GET http://localhost:8080/api/v1/credentials`
+- 创建凭证：`POST http://localhost:8080/api/v1/credentials`
+- 沙箱会话：`POST http://localhost:8080/sandbox/sessions`

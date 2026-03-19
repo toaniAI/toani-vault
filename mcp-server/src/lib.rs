@@ -8,12 +8,11 @@ pub mod sse;
 pub mod auth;
 pub mod message_queue;
 
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
 
-use vault_service::vault::{CredentialVault, InMemoryStorage};
+use vault_service::vault::CredentialVault;
 use vault_service::audit::MemoryAuditStorage;
+use vault_service::crypto::KeyHierarchy;
 
 /// MCP Server 配置
 #[derive(Debug, Clone)]
@@ -76,6 +75,8 @@ pub struct McpServerState {
     pub audit: MemoryAuditStorage,
     /// Token 验证器（用于测试/开发）
     pub token_key: Option<vault_service::token::PasetoKey>,
+    /// 密钥层次管理器（用于 TEE 解密）
+    pub key_hierarchy: tokio::sync::RwLock<KeyHierarchy>,
 }
 
 impl McpServerState {
@@ -85,10 +86,17 @@ impl McpServerState {
         let audit = MemoryAuditStorage::new(10000)
             .context("Failed to create audit storage")?;
 
+        let mut key_hierarchy = KeyHierarchy::new();
+        let l0_key = vault_service::crypto::HardwareRootKey::for_simulation()
+            .context("Failed to generate simulation root key")?;
+        key_hierarchy.initialize_master_key(&l0_key)
+            .context("Failed to initialize key hierarchy")?;
+
         Ok(Self {
             vault,
             audit,
             token_key: None,
+            key_hierarchy: tokio::sync::RwLock::new(key_hierarchy),
         })
     }
 

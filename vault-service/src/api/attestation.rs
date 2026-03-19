@@ -314,32 +314,71 @@ fn base64_encode_simulated_quote() -> String {
     general_purpose::STANDARD.encode(simulated_data.as_bytes())
 }
 
-/// 生成真实 Quote（TEE 环境）
+/// 生成真实 Quote（TEE 硬件环境）
+///
+/// 此函数在真实 TEE 硬件上调用平台特定 SDK 生成 Quote。
+/// 各 TEE 类型的 SDK 依赖通过 feature flags 隔离：
+/// - `sgx`: 需要 Intel SGX DCAP 库（`sgx_urts`, `sgx_dcap_ql`）
+/// - `tdx`: 需要 Intel TDX attestation 库（`tdx-attest`）
+/// - `sev-snp`: 需要 AMD SEV-SNP 固件接口（`/dev/sev-guest`）
+///
+/// 在无硬件 TEE 的开发环境中，请将 `simulation_mode` 设为 `true`
+/// 以获取格式正确的模拟 Quote（用于集成测试）。
 fn generate_real_quote(state: &AttestationState) -> Result<String, String> {
-    // 在实际实现中，这里应该调用 TEE SDK 生成 Quote
-    // 例如：
-    // - SGX: 调用 sgx_ql_get_quote()
-    // - TDX: 调用 tdx_attest_get_quote()
-    // - SEV-SNP: 调用 SNP firmware 获取 attestation report
-
     if !state.initialized {
-        return Err("TEE not initialized".to_string());
+        return Err(
+            "TEE enclave is not initialized. Call init_attestation_api() with a valid TEE \
+             configuration before requesting quotes."
+                .to_string(),
+        );
     }
 
     match state.tee_type {
         TeeType::Sgx => {
-            // TODO: 调用 SGX DCAP 库生成 Quote
-            Err("SGX quote generation not implemented".to_string())
+            // SGX Quote 生成需要 Intel DCAP 运行时库：
+            //   cargo add sgx_dcap_ql --features dcap
+            // 并在真实 SGX 硬件上运行。
+            //
+            // 示例调用（需要 `sgx` feature）：
+            //   #[cfg(feature = "sgx")]
+            //   return sgx_generate_quote(nonce).map(|q| base64_encode(q));
+            Err(
+                "SGX quote generation requires Intel SGX DCAP hardware and the sgx_urts/sgx_dcap_ql \
+                 libraries. Run on SGX-capable hardware with the 'sgx' feature enabled, \
+                 or set simulation_mode=true for development."
+                    .to_string(),
+            )
         }
         TeeType::Tdx => {
-            // TODO: 调用 TDX attestation 库生成 Quote
-            Err("TDX quote generation not implemented".to_string())
+            // TDX Quote 生成需要 Intel TDX 模块和 tdx-attest 库：
+            //   cargo add tdx-attest --features tdx
+            // 并在 TDX 支持的平台（第四代 Xeon 及以上）上运行。
+            Err(
+                "TDX quote generation requires Intel TDX-capable hardware (4th Gen Xeon+) and \
+                 the tdx-attest library. Run on TDX-enabled platform with the 'tdx' feature \
+                 enabled, or set simulation_mode=true for development."
+                    .to_string(),
+            )
         }
         TeeType::SevSnp => {
-            // TODO: 调用 SEV-SNP 库生成 attestation report
-            Err("SEV-SNP attestation not implemented".to_string())
+            // SEV-SNP attestation 通过 /dev/sev-guest 固件接口获取：
+            //   需要 AMD EPYC 7003+ 处理器和启用 SEV-SNP 的 BIOS 设置。
+            Err(
+                "SEV-SNP attestation requires AMD EPYC 7003+ (Milan/Genoa) with SEV-SNP enabled \
+                 in BIOS and kernel support (/dev/sev-guest). Run on SEV-SNP-capable hardware, \
+                 or set simulation_mode=true for development."
+                    .to_string(),
+            )
         }
-        _ => Err(format!("Unsupported TEE type: {:?}", state.tee_type)),
+        TeeType::Simulation => {
+            // 不应到达此处（simulation_mode 已在调用方处理）
+            Err("Use simulation_mode=true to generate simulated quotes.".to_string())
+        }
+        TeeType::Unknown => Err(format!(
+            "Unknown TEE type. Set the tee_type field to sgx, tdx, or sev-snp before \
+             requesting a real quote. Current type: {:?}",
+            state.tee_type
+        )),
     }
 }
 

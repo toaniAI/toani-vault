@@ -3,15 +3,12 @@
 //! 实现与现有 AuditRecorder 集成的 immudb 存储后端
 //! 提供审计日志的不可篡改持久化存储
 
-// FIXME: 需要将 std::sync::Mutex 替换为 tokio::sync::Mutex 以支持跨 await 持有
-// 当前为让 CI 通过暂时允许此警告
-#![allow(clippy::await_holding_lock)]
-
 use super::events::{AuditEntry, Outcome};
 use super::immudb_client::{ImmuDbConfig, ImmuDbState, ImmuDbStorage, QueryOptions};
 use super::recorder::{RecorderError, SignedAuditEntry};
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// immudb 审计存储
 ///
@@ -186,19 +183,13 @@ impl ImmuDbAuditStore {
         signed_entry: &SignedAuditEntry,
     ) -> Result<StoredAuditEntry, RecorderError> {
         let immu_entry = {
-            let mut storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let mut storage = self.storage.lock().await;
             storage.store(signed_entry).await?
         };
 
         // 更新缓存
         {
-            let mut cache = self
-                .cache
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Cache lock failed: {}", e)))?;
+            let mut cache = self.cache.lock().await;
             cache.push_back(signed_entry.clone());
 
             // 清理旧缓存
@@ -233,14 +224,11 @@ impl ImmuDbAuditStore {
         &self,
         index: u64,
     ) -> Result<Option<SignedAuditEntry>, RecorderError> {
-        let key = format!("audit:{}", index);
+        let key = format!("audit:{index}");
 
         // 先检查缓存
         {
-            let cache = self
-                .cache
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Cache lock failed: {}", e)))?;
+            let cache = self.cache.lock().await;
             if let Some(entry) = cache.iter().find(|e| e.log_index == index) {
                 return Ok(Some(entry.clone()));
             }
@@ -248,10 +236,7 @@ impl ImmuDbAuditStore {
 
         // 从 immudb 获取
         let immu_entry = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             storage.get(&key).await?
         };
         Ok(immu_entry.map(|e| e.signed_entry))
@@ -261,10 +246,7 @@ impl ImmuDbAuditStore {
     pub async fn get_recent(&self, n: usize) -> Result<Vec<SignedAuditEntry>, RecorderError> {
         // 从缓存获取（逆序）
         let cache_entries: Vec<SignedAuditEntry> = {
-            let cache = self
-                .cache
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Cache lock failed: {}", e)))?;
+            let cache = self.cache.lock().await;
             cache
                 .iter()
                 .rev()
@@ -283,10 +265,7 @@ impl ImmuDbAuditStore {
 
         // 否则从 immudb 查询更多
         let entries: Vec<SignedAuditEntry> = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             let options = QueryOptions {
                 limit: Some(n),
                 ..Default::default()
@@ -310,10 +289,7 @@ impl ImmuDbAuditStore {
             ..Default::default()
         };
         let immu_entries = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             storage.query(&options).await?
         };
         Ok(immu_entries.into_iter().map(|e| e.signed_entry).collect())
@@ -331,10 +307,7 @@ impl ImmuDbAuditStore {
             ..Default::default()
         };
         let immu_entries = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             storage.query(&options).await?
         };
         Ok(immu_entries.into_iter().map(|e| e.signed_entry).collect())
@@ -354,10 +327,7 @@ impl ImmuDbAuditStore {
             ..Default::default()
         };
         let immu_entries = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             storage.query(&options).await?
         };
         Ok(immu_entries.into_iter().map(|e| e.signed_entry).collect())
@@ -371,23 +341,17 @@ impl ImmuDbAuditStore {
     /// 3. 返回验证结果
     pub async fn verify(&self) -> Result<bool, RecorderError> {
         {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             storage.verify().await
         }
     }
 
     /// 验证特定条目的完整性
     pub async fn verify_entry(&self, index: u64) -> Result<VerificationResult, RecorderError> {
-        let key = format!("audit:{}", index);
+        let key = format!("audit:{index}");
 
         let proof = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             let client = storage.client();
             client.verify_entry(&key).await?
         };
@@ -404,10 +368,7 @@ impl ImmuDbAuditStore {
     /// 获取当前 immudb 状态
     pub async fn current_state(&self) -> Result<ImmuDbState, RecorderError> {
         let state = {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
             storage.client().current_state().await?
         };
         Ok(state)
@@ -423,10 +384,7 @@ impl ImmuDbAuditStore {
 
         // 查询范围内的条目
         let entries = if start_time.is_some() || end_time.is_some() {
-            let storage = self
-                .storage
-                .lock()
-                .map_err(|e| RecorderError::StorageError(format!("Storage lock failed: {}", e)))?;
+            let storage = self.storage.lock().await;
 
             let options = QueryOptions {
                 start_time,
@@ -478,26 +436,18 @@ impl ImmuDbAuditStore {
     }
 
     /// 清空缓存
-    pub fn clear_cache(&self) -> Result<(), RecorderError> {
-        let mut cache = self
-            .cache
-            .lock()
-            .map_err(|e| RecorderError::StorageError(format!("Cache lock failed: {}", e)))?;
+    pub async fn clear_cache(&self) {
+        let mut cache = self.cache.lock().await;
         cache.clear();
-        Ok(())
     }
 
     /// 获取缓存统计
-    pub fn cache_stats(&self) -> Result<CacheStats, RecorderError> {
-        let cache = self
-            .cache
-            .lock()
-            .map_err(|e| RecorderError::StorageError(format!("Cache lock failed: {}", e)))?;
-
-        Ok(CacheStats {
+    pub async fn cache_stats(&self) -> CacheStats {
+        let cache = self.cache.lock().await;
+        CacheStats {
             cached_entries: cache.len(),
             max_cache_size: self.max_cache_size,
-        })
+        }
     }
 
     /// 获取存储客户端（用于高级操作）

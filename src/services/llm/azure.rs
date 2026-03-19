@@ -122,11 +122,11 @@ impl AzureOpenAiClient {
         let messages = vec![
             AzureMessage {
                 role: "system".to_string(),
-                content: request.system_prompt.clone(),
+                content: AzureMessageContent::Text(request.system_prompt.clone()),
             },
             AzureMessage {
                 role: "user".to_string(),
-                content: request.user_message.clone(),
+                content: AzureMessageContent::Text(request.user_message.clone()),
             },
         ];
 
@@ -147,19 +147,25 @@ impl AzureOpenAiClient {
     fn convert_image_request(&self, request: &ChatRequestWithImage) -> AzureChatRequest {
         let system_message = AzureMessage {
             role: "system".to_string(),
-            content: request.base.system_prompt.clone(),
+            content: AzureMessageContent::Text(request.base.system_prompt.clone()),
         };
 
-        let _image_url = format!(
+        let image_url = format!(
             "data:{};base64,{}",
             request.image_mime_type, request.image_base64
         );
 
-        let user_content = request.base.user_message.clone();
-
+        // 构建 content array：文本 + 图片
         let user_message = AzureMessage {
             role: "user".to_string(),
-            content: user_content, // 简化处理，实际应使用 content array
+            content: AzureMessageContent::Parts(vec![
+                AzureContentPart::Text {
+                    text: request.base.user_message.clone(),
+                },
+                AzureContentPart::ImageUrl {
+                    image_url: AzureImageUrlContent { url: image_url },
+                },
+            ]),
         };
 
         AzureChatRequest {
@@ -238,11 +244,26 @@ impl LlmProvider for AzureOpenAiClient {
             azure_response.usage.total_tokens
         );
 
-        let content = azure_response
+        // 检查 choices 是否为空，区分正常空结果和错误情况
+        let choice = azure_response
             .choices
             .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
+            .ok_or_else(|| LlmError::InvalidRequest("API returned empty choices (possible rate limiting, content filtering, or model error)".to_string()))?;
+
+        let content = match &choice.message.content {
+            AzureMessageContent::Text(s) => s.clone(),
+            AzureMessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|p| {
+                    if let AzureContentPart::Text { text } = p {
+                        Some(text.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+        };
 
         Ok(ChatResponse {
             content,
@@ -252,10 +273,7 @@ impl LlmProvider for AzureOpenAiClient {
                 completion_tokens: azure_response.usage.completion_tokens,
                 total_tokens: azure_response.usage.total_tokens,
             },
-            finish_reason: azure_response
-                .choices
-                .first()
-                .and_then(|c| c.finish_reason.clone()),
+            finish_reason: choice.finish_reason.clone(),
             raw_response: Some(body),
         })
     }
@@ -303,11 +321,26 @@ impl LlmProvider for AzureOpenAiClient {
             azure_response.usage.completion_tokens,
         );
 
-        let content = azure_response
+        // 检查 choices 是否为空，区分正常空结果和错误情况
+        let choice = azure_response
             .choices
             .first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default();
+            .ok_or_else(|| LlmError::InvalidRequest("API returned empty choices (possible rate limiting, content filtering, or model error)".to_string()))?;
+
+        let content = match &choice.message.content {
+            AzureMessageContent::Text(s) => s.clone(),
+            AzureMessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|p| {
+                    if let AzureContentPart::Text { text } = p {
+                        Some(text.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+        };
 
         Ok(ChatResponse {
             content,
@@ -317,10 +350,7 @@ impl LlmProvider for AzureOpenAiClient {
                 completion_tokens: azure_response.usage.completion_tokens,
                 total_tokens: azure_response.usage.total_tokens,
             },
-            finish_reason: azure_response
-                .choices
-                .first()
-                .and_then(|c| c.finish_reason.clone()),
+            finish_reason: choice.finish_reason.clone(),
             raw_response: Some(body),
         })
     }
@@ -392,7 +422,7 @@ impl LlmProvider for AzureOpenAiClient {
         let health_request = AzureChatRequest {
             messages: vec![AzureMessage {
                 role: "user".to_string(),
-                content: "hi".to_string(),
+                content: AzureMessageContent::Text("hi".to_string()),
             }],
             temperature: Some(0.0),
             max_tokens: Some(1),
@@ -433,11 +463,42 @@ struct AzureChatRequest {
     response_format: Option<AzureResponseFormat>,
 }
 
+/// Azure OpenAI 消息 content 枚举，支持纯文本和多部分数组
+///
+/// Azure OpenAI API 与 OpenAI API 兼容，支持相同的 content array 格式
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum AzureMessageContent {
+    /// 纯文本内容
+    Text(String),
+    /// 多部分内容（文本 + 图片等）
+    Parts(Vec<AzureContentPart>),
+}
+
+/// Content 数组中的单个部分
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum AzureContentPart {
+    /// 文本部分
+    #[serde(rename = "text")]
+    Text { text: String },
+    /// 图片 URL 部分
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: AzureImageUrlContent },
+}
+
+/// 图片 URL 内容
+#[derive(Debug, Serialize, Deserialize)]
+struct AzureImageUrlContent {
+    /// 图片 URL（支持 data: URI）
+    url: String,
+}
+
 /// Azure OpenAI 消息
 #[derive(Debug, Serialize, Deserialize)]
 struct AzureMessage {
     role: String,
-    content: String,
+    content: AzureMessageContent,
 }
 
 /// Azure OpenAI 响应格式
@@ -576,9 +637,13 @@ mod tests {
         assert_eq!(azure_request.max_tokens, Some(100));
         assert_eq!(azure_request.messages.len(), 2);
         assert_eq!(azure_request.messages[0].role, "system");
-        assert_eq!(azure_request.messages[0].content, "System prompt");
+        assert!(
+            matches!(&azure_request.messages[0].content, AzureMessageContent::Text(s) if s == "System prompt")
+        );
         assert_eq!(azure_request.messages[1].role, "user");
-        assert_eq!(azure_request.messages[1].content, "User message");
+        assert!(
+            matches!(&azure_request.messages[1].content, AzureMessageContent::Text(s) if s == "User message")
+        );
     }
 
     #[test]

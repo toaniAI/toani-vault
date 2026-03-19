@@ -271,6 +271,38 @@ pub struct StatsSnapshot {
     pub current_token_count: usize,
 }
 
+/// Token 清理任务句柄（不包含密钥材料，用于后台清理任务）
+#[derive(Clone)]
+struct TokenCleanupHandle {
+    /// Token 元数据缓存
+    metadata_cache: Arc<RwLock<HashMap<String, TokenMetadata>>>,
+    /// 加密的 Token 数据（内存中，用于快速访问）
+    encrypted_tokens: Arc<RwLock<HashMap<String, EncryptedToken>>>,
+    /// 统计
+    stats: Arc<TokenStorageStats>,
+}
+
+impl TokenCleanupHandle {
+    /// 删除 Token（清理任务专用，不涉及密钥操作）
+    async fn remove_token(&self, token_id: &str) -> Result<(), TokenStorageError> {
+        // 从缓存删除
+        {
+            let mut metadata_cache = self.metadata_cache.write().await;
+            let mut encrypted_cache = self.encrypted_tokens.write().await;
+
+            metadata_cache.remove(token_id);
+            encrypted_cache.remove(token_id);
+        }
+
+        // 更新统计
+        let metadata_cache = self.metadata_cache.read().await;
+        self.stats.update_token_count(metadata_cache.len());
+
+        log::debug!("Token removed from cleanup task: {}", token_id);
+        Ok(())
+    }
+}
+
 /// MCP Token 安全存储管理器
 #[allow(dead_code)]
 pub struct McpTokenStorage {
@@ -278,8 +310,8 @@ pub struct McpTokenStorage {
     metadata_cache: Arc<RwLock<HashMap<String, TokenMetadata>>>,
     /// 加密的 Token 数据（内存中，用于快速访问）
     encrypted_tokens: Arc<RwLock<HashMap<String, EncryptedToken>>>,
-    /// 加密密钥（用于 Token 加密）
-    encryption_key: SecureBuffer,
+    /// 加密密钥（用于 Token 加密，使用 Arc 共享以避免复制）
+    encryption_key: Arc<SecureBuffer>,
     /// 配置
     config: TokenStorageConfig,
     /// 统计
@@ -298,7 +330,7 @@ impl McpTokenStorage {
         let result = Self {
             metadata_cache: Arc::new(RwLock::new(HashMap::new())),
             encrypted_tokens: Arc::new(RwLock::new(HashMap::new())),
-            encryption_key: SecureBuffer::with_data(&encryption_key),
+            encryption_key: Arc::new(SecureBuffer::with_data(&encryption_key)),
             config,
             stats: Arc::new(TokenStorageStats::default()),
             keychain_initialized: Arc::new(AtomicU64::new(0)),
@@ -312,8 +344,26 @@ impl McpTokenStorage {
 
     /// 初始化密钥环
     pub async fn initialize_keychain(&self) -> Result<(), TokenStorageError> {
-        // 在实际实现中初始化 macOS Keychain
-        // 这里仅标记为已初始化
+        #[cfg(target_os = "macos")]
+        {
+            // 测试 Keychain 访问
+            use security_framework::os::macos::keychain::SecKeychain;
+            match SecKeychain::default() {
+                Ok(_) => {
+                    log::info!("Keychain initialized successfully");
+                }
+                Err(e) => {
+                    log::warn!("Failed to access keychain: {}. Falling back to memory storage", e);
+                    return Err(TokenStorageError::EncryptionError(format!("Keychain access failed: {}", e)));
+                }
+            }
+        }
+        
+        #[cfg(not(target_os = "macos"))]
+        {
+            log::warn!("Keychain storage only supported on macOS. Using memory storage.");
+        }
+        
         self.keychain_initialized.store(1, Ordering::SeqCst);
         Ok(())
     }
@@ -568,8 +618,15 @@ impl McpTokenStorage {
             .encrypt(nonce_val, token.as_bytes())
             .map_err(|_| TokenStorageError::EncryptionError("Encryption failed".to_string()))?;
 
+        // 校验 AES-GCM 输出长度（密文 + 16 字节认证标签）
+        if combined.len() < 16 {
+            return Err(TokenStorageError::EncryptionError(
+                format!("AES-GCM output too short: {} bytes", combined.len())
+            ));
+        }
+
         // aes-gcm 返回 ciphertext || auth_tag，auth_tag 为最后 16 字节
-        let split_at = combined.len().saturating_sub(16);
+        let split_at = combined.len() - 16;
         let ciphertext_only = combined[..split_at].to_vec();
         let auth_tag_bytes = &combined[split_at..];
         let mut auth_tag = [0u8; 16];
@@ -582,6 +639,13 @@ impl McpTokenStorage {
     fn decrypt_token(&self, encrypted: &EncryptedToken) -> Result<String, TokenStorageError> {
         let cipher = Aes256Gcm::new_from_slice(self.encryption_key.as_slice())
             .map_err(|_| TokenStorageError::DecryptionError("Invalid key length".to_string()))?;
+
+        // 校验 nonce 长度（AES-GCM 要求 12 字节）
+        if encrypted.nonce().len() != 12 {
+            return Err(TokenStorageError::DecryptionError(
+                format!("Invalid nonce length: {}, expected 12", encrypted.nonce().len())
+            ));
+        }
 
         // 重新拼接 ciphertext || auth_tag
         let mut full_ciphertext = encrypted.ciphertext().to_vec();
@@ -599,19 +663,80 @@ impl McpTokenStorage {
     /// 存储到密钥环
     async fn store_to_keychain(
         &self,
-        _token_id: &str,
-        _encrypted: &EncryptedToken,
-        _metadata: &TokenMetadata,
+        token_id: &str,
+        encrypted: &EncryptedToken,
+        metadata: &TokenMetadata,
     ) -> Result<(), TokenStorageError> {
-        // 在实际实现中使用 macOS Security Framework
-        // 这里仅模拟
-        Ok(())
+        #[cfg(target_os = "macos")]
+        {
+            use security_framework::passwords::{set_generic_password, delete_generic_password};
+            
+            // 序列化 Token 数据
+            let mut token_data = Vec::new();
+            token_data.extend_from_slice(encrypted.ciphertext());
+            token_data.extend_from_slice(encrypted.auth_tag());
+            token_data.extend_from_slice(encrypted.nonce());
+            
+            // 添加元数据
+            let metadata_json = serde_json::to_string(metadata)
+                .map_err(|e| TokenStorageError::EncryptionError(format!("Metadata serialization failed: {}", e)))?;
+            
+            // 组合数据：token_data + metadata_json
+            let mut full_data = token_data;
+            full_data.extend_from_slice(metadata_json.as_bytes());
+            
+            // 存储到 Keychain
+            let service_name = "credbridge-mcp-token";
+            let account_name = token_id;
+            
+            // 尝试删除旧值（如果存在）
+            let _ = delete_generic_password(service_name, account_name);
+            
+            match set_generic_password(service_name, account_name, &full_data) {
+                Ok(_) => {
+                    log::debug!("Token saved to keychain: {}", token_id);
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!("Failed to save to keychain: {}. Falling back to memory storage", e);
+                    return Err(TokenStorageError::EncryptionError(format!("Keychain save failed: {}", e)));
+                }
+            }
+        }
+        
+        #[cfg(not(target_os = "macos"))]
+        {
+            log::debug!("Keychain storage not available on this platform. Using memory storage.");
+            Ok(())
+        }
     }
 
     /// 从密钥环删除
-    async fn delete_from_keychain(&self, _token_id: &str) -> Result<(), TokenStorageError> {
-        // 在实际实现中使用 macOS Security Framework
-        Ok(())
+    async fn delete_from_keychain(&self, token_id: &str) -> Result<(), TokenStorageError> {
+        #[cfg(target_os = "macos")]
+        {
+            use security_framework::passwords::delete_generic_password;
+            
+            let service_name = "credbridge-mcp-token";
+            let account_name = token_id;
+            
+            match delete_generic_password(service_name, account_name) {
+                Ok(_) => {
+                    log::debug!("Token deleted from keychain: {}", token_id);
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!("Failed to delete from keychain: {}", e);
+                    // 如果不存在，不视为错误
+                    return Ok(());
+                }
+            }
+        }
+        
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(())
+        }
     }
 
     /// 清理旧 Token
@@ -642,17 +767,13 @@ impl McpTokenStorage {
         self.stats.update_token_count(metadata_cache.len());
     }
 
-    /// 为任务克隆引用
-    fn clone_for_task(&self) -> Arc<Self> {
-        // 创建新的 Arc 实例（共享内部状态）
-        Arc::new(McpTokenStorage {
+    /// 为清理任务创建句柄（不包含密钥材料，遵循最小权限原则）
+    fn clone_for_task(&self) -> TokenCleanupHandle {
+        TokenCleanupHandle {
             metadata_cache: Arc::clone(&self.metadata_cache),
             encrypted_tokens: Arc::clone(&self.encrypted_tokens),
-            encryption_key: SecureBuffer::with_data(self.encryption_key.as_slice()),
-            config: self.config.clone(),
             stats: Arc::clone(&self.stats),
-            keychain_initialized: Arc::clone(&self.keychain_initialized),
-        })
+        }
     }
 }
 
@@ -687,11 +808,10 @@ fn generate_new_token() -> String {
     format!("tok_{}", hex::encode(bytes))
 }
 
-/// 获取随机字节
+/// 获取随机字节（使用密码学安全的 CSPRNG）
 fn get_random_bytes(buffer: &mut [u8]) {
-    use rand::RngCore;
-    let mut rng = rand::thread_rng();
-    rng.fill_bytes(buffer);
+    use ring::rand::{SecureRandom, SystemRandom};
+    SystemRandom::new().fill(buffer).expect("OS RNG failed");
 }
 
 /// 获取当前时间戳

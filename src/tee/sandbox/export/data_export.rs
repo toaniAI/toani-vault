@@ -474,38 +474,107 @@ impl ExportService {
         Ok(json_str.into_bytes())
     }
 
+    /// 将 JSON 值转换为 CSV 单元格字符串
+    ///
+    /// 字符串直接返回，对象/数组序列化为 JSON 字符串，其他类型调用 to_string()
+    fn json_value_to_csv_cell(v: &serde_json::Value) -> String {
+        match v {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Null => String::new(),
+            // 嵌套对象/数组：序列化为 JSON 字符串放入单元格
+            serde_json::Value::Object(_) | serde_json::Value::Array(_) => v.to_string(),
+            other => other.to_string(),
+        }
+    }
+
     /// 序列化为 CSV
+    ///
+    /// 支持以下数据结构：
+    /// - 对象数组（每个对象为一行，键为列名）
+    /// - 单个对象（单行）
+    /// - 混合类型数组（非对象元素整体序列化为单列字符串）
+    /// - 标量值（单列单行）
     fn serialize_csv(
         &self,
         data: &serde_json::Value,
         _request: &ExportRequest,
     ) -> Result<Vec<u8>, ExportError> {
-        // 简化实现：仅支持对象数组
         let mut wtr = csv::WriterBuilder::new()
             .delimiter(self.config.csv_delimiter)
             .from_writer(Vec::new());
 
         match data {
             serde_json::Value::Array(arr) => {
-                if self.config.csv_header
-                    && !arr.is_empty()
-                    && let Some(serde_json::Value::Object(first)) = arr.first()
-                {
-                    let headers: Vec<_> = first.keys().cloned().collect();
-                    wtr.write_record(&headers)
-                        .map_err(|e| ExportError::Serialization(e.to_string()))?;
-                }
+                // 判断是否为纯对象数组（用第一个非 null 元素推断）
+                let first_obj = arr
+                    .iter()
+                    .find(|v| v.is_object())
+                    .and_then(|v| v.as_object());
 
-                for item in arr {
-                    if let serde_json::Value::Object(obj) = item {
-                        let row: Vec<String> = obj
-                            .values()
-                            .map(|v| match v {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => other.to_string(),
-                            })
-                            .collect();
-                        wtr.write_record(&row)
+                if let Some(_) = first_obj {
+                    // 对象数组路径：收集所有对象的所有键作为统一标题行
+                    // 修复：处理不同 Schema 的对象，避免列错位
+                    let mut all_keys: Vec<String> = Vec::new();
+                    let mut key_set = std::collections::HashSet::new();
+
+                    // 第一遍：收集所有可能的键
+                    for item in arr.iter() {
+                        if let serde_json::Value::Object(obj) = item {
+                            for key in obj.keys() {
+                                if key_set.insert(key.clone()) {
+                                    all_keys.push(key.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    // 如果没有找到任何键（理论上不会发生），降级为标量处理
+                    if all_keys.is_empty() {
+                        if self.config.csv_header {
+                            wtr.write_record(&["value"])
+                                .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                        }
+                        for item in arr {
+                            wtr.write_record(&[Self::json_value_to_csv_cell(item)])
+                                .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                        }
+                    } else {
+                        // 写入统一标题行
+                        if self.config.csv_header {
+                            wtr.write_record(&all_keys)
+                                .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                        }
+
+                        // 第二遍：按统一顺序写入每一行
+                        for item in arr {
+                            if let serde_json::Value::Object(obj) = item {
+                                let row: Vec<String> = all_keys
+                                    .iter()
+                                    .map(|key| {
+                                        obj.get(key)
+                                            .map(Self::json_value_to_csv_cell)
+                                            .unwrap_or_default()
+                                    })
+                                    .collect();
+                                wtr.write_record(&row)
+                                    .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                            } else {
+                                // 混合类型数组中的非对象元素：按空值填充其他列，第一列为该值
+                                let mut row: Vec<String> = vec![Self::json_value_to_csv_cell(item)];
+                                row.extend(std::iter::repeat(String::new()).take(all_keys.len() - 1));
+                                wtr.write_record(&row)
+                                    .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                            }
+                        }
+                    }
+                } else {
+                    // 纯非对象数组（标量/嵌套数组）：单列输出
+                    if self.config.csv_header {
+                        wtr.write_record(&["value"])
+                            .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                    }
+                    for item in arr {
+                        wtr.write_record(&[Self::json_value_to_csv_cell(item)])
                             .map_err(|e| ExportError::Serialization(e.to_string()))?;
                     }
                 }
@@ -516,20 +585,18 @@ impl ExportService {
                     wtr.write_record(&headers)
                         .map_err(|e| ExportError::Serialization(e.to_string()))?;
                 }
-                let row: Vec<String> = obj
-                    .values()
-                    .map(|v| match v {
-                        serde_json::Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    })
-                    .collect();
+                let row: Vec<String> = obj.values().map(Self::json_value_to_csv_cell).collect();
                 wtr.write_record(&row)
                     .map_err(|e| ExportError::Serialization(e.to_string()))?;
             }
-            _ => {
-                return Err(ExportError::Serialization(
-                    "CSV export requires object or array".to_string(),
-                ));
+            // 标量值：单列单行
+            scalar => {
+                if self.config.csv_header {
+                    wtr.write_record(&["value"])
+                        .map_err(|e| ExportError::Serialization(e.to_string()))?;
+                }
+                wtr.write_record(&[Self::json_value_to_csv_cell(scalar)])
+                    .map_err(|e| ExportError::Serialization(e.to_string()))?;
             }
         }
 

@@ -89,6 +89,7 @@ fn create_test_storage() -> MemoryAuditStorageAdapter {
 fn create_test_app() -> Router {
     let state = AuditApiState {
         storage: std::sync::Arc::new(create_test_storage()),
+        verifier_public_key: vec![],
     };
     audit_routes(state)
 }

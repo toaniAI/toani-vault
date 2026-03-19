@@ -41,15 +41,38 @@ pub struct AppState {
 
 /// 审计日志记录器 trait
 pub trait AuditLogger: Send + Sync {
-    fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str);
-    fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str);
-    fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str);
+    fn log_credential_created(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    );
+    fn log_credential_accessed(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    );
+    fn log_credential_deleted(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    );
     fn log_decryption_attempt(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         success: bool,
+        jti: &str,
+        mrenclave: &str,
     );
 }
 
@@ -57,24 +80,42 @@ pub trait AuditLogger: Send + Sync {
 pub struct DefaultAuditLogger;
 
 impl AuditLogger for DefaultAuditLogger {
-    fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+    fn log_credential_created(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) {
         log::info!(
-            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
+            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
 
-    fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+    fn log_credential_accessed(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) {
         log::info!(
-            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
+            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
 
-    fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+    fn log_credential_deleted(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) {
         log::info!(
-            "[AUDIT] Credential deleted - tenant: {}, user: {}, credential: {}",
-            tenant_id,
-            user_id,
-            credential_id
+            "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
 
@@ -84,9 +125,11 @@ impl AuditLogger for DefaultAuditLogger {
         user_id: &str,
         credential_id: &str,
         success: bool,
+        jti: &str,
+        mrenclave: &str,
     ) {
         log::info!(
-            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}"
+            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
 }
@@ -105,42 +148,62 @@ impl StorageAuditLogger {
     }
 
     /// 记录审计事件到存储
+    ///
+    /// - `jti`: 从 ValidatedToken.token_id 获取的 action token JTI
+    /// - `mrenclave`: TEE MRENCLAVE 测量值，软件模式下使用 "software_mode"
     fn record_to_storage(
         &self,
         action: AuditAction,
         user_id: &str,
         credential_id: &str,
         outcome: Outcome,
+        jti: &str,
+        mrenclave: &str,
     ) {
-        // 使用 try_lock 避免阻塞，如果锁不可用则跳过存储
-        if let Ok(storage) = self.storage.try_lock() {
-            // 使用用户 ID 的哈希
-            let user_id_hash = crate::audit::events::hash_user_id(user_id);
+        // 使用 try_lock 避免阻塞，如果锁不可用则记录警告日志
+        match self.storage.try_lock() {
+            Ok(storage) => {
+                // 使用用户 ID 的哈希
+                let user_id_hash = crate::audit::events::hash_user_id(user_id);
 
-            let entry = AuditEntry::new(
-                user_id_hash,
-                "session",     // session_id
-                "credentials", // service
-                action,
-                outcome,
-                "mrenclave", // tee_mrenclave - 简化处理
-                "jti",       // action_token_jti - 简化处理
-            )
-            .with_param(
-                "credential_id",
-                RedactedParam::Plain(credential_id.to_string()),
-            )
-            .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
+                let entry = AuditEntry::new(
+                    user_id_hash,
+                    "session",     // session_id
+                    "credentials", // service
+                    action,
+                    outcome,
+                    mrenclave, // tee_mrenclave - 来自调用方（软件模式为 "software_mode"）
+                    jti,       // action_token_jti - 来自 ValidatedToken.token_id
+                )
+                .with_param(
+                    "credential_id",
+                    RedactedParam::Plain(credential_id.to_string()),
+                )
+                .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
 
-            if let Err(e) = storage.record(entry) {
-                log::warn!("[AUDIT] 存储审计日志失败: {:?}", e);
+                if let Err(e) = storage.record(entry) {
+                    log::warn!("[AUDIT] 存储审计日志失败：{:?}", e);
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "[AUDIT-DROP] Lock contention: credential={}, action={:?}, user={}",
+                    credential_id, action, user_id
+                );
             }
         }
     }
 }
 
 impl AuditLogger for StorageAuditLogger {
-    fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+    fn log_credential_created(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) {
         // 打印到控制台
         log::info!(
             "[AUDIT] Credential created - tenant: {}, user: {}, credential: {}",
@@ -155,10 +218,19 @@ impl AuditLogger for StorageAuditLogger {
             user_id,
             credential_id,
             Outcome::Success,
+            jti,
+            mrenclave,
         );
     }
 
-    fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+    fn log_credential_accessed(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) {
         // 打印到控制台
         log::info!(
             "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
@@ -170,10 +242,19 @@ impl AuditLogger for StorageAuditLogger {
             user_id,
             credential_id,
             Outcome::Success,
+            jti,
+            mrenclave,
         );
     }
 
-    fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+    fn log_credential_deleted(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) {
         // 打印到控制台
         log::info!(
             "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
@@ -185,6 +266,8 @@ impl AuditLogger for StorageAuditLogger {
             user_id,
             credential_id,
             Outcome::Success,
+            jti,
+            mrenclave,
         );
     }
 
@@ -194,6 +277,8 @@ impl AuditLogger for StorageAuditLogger {
         user_id: &str,
         credential_id: &str,
         success: bool,
+        jti: &str,
+        mrenclave: &str,
     ) {
         // 打印到控制台
         log::info!(
@@ -211,6 +296,8 @@ impl AuditLogger for StorageAuditLogger {
             user_id,
             credential_id,
             outcome,
+            jti,
+            mrenclave,
         );
     }
 }
@@ -312,11 +399,13 @@ pub async fn create_credential(
         .create_credential_with_id(create_request, encrypted_payload, credential_id)
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
 
-    // 记录审计日志
+    // 记录审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
     state.audit_logger.log_credential_created(
         &token.tenant_id,
         &token.user_id,
         entry.credential_id.as_str(),
+        &token.token_id,
+        "software_mode",
     );
 
     let response = CreateCredentialResponse {
@@ -443,11 +532,13 @@ pub async fn get_credential(
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
-    // 记录访问审计日志
+    // 记录访问审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
     state.audit_logger.log_credential_accessed(
         &token.tenant_id,
         &token.user_id,
         &metadata.credential_id,
+        &token.token_id,
+        "software_mode",
     );
 
     Ok(Json(GetCredentialResponse {
@@ -501,18 +592,28 @@ pub async fn decrypt_credential_endpoint(
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
-    // 在 TEE 内解密密文
+    // 在 TEE 内解密密文，记录审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
     let plaintext_bytes = match decrypt_credential_in_tee(&state, &entry).await {
         Ok(data) => {
-            state
-                .audit_logger
-                .log_decryption_attempt(&token.tenant_id, &token.user_id, &id, true);
+            state.audit_logger.log_decryption_attempt(
+                &token.tenant_id,
+                &token.user_id,
+                &id,
+                true,
+                &token.token_id,
+                "software_mode",
+            );
             data
         }
         Err(e) => {
-            state
-                .audit_logger
-                .log_decryption_attempt(&token.tenant_id, &token.user_id, &id, false);
+            state.audit_logger.log_decryption_attempt(
+                &token.tenant_id,
+                &token.user_id,
+                &id,
+                false,
+                &token.token_id,
+                "software_mode",
+            );
             return Err(ApiError::new("internal_error", e));
         }
     };
@@ -612,11 +713,13 @@ pub async fn delete_credential(
         return Err(ApiError::new("not_found", "凭证不存在"));
     }
 
-    // 记录审计日志
+    // 记录审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
     state.audit_logger.log_credential_deleted(
         &token.tenant_id,
         &token.user_id,
         credential_id.as_str(),
+        &token.token_id,
+        "software_mode",
     );
 
     Ok(Json(DeleteCredentialResponse {

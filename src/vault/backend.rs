@@ -129,7 +129,13 @@ impl VaultStorageBackend {
             entry.encrypted_payload.auth_tag.clone(),
         );
         data.is_deleted = entry.is_deleted;
-        data.updated_at = Some(entry.updated_at);
+        // 修正：当 updated_at 为 0 时表示未更新，使用 None 而非 Some(0)
+        // 避免审计记录显示为 1970 年
+        data.updated_at = if entry.updated_at == 0 {
+            None
+        } else {
+            Some(entry.updated_at)
+        };
         Ok(data)
     }
 

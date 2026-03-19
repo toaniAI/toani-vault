@@ -1,0 +1,104 @@
+CredBridge CLI - 凭证管理命令行工具
+
+Usage: credbridge [OPTIONS] <COMMAND>
+
+Commands:
+  auth         认证管理 (登录、状态)
+  credentials  凭证管理 (创建、读取、更新、删除)
+  tokens       Token 操作
+  sandbox      沙箱会话控制
+  audit        审计日志
+  config       配置管理
+  help         Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  输出格式 (table, json) [default: table]
+  -c, --config <CONFIG>  配置文件路径
+  -v, --verbose          详细日志输出
+  -h, --help             Print help
+  -V, --version          Print version
+认证管理 (登录、状态)
+
+Usage: credbridge auth [OPTIONS] <COMMAND>
+
+Commands:
+  login   登录到 CredBridge 服务
+  status  查看当前登录状态
+  logout  注销
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  输出格式 (table, json) [default: table]
+  -c, --config <CONFIG>  配置文件路径
+  -v, --verbose          详细日志输出
+  -h, --help             Print help
+凭证管理 (创建、读取、更新、删除)
+
+Usage: credbridge credentials [OPTIONS] <COMMAND>
+
+Commands:
+  list      列出所有凭证
+  get       获取单个凭证
+  create    创建新凭证
+  update    更新凭证
+  delete    删除凭证
+  decrypt   解密凭证值
+  versions  查看版本历史
+  rollback  回滚到指定版本
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  输出格式 (table, json) [default: table]
+  -c, --config <CONFIG>  配置文件路径
+  -v, --verbose          详细日志输出
+  -h, --help             Print help
+Token 操作
+
+Usage: credbridge tokens [OPTIONS] <COMMAND>
+
+Commands:
+  create  创建新 Token
+  list    列出所有 Token
+  revoke  撤销 Token
+  verify  验证 Token 有效性
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  输出格式 (table, json) [default: table]
+  -c, --config <CONFIG>  配置文件路径
+  -v, --verbose          详细日志输出
+  -h, --help             Print help
+沙箱会话控制
+
+Usage: credbridge sandbox [OPTIONS] <COMMAND>
+
+Commands:
+  create-session  创建沙箱会话
+  list-sessions   列出沙箱会话
+  get-session     获取会话详情
+  terminate       终止会话
+  execute         执行操作
+  get-operation   获取操作结果
+  stats           查看沙箱统计
+  help            Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  输出格式 (table, json) [default: table]
+  -c, --config <CONFIG>  配置文件路径
+  -v, --verbose          详细日志输出
+  -h, --help             Print help
+审计日志
+
+Usage: credbridge audit [OPTIONS] <COMMAND>
+
+Commands:
+  logs    查询审计日志
+  export  导出审计日志
+  verify  验证审计日志完整性
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -o, --output <OUTPUT>  输出格式 (table, json) [default: table]
+  -c, --config <CONFIG>  配置文件路径
+  -v, --verbose          详细日志输出
+  -h, --help             Print help

@@ -187,14 +187,23 @@ impl CredBridgeTools {
             aad_hash: None,
         };
 
-        // 派生 L3 凭证密钥
+        // 派生 L3 凭证密钥（分两步以最小化锁持有时间）
+        let user_hash = entry.user_id.hash();
+        let credential_id_str = entry.credential_id.as_str().to_string();
+
+        // 步骤1：派生 L2 密钥
+        let l2_key = {
+            let hierarchy = self.state.key_hierarchy.read().await;
+            hierarchy
+                .derive_user_vault_key(entry.tenant_id.as_str(), user_hash)
+                .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?
+        };
+
+        // 步骤2：派生 L3 密钥（使用新的读锁）
         let l3_key = {
             let hierarchy = self.state.key_hierarchy.read().await;
-            let l2_key = hierarchy
-                .derive_user_vault_key(entry.tenant_id.as_str(), entry.user_id.hash())
-                .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?;
             hierarchy
-                .derive_credential_key(&l2_key, entry.credential_id.as_str(), KeyPurpose::CredentialEncryption)
+                .derive_credential_key(&l2_key, &credential_id_str, KeyPurpose::CredentialEncryption)
                 .map_err(|e| ToolError::VaultError(format!("L3 key derivation failed: {}", e)))?
         };
 
@@ -302,14 +311,23 @@ impl CredBridgeTools {
         // 创建用于派生密钥的 user_id
         let user_for_key = UserId::new(user_id);
 
-        // 通过 key_hierarchy 派生 L3 凭证密钥，保证加密/解密使用同一密钥
+        // 通过 key_hierarchy 派生 L3 凭证密钥，保证加密/解密使用同一密钥（分两步以最小化锁持有时间）
+        let user_hash = user_for_key.hash();
+        let credential_id_str = credential_id_obj.as_str().to_string();
+
+        // 步骤1：派生 L2 密钥
+        let l2_key = {
+            let hierarchy = self.state.key_hierarchy.read().await;
+            hierarchy
+                .derive_user_vault_key(tenant_id, user_hash)
+                .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?
+        };
+
+        // 步骤2：派生 L3 密钥（使用新的读锁）
         let l3_key = {
             let hierarchy = self.state.key_hierarchy.read().await;
-            let l2_key = hierarchy
-                .derive_user_vault_key(tenant_id, user_for_key.hash())
-                .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?;
             hierarchy
-                .derive_credential_key(&l2_key, credential_id_obj.as_str(), KeyPurpose::CredentialEncryption)
+                .derive_credential_key(&l2_key, &credential_id_str, KeyPurpose::CredentialEncryption)
                 .map_err(|e| ToolError::VaultError(format!("L3 key derivation failed: {}", e)))?
         };
 
@@ -406,16 +424,24 @@ impl CredBridgeTools {
                 .map_err(|e| ToolError::InvalidInput(format!("Invalid plaintext data: {}", e)))?;
 
             let user_for_key = UserId::new(user_id);
+            let user_hash = user_for_key.hash();
+
+            // 步骤1：派生 L2 密钥
+            let l2_key = {
+                let hierarchy = self.state.key_hierarchy.read().await;
+                hierarchy
+                    .derive_user_vault_key(tenant_id, user_hash)
+                    .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?
+            };
+
+            // 步骤2：派生 L3 密钥（使用新的读锁）
             let l3_key = {
                 let hierarchy = self.state.key_hierarchy.read().await;
-                let l2_key = hierarchy
-                    .derive_user_vault_key(tenant_id, user_for_key.hash())
-                    .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?;
                 hierarchy
                     .derive_credential_key(&l2_key, credential_id, KeyPurpose::CredentialEncryption)
                     .map_err(|e| ToolError::VaultError(format!("L3 key derivation failed: {}", e)))?
             };
-            let aad = format!("{}:{}", tenant_id, user_for_key.hash());
+            let aad = format!("{}:{}", tenant_id, user_hash);
             let blob = vault_service::crypto::encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
                 .map_err(|e| ToolError::VaultError(format!("Encryption failed: {:?}", e)))?;
             Some(EncryptedPayload::from_blob(&blob))

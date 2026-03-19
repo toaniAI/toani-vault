@@ -6,6 +6,7 @@
 .qoder/
 .qwen/
 .sealed/
+.cursor/
 
 # Build artifacts
 /target

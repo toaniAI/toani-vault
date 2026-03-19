@@ -315,7 +315,7 @@ mod immudb_audit_store_tests {
     async fn test_audit_store_creation() {
         let store = create_test_store().await;
 
-        let stats = store.cache_stats().expect("Failed to get cache stats");
+        let stats = store.cache_stats().await;
         assert_eq!(stats.cached_entries, 0);
         assert_eq!(stats.max_cache_size, 1000);
     }
@@ -352,7 +352,7 @@ mod immudb_audit_store_tests {
         assert_eq!(stored.len(), 5);
 
         // 验证缓存
-        let stats = store.cache_stats().expect("Failed to get stats");
+        let stats = store.cache_stats().await;
         assert_eq!(stats.cached_entries, 5);
     }
 
@@ -453,13 +453,13 @@ mod immudb_audit_store_tests {
         store.store(&entry).await.expect("Failed to store");
 
         // 验证缓存
-        let stats = store.cache_stats().expect("Failed to get stats");
+        let stats = store.cache_stats().await;
         assert_eq!(stats.cached_entries, 1);
 
         // 清空缓存
-        store.clear_cache().expect("Failed to clear cache");
+        store.clear_cache().await;
 
-        let stats = store.cache_stats().expect("Failed to get stats");
+        let stats = store.cache_stats().await;
         assert_eq!(stats.cached_entries, 0);
     }
 

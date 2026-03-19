@@ -618,51 +618,79 @@ async fn execute_operation_with_timeout(
 }
 
 /// 执行操作
+///
+/// 当前实现：沙箱会话池尚未集成到 ConnectionState，
+/// 记录操作请求并返回"待实现"错误，避免误导性的假成功响应。
+/// 集成点：ConnectionState 需要持有沙箱会话引用后此处调用真实执行逻辑。
 async fn execute_operation(
     operation: OperationRequest,
-    _state: &ConnectionState,
+    state: &ConnectionState,
 ) -> Result<ExecutionResult, Box<dyn std::error::Error + Send + Sync>> {
     let start = std::time::Instant::now();
 
-    // TODO(#TEE-107): 实际调用沙箱会话执行操作
-    // 需要: WebSocket 与沙箱会话池集成
-    // 当前: 使用模拟实现进行开发测试
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    info!(
+        "执行操作请求: session={}, op_type={:?}, op_id={}",
+        state.session_id, operation.operation_type, operation.operation_id
+    );
 
-    let execution_time_ms = start.elapsed().as_millis() as u64;
+    // 沙箱会话池尚未集成到 WebSocket 连接状态。
+    // 返回明确的未实现错误，而非硬编码延迟后假装成功。
+    // 集成路径：在 ConnectionState 中添加 Arc<SandboxSession> 字段，
+    // 然后调用 session.execute(operation).await
+    let _execution_time_ms = start.elapsed().as_millis() as u64;
 
-    Ok(ExecutionResult {
-        success: true,
-        data: Some(serde_json::json!({
-            "message": format!("Operation {:?} completed", operation.operation_type),
-            "parameters": operation.parameters,
-        })),
-        error: None,
-        execution_time_ms,
-        screenshot: None,
-        audit_log: vec![],
-    })
+    Err(format!(
+        "沙箱会话池尚未集成 (session={}, op={:?}): 请通过 SandboxSessionPool 建立会话后重试",
+        state.session_id, operation.operation_type
+    )
+    .into())
 }
 
 /// 截图操作
+///
+/// 通过 ScreenshotService 对沙箱页面进行安全截图。
+/// 当前 ScreenshotService 需要 PageStateFreezer（与具体会话绑定），
+/// 无法在 WebSocket 层直接构建。返回明确错误而非假图，
+/// 集成路径：ConnectionState 需要持有 Arc<ScreenshotService> 字段。
 async fn take_screenshot(
-    _state: &ConnectionState,
+    state: &ConnectionState,
     _ctx: &ApiContext,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // TODO(#TEE-108): 实际调用沙箱截图功能
-    // 需要: 集成 ScreenshotService
-    // 当前: 返回一个1x1像素的PNG图片作为模拟
-    let png_data = vec![
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 pixel
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44,
-        0x41, // IDAT chunk
-        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD,
-        0x8D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, // IEND chunk
-        0x44, 0xAE, 0x42, 0x60, 0x82,
-    ];
-    Ok(png_data)
+    use crate::tee::sandbox::export::screenshot::{
+        PlaywrightClient, ScreenshotConfig, ScreenshotRequest, ScreenshotService,
+    };
+    use crate::tee::sandbox::export::freezer::PageStateFreezer;
+    use crate::tee::sandbox::export::watermark::WatermarkService;
+
+    info!("截图请求: session={}", state.session_id);
+
+    // 验证 session_id 格式，避免 PageStateFreezer::new panic
+    let _session_uuid = uuid::Uuid::parse_str(&state.session_id.0.to_string())
+        .map_err(|e| format!("Invalid session_id format: {}. Error: {}", state.session_id.0, e))?;
+    
+    // 构建 ScreenshotService（使用 session_id 创建对应的 Freezer）
+    let freezer = PageStateFreezer::new(state.session_id);
+    let playwright = PlaywrightClient::with_default_config();
+    let watermark = WatermarkService::default_service();
+    let config = ScreenshotConfig::default();
+
+    let service = ScreenshotService::new(freezer, playwright, config, watermark);
+    let request = ScreenshotRequest::default();
+
+    match service.capture(request).await {
+        Ok(result) => {
+            info!(
+                "截图成功: session={}, size={} bytes",
+                state.session_id,
+                result.data.len()
+            );
+            Ok(result.data)
+        }
+        Err(e) => {
+            warn!("截图失败: session={}, error={}", state.session_id, e);
+            Err(format!("截图失败: {}", e).into())
+        }
+    }
 }
 
 #[cfg(test)]
