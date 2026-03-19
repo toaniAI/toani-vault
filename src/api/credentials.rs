@@ -101,6 +101,137 @@ impl AuditLogger for DefaultAuditLogger {
     }
 }
 
+use crate::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RedactedParam};
+
+/// 存储审计日志记录器 - 将日志写入 MemoryAuditStorage 并打印到控制台
+pub struct StorageAuditLogger {
+    storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>,
+}
+
+impl StorageAuditLogger {
+    /// 创建新的存储审计日志记录器
+    pub fn new(storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>) -> Self {
+        Self { storage }
+    }
+
+    /// 记录审计事件到存储
+    fn record_to_storage(
+        &self,
+        action: AuditAction,
+        user_id: &str,
+        credential_id: &str,
+        outcome: Outcome,
+    ) {
+        // 使用 try_lock 避免阻塞，如果锁不可用则跳过存储
+        if let Ok(storage) = self.storage.try_lock() {
+            // 使用用户 ID 的哈希
+            let user_id_hash = crate::audit::events::hash_user_id(user_id);
+
+            let entry = AuditEntry::new(
+                user_id_hash,
+                "session",      // session_id
+                "credentials",  // service
+                action,
+                outcome,
+                "mrenclave",    // tee_mrenclave - 简化处理
+                "jti",          // action_token_jti - 简化处理
+            )
+            .with_param("credential_id", RedactedParam::Plain(credential_id.to_string()))
+            .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
+
+            if let Err(e) = storage.record(entry) {
+                log::warn!("[AUDIT] 存储审计日志失败: {:?}", e);
+            }
+        }
+    }
+}
+
+impl AuditLogger for StorageAuditLogger {
+    fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+        // 打印到控制台
+        log::info!(
+            "[AUDIT] Credential created - tenant: {}, user: {}, credential: {}",
+            tenant_id,
+            user_id,
+            credential_id
+        );
+
+        // 写入存储
+        self.record_to_storage(
+            AuditAction::CredentialCreate,
+            user_id,
+            credential_id,
+            Outcome::Success,
+        );
+    }
+
+    fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+        // 打印到控制台
+        log::info!(
+            "[AUDIT] Credential accessed - tenant: {}, user: {}, credential: {}",
+            tenant_id,
+            user_id,
+            credential_id
+        );
+
+        // 写入存储
+        self.record_to_storage(
+            AuditAction::CredentialAccess,
+            user_id,
+            credential_id,
+            Outcome::Success,
+        );
+    }
+
+    fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
+        // 打印到控制台
+        log::info!(
+            "[AUDIT] Credential deleted - tenant: {}, user: {}, credential: {}",
+            tenant_id,
+            user_id,
+            credential_id
+        );
+
+        // 写入存储
+        self.record_to_storage(
+            AuditAction::CredentialDelete,
+            user_id,
+            credential_id,
+            Outcome::Success,
+        );
+    }
+
+    fn log_decryption_attempt(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        success: bool,
+    ) {
+        // 打印到控制台
+        log::info!(
+            "[AUDIT] Decryption attempt - tenant: {}, user: {}, credential: {}, success: {}",
+            tenant_id,
+            user_id,
+            credential_id,
+            success
+        );
+
+        // 写入存储
+        let outcome = if success {
+            Outcome::Success
+        } else {
+            Outcome::Failure
+        };
+        self.record_to_storage(
+            AuditAction::CredentialDecrypt,
+            user_id,
+            credential_id,
+            outcome,
+        );
+    }
+}
+
 /// API 错误响应
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiError {

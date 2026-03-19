@@ -95,6 +95,13 @@ impl MemoryAuditStorageAdapter {
             storage: Arc::new(tokio::sync::Mutex::new(storage)),
         }
     }
+
+    /// 从共享的存储创建适配器
+    ///
+    /// 用于让多个组件共享同一个存储实例
+    pub fn from_shared_storage(storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>) -> Self {
+        Self { storage }
+    }
 }
 
 #[async_trait::async_trait]
