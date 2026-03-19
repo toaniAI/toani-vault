@@ -37,7 +37,7 @@ pub enum VaultClientError {
 }
 
 /// Vault 配置
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct VaultConfig {
     /// Vault 服务器地址 (如: http://127.0.0.1:8200)
     pub addr: String,
@@ -65,6 +65,22 @@ pub struct VaultConfig {
 
     /// 最大重试次数
     pub max_retries: u32,
+}
+
+impl std::fmt::Debug for VaultConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VaultConfig")
+            .field("addr", &self.addr)
+            .field("token", &"[REDACTED]")
+            .field("mount_path", &self.mount_path)
+            .field("namespace", &self.namespace)
+            .field("ca_cert_path", &self.ca_cert_path)
+            .field("client_cert_path", &self.client_cert_path)
+            .field("client_key_path", &self.client_key_path)
+            .field("timeout_seconds", &self.timeout_seconds)
+            .field("max_retries", &self.max_retries)
+            .finish()
+    }
 }
 
 impl Default for VaultConfig {
@@ -418,6 +434,10 @@ pub struct VaultCredentialData {
 
     /// 是否已删除
     pub is_deleted: bool,
+
+    /// 最后更新时间戳（可选，Unix 秒）
+    #[serde(default)]
+    pub updated_at: Option<u64>,
 }
 
 /// Vault 凭证数据构建器
@@ -530,6 +550,7 @@ impl VaultCredentialDataBuilder {
             nonce: self.nonce,
             auth_tag: self.auth_tag,
             is_deleted: false,
+            updated_at: None,
         }
     }
 }
@@ -569,6 +590,7 @@ impl VaultCredentialData {
             nonce,
             auth_tag,
             is_deleted: false,
+            updated_at: None,
         }
     }
 

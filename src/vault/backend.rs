@@ -90,14 +90,20 @@ impl VaultStorageBackend {
         &self.client
     }
 
-    /// 在异步运行时中执行操作
+    /// 在同步上下文中安全执行异步操作
+    ///
+    /// 使用 `block_in_place` 而非 `block_on`，避免在已有 tokio 运行时的线程上
+    /// 调用 `block_on` 导致的死锁（nested block_on 会 panic）。
+    /// `block_in_place` 将当前线程标记为 blocking，允许调度器在等待期间迁移其他任务。
     fn block_on<F, T>(&self, future: F) -> Result<T, VaultBackendError>
     where
         F: std::future::Future<Output = Result<T, VaultClientError>>,
     {
-        self.runtime_handle
-            .block_on(future)
-            .map_err(VaultBackendError::ClientError)
+        tokio::task::block_in_place(|| {
+            self.runtime_handle
+                .block_on(future)
+                .map_err(VaultBackendError::ClientError)
+        })
     }
 
     /// 将 VaultEntry 转换为 VaultCredentialData
@@ -107,7 +113,7 @@ impl VaultStorageBackend {
             entry.encrypted_payload.ciphertext, entry.encrypted_payload.auth_tag
         );
 
-        Ok(VaultCredentialData::new(
+        let mut data = VaultCredentialData::new(
             entry.credential_id.as_str().to_string(),
             entry.tenant_id.as_str().to_string(),
             entry.user_id.hash().to_string(),
@@ -121,7 +127,10 @@ impl VaultStorageBackend {
             entry.encrypted_payload.kdf.clone(),
             entry.encrypted_payload.nonce.clone(),
             entry.encrypted_payload.auth_tag.clone(),
-        ))
+        );
+        data.is_deleted = entry.is_deleted;
+        data.updated_at = Some(entry.updated_at);
+        Ok(data)
     }
 
     /// 将 VaultCredentialData 转换为 VaultEntry（简化版）
@@ -145,7 +154,7 @@ impl VaultStorageBackend {
                 _ => crate::models::CredentialType::ApiKey,
             },
             created_at: data.created_at,
-            updated_at: data.created_at, // 简化处理
+            updated_at: data.updated_at.unwrap_or(data.created_at),
             expires_at: data.expires_at,
             encrypted_payload,
             is_deleted: data.is_deleted,
@@ -400,10 +409,19 @@ impl StorageBackend for VaultStorageBackend {
 
 impl VaultStorageBackend {
     /// 列出所有租户 ID（内部方法）
+    ///
+    /// 通过列出 Vault KV2 中 `credbridge/` 路径下的子目录获取租户列表。
+    /// Vault list 操作返回条目可能带有尾部斜杠（目录），需要去除。
     fn list_all_tenants(&self) -> Result<Vec<String>, VaultBackendError> {
-        // 从 Vault 列出 credbridge/ 下的所有子目录
-        // 这是一个简化的实现，实际应该维护租户索引
-        self.block_on(self.client.list_secrets(""))
+        // list_secrets("") 内部构建路径 "credbridge/"，列出所有租户子目录
+        let entries = self.block_on(self.client.list_secrets(""))?;
+        // Vault 对目录条目返回时附带尾部斜杠，去除后即为租户 ID
+        let tenant_ids = entries
+            .into_iter()
+            .map(|e| e.trim_end_matches('/').to_string())
+            .filter(|e| !e.is_empty())
+            .collect();
+        Ok(tenant_ids)
     }
 }
 
