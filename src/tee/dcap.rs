@@ -897,34 +897,85 @@ impl DcapService {
 
     /// 验证 Quote 签名
     fn verify_quote_signature(&self, quote: &DcapQuote) -> Result<(), DcapError> {
-        // 在实际实现中，这里会使用 Intel 根证书验证签名
-        // 模拟模式下允许空签名
+        // 模拟模式下跳过签名验证
         if self.config.simulation_mode {
             return Ok(());
         }
 
-        // 验证签名格式
-        if quote.signature.isv_enclave_report_signature.r == [0u8; 32]
-            && quote.signature.isv_enclave_report_signature.s == [0u8; 32]
-        {
+        let sig = &quote.signature.isv_enclave_report_signature;
+
+        // 全零签名在非模拟模式下拒绝（fail-closed）
+        if sig.r == [0u8; 32] && sig.s == [0u8; 32] {
             return Err(DcapError::SignatureVerificationFailed);
         }
 
-        Ok(())
+        // 当前无法在非模拟模式下执行真实 ECDSA P-256 验证，因为
+        // DcapService 未存储 Intel Attestation Key 公钥。
+        // 生产环境必须通过证书链提取 QE Public Key 并验证签名。
+        // 此处 fail-closed：非模拟模式下非全零签名仍需真实验证，暂返回错误。
+        Err(DcapError::SignatureVerificationFailed)
     }
 
     /// 验证证书链
-    fn verify_certificate_chain(&self, _quote: &DcapQuote) -> Result<(), DcapError> {
-        // 实际实现中：
-        // 1. 解析 PCK 证书链
-        // 2. 验证每个证书的有效性
-        // 3. 验证链到 Intel 根证书
-
+    ///
+    /// 执行以下检查：
+    /// 1. 若 QE Certification Data 全零（模拟 Quote 特征），跳过验证
+    /// 2. 若数据非空非零，验证格式有效性（PEM 以 "-----BEGIN" 开头，DER 以 0x30 开头）
+    /// 3. 若为有效 PEM，验证包含 CERTIFICATE 块
+    ///
+    /// 注意：完整的 PKI 路径验证（含 OCSP/CRL 撤销检查）需要 webpki 或 x509-cert crate。
+    /// 当前实现提供格式完整性验证；模拟 Quote（qe_certification_data 全零）自动跳过。
+    fn verify_certificate_chain(&self, quote: &DcapQuote) -> Result<(), DcapError> {
         if self.config.simulation_mode {
             return Ok(());
         }
 
-        // 这里简化处理，实际使用 webpki 或类似库
+        let cert_data = &quote.signature.qe_certification_data;
+
+        // 检查1：若数据为空或全零，拒绝（fail-closed）
+        // 模拟 Quote 通过 simulation_mode 判断已在函数开头处理
+        if cert_data.is_empty() || cert_data.iter().all(|&b| b == 0) {
+            return Err(DcapError::CertificateVerificationFailed(
+                "QE certification data is empty or all-zeros; not permitted in non-simulation mode"
+                    .to_string(),
+            ));
+        }
+
+        // 检查2：验证数据格式（PEM 以 "-----BEGIN" 开头，DER 以 0x30 开头）
+        let is_pem = cert_data.starts_with(b"-----BEGIN");
+        let is_der = cert_data[0] == 0x30;
+
+        if !is_pem && !is_der {
+            return Err(DcapError::CertificateVerificationFailed(
+                "QE certification data is not valid PEM or DER format".to_string(),
+            ));
+        }
+
+        // 检查3：若为 PEM 格式，验证包含 CERTIFICATE 块
+        if is_pem {
+            let pem_str = std::str::from_utf8(cert_data).map_err(|_| {
+                DcapError::CertificateVerificationFailed(
+                    "QE certification data contains invalid UTF-8".to_string(),
+                )
+            })?;
+
+            if !pem_str.contains("-----BEGIN CERTIFICATE-----") {
+                return Err(DcapError::CertificateVerificationFailed(
+                    "QE certification data does not contain a CERTIFICATE PEM block".to_string(),
+                ));
+            }
+
+            // 预计算 Intel 根证书指纹（待 webpki/x509-cert 集成时用于链验证）
+            if let Ok(root_der) = parse_pem_cert(INTEL_SGX_ROOT_CERT_PEM) {
+                let expected_fingerprint = digest(&SHA256, &root_der);
+                // TODO: 集成 webpki 后执行路径验证：
+                //   let anchors = vec![TrustAnchor::try_from_cert_der(&self.root_cert)?];
+                //   EndEntityCert::try_from(end_entity_der)?.verify_is_valid_tls_server_cert(...)
+                let _ = expected_fingerprint;
+            }
+        }
+
+        // 格式完整性检查通过
         Ok(())
     }
 
@@ -965,10 +1016,34 @@ impl DcapService {
         Err(DcapError::MeasurementMismatch)
     }
 
-    /// 验证 nonce
-    fn verify_nonce(&self, _quote: &DcapQuote, _nonce: &[u8]) -> Result<(), DcapError> {
-        // 验证 Quote 中的 report_data 是否包含预期的 nonce
-        // 实际实现中需要解析 report_data
+    /// 验证 nonce（防重放攻击）
+    ///
+    /// report_data 前 32 字节应为 nonce 的 SHA-256 哈希值。
+    fn verify_nonce(&self, quote: &DcapQuote, nonce: &[u8]) -> Result<(), DcapError> {
+        if nonce.is_empty() {
+            return Err(DcapError::QuoteVerificationFailed(
+                "Nonce must not be empty".to_string(),
+            ));
+        }
+
+        // report_data 前 32 字节应为 nonce 的 SHA-256 哈希
+        let expected_hash = digest(&SHA256, nonce);
+        let report_data = &quote.report_body.report_data.data;
+
+        if report_data.len() < 32 {
+            return Err(DcapError::QuoteVerificationFailed(
+                "Report data too short to contain nonce hash".to_string(),
+            ));
+        }
+
+        // 恒定时间比较防止时序攻击
+        use constant_time_eq::constant_time_eq;
+        if !constant_time_eq(expected_hash.as_ref(), &report_data[..32]) {
+            return Err(DcapError::QuoteVerificationFailed(
+                "Nonce hash mismatch: possible replay attack".to_string(),
+            ));
+        }
+
         Ok(())
     }
 
@@ -1253,9 +1328,9 @@ mod tests {
 
         let mrenclave = enclave.mrenclave();
 
-        // 使用白名单创建服务
+        // 使用白名单创建服务（测试使用模拟 Quote，因此使用 simulation_mode: true）
         let config = DcapConfig {
-            simulation_mode: false,
+            simulation_mode: true,
             allowed_mrenclaves: vec![mrenclave],
             ..Default::default()
         };
@@ -1281,9 +1356,9 @@ mod tests {
 
         let wrong_mrenclave = [0x99u8; 32];
 
-        // 使用错误白名单创建服务
+        // 使用错误白名单创建服务（测试使用模拟 Quote，因此使用 simulation_mode: true）
         let config = DcapConfig {
-            simulation_mode: false,
+            simulation_mode: true,
             allowed_mrenclaves: vec![wrong_mrenclave],
             ..Default::default()
         };
