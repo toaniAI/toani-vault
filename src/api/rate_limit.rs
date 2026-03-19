@@ -199,20 +199,20 @@ impl RateLimitStore {
 /// 从请求中提取客户端 IP
 fn extract_client_ip(request: &Request) -> String {
     // 1. 首先尝试从 X-Forwarded-For 头获取（如果通过代理）
-    if let Some(forwarded) = request.headers().get("X-Forwarded-For") {
-        if let Ok(forwarded_str) = forwarded.to_str() {
-            // 取第一个 IP（最原始的客户端）
-            if let Some(first_ip) = forwarded_str.split(',').next() {
-                return first_ip.trim().to_string();
-            }
+    if let Some(forwarded) = request.headers().get("X-Forwarded-For")
+        && let Ok(forwarded_str) = forwarded.to_str()
+    {
+        // 取第一个 IP（最原始的客户端）
+        if let Some(first_ip) = forwarded_str.split(',').next() {
+            return first_ip.trim().to_string();
         }
     }
 
     // 2. 尝试 X-Real-IP 头
-    if let Some(real_ip) = request.headers().get("X-Real-IP") {
-        if let Ok(real_ip_str) = real_ip.to_str() {
-            return real_ip_str.trim().to_string();
-        }
+    if let Some(real_ip) = request.headers().get("X-Real-IP")
+        && let Ok(real_ip_str) = real_ip.to_str()
+    {
+        return real_ip_str.trim().to_string();
     }
 
     // 3. 使用连接地址

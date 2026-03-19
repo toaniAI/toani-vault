@@ -211,7 +211,7 @@ impl Enclave {
     }
 
     /// 使用默认配置创建 Enclave
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(EnclaveConfig::default())
     }
 
@@ -446,7 +446,7 @@ impl Enclave {
             version: crate::crypto::constants::PROTOCOL_VERSION,
             algorithm: "AES-256-GCM".to_string(),
             kdf: "HKDF-SHA-256".to_string(),
-            nonce: URL_SAFE_NO_PAD.encode(&nonce_bytes),
+            nonce: URL_SAFE_NO_PAD.encode(nonce_bytes),
             auth_tag: URL_SAFE_NO_PAD.encode(&auth_tag),
             ciphertext: URL_SAFE_NO_PAD.encode(&ciphertext_only),
             aad_hash: Some(URL_SAFE_NO_PAD.encode(aad_hash.as_ref())),
@@ -618,14 +618,14 @@ impl Enclave {
 
     /// 从密封存储恢复
     fn restore_from_sealed_storage(&mut self) -> Result<(), EnclaveError> {
-        if let Some(storage) = &self.sealed_storage {
-            if storage.exists("master_key") {
-                let sealed = storage.load("master_key")?;
-                let _plaintext = storage.sealing().unseal_data(&sealed)?;
+        if let Some(storage) = &self.sealed_storage
+            && storage.exists("master_key")
+        {
+            let sealed = storage.load("master_key")?;
+            let _plaintext = storage.sealing().unseal_data(&sealed)?;
 
-                if self.config.debug_mode {
-                    tracing::debug!("从密封存储恢复主密钥成功");
-                }
+            if self.config.debug_mode {
+                tracing::debug!("从密封存储恢复主密钥成功");
             }
         }
         Ok(())

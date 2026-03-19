@@ -2,17 +2,21 @@
 //!
 //! 这些测试需要 Redis 服务器运行。
 //! 默认连接地址: redis://127.0.0.1:6379
+//! 可通过 REDIS_URL 环境变量自定义连接地址
 //!
 //! 运行测试前请确保 Redis 可用：
 //! ```bash
 //! redis-server
 //! cargo test --test redis_store_tests -- --nocapture
 //! ```
+//!
+//! 使用自定义 Redis 地址：
+//! ```bash
+//! REDIS_URL=redis://localhost:6379 cargo test --test redis_store_tests
+//! ```
 
 use std::time::{SystemTime, UNIX_EPOCH};
-use vault_service::token::{
-    RedisTokenStore, TokenClaims, TokenMetadata, TokenStoreError, token_keys as keys,
-};
+use vault_service::token::{RedisTokenStore, TokenClaims, TokenStoreError, token_keys as keys};
 
 /// 获取当前 Unix 时间戳
 fn current_timestamp() -> u64 {
@@ -23,13 +27,16 @@ fn current_timestamp() -> u64 {
 }
 
 /// 获取 Redis 客户端，如果 Redis 不可用则跳过测试
+/// 优先从 REDIS_URL 环境变量读取连接地址，默认使用 redis://127.0.0.1:6379/
 async fn get_redis_client() -> Option<redis::Client> {
-    let client = redis::Client::open("redis://127.0.0.1:6379/").ok()?;
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379/".to_string());
+    let client = redis::Client::open(redis_url.as_str()).ok()?;
     // 测试连接
     match client.get_multiplexed_async_connection().await {
         Ok(_) => Some(client),
-        Err(_) => {
-            println!("⚠️ Redis 不可用，跳过集成测试");
+        Err(e) => {
+            println!("⚠️ Redis 不可用 ({}), 跳过集成测试", e);
             None
         }
     }

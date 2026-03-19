@@ -73,7 +73,7 @@ impl PlaywrightClient {
     }
 
     /// 创建带默认配置的客户端
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(PlaywrightConfig::default())
     }
 
@@ -91,12 +91,10 @@ impl PlaywrightClient {
 
         // chromiumoxide 使用不同的方式连接现有浏览器
         // 通过 Chrome 的 --remote-debugging-port 启动后，使用 ws://localhost:9222/json/version 获取 WebSocket URL
-        let _config = BrowserConfig::builder()
-            .build()
-            .map_err(|e| {
-                error!("浏览器配置构建失败: {}", e);
-                ExportError::ConfigurationError(format!("浏览器配置失败: {}", e))
-            })?;
+        let _config = BrowserConfig::builder().build().map_err(|e| {
+            error!("浏览器配置构建失败: {}", e);
+            ExportError::ConfigurationError(format!("浏览器配置失败: {}", e))
+        })?;
 
         // 连接到浏览器
         // 注意：chromiumoxide 的 Browser::launch 是启动新浏览器
@@ -214,22 +212,25 @@ impl PlaywrightClient {
             debug!("设置视口: {}x{}", viewport.width, viewport.height);
             let device_scale_factor = viewport.device_scale_factor.unwrap_or(1.0);
             // 使用 CDP 命令设置视口
-            let viewport_cmd = chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams {
-                width: viewport.width as i64,
-                height: viewport.height as i64,
-                device_scale_factor,
-                mobile: false,
-                scale: None,
-                screen_width: None,
-                screen_height: None,
-                position_x: None,
-                position_y: None,
-                dont_set_visible_size: None,
-                screen_orientation: None,
-                viewport: None,
-                display_feature: None,
-            };
-            let _ = page.execute(viewport_cmd).await
+            let viewport_cmd =
+                chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams {
+                    width: viewport.width as i64,
+                    height: viewport.height as i64,
+                    device_scale_factor,
+                    mobile: false,
+                    scale: None,
+                    screen_width: None,
+                    screen_height: None,
+                    position_x: None,
+                    position_y: None,
+                    dont_set_visible_size: None,
+                    screen_orientation: None,
+                    viewport: None,
+                    display_feature: None,
+                };
+            let _ = page
+                .execute(viewport_cmd)
+                .await
                 .map_err(|e| ExportError::BrowserError(format!("设置视口失败: {}", e)))?;
         }
 
@@ -275,12 +276,12 @@ impl PlaywrightClient {
         {
             if self.browser.is_some() {
                 debug!("健康检查通过: 浏览器已连接");
-                return Ok(());
+                Ok(())
             } else {
                 warn!("健康检查失败: 浏览器未连接");
-                return Err(ExportError::BrowserConnectionError(
+                Err(ExportError::BrowserConnectionError(
                     "浏览器未连接".to_string(),
-                ));
+                ))
             }
         }
 
@@ -526,7 +527,7 @@ impl ScreenshotService {
     pub fn with_freezer(freezer: PageStateFreezer) -> Self {
         Self::new(
             freezer,
-            PlaywrightClient::default(),
+            PlaywrightClient::with_default_config(),
             ScreenshotConfig::default(),
             WatermarkService::default_service(),
         )
@@ -770,27 +771,27 @@ impl ScreenshotService {
                     screenshot.review_result = Some(review_result.clone());
 
                     // 步骤4: 自动脱敏（如果检测到敏感信息）
-                    if let Some(redaction_service) = redaction {
-                        if !review_result.redaction_regions.is_empty() {
-                            debug!("开始脱敏处理，检测到 {} 个敏感区域", review_result.redaction_regions.len());
+                    if let Some(redaction_service) = redaction
+                        && !review_result.redaction_regions.is_empty()
+                    {
+                        debug!(
+                            "开始脱敏处理，检测到 {} 个敏感区域",
+                            review_result.redaction_regions.len()
+                        );
 
-                            // 使用审核结果中的脱敏区域
-                            let regions = &review_result.redaction_regions;
+                        // 使用审核结果中的脱敏区域
+                        let regions = &review_result.redaction_regions;
 
-                            // 执行脱敏
-                            match redaction_service.redact(
-                                &screenshot.data,
-                                screenshot.format,
-                                regions
-                            ) {
-                                Ok(redacted_data) => {
-                                    screenshot.data = redacted_data;
-                                    debug!("脱敏处理完成");
-                                }
-                                Err(e) => {
-                                    warn!("脱敏处理失败: {}", e);
-                                    // 脱敏失败不阻断流程
-                                }
+                        // 执行脱敏
+                        match redaction_service.redact(&screenshot.data, screenshot.format, regions)
+                        {
+                            Ok(redacted_data) => {
+                                screenshot.data = redacted_data;
+                                debug!("脱敏处理完成");
+                            }
+                            Err(e) => {
+                                warn!("脱敏处理失败: {}", e);
+                                // 脱敏失败不阻断流程
                             }
                         }
                     }
@@ -862,6 +863,7 @@ impl ScreenshotService {
 
 #[cfg(test)]
 mod tests {
+    #![allow(unused_imports)]
     use super::*;
     use crate::tee::sandbox::export::freezer::{FrozenMetadata, ViewportInfo};
 
@@ -879,7 +881,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_playwright_client() {
-        let client = PlaywrightClient::default();
+        let client = PlaywrightClient::with_default_config();
 
         // 未连接浏览器时，health_check 应该返回错误（如果启用了 CDP）或通过（如果未启用）
         let result = client.health_check().await;
@@ -900,7 +902,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_playwright_client_connection_status() {
-        let client = PlaywrightClient::default();
+        let client = PlaywrightClient::with_default_config();
 
         // 新创建的客户端应该未连接
         assert!(!client.is_connected());

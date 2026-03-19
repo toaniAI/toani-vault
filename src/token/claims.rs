@@ -153,10 +153,10 @@ impl TokenClaims {
         }
 
         // 验证 nbf (Not Before)
-        if let Some(nbf) = self.nbf {
-            if now < nbf {
-                return Err(ClaimsError::NotYetValid);
-            }
+        if let Some(nbf) = self.nbf
+            && now < nbf
+        {
+            return Err(ClaimsError::NotYetValid);
         }
 
         // 验证 exp (Expiration)
@@ -185,7 +185,7 @@ impl TokenClaims {
     /// 获取剩余有效时间（秒）
     pub fn remaining_ttl(&self) -> u64 {
         let now = current_timestamp();
-        if now >= self.exp { 0 } else { self.exp - now }
+        self.exp.saturating_sub(now)
     }
 
     /// 序列化为 JSON 字符串

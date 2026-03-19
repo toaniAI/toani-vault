@@ -436,6 +436,12 @@ pub struct MemoryTenantStorage {
     tenants: std::sync::Arc<tokio::sync::RwLock<std::collections::HashMap<String, TenantInfo>>>,
 }
 
+impl Default for MemoryTenantStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MemoryTenantStorage {
     pub fn new() -> Self {
         Self {

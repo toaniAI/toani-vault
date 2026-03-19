@@ -327,13 +327,13 @@ mod tests {
         // 记录多个事件
         for i in 0..3 {
             let entry = AuditEntry::new(
-                &format!("user_{}", i),
+                format!("user_{}", i),
                 "session_123",
                 "vault-service",
                 AuditAction::CredentialDecrypt,
                 Outcome::Success,
                 "mrenclave_abc",
-                &format!("jti_{}", i),
+                format!("jti_{}", i),
             );
             storage.record(entry).unwrap();
         }

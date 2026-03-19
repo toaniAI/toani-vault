@@ -112,10 +112,7 @@ impl ClaudeClient {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             "x-api-key",
-            self.config
-                .api_key
-                .parse()
-                .expect("Invalid API key format"),
+            self.config.api_key.parse().expect("Invalid API key format"),
         );
         headers.insert(
             "anthropic-version",
@@ -149,6 +146,7 @@ impl ClaudeClient {
 
     /// 转换带图片的请求为 Claude Messages API 格式
     /// 使用多模态 content blocks 格式，支持图片和文本的组合
+    #[allow(dead_code)]
     fn convert_image_request(&self, request: &ChatRequestWithImage) -> ClaudeRequestWithContent {
         let messages = vec![ClaudeMessageWithContent {
             role: "user".to_string(),
@@ -189,7 +187,8 @@ impl ClaudeClient {
     /// 估算成本 (基于 token 数量)
     pub fn cost_estimate(&self, prompt_tokens: u32, completion_tokens: u32) -> f64 {
         let input_cost = (prompt_tokens as f64 / 1000.0) * self.config.pricing.input_price_per_1k;
-        let output_cost = (completion_tokens as f64 / 1000.0) * self.config.pricing.output_price_per_1k;
+        let output_cost =
+            (completion_tokens as f64 / 1000.0) * self.config.pricing.output_price_per_1k;
         input_cost + output_cost
     }
 }
@@ -265,7 +264,8 @@ impl LlmProvider for ClaudeClient {
             usage: TokenUsage {
                 prompt_tokens: claude_response.usage.input_tokens,
                 completion_tokens: claude_response.usage.output_tokens,
-                total_tokens: claude_response.usage.input_tokens + claude_response.usage.output_tokens,
+                total_tokens: claude_response.usage.input_tokens
+                    + claude_response.usage.output_tokens,
             },
             finish_reason: claude_response.stop_reason.clone(),
             raw_response: Some(body),
@@ -354,7 +354,8 @@ impl LlmProvider for ClaudeClient {
             usage: TokenUsage {
                 prompt_tokens: claude_response.usage.input_tokens,
                 completion_tokens: claude_response.usage.output_tokens,
-                total_tokens: claude_response.usage.input_tokens + claude_response.usage.output_tokens,
+                total_tokens: claude_response.usage.input_tokens
+                    + claude_response.usage.output_tokens,
             },
             finish_reason: claude_response.stop_reason.clone(),
             raw_response: Some(body),
@@ -464,6 +465,7 @@ struct ClaudeResponse {
 /// Claude Content (响应用)
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
+#[allow(dead_code)]
 enum ClaudeContent {
     #[serde(rename = "text")]
     Text { text: String },
@@ -517,7 +519,10 @@ mod tests {
         assert_eq!(claude_request.model, "claude-3-5-sonnet-20241022");
         assert_eq!(claude_request.temperature, Some(0.7));
         assert_eq!(claude_request.max_tokens, 100);
-        assert_eq!(claude_request.system, Some("You are a helpful assistant".to_string()));
+        assert_eq!(
+            claude_request.system,
+            Some("You are a helpful assistant".to_string())
+        );
         assert_eq!(claude_request.messages.len(), 1);
         assert_eq!(claude_request.messages[0].role, "user");
         assert_eq!(claude_request.messages[0].content, "Hello");

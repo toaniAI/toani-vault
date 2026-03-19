@@ -8,20 +8,20 @@
 //! ```
 
 use vault_service::audit::{
-    AuditAction, AuditEntry, ImmuDbAuditStore, ImmuDbClient, ImmuDbConfig, ImmuDbState,
-    ImmuDbStorage, ImmuDbStoreConfig, Outcome, QueryOptions, SignedAuditEntry, SigningKeyPair,
+    AuditAction, AuditEntry, ImmuDbAuditStore, ImmuDbClient, ImmuDbConfig, ImmuDbStorage,
+    ImmuDbStoreConfig, Outcome, QueryOptions, SignedAuditEntry, SigningKeyPair,
 };
 
 /// 创建测试用的 SignedAuditEntry
 fn create_test_entry(index: u64, action: AuditAction, outcome: Outcome) -> SignedAuditEntry {
     let entry = AuditEntry::new(
-        &format!("user_hash_{}", index),
+        format!("user_hash_{}", index),
         "session_test",
         "test-service",
         action,
         outcome,
         "mrenclave_test_value",
-        &format!("jti_{}", index),
+        format!("jti_{}", index),
     );
 
     // 计算内容哈希
@@ -548,7 +548,7 @@ mod immudb_integration_tests {
         let store: ImmuDbAuditStore = create_integration_store().await;
 
         // 2. 存储不同类型的审计事件
-        let actions = vec![
+        let actions = [
             (AuditAction::CredentialDecrypt, Outcome::Success),
             (AuditAction::CredentialAccess, Outcome::Success),
             (AuditAction::TokenIssue, Outcome::Success),

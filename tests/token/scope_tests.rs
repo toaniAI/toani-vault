@@ -43,25 +43,22 @@ fn test_scope_from_str_valid() {
     // Given: 有效的 scope 字符串
     // When: 解析为 Scope
     // Then: 返回正确的 Scope 枚举
+    assert_eq!(Scope::parse("credential:read"), Some(Scope::CredentialRead));
     assert_eq!(
-        Scope::from_str("credential:read"),
-        Some(Scope::CredentialRead)
-    );
-    assert_eq!(
-        Scope::from_str("credential:decrypt"),
+        Scope::parse("credential:decrypt"),
         Some(Scope::CredentialDecrypt)
     );
     assert_eq!(
-        Scope::from_str("credential:write"),
+        Scope::parse("credential:write"),
         Some(Scope::CredentialWrite)
     );
     assert_eq!(
-        Scope::from_str("credential:delete"),
+        Scope::parse("credential:delete"),
         Some(Scope::CredentialDelete)
     );
-    assert_eq!(Scope::from_str("token:manage"), Some(Scope::TokenManage));
-    assert_eq!(Scope::from_str("audit:read"), Some(Scope::AuditRead));
-    assert_eq!(Scope::from_str("admin"), Some(Scope::Admin));
+    assert_eq!(Scope::parse("token:manage"), Some(Scope::TokenManage));
+    assert_eq!(Scope::parse("audit:read"), Some(Scope::AuditRead));
+    assert_eq!(Scope::parse("admin"), Some(Scope::Admin));
 }
 
 #[test]
@@ -69,10 +66,10 @@ fn test_scope_from_str_invalid() {
     // Given: 无效的 scope 字符串
     // When: 解析为 Scope
     // Then: 返回 None
-    assert_eq!(Scope::from_str("invalid:scope"), None);
-    assert_eq!(Scope::from_str(""), None);
-    assert_eq!(Scope::from_str("credential"), None);
-    assert_eq!(Scope::from_str("read"), None);
+    assert_eq!(Scope::parse("invalid:scope"), None);
+    assert_eq!(Scope::parse(""), None);
+    assert_eq!(Scope::parse("credential"), None);
+    assert_eq!(Scope::parse("read"), None);
 }
 
 #[test]

@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn test_cgroup_manager_creation() {
         // 测试创建管理器（可能在非 Linux 环境下失败）
-        let result = CgroupManager::new(Uuid::new_v4());
+        let _result = CgroupManager::new(Uuid::new_v4());
         // 结果取决于运行环境
     }
 

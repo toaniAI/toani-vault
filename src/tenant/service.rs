@@ -890,13 +890,13 @@ mod tests {
     #[tokio::test]
     async fn test_memory_tenant_service() {
         let service = MemoryTenantStorage::new();
-        let tenant_id = TenantId::new();
+        let _tenant_id = TenantId::new();
 
         // 检查名称可用性
         assert!(service.is_name_available("New Tenant").await.unwrap());
 
         // 创建租户（简化）
-        let tenant = Tenant::new("New Tenant");
+        let _tenant = Tenant::new("New Tenant");
         assert!(service.is_name_available("New Tenant").await.unwrap());
 
         // 查找租户

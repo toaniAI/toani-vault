@@ -3,8 +3,8 @@
 //! 测试 Token 签发、验证、过期和 Scope 权限验证
 
 use vault_service::token::{
-    ClaimsError, PasetoKey, PasetoToken, ScopeValidator, TokenClaims, TokenError,
-    TokenValidationResult, quick_verify, scopes,
+    ClaimsError, PasetoToken, ScopeValidator, TokenClaims, TokenError, TokenValidationResult,
+    quick_verify, scopes,
 };
 
 /// 模拟撤销检查器
@@ -420,7 +420,7 @@ mod revocation_tests {
 
     #[test]
     fn test_revocable_token_validator() {
-        let mut checker = MockRevocationChecker::new();
+        let checker = MockRevocationChecker::new();
         let key = PasetoToken::generate_key();
         let claims =
             TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);

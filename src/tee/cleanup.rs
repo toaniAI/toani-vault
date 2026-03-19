@@ -101,7 +101,7 @@ impl CleanupScheduler {
     }
 
     /// 使用默认配置创建
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(CleanupConfig::default())
     }
 

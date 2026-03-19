@@ -720,13 +720,13 @@ mod tests {
         // 记录多个条目
         for i in 0..5 {
             let entry = AuditEntry::new(
-                &format!("user_hash_{}", i),
+                format!("user_hash_{}", i),
                 "session_123",
                 "vault-service",
                 AuditAction::TokenValidate,
                 Outcome::Success,
                 "mrenclave_abc",
-                &format!("jti_{}", i),
+                format!("jti_{}", i),
             );
             recorder.record(entry).unwrap();
         }
@@ -743,13 +743,13 @@ mod tests {
 
         for i in 0..10 {
             let entry = AuditEntry::new(
-                &format!("user_{}", i),
+                format!("user_{}", i),
                 "session",
                 "service",
                 AuditAction::TokenValidate,
                 Outcome::Success,
                 "mrenclave",
-                &format!("jti_{}", i),
+                format!("jti_{}", i),
             );
             recorder.record(entry).unwrap();
         }
@@ -793,13 +793,13 @@ mod tests {
                 Outcome::Failure
             };
             let entry = AuditEntry::new(
-                &format!("user_{}", i),
+                format!("user_{}", i),
                 "session",
                 "service",
                 AuditAction::TokenValidate,
                 outcome,
                 "mrenclave",
-                &format!("jti_{}", i),
+                format!("jti_{}", i),
             );
             recorder.record(entry).unwrap();
         }
@@ -817,13 +817,13 @@ mod tests {
         // 记录超过限制的条目
         for i in 0..5 {
             let entry = AuditEntry::new(
-                &format!("user_{}", i),
+                format!("user_{}", i),
                 "session",
                 "service",
                 AuditAction::TokenValidate,
                 Outcome::Success,
                 "mrenclave",
-                &format!("jti_{}", i),
+                format!("jti_{}", i),
             );
             recorder.record(entry).unwrap();
         }

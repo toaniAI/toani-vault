@@ -32,7 +32,7 @@ use vault_service::api::{
     audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
     auth::{AuthApiState, auth_routes},
     credentials::{
-        AppState as CredentialAppState, DefaultAuditLogger, routes as credential_routes,
+        AppState as CredentialAppState, StorageAuditLogger, routes as credential_routes,
     },
     middleware::auth_middleware,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
@@ -239,21 +239,28 @@ async fn initialize_app_state(
     // 初始化 Vault（内存存储模式）
     let vault = Arc::new(CredentialVault::new_in_memory());
 
-    // 初始化审计日志存储
-    let audit_storage =
-        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?;
-    let audit_storage_adapter = MemoryAuditStorageAdapter::new(audit_storage);
+    // 初始化审计日志存储（使用共享的 Arc，让凭证 API 和审计 API 共享同一个存储）
+    let audit_storage = Arc::new(tokio::sync::Mutex::new(
+        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?,
+    ));
+
+    // 创建存储适配器用于审计 API 查询
+    let audit_storage_adapter =
+        MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
+
+    // 创建存储审计日志记录器用于凭证 API 写入
+    let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage));
 
     // 创建凭证 API 状态
     let credential_state = CredentialAppState {
         vault,
         key_hierarchy: Arc::new(RwLock::new(hierarchy)),
-        audit_logger: Arc::new(DefaultAuditLogger),
+        audit_logger, // 现在写入到共享存储
     };
 
     // 创建审计 API 状态
     let audit_state = AuditApiState {
-        storage: Arc::new(audit_storage_adapter),
+        storage: Arc::new(audit_storage_adapter), // 从共享存储查询
     };
 
     // 创建认证 API 状态
@@ -329,7 +336,7 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         // 根路径
         .route("/", get(root_handler))
         // API 路由
-        .nest(&format!("{}", API_BASE_PATH), api_routes)
+        .nest(API_BASE_PATH, api_routes)
         // 健康检查路由
         .route("/health", get(health_check))
         .route("/health/detail", get(health_check_detail))
@@ -361,11 +368,8 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
             env::var("CREDBRIDGE_ALLOWED_ORIGINS")
                 .ok()
                 .and_then(|origins| {
-                    let origins: Vec<_> = origins
-                        .split(',')
-                        .map(|s| s.parse().ok())
-                        .flatten()
-                        .collect();
+                    let origins: Vec<_> =
+                        origins.split(',').filter_map(|s| s.parse().ok()).collect();
                     if origins.is_empty() {
                         None
                     } else {

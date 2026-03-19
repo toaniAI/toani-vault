@@ -27,7 +27,7 @@ use tokio::sync::RwLock;
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge::connector::{ConnectorRegistry, Connector, ConnectorConfig};
+/// use vault_service::connector::{ConnectorRegistry, Connector, ConnectorConfig};
 /// use std::sync::Arc;
 ///
 /// #[tokio::main]
@@ -46,7 +46,7 @@ use tokio::sync::RwLock;
 ///     Ok(())
 /// }
 /// # struct MyConnector;
-/// # #[credbridge::connector::async_trait]
+/// # #[vault_service::connector::async_trait]
 /// # impl Connector for MyConnector {
 /// #     fn name(&self) -> &'static str { "my-connector" }
 /// #     fn description(&self) -> &'static str { "我的连接器" }
@@ -94,7 +94,7 @@ impl ConnectorRegistry {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge::connector::ConnectorRegistry;
+    /// use vault_service::connector::ConnectorRegistry;
     ///
     /// let registry = ConnectorRegistry::new();
     /// registry.register("aws", Box::new(AwsConnector))?;
@@ -148,7 +148,7 @@ impl ConnectorRegistry {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge::connector::ConnectorRegistry;
+    /// use vault_service::connector::ConnectorRegistry;
     ///
     /// let registry = ConnectorRegistry::new();
     /// let connector = registry.get("aws")?;
@@ -311,7 +311,7 @@ pub async fn list_all() -> Vec<String> {
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge::connector::ConnectorRegistryBuilder;
+/// use vault_service::connector::ConnectorRegistryBuilder;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let registry = ConnectorRegistryBuilder::new()

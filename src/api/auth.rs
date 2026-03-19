@@ -88,6 +88,12 @@ impl MemoryUserStore {
     }
 }
 
+impl Default for AuthApiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuthApiState {
     /// 创建认证 API 状态
     pub fn new() -> Self {
@@ -363,7 +369,7 @@ pub async fn create_token_handler(
     let scopes: Vec<TokenScope> = request
         .scopes
         .iter()
-        .filter_map(|s| TokenScope::from_str(s))
+        .filter_map(|s| s.parse().ok())
         .collect();
 
     if scopes.is_empty() {
@@ -588,7 +594,7 @@ fn generate_paseto_token(
 
     // 创建对称密钥
     let sk: SymmetricKey<V4> =
-        SymmetricKey::from(secret_key).map_err(|e| format!("无效的密钥：{:?}", e))?;
+        SymmetricKey::from(secret_key).map_err(|e| format!("无效的密钥：{e:?}"))?;
 
     let _now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -597,21 +603,21 @@ fn generate_paseto_token(
 
     // 构建 Claims（使用 expires_in Duration）
     let mut claims = Claims::new_expires_in(&Duration::from_secs(expires_in))
-        .map_err(|e| format!("创建 Claims 失败：{:?}", e))?;
+        .map_err(|e| format!("创建 Claims 失败：{e:?}"))?;
 
     // 设置标准声明
     claims
         .issuer("credbridge-vault")
-        .map_err(|e| format!("设置 iss 失败：{:?}", e))?;
+        .map_err(|e| format!("设置 iss 失败：{e:?}"))?;
     claims
-        .subject(&format!("{}:{}", tenant_id, user_id))
-        .map_err(|e| format!("设置 sub 失败：{:?}", e))?;
+        .subject(&format!("{tenant_id}:{user_id}"))
+        .map_err(|e| format!("设置 sub 失败：{e:?}"))?;
     claims
         .audience(tenant_id)
-        .map_err(|e| format!("设置 aud 失败：{:?}", e))?;
+        .map_err(|e| format!("设置 aud 失败：{e:?}"))?;
     claims
         .token_identifier(&Uuid::now_v7().to_string())
-        .map_err(|e| format!("设置 jti 失败：{:?}", e))?;
+        .map_err(|e| format!("设置 jti 失败：{e:?}"))?;
 
     // 添加自定义声明（scope）
     let scope_str = scopes
@@ -621,11 +627,11 @@ fn generate_paseto_token(
         .join(" ");
     claims
         .add_additional("scope", serde_json::json!(scope_str))
-        .map_err(|e| format!("添加 scope 失败：{:?}", e))?;
+        .map_err(|e| format!("添加 scope 失败：{e:?}"))?;
 
     // 加密 Token
     let token =
-        local::encrypt(&sk, &claims, None, None).map_err(|e| format!("Token 加密失败：{:?}", e))?;
+        local::encrypt(&sk, &claims, None, None).map_err(|e| format!("Token 加密失败：{e:?}"))?;
 
     Ok(token.to_string())
 }
@@ -693,7 +699,7 @@ fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken,
 
     let scopes: Vec<TokenScope> = scope_str
         .split_whitespace()
-        .filter_map(TokenScope::from_str)
+        .filter_map(|s| s.parse().ok())
         .collect();
 
     // 解析 tenant_id 和 user_id

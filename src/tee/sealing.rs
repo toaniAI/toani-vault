@@ -129,8 +129,86 @@ pub struct SealedData {
     pub version: u16,
 }
 
+/// 密封数据构建器
+///
+/// 用于构建 SealedData 的 Builder 模式实现
+pub struct SealedDataBuilder {
+    policy: SealPolicy,
+    cpusvn: [u8; 16],
+    isvsvn: u16,
+    key_request: Vec<u8>,
+    ciphertext: Vec<u8>,
+    mac: [u8; 16],
+    aad: Vec<u8>,
+    created_at: u64,
+}
+
+impl SealedDataBuilder {
+    /// 创建新的构建器
+    pub fn new(policy: SealPolicy, cpusvn: [u8; 16], isvsvn: u16) -> Self {
+        Self {
+            policy,
+            cpusvn,
+            isvsvn,
+            key_request: Vec::new(),
+            ciphertext: Vec::new(),
+            mac: [0u8; 16],
+            aad: Vec::new(),
+            created_at: 0,
+        }
+    }
+
+    /// 设置密钥请求元数据
+    pub fn key_request(mut self, key_request: Vec<u8>) -> Self {
+        self.key_request = key_request;
+        self
+    }
+
+    /// 设置密文
+    pub fn ciphertext(mut self, ciphertext: Vec<u8>) -> Self {
+        self.ciphertext = ciphertext;
+        self
+    }
+
+    /// 设置 MAC
+    pub fn mac(mut self, mac: [u8; 16]) -> Self {
+        self.mac = mac;
+        self
+    }
+
+    /// 设置 AAD
+    pub fn aad(mut self, aad: Vec<u8>) -> Self {
+        self.aad = aad;
+        self
+    }
+
+    /// 设置创建时间戳
+    pub fn created_at(mut self, created_at: u64) -> Self {
+        self.created_at = created_at;
+        self
+    }
+
+    /// 构建 SealedData
+    pub fn build(self) -> SealedData {
+        SealedData {
+            policy: self.policy,
+            cpusvn: self.cpusvn,
+            isvsvn: self.isvsvn,
+            key_request: self.key_request,
+            ciphertext: self.ciphertext,
+            mac: self.mac,
+            aad: self.aad,
+            created_at: self.created_at,
+            version: 1,
+        }
+    }
+}
+
 impl SealedData {
     /// 创建新的密封数据包
+    ///
+    /// 推荐使用 SealedDataBuilder 来构建复杂实例
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         policy: SealPolicy,
         cpusvn: [u8; 16],
@@ -152,6 +230,11 @@ impl SealedData {
             created_at,
             version: 1,
         }
+    }
+
+    /// 创建密封数据构建器
+    pub fn builder(policy: SealPolicy, cpusvn: [u8; 16], isvsvn: u16) -> SealedDataBuilder {
+        SealedDataBuilder::new(policy, cpusvn, isvsvn)
     }
 
     /// 验证密封数据是否可以被当前 Enclave 解封

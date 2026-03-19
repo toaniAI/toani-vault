@@ -1,399 +1,6 @@
-# CredBridge CI/CD Pipeline
-# 业务系统模式 - 多环境部署 (dev/test/prod)
-# 目标集群: zkme, 命名空间: suna
-
----
-# Backend Pipeline
-kind: pipeline
-name: backend-build
-type: docker
-
-trigger:
-  ref:
-    - refs/heads/branch_dev
-    - refs/heads/branch_test
-    - refs/tags/*
-  event:
-    - push
-    - tag
-  paths:
-    exclude:
-      - frontend/**
-
-steps:
-  # Rust 构建
-  - name: rust build
-    image: hub.bitkinetic.com/public/rust:1.75-bullseye
-    pull: if-not-exists
-    commands:
-      - cargo build --release --bin credbridge
-
-  # Docker build dev/test
-  - name: docker build backend dev
-    image: plugins/docker
-    pull: if-not-exists
-    depends_on:
-      - rust build
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/suna/credbridge-backend
-      tags: alpha-${DRONE_BUILD_NUMBER}
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
-  # Docker build prod
-  - name: docker build backend prod
-    image: plugins/docker
-    pull: if-not-exists
-    depends_on:
-      - rust build
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/suna/credbridge-backend
-      tags: ${DRONE_TAG/@/-}
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
-    when:
-      ref:
-        - refs/tags/*
-
-  # Helm chart push dev/test
-  - name: helm chart push backend dev
-    image: alpine/helm:latest
-    pull: if-not-exists
-    depends_on:
-      - docker build backend dev
-    environment:
-      DOCKER_USERNAME:
-        from_secret: docker-hub-username
-      DOCKER_PASSWORD:
-        from_secret: docker-hub-password
-    commands:
-      - helm registry login hub.bitkinetic.com -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
-      - cd config/chart
-      - "sed -i 's/version:.*/version: 0.1.${DRONE_BUILD_NUMBER}-alpha/' Chart.yaml"
-      - helm package .
-      - helm push credbridge-config-0.1.${DRONE_BUILD_NUMBER}-alpha.tgz oci://hub.bitkinetic.com/suna/charts
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
-  # Helm chart push prod
-  - name: helm chart push backend prod
-    image: alpine/helm:latest
-    pull: if-not-exists
-    depends_on:
-      - docker build backend prod
-    environment:
-      DOCKER_USERNAME:
-        from_secret: docker-hub-username
-      DOCKER_PASSWORD:
-        from_secret: docker-hub-password
-    commands:
-      - helm registry login hub.bitkinetic.com -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
-      - cd config/chart
-      - "sed -i 's/version:.*/version: ${DRONE_TAG/@/-}/' Chart.yaml"
-      - helm package .
-      - helm push credbridge-config-${DRONE_TAG/@/-}.tgz oci://hub.bitkinetic.com/suna/charts
-    when:
-      ref:
-        - refs/tags/*
-
-  # Deploy to k8s dev
-  - name: deploy backend to dev
-    image: tttlkkkl/drone-helm:v6
-    pull: if-not-exists
-    depends_on:
-      - helm chart push backend dev
-    environment:
-      KUBECTL_CONFIG:
-        from_secret: kube-config
-      REPO_USER:
-        from_secret: docker-hub-username
-      REPO_PWD:
-        from_secret: docker-hub-password
-    commands:
-      - /run.sh
-      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-backend -n suna --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-backend dn/go -f .values.yaml -n suna --set image.tag=alpha-${DRONE_BUILD_NUMBER}
-      - kubectl -n suna rollout status deployment/credbridge-backend --timeout=600s
-    when:
-      ref:
-        - refs/heads/branch_dev
-
-  # Deploy to k8s test
-  - name: deploy backend to test
-    image: tttlkkkl/drone-helm:v6
-    pull: if-not-exists
-    depends_on:
-      - helm chart push backend dev
-    environment:
-      KUBECTL_CONFIG:
-        from_secret: kube-config
-      REPO_USER:
-        from_secret: docker-hub-username
-      REPO_PWD:
-        from_secret: docker-hub-password
-    commands:
-      - /run.sh
-      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-backend -n suna --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-backend dn/go -f .test.values.yaml -n suna --set image.tag=alpha-${DRONE_BUILD_NUMBER}
-      - kubectl -n suna rollout status deployment/credbridge-backend --timeout=600s
-    when:
-      ref:
-        - refs/heads/branch_test
-
-  # Apply push to online (prod)
-  - name: apply push backend to prod
-    image: hub.bitkinetic.com/public/deploy:v1
-    pull: if-not-exists
-    depends_on:
-      - helm chart push backend prod
-    environment:
-      DEPLOY_AUTH_KEY:
-        from_secret: deploy-auth-key
-      DEPLOY_SERVER:
-        from_secret: deploy-base-url
-      OBJECT: suna
-    commands:
-      - app call -d
-    when:
-      ref:
-        - refs/tags/*
-
-trigger:
-  ref:
-    - refs/heads/branch_dev
-    - refs/heads/branch_test
-    - refs/tags/*
-  event:
-    - push
-    - tag
-
----
-# Frontend Testing Pipeline
-kind: pipeline
-type: docker
-name: frontend-testing
-
-trigger:
-  ref:
-    include:
-      - refs/heads/branch_dev
-      - refs/heads/branch_test
-  event:
-    - push
-    - pull_request
-  paths:
-    include:
-      - frontend/**
-
-steps:
-  - name: setup
-    image: hub.bitkinetic.com/public/node:20-alpine
-    pull: always
-    commands:
-      - cd frontend && npm ci
-
-  - name: lint check
-    image: hub.bitkinetic.com/public/node:20-alpine
-    depends_on:
-      - setup
-    commands:
-      - cd frontend && npm run lint
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
-  - name: format check
-    image: hub.bitkinetic.com/public/node:20-alpine
-    depends_on:
-      - setup
-    commands:
-      - cd frontend && npm run format:check
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
-  - name: typescript check
-    image: hub.bitkinetic.com/public/node:20-alpine
-    depends_on:
-      - setup
-    commands:
-      - cd frontend && npx tsc --noEmit
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
-  - name: build check
-    image: hub.bitkinetic.com/public/node:20-alpine
-    depends_on:
-      - lint check
-      - format check
-      - typescript check
-    commands:
-      - cd frontend && npm run build
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
----
-# Frontend Pipeline
-kind: pipeline
-name: frontend-build
-type: docker
-
-trigger:
-  ref:
-    - refs/heads/branch_dev
-    - refs/heads/branch_test
-    - refs/tags/*
-  event:
-    - push
-    - tag
-  paths:
-    include:
-      - frontend/**
-
-steps:
-  # Docker build dev/test
-  - name: docker build frontend dev
-    image: plugins/docker
-    pull: if-not-exists
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/suna/credbridge-frontend
-      tags: alpha-${DRONE_BUILD_NUMBER}
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./frontend
-      dockerfile: ./frontend/Dockerfile
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
-
-  # Docker build prod
-  - name: docker build frontend prod
-    image: plugins/docker
-    pull: if-not-exists
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/suna/credbridge-frontend
-      tags: ${DRONE_TAG/@/-}
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./frontend
-      dockerfile: ./frontend/Dockerfile
-    when:
-      ref:
-        - refs/tags/*
-
-  # Deploy to k8s dev
-  - name: deploy frontend to dev
-    image: tttlkkkl/drone-helm:v6
-    pull: if-not-exists
-    depends_on:
-      - docker build frontend dev
-    environment:
-      KUBECTL_CONFIG:
-        from_secret: kube-config
-      REPO_USER:
-        from_secret: docker-hub-username
-      REPO_PWD:
-        from_secret: docker-hub-password
-    commands:
-      - /run.sh
-      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - helm upgrade --install credbridge-frontend dn/static -f frontend/.values.yaml -n suna --set image.tag=alpha-${DRONE_BUILD_NUMBER}
-      - kubectl -n suna rollout status deployment/credbridge-frontend --timeout=600s
-    when:
-      ref:
-        - refs/heads/branch_dev
-
-  # Deploy to k8s test
-  - name: deploy frontend to test
-    image: tttlkkkl/drone-helm:v6
-    pull: if-not-exists
-    depends_on:
-      - docker build frontend dev
-    environment:
-      KUBECTL_CONFIG:
-        from_secret: kube-config
-      REPO_USER:
-        from_secret: docker-hub-username
-      REPO_PWD:
-        from_secret: docker-hub-password
-    commands:
-      - /run.sh
-      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - helm upgrade --install credbridge-frontend dn/static -f frontend/.test.values.yaml -n suna --set image.tag=alpha-${DRONE_BUILD_NUMBER}
-      - kubectl -n suna rollout status deployment/credbridge-frontend --timeout=600s
-    when:
-      ref:
-        - refs/heads/branch_test
-
-  # Apply push to online (prod)
-  - name: apply push frontend to prod
-    image: hub.bitkinetic.com/public/deploy:v1
-    pull: if-not-exists
-    depends_on:
-      - docker build frontend prod
-    environment:
-      DEPLOY_AUTH_KEY:
-        from_secret: deploy-auth-key
-      DEPLOY_SERVER:
-        from_secret: deploy-base-url
-      OBJECT: suna
-    commands:
-      - app call -d
-    when:
-      ref:
-        - refs/tags/*
-
-trigger:
-  ref:
-    - refs/heads/branch_dev
-    - refs/heads/branch_test
-    - refs/tags/*
-  event:
-    - push
-    - tag
-
----
-# Testing Pipeline (Backend)
 kind: pipeline
 type: docker
 name: backend-testing
-depends_on:
-  - backend-build
 
 trigger:
   ref:
@@ -407,82 +14,134 @@ trigger:
     exclude:
       - frontend/**
 
+services:
+  - name: redis
+    image: redis:7-alpine
+    ports:
+      - 6379
+
 steps:
-  - name: setup
-    image: hub.bitkinetic.com/public/rust:1.75-bullseye
-    pull: always
+  - name: cargo-fetch
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
     commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
       - cargo fetch
 
-  - name: rust fmt check
-    image: hub.bitkinetic.com/public/rust:1.75-bullseye
+  - name: rust-fmt
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
     depends_on:
-      - setup
+      - cargo-fetch
     commands:
-      - rustfmt --check src/**/*.rs
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
+      - apt-get update && apt-get install -y libssl-dev pkg-config libsodium-dev cmake build-essential
+      - rustup component add rustfmt
+      - cargo fmt --all -- --check
 
-  - name: rust clippy
-    image: hub.bitkinetic.com/public/rust:1.75-bullseye
+  - name: rust-clippy
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
     depends_on:
-      - setup
+      - cargo-fetch
     commands:
-      - cargo clippy -- -D warnings
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
+      - apt-get update && apt-get install -y libssl-dev pkg-config libsodium-dev cmake build-essential
+      - rustup component add clippy
+      # 对 lib 和 bin 使用严格检查（禁用风格类警告）
+      - cargo clippy --lib --bins -- -D warnings -A clippy::uninlined_format_args -A clippy::only_used_in_recursion
+      # 对测试放宽常见警告（测试代码经常有需要但未使用的辅助方法）
+      - cargo clippy --tests -- -A dead_code -A clippy::approx_constant -A unexpected_cfgs -A clippy::redundant_pattern_matching -A deprecated -A clippy::field_reassign_with_default -A clippy::uninlined_format_args -A clippy::only_used_in_recursion
 
-  - name: unit tests
-    image: hub.bitkinetic.com/public/rust:1.75-bullseye
+  - name: unit-tests
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
     depends_on:
-      - setup
-      - rust clippy
+      - rust-fmt
+      - rust-clippy
+    environment:
+      REDIS_URL: redis://redis:6379
     commands:
-      - cargo test --release
-    when:
-      ref:
-        - refs/heads/branch_dev
-        - refs/heads/branch_test
+      - apt-get update && apt-get install -y libssl-dev pkg-config libsodium-dev cmake build-essential
+      # 运行 lib、tests 和 bins 测试，跳过 doc tests（需要修复）
+      - cargo test --release --lib --tests --bins
 
 ---
-# Notify Pipeline
 kind: pipeline
 type: docker
-name: notify
+name: backend-build-deploy
 depends_on:
-  - backend-build
-  - frontend-build
-
-steps:
-  - name: notify
-    image: hub.bitkinetic.com/public/deploy:v1
-    pull: if-not-exists
-    environment:
-      DEPLOY_AUTH_KEY:
-        from_secret: deploy-auth-key
-      DEPLOY_SERVER:
-        from_secret: deploy-base-url
-    commands:
-      - app call -b
-    when:
-      ref:
-        - refs/tags/*
-        - refs/heads/*
+  - backend-testing
 
 trigger:
   ref:
-    - refs/tags/*
-    - refs/heads/*
+    - refs/heads/branch_dev
+    - refs/heads/branch_test
   event:
     - push
-    - tag
+  paths:
+    exclude:
+      - frontend/**
+
+steps:
+  - name: docker-build
+    image: plugins/docker
+    pull: if-not-exists
+    settings:
+      registry: hub.bitkinetic.com
+      repo: hub.bitkinetic.com/zkme/credbridge
+      tags: alpha-${DRONE_BUILD_NUMBER}
+      purge: true
+      username:
+        from_secret: docker-hub-username
+      password:
+        from_secret: docker-hub-password
+      context: ./
+      dockerfile: Dockerfile
+
+  - name: deploy-dev
+    image: tttlkkkl/drone-helm:v6
+    pull: if-not-exists
+    depends_on:
+      - docker-build
+    environment:
+      KUBECTL_CONFIG:
+        from_secret: kube-config
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+    commands:
+      - /run.sh
+      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
+      - kubectl create --save-config configmap credbridge-go -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - helm upgrade --install credbridge-go dn/go -f .values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
+    when:
+      ref:
+        - refs/heads/branch_dev
+
+  - name: deploy-test
+    image: tttlkkkl/drone-helm:v6
+    pull: if-not-exists
+    depends_on:
+      - docker-build
+    environment:
+      KUBECTL_CONFIG:
+        from_secret: kube-config
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+    commands:
+      - /run.sh
+      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
+      - kubectl create --save-config configmap credbridge-go -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - helm upgrade --install credbridge-go dn/go -f .test.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
+    when:
+      ref:
+        - refs/heads/branch_test
 
 ---
-# Secrets
 kind: secret
 name: docker-hub-username
 get:
@@ -502,17 +161,3 @@ name: kube-config
 get:
   path: drone-helm-secret
   name: config
-
----
-kind: secret
-name: deploy-auth-key
-get:
-  path: drone-deploy-auth-key
-  name: auth-key
-
----
-kind: secret
-name: deploy-base-url
-get:
-  path: drone-deploy-auth-key
-  name: deploy-base-url

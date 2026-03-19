@@ -112,12 +112,12 @@ impl HttpConnectorConfig {
         }
 
         // 读取默认请求头
-        if let Some(headers) = config.get_sync("headers") {
-            if let Some(headers_map) = headers.as_object() {
-                for (key, value) in headers_map {
-                    if let Some(value_str) = value.as_str() {
-                        http_config = http_config.with_header(key.clone(), value_str.to_string());
-                    }
+        if let Some(headers) = config.get_sync("headers")
+            && let Some(headers_map) = headers.as_object()
+        {
+            for (key, value) in headers_map {
+                if let Some(value_str) = value.as_str() {
+                    http_config = http_config.with_header(key.clone(), value_str.to_string());
                 }
             }
         }
@@ -145,7 +145,7 @@ impl HttpConnectorConfig {
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge::connector::http::{HttpConnector, HttpConnectorConfig};
+/// use vault_service::connector::http::{HttpConnector, HttpConnectorConfig};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {

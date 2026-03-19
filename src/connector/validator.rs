@@ -17,7 +17,7 @@ use serde_json::Value;
 /// # 示例
 ///
 /// ```rust
-/// use credbridge::connector::validator::ValidationRule;
+/// use vault_service::connector::validator::ValidationRule;
 /// use serde_json::Value;
 ///
 /// struct MyRule;
@@ -92,124 +92,116 @@ impl SchemaValidator {
         }
 
         // 检查 required（仅对对象）
-        if let Some(required) = schema.get("required").and_then(|r| r.as_array()) {
-            if let Value::Object(obj) = value {
-                for field in required {
-                    if let Some(field_name) = field.as_str() {
-                        if !obj.contains_key(field_name) {
-                            return Err(ValidationError::with_code(
-                                Some(format!("{}{}", path, field_name)),
-                                format!("缺少必需字段: {}", field_name),
-                                "REQUIRED_FIELD",
-                            ));
-                        }
-                    }
+        if let Some(required) = schema.get("required").and_then(|r| r.as_array())
+            && let Value::Object(obj) = value
+        {
+            for field in required {
+                if let Some(field_name) = field.as_str()
+                    && !obj.contains_key(field_name)
+                {
+                    return Err(ValidationError::with_code(
+                        Some(format!("{}{}", path, field_name)),
+                        format!("缺少必需字段: {}", field_name),
+                        "REQUIRED_FIELD",
+                    ));
                 }
             }
         }
 
         // 检查 properties（仅对对象）
-        if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
-            if let Value::Object(obj) = value {
-                for (prop_name, prop_schema) in properties {
-                    if let Some(prop_value) = obj.get(prop_name) {
-                        let prop_path = format!("{}{}.", path, prop_name);
-                        self.validate_against_schema(prop_value, prop_schema, &prop_path)?;
-                    }
+        if let Some(properties) = schema.get("properties").and_then(|p| p.as_object())
+            && let Value::Object(obj) = value
+        {
+            for (prop_name, prop_schema) in properties {
+                if let Some(prop_value) = obj.get(prop_name) {
+                    let prop_path = format!("{}{}.", path, prop_name);
+                    self.validate_against_schema(prop_value, prop_schema, &prop_path)?;
                 }
             }
         }
 
         // 检查 items（仅对数组）
-        if let Some(items_schema) = schema.get("items") {
-            if let Value::Array(arr) = value {
-                for (i, item) in arr.iter().enumerate() {
-                    let item_path = format!("{}[{}].", path, i);
-                    self.validate_against_schema(item, items_schema, &item_path)?;
-                }
+        if let Some(items_schema) = schema.get("items")
+            && let Value::Array(arr) = value
+        {
+            for (i, item) in arr.iter().enumerate() {
+                let item_path = format!("{}[{}].", path, i);
+                self.validate_against_schema(item, items_schema, &item_path)?;
             }
         }
 
         // 检查 minimum（数值最小值）
-        if let Some(min) = schema.get("minimum").and_then(|m| m.as_f64()) {
-            if let Value::Number(n) = value {
-                if let Some(v) = n.as_f64() {
-                    if v < min {
-                        return Err(ValidationError::with_code(
-                            Some(path.to_string()),
-                            format!("值 {} 小于最小值 {}", v, min),
-                            "BELOW_MINIMUM",
-                        ));
-                    }
-                }
-            }
+        if let Some(min) = schema.get("minimum").and_then(|m| m.as_f64())
+            && let Value::Number(n) = value
+            && let Some(v) = n.as_f64()
+            && v < min
+        {
+            return Err(ValidationError::with_code(
+                Some(path.to_string()),
+                format!("值 {} 小于最小值 {}", v, min),
+                "BELOW_MINIMUM",
+            ));
         }
 
         // 检查 maximum（数值最大值）
-        if let Some(max) = schema.get("maximum").and_then(|m| m.as_f64()) {
-            if let Value::Number(n) = value {
-                if let Some(v) = n.as_f64() {
-                    if v > max {
-                        return Err(ValidationError::with_code(
-                            Some(path.to_string()),
-                            format!("值 {} 大于最大值 {}", v, max),
-                            "ABOVE_MAXIMUM",
-                        ));
-                    }
-                }
-            }
+        if let Some(max) = schema.get("maximum").and_then(|m| m.as_f64())
+            && let Value::Number(n) = value
+            && let Some(v) = n.as_f64()
+            && v > max
+        {
+            return Err(ValidationError::with_code(
+                Some(path.to_string()),
+                format!("值 {} 大于最大值 {}", v, max),
+                "ABOVE_MAXIMUM",
+            ));
         }
 
         // 检查 minLength（字符串最小长度）
-        if let Some(min_len) = schema.get("minLength").and_then(|m| m.as_u64()) {
-            if let Value::String(s) = value {
-                if s.len() < min_len as usize {
-                    return Err(ValidationError::with_code(
-                        Some(path.to_string()),
-                        format!("字符串长度 {} 小于最小长度 {}", s.len(), min_len),
-                        "BELOW_MIN_LENGTH",
-                    ));
-                }
-            }
+        if let Some(min_len) = schema.get("minLength").and_then(|m| m.as_u64())
+            && let Value::String(s) = value
+            && s.len() < min_len as usize
+        {
+            return Err(ValidationError::with_code(
+                Some(path.to_string()),
+                format!("字符串长度 {} 小于最小长度 {}", s.len(), min_len),
+                "BELOW_MIN_LENGTH",
+            ));
         }
 
         // 检查 maxLength（字符串最大长度）
-        if let Some(max_len) = schema.get("maxLength").and_then(|m| m.as_u64()) {
-            if let Value::String(s) = value {
-                if s.len() > max_len as usize {
-                    return Err(ValidationError::with_code(
-                        Some(path.to_string()),
-                        format!("字符串长度 {} 大于最大长度 {}", s.len(), max_len),
-                        "ABOVE_MAX_LENGTH",
-                    ));
-                }
-            }
+        if let Some(max_len) = schema.get("maxLength").and_then(|m| m.as_u64())
+            && let Value::String(s) = value
+            && s.len() > max_len as usize
+        {
+            return Err(ValidationError::with_code(
+                Some(path.to_string()),
+                format!("字符串长度 {} 大于最大长度 {}", s.len(), max_len),
+                "ABOVE_MAX_LENGTH",
+            ));
         }
 
         // 检查 pattern（正则表达式）
-        if let Some(pattern) = schema.get("pattern").and_then(|p| p.as_str()) {
-            if let Value::String(s) = value {
-                if let Ok(regex) = Regex::new(pattern) {
-                    if !regex.is_match(s) {
-                        return Err(ValidationError::with_code(
-                            Some(path.to_string()),
-                            format!("字符串 '{}' 不匹配模式 '{}'", s, pattern),
-                            "PATTERN_MISMATCH",
-                        ));
-                    }
-                }
-            }
+        if let Some(pattern) = schema.get("pattern").and_then(|p| p.as_str())
+            && let Value::String(s) = value
+            && let Ok(regex) = Regex::new(pattern)
+            && !regex.is_match(s)
+        {
+            return Err(ValidationError::with_code(
+                Some(path.to_string()),
+                format!("字符串 '{}' 不匹配模式 '{}'", s, pattern),
+                "PATTERN_MISMATCH",
+            ));
         }
 
         // 检查 enum（枚举值）
-        if let Some(enum_values) = schema.get("enum").and_then(|e| e.as_array()) {
-            if !enum_values.contains(value) {
-                return Err(ValidationError::with_code(
-                    Some(path.to_string()),
-                    format!("值 {} 不在允许的枚举值中: {:?}", value, enum_values),
-                    "INVALID_ENUM",
-                ));
-            }
+        if let Some(enum_values) = schema.get("enum").and_then(|e| e.as_array())
+            && !enum_values.contains(value)
+        {
+            return Err(ValidationError::with_code(
+                Some(path.to_string()),
+                format!("值 {} 不在允许的枚举值中: {:?}", value, enum_values),
+                "INVALID_ENUM",
+            ));
         }
 
         Ok(())
@@ -319,7 +311,7 @@ impl Default for CompositeValidator {
 /// # 示例
 ///
 /// ```rust
-/// use credbridge::connector::validator::{
+/// use vault_service::connector::validator::{
 ///     ValidatorBuilder, rules::RequiredRule
 /// };
 /// use serde_json::json;
@@ -458,15 +450,14 @@ pub mod rules {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Value::Object(obj) = value {
-                if let Some(field_value) = obj.get(&self.field) {
-                    if !self.check_type(field_value) {
-                        return Err(format!(
-                            "字段 '{}' 类型错误，期望 '{}'",
-                            self.field, self.expected_type
-                        ));
-                    }
-                }
+            if let Value::Object(obj) = value
+                && let Some(field_value) = obj.get(&self.field)
+                && !self.check_type(field_value)
+            {
+                return Err(format!(
+                    "字段 '{}' 类型错误，期望 '{}'",
+                    self.field, self.expected_type
+                ));
             }
             Ok(())
         }
@@ -497,17 +488,16 @@ pub mod rules {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Value::Object(obj) = value {
-                if let Some(Value::String(s)) = obj.get(&self.field) {
-                    if s.len() < self.min_length {
-                        return Err(format!(
-                            "字段 '{}' 长度 {} 小于最小长度 {}",
-                            self.field,
-                            s.len(),
-                            self.min_length
-                        ));
-                    }
-                }
+            if let Value::Object(obj) = value
+                && let Some(Value::String(s)) = obj.get(&self.field)
+                && s.len() < self.min_length
+            {
+                return Err(format!(
+                    "字段 '{}' 长度 {} 小于最小长度 {}",
+                    self.field,
+                    s.len(),
+                    self.min_length
+                ));
             }
             Ok(())
         }
@@ -538,17 +528,16 @@ pub mod rules {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Value::Object(obj) = value {
-                if let Some(Value::String(s)) = obj.get(&self.field) {
-                    if s.len() > self.max_length {
-                        return Err(format!(
-                            "字段 '{}' 长度 {} 大于最大长度 {}",
-                            self.field,
-                            s.len(),
-                            self.max_length
-                        ));
-                    }
-                }
+            if let Value::Object(obj) = value
+                && let Some(Value::String(s)) = obj.get(&self.field)
+                && s.len() > self.max_length
+            {
+                return Err(format!(
+                    "字段 '{}' 长度 {} 大于最大长度 {}",
+                    self.field,
+                    s.len(),
+                    self.max_length
+                ));
             }
             Ok(())
         }
@@ -583,15 +572,14 @@ pub mod rules {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Value::Object(obj) = value {
-                if let Some(Value::String(s)) = obj.get(&self.field) {
-                    if !self.pattern.is_match(s) {
-                        return Err(format!(
-                            "字段 '{}' 值 '{}' 不匹配模式 '{}'",
-                            self.field, s, self.pattern_str
-                        ));
-                    }
-                }
+            if let Value::Object(obj) = value
+                && let Some(Value::String(s)) = obj.get(&self.field)
+                && !self.pattern.is_match(s)
+            {
+                return Err(format!(
+                    "字段 '{}' 值 '{}' 不匹配模式 '{}'",
+                    self.field, s, self.pattern_str
+                ));
             }
             Ok(())
         }
@@ -634,26 +622,19 @@ pub mod rules {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Value::Object(obj) = value {
-                if let Some(Value::Number(n)) = obj.get(&self.field) {
-                    if let Some(v) = n.as_f64() {
-                        if let Some(min) = self.min {
-                            if v < min {
-                                return Err(format!(
-                                    "字段 '{}' 值 {} 小于最小值 {}",
-                                    self.field, v, min
-                                ));
-                            }
-                        }
-                        if let Some(max) = self.max {
-                            if v > max {
-                                return Err(format!(
-                                    "字段 '{}' 值 {} 大于最大值 {}",
-                                    self.field, v, max
-                                ));
-                            }
-                        }
-                    }
+            if let Value::Object(obj) = value
+                && let Some(Value::Number(n)) = obj.get(&self.field)
+                && let Some(v) = n.as_f64()
+            {
+                if let Some(min) = self.min
+                    && v < min
+                {
+                    return Err(format!("字段 '{}' 值 {} 小于最小值 {}", self.field, v, min));
+                }
+                if let Some(max) = self.max
+                    && v > max
+                {
+                    return Err(format!("字段 '{}' 值 {} 大于最大值 {}", self.field, v, max));
                 }
             }
             Ok(())
@@ -685,15 +666,14 @@ pub mod rules {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Value::Object(obj) = value {
-                if let Some(field_value) = obj.get(&self.field) {
-                    if !self.allowed_values.contains(field_value) {
-                        return Err(format!(
-                            "字段 '{}' 值 {:?} 不在允许值中",
-                            self.field, field_value
-                        ));
-                    }
-                }
+            if let Value::Object(obj) = value
+                && let Some(field_value) = obj.get(&self.field)
+                && !self.allowed_values.contains(field_value)
+            {
+                return Err(format!(
+                    "字段 '{}' 值 {:?} 不在允许值中",
+                    self.field, field_value
+                ));
             }
             Ok(())
         }

@@ -411,16 +411,16 @@ impl ExportService {
         let mut redaction_log = Vec::new();
 
         for field in &schema.sensitive_fields {
-            if let Some(value) = redacted.pointer_mut(&format!("/{}", field.replace('.', "/"))) {
-                if let Some(redacted_value) = self.redact_value(value) {
-                    redaction_log.push(RedactionRecord {
-                        field_path: field.clone(),
-                        original_type: Self::get_json_type(value),
-                        strategy: "hide".to_string(),
-                        redacted_at: OffsetDateTime::now_utc(),
-                    });
-                    *value = redacted_value;
-                }
+            if let Some(value) = redacted.pointer_mut(&format!("/{}", field.replace('.', "/")))
+                && let Some(redacted_value) = self.redact_value(value)
+            {
+                redaction_log.push(RedactionRecord {
+                    field_path: field.clone(),
+                    original_type: Self::get_json_type(value),
+                    strategy: "hide".to_string(),
+                    redacted_at: OffsetDateTime::now_utc(),
+                });
+                *value = redacted_value;
             }
         }
 
@@ -487,12 +487,13 @@ impl ExportService {
 
         match data {
             serde_json::Value::Array(arr) => {
-                if self.config.csv_header && !arr.is_empty() {
-                    if let Some(serde_json::Value::Object(first)) = arr.first() {
-                        let headers: Vec<_> = first.keys().cloned().collect();
-                        wtr.write_record(&headers)
-                            .map_err(|e| ExportError::Serialization(e.to_string()))?;
-                    }
+                if self.config.csv_header
+                    && !arr.is_empty()
+                    && let Some(serde_json::Value::Object(first)) = arr.first()
+                {
+                    let headers: Vec<_> = first.keys().cloned().collect();
+                    wtr.write_record(&headers)
+                        .map_err(|e| ExportError::Serialization(e.to_string()))?;
                 }
 
                 for item in arr {

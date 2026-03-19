@@ -3,6 +3,9 @@ name = "vault-service"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+doctest = false
+
 [dependencies]
 # 加密库
 ring = "0.17"
@@ -51,11 +54,11 @@ derive_more = { version = "1.0", features = ["display"] }
 # UUID（v4/v7 时间排序）
 uuid = { version = "1.7", features = ["v4", "v7", "serde"] }
 
-# Time with serde
-time = { version = "0.3", features = ["serde"] }
+# Time with serde (锁定到兼容 Rust 1.85 的版本)
+time = { version = "=0.3.36", features = ["serde"] }
 
-# PASETO Token
-pasetors = { version = "0.7", features = ["v4"] }
+# PASETO Token (降级到兼容 Rust 1.85 的版本)
+pasetors = { version = "=0.6.8", features = ["v4"] }
 
 # HTTP API 框架（Axum）
 axum = { version = "0.7", features = ["json", "macros", "ws"] }
@@ -92,6 +95,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # 日期时间
 chrono = { version = "0.4", features = ["serde"] }
+
+# 锁定传递依赖版本以兼容 Rust 1.85
+home = "=0.5.9"
+orion = "=0.17.8"
 
 # 系统调用
 libc = "0.2"

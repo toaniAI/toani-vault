@@ -66,6 +66,14 @@ pub trait StorageBackend: Send + Sync {
     ) -> Result<Option<CredentialVersion>, VaultError>;
 }
 
+/// 租户用户索引类型
+/// tenant_id -> user_hash -> Vec<credential_id>
+type TenantUserIndex = HashMap<String, HashMap<String, Vec<String>>>;
+
+/// 版本历史存储类型
+/// credential_id -> version -> CredentialVersion
+type VersionHistoryStore = HashMap<String, HashMap<u32, CredentialVersion>>;
+
 /// 内存存储实现（用于测试和开发）
 ///
 /// 生产环境应使用 PostgreSQL + RLS 或 HashiCorp Vault
@@ -74,11 +82,10 @@ pub struct InMemoryStorage {
     entries: Arc<RwLock<HashMap<String, VaultEntry>>>,
 
     /// 按租户和用户索引（用于快速查询）
-    /// tenant_id -> user_hash -> Vec<credential_id>
-    index: Arc<RwLock<HashMap<String, HashMap<String, Vec<String>>>>>,
+    index: Arc<RwLock<TenantUserIndex>>,
 
-    /// 版本历史存储：credential_id -> version -> CredentialVersion
-    versions: Arc<RwLock<HashMap<String, HashMap<u32, CredentialVersion>>>>,
+    /// 版本历史存储
+    versions: Arc<RwLock<VersionHistoryStore>>,
 }
 
 impl InMemoryStorage {
@@ -134,10 +141,10 @@ impl InMemoryStorage {
 
         let (t_key, u_key) = Self::build_index_key(tenant_id, user_id);
 
-        if let Some(tenant_index) = index.get_mut(&t_key) {
-            if let Some(user_entries) = tenant_index.get_mut(&u_key) {
-                user_entries.retain(|id| id != credential_id.as_str());
-            }
+        if let Some(tenant_index) = index.get_mut(&t_key)
+            && let Some(user_entries) = tenant_index.get_mut(&u_key)
+        {
+            user_entries.retain(|id| id != credential_id.as_str());
         }
 
         Ok(())
@@ -270,17 +277,17 @@ impl StorageBackend for InMemoryStorage {
                 }
 
                 // 按服务 ID 过滤
-                if let Some(ref service_id) = filter.service_id {
-                    if entry.service_id != *service_id {
-                        continue;
-                    }
+                if let Some(ref service_id) = filter.service_id
+                    && entry.service_id != *service_id
+                {
+                    continue;
                 }
 
                 // 按凭证类型过滤
-                if let Some(ref cred_type) = filter.credential_type {
-                    if entry.credential_type != *cred_type {
-                        continue;
-                    }
+                if let Some(ref cred_type) = filter.credential_type
+                    && entry.credential_type != *cred_type
+                {
+                    continue;
                 }
 
                 result.push(entry.metadata());

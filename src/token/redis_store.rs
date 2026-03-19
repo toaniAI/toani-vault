@@ -302,7 +302,7 @@ impl RedisTokenStore {
         let _: () = conn.sadd(&revoked_key, jti).await?;
 
         // 设置撤销集合的 TTL（30 天）
-        let _: () = conn.expire(&revoked_key, 30 * 86400 as i64).await?;
+        let _: () = conn.expire(&revoked_key, 30 * 86400_i64).await?;
 
         // 3. 更新元数据
         let metadata_key = keys::token_metadata_key(jti);

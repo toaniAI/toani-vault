@@ -7,6 +7,11 @@
 //! - 错误处理测试
 //! - 线程安全测试
 
+// 允许测试中使用近似浮点数值（测试数据而非数学 PI）
+#![allow(clippy::approx_constant)]
+// 允许测试代码中有未使用的辅助方法
+#![allow(dead_code)]
+
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -74,10 +79,10 @@ impl Connector for MockHttpConnector {
 
     async fn validate(&self, params: &Value) -> Result<ValidatedParams, ValidationError> {
         // 验证必需字段
-        if let Some(method) = params.get("method") {
-            if method.as_str().is_none() {
-                return Err(ValidationError::field("method", "方法必须是字符串"));
-            }
+        if let Some(method) = params.get("method")
+            && method.as_str().is_none()
+        {
+            return Err(ValidationError::field("method", "方法必须是字符串"));
         }
         Ok(ValidatedParams::new(params.clone()))
     }
@@ -436,12 +441,11 @@ async fn test_custom_validation_rule() {
         }
 
         fn validate(&self, value: &Value) -> Result<(), String> {
-            if let Some(obj) = value.as_object() {
-                if let Some(val) = obj.get("custom_field") {
-                    if val.as_str() == Some("valid") {
-                        return Ok(());
-                    }
-                }
+            if let Some(obj) = value.as_object()
+                && let Some(val) = obj.get("custom_field")
+                && val.as_str() == Some("valid")
+            {
+                return Ok(());
             }
             Err("custom_field 必须是 'valid'".to_string())
         }
@@ -638,7 +642,7 @@ async fn test_concurrent_execute() {
     }
 
     // 验证调用次数
-    let connector = registry.get("concurrent").await.unwrap();
+    let _connector = registry.get("concurrent").await.unwrap();
     // 注意：由于 connector 是 Arc<dyn Connector>，我们无法直接访问 MockHttpConnector 的 call_count
     // 但这证明了并发执行不会 panic
 }

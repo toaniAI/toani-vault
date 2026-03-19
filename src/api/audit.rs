@@ -95,6 +95,13 @@ impl MemoryAuditStorageAdapter {
             storage: Arc::new(tokio::sync::Mutex::new(storage)),
         }
     }
+
+    /// 从共享的存储创建适配器
+    ///
+    /// 用于让多个组件共享同一个存储实例
+    pub fn from_shared_storage(storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>) -> Self {
+        Self { storage }
+    }
 }
 
 #[async_trait::async_trait]
@@ -110,46 +117,46 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         // 获取所有条目
         let all_entries = storage
             .query_recent(100_000)
-            .map_err(|e| format!("{:?}", e))?;
+            .map_err(|e| format!("{e:?}"))?;
 
         // 过滤
         let filtered: Vec<_> = all_entries
             .into_iter()
             .filter(|e| {
-                if let Some(start) = filter.start_time {
-                    if e.entry.timestamp < start {
-                        return false;
-                    }
+                if let Some(start) = filter.start_time
+                    && e.entry.timestamp < start
+                {
+                    return false;
                 }
-                if let Some(end) = filter.end_time {
-                    if e.entry.timestamp > end {
-                        return false;
-                    }
+                if let Some(end) = filter.end_time
+                    && e.entry.timestamp > end
+                {
+                    return false;
                 }
-                if let Some(ref user_hash) = filter.user_id_hash {
-                    if &e.entry.user_id_hash != user_hash {
-                        return false;
-                    }
+                if let Some(ref user_hash) = filter.user_id_hash
+                    && &e.entry.user_id_hash != user_hash
+                {
+                    return false;
                 }
-                if let Some(action) = filter.action {
-                    if e.entry.action != action {
-                        return false;
-                    }
+                if let Some(action) = filter.action
+                    && e.entry.action != action
+                {
+                    return false;
                 }
-                if let Some(tier) = filter.risk_tier {
-                    if e.entry.risk_tier != tier {
-                        return false;
-                    }
+                if let Some(tier) = filter.risk_tier
+                    && e.entry.risk_tier != tier
+                {
+                    return false;
                 }
-                if let Some(outcome) = filter.outcome {
-                    if e.entry.outcome != outcome {
-                        return false;
-                    }
+                if let Some(outcome) = filter.outcome
+                    && e.entry.outcome != outcome
+                {
+                    return false;
                 }
-                if let Some(ref service) = filter.service {
-                    if &e.entry.service != service {
-                        return false;
-                    }
+                if let Some(ref service) = filter.service
+                    && &e.entry.service != service
+                {
+                    return false;
                 }
                 true
             })
@@ -168,13 +175,13 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         // 搜索所有条目
         let all_entries = storage
             .query_recent(100_000)
-            .map_err(|e| format!("{:?}", e))?;
+            .map_err(|e| format!("{e:?}"))?;
         Ok(all_entries.into_iter().find(|e| e.entry.id == id))
     }
 
     async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String> {
         let storage = self.storage.lock().await;
-        storage.get_by_index(index).map_err(|e| format!("{:?}", e))
+        storage.get_by_index(index).map_err(|e| format!("{e:?}"))
     }
 
     async fn get_verification_proof(
@@ -247,7 +254,7 @@ pub async fn list_audit_logs(
     };
 
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditLogListResponse::error(
@@ -320,7 +327,7 @@ pub async fn get_audit_log_detail(
         }
     };
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditLogDetailResponse::error(
@@ -401,7 +408,7 @@ pub async fn export_audit_logs(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditExportResponse::error(format!("读取请求体失败: {}", e))),
+                Json(AuditExportResponse::error(format!("读取请求体失败：{e}"))),
             )
                 .into_response();
         }
@@ -412,7 +419,7 @@ pub async fn export_audit_logs(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditExportResponse::error(format!("无效的请求体: {}", e))),
+                Json(AuditExportResponse::error(format!("无效的请求体：{e}"))),
             )
                 .into_response();
         }
@@ -433,7 +440,7 @@ pub async fn export_audit_logs(
         }
     };
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditExportResponse::error(
@@ -559,7 +566,7 @@ pub async fn verify_audit_log(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditVerifyResponse::error(format!("读取请求体失败: {}", e))),
+                Json(AuditVerifyResponse::error(format!("读取请求体失败：{e}"))),
             )
                 .into_response();
         }
@@ -570,7 +577,7 @@ pub async fn verify_audit_log(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditVerifyResponse::error(format!("无效的请求体: {}", e))),
+                Json(AuditVerifyResponse::error(format!("无效的请求体：{e}"))),
             )
                 .into_response();
         }
@@ -591,7 +598,7 @@ pub async fn verify_audit_log(
         }
     };
     // 验证权限
-    if !has_audit_permission(&token) {
+    if !has_audit_permission(token) {
         return (
             StatusCode::FORBIDDEN,
             Json(AuditVerifyResponse::error(
@@ -660,10 +667,11 @@ pub async fn verify_audit_log(
     });
 
     // 3. 验证 Merkle 证明
-    let merkle_proof_valid = match state.storage.verify_entry(entry.log_index).await {
-        Ok(valid) => valid,
-        Err(_) => false,
-    };
+    let merkle_proof_valid: bool = state
+        .storage
+        .verify_entry(entry.log_index)
+        .await
+        .unwrap_or_default();
     details.push(VerificationDetail {
         step: "Merkle Tree 验证".to_string(),
         passed: merkle_proof_valid,

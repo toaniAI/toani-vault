@@ -50,7 +50,7 @@ impl BlurStrategy {
         Self { sigma }
     }
 
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(10.0)
     }
 }
@@ -159,7 +159,7 @@ impl PixelateStrategy {
         }
     }
 
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new(8)
     }
 }
@@ -262,7 +262,7 @@ impl ReplaceStrategy {
         }
     }
 
-    pub fn default() -> Self {
+    pub fn with_default_config() -> Self {
         Self::new("[REDACTED]")
     }
 }
@@ -295,18 +295,18 @@ impl RedactionService {
     pub fn new() -> Self {
         let mut strategies: HashMap<RedactionAction, Box<dyn RedactionStrategy>> = HashMap::new();
 
-        strategies.insert(RedactionAction::Blur, Box::new(BlurStrategy::default()));
         strategies.insert(
-            RedactionAction::Blackout,
-            Box::new(BlackoutStrategy::default()),
+            RedactionAction::Blur,
+            Box::new(BlurStrategy::with_default_config()),
         );
+        strategies.insert(RedactionAction::Blackout, Box::new(BlackoutStrategy));
         strategies.insert(
             RedactionAction::Pixelate,
-            Box::new(PixelateStrategy::default()),
+            Box::new(PixelateStrategy::with_default_config()),
         );
         strategies.insert(
             RedactionAction::Replace,
-            Box::new(ReplaceStrategy::default()),
+            Box::new(ReplaceStrategy::with_default_config()),
         );
 
         Self {

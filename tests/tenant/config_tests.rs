@@ -7,8 +7,8 @@
 //! - 配置管理器操作
 //! - 缓存集成
 
-use std::collections::HashMap;
-
+// 允许测试代码中有未使用的辅助方法
+#![allow(dead_code)]
 use vault_service::tenant::{
     FeatureFlags, MemoryTenantConfigStore, PartialTenantConfig, QuotaLimits, TenantConfig,
     TenantConfigError, TenantConfigManager, TenantConfigStore, TenantId, TenantSettings,

@@ -172,12 +172,12 @@ impl EnclaveVersion {
 
     /// 获取 MRENCLAVE 十六进制字符串
     pub fn mrenclave_hex(&self) -> String {
-        hex::encode(&self.mrenclave)
+        hex::encode(self.mrenclave)
     }
 
     /// 获取 MRSIGNER 十六进制字符串
     pub fn mrsigner_hex(&self) -> String {
-        hex::encode(&self.mrsigner)
+        hex::encode(self.mrsigner)
     }
 }
 
@@ -321,12 +321,11 @@ impl BlueGreenUpgradeManager {
         new_version: EnclaveVersion,
         sealing_key: SealingKeyCustody,
     ) -> Result<(), UpgradeError> {
-        // 检查是否有并发的升级
-        let expected = false;
-        if !self
+        // 检查是否有并发的升级（使用 compare_exchange 而非 compare_exchange_weak 避免伪失败）
+        if self
             .is_upgrading
-            .compare_exchange_weak(expected, true, Ordering::SeqCst, Ordering::SeqCst)
-            .unwrap_or(true)
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
         {
             return Err(UpgradeError::ConcurrentUpgradeConflict);
         }
@@ -369,12 +368,12 @@ impl BlueGreenUpgradeManager {
         }
 
         // 检查是否已经是活跃版本
-        if let Some(active) = self.active_version.read().await.as_ref() {
-            if active.mrenclave == version.mrenclave {
-                return Err(UpgradeError::InvalidState(
-                    "新版本与当前版本相同".to_string(),
-                ));
-            }
+        if let Some(active) = self.active_version.read().await.as_ref()
+            && active.mrenclave == version.mrenclave
+        {
+            return Err(UpgradeError::InvalidState(
+                "新版本与当前版本相同".to_string(),
+            ));
         }
 
         Ok(())

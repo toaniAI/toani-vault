@@ -188,7 +188,6 @@ async fn test_request_context_extensions() {
 #[tokio::test]
 async fn test_tenant_id_extractor() {
     use axum::extract::FromRequestParts;
-    use http::request::Parts;
 
     // 创建带上下文的 Parts
     let token = create_test_token(

@@ -52,7 +52,7 @@
 //! ## 实现自定义 Connector
 //!
 //! ```rust,no_run
-//! use credbridge::connector::{
+//! use vault_service::connector::{
 //!     Connector, ConnectorConfig, ConnectorResult,
 //!     ValidatedParams, ValidationError,
 //! };
@@ -96,7 +96,7 @@
 //! ## 注册和使用 Connector
 //!
 //! ```rust,no_run
-//! use credbridge::connector::ConnectorRegistry;
+//! use vault_service::connector::ConnectorRegistry;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -115,20 +115,20 @@
 //!     Ok(())
 //! }
 //! # struct MyConnector;
-//! # impl credbridge::connector::Connector for MyConnector {
+//! # impl vault_service::connector::Connector for MyConnector {
 //! #     fn name(&self) -> &'static str { "my-connector" }
 //! #     fn description(&self) -> &'static str { "我的连接器" }
-//! #     async fn init(&mut self, _: credbridge::connector::ConnectorConfig) -> credbridge::connector::ConnectorResult<()> { Ok(()) }
-//! #     async fn validate(&self, _: &serde_json::Value) -> Result<credbridge::connector::ValidatedParams, credbridge::connector::ValidationError> { Ok(unsafe { std::mem::zeroed() }) }
-//! #     async fn execute(&self, _: credbridge::connector::ValidatedParams) -> credbridge::connector::ConnectorResult<serde_json::Value> { Ok(unsafe { std::mem::zeroed() }) }
-//! #     async fn cleanup(&self) -> credbridge::connector::ConnectorResult<()> { Ok(()) }
+//! #     async fn init(&mut self, _: vault_service::connector::ConnectorConfig) -> vault_service::connector::ConnectorResult<()> { Ok(()) }
+//! #     async fn validate(&self, _: &serde_json::Value) -> Result<vault_service::connector::ValidatedParams, vault_service::connector::ValidationError> { Ok(unsafe { std::mem::zeroed() }) }
+//! #     async fn execute(&self, _: vault_service::connector::ValidatedParams) -> vault_service::connector::ConnectorResult<serde_json::Value> { Ok(unsafe { std::mem::zeroed() }) }
+//! #     async fn cleanup(&self) -> vault_service::connector::ConnectorResult<()> { Ok(()) }
 //! # }
 //! ```
 //!
 //! # 错误处理
 //!
 //! ```rust
-//! use credbridge::connector::{ConnectorError, ConnectorResult};
+//! use vault_service::connector::{ConnectorError, ConnectorResult};
 //!
 //! # fn example() -> ConnectorResult<()> {
 //! // 创建不同类型的错误

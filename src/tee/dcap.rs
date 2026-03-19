@@ -471,7 +471,7 @@ impl DcapService {
     }
 
     /// 使用默认配置创建服务
-    pub fn default() -> Result<Self, DcapError> {
+    pub fn with_default_config() -> Result<Self, DcapError> {
         Self::new(DcapConfig::default())
     }
 
@@ -596,12 +596,12 @@ impl DcapService {
     ///
     /// 返回缓存的 Quote（如果未过期）
     pub fn get_current_quote(&self) -> Result<DcapQuote, DcapError> {
-        if let Ok(cache) = self.cached_quote.read() {
-            if let Some(cached) = cache.as_ref() {
-                let now = current_timestamp();
-                if now < cached.expires_at {
-                    return Ok(cached.quote.clone());
-                }
+        if let Ok(cache) = self.cached_quote.read()
+            && let Some(cached) = cache.as_ref()
+        {
+            let now = current_timestamp();
+            if now < cached.expires_at {
+                return Ok(cached.quote.clone());
             }
         }
         Err(DcapError::QuoteGenerationFailed(
@@ -1075,7 +1075,7 @@ impl DcapService {
         // SHA256 produces 32 bytes, split into two halves for r and s
         r.copy_from_slice(&hash_bytes[..32]);
         s.copy_from_slice(&hash_bytes[..32]); // Use same bytes for s, XOR with constant for variation
-        for (_i, b) in s.iter_mut().enumerate() {
+        for b in s.iter_mut() {
             *b ^= 0x5C; // XOR with constant to derive s from r
         }
 

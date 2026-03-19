@@ -199,8 +199,6 @@ mod tests {
 
     #[test]
     fn test_encrypted_payload_validation() {
-        use crate::vault::EncryptedPayload;
-
         // 有效的载荷
         let valid = test_payload();
         assert!(valid.validate().is_ok());

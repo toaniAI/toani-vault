@@ -420,8 +420,125 @@ pub struct VaultCredentialData {
     pub is_deleted: bool,
 }
 
+/// Vault 凭证数据构建器
+///
+/// 用于构建 VaultCredentialData 的 Builder 模式实现
+pub struct VaultCredentialDataBuilder {
+    credential_id: String,
+    tenant_id: String,
+    user_id_hash: String,
+    service_id: String,
+    credential_type: String,
+    created_at: u64,
+    expires_at: Option<u64>,
+    encrypted_payload: String,
+    version: u8,
+    algorithm: String,
+    kdf: String,
+    nonce: String,
+    auth_tag: String,
+}
+
+impl VaultCredentialDataBuilder {
+    /// 创建新的构建器（必需字段）
+    pub fn new(
+        credential_id: String,
+        tenant_id: String,
+        user_id_hash: String,
+        service_id: String,
+        credential_type: String,
+    ) -> Self {
+        Self {
+            credential_id,
+            tenant_id,
+            user_id_hash,
+            service_id,
+            credential_type,
+            created_at: 0,
+            expires_at: None,
+            encrypted_payload: String::new(),
+            version: 1,
+            algorithm: String::new(),
+            kdf: String::new(),
+            nonce: String::new(),
+            auth_tag: String::new(),
+        }
+    }
+
+    /// 设置创建时间
+    pub fn created_at(mut self, created_at: u64) -> Self {
+        self.created_at = created_at;
+        self
+    }
+
+    /// 设置过期时间
+    pub fn expires_at(mut self, expires_at: Option<u64>) -> Self {
+        self.expires_at = expires_at;
+        self
+    }
+
+    /// 设置加密载荷
+    pub fn encrypted_payload(mut self, encrypted_payload: String) -> Self {
+        self.encrypted_payload = encrypted_payload;
+        self
+    }
+
+    /// 设置版本
+    pub fn version(mut self, version: u8) -> Self {
+        self.version = version;
+        self
+    }
+
+    /// 设置算法
+    pub fn algorithm(mut self, algorithm: String) -> Self {
+        self.algorithm = algorithm;
+        self
+    }
+
+    /// 设置 KDF
+    pub fn kdf(mut self, kdf: String) -> Self {
+        self.kdf = kdf;
+        self
+    }
+
+    /// 设置 Nonce
+    pub fn nonce(mut self, nonce: String) -> Self {
+        self.nonce = nonce;
+        self
+    }
+
+    /// 设置 Auth Tag
+    pub fn auth_tag(mut self, auth_tag: String) -> Self {
+        self.auth_tag = auth_tag;
+        self
+    }
+
+    /// 构建 VaultCredentialData
+    pub fn build(self) -> VaultCredentialData {
+        VaultCredentialData {
+            credential_id: self.credential_id,
+            tenant_id: self.tenant_id,
+            user_id_hash: self.user_id_hash,
+            service_id: self.service_id,
+            credential_type: self.credential_type,
+            created_at: self.created_at,
+            expires_at: self.expires_at,
+            encrypted_payload: self.encrypted_payload,
+            version: self.version,
+            algorithm: self.algorithm,
+            kdf: self.kdf,
+            nonce: self.nonce,
+            auth_tag: self.auth_tag,
+            is_deleted: false,
+        }
+    }
+}
+
 impl VaultCredentialData {
     /// 创建新的 Vault 凭证数据
+    ///
+    /// 推荐使用 VaultCredentialDataBuilder 来构建复杂实例
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         credential_id: String,
         tenant_id: String,
@@ -453,6 +570,23 @@ impl VaultCredentialData {
             auth_tag,
             is_deleted: false,
         }
+    }
+
+    /// 创建构建器（必需字段）
+    pub fn builder(
+        credential_id: String,
+        tenant_id: String,
+        user_id_hash: String,
+        service_id: String,
+        credential_type: String,
+    ) -> VaultCredentialDataBuilder {
+        VaultCredentialDataBuilder::new(
+            credential_id,
+            tenant_id,
+            user_id_hash,
+            service_id,
+            credential_type,
+        )
     }
 
     /// 转换为 JSON Value
