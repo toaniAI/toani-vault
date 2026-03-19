@@ -13,6 +13,10 @@
 //! - 自动轮换防止长期暴露
 //! - 访问审计日志
 
+use aes_gcm::{
+    Aes256Gcm, Nonce as AesGcmNonce,
+    aead::{Aead, KeyInit},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -291,14 +295,19 @@ impl McpTokenStorage {
         let mut encryption_key = vec![0u8; 32];
         get_random_bytes(&mut encryption_key);
 
-        Ok(Self {
+        let result = Self {
             metadata_cache: Arc::new(RwLock::new(HashMap::new())),
             encrypted_tokens: Arc::new(RwLock::new(HashMap::new())),
             encryption_key: SecureBuffer::with_data(&encryption_key),
             config,
             stats: Arc::new(TokenStorageStats::default()),
             keychain_initialized: Arc::new(AtomicU64::new(0)),
-        })
+        };
+
+        // 立即清除临时密钥变量，防止在栈上残留敏感数据
+        encryption_key.zeroize();
+
+        Ok(result)
     }
 
     /// 初始化密钥环
@@ -548,25 +557,43 @@ impl McpTokenStorage {
 
     /// 加密 Token
     fn encrypt_token(&self, token: &str) -> Result<EncryptedToken, TokenStorageError> {
-        // 使用 AES-256-GCM 加密
-        // 这里简化处理
         let mut nonce = [0u8; 12];
         get_random_bytes(&mut nonce);
 
-        let ciphertext = token.as_bytes().to_vec(); // 简化：实际应加密
-        let auth_tag = [0u8; 16]; // 简化：实际应有认证标签
+        let cipher = Aes256Gcm::new_from_slice(self.encryption_key.as_slice())
+            .map_err(|_| TokenStorageError::EncryptionError("Invalid key length".to_string()))?;
 
-        Ok(EncryptedToken::new(ciphertext, auth_tag, nonce))
+        let nonce_val = AesGcmNonce::from_slice(&nonce);
+        let combined = cipher
+            .encrypt(nonce_val, token.as_bytes())
+            .map_err(|_| TokenStorageError::EncryptionError("Encryption failed".to_string()))?;
+
+        // aes-gcm 返回 ciphertext || auth_tag，auth_tag 为最后 16 字节
+        let split_at = combined.len().saturating_sub(16);
+        let ciphertext_only = combined[..split_at].to_vec();
+        let auth_tag_bytes = &combined[split_at..];
+        let mut auth_tag = [0u8; 16];
+        auth_tag.copy_from_slice(auth_tag_bytes);
+
+        Ok(EncryptedToken::new(ciphertext_only, auth_tag, nonce))
     }
 
     /// 解密 Token
     fn decrypt_token(&self, encrypted: &EncryptedToken) -> Result<String, TokenStorageError> {
-        // 使用 AES-256-GCM 解密
-        // 这里简化处理
-        let plaintext = std::str::from_utf8(encrypted.ciphertext())
-            .map_err(|_| TokenStorageError::DecryptionError("无效的 UTF-8".to_string()))?;
+        let cipher = Aes256Gcm::new_from_slice(self.encryption_key.as_slice())
+            .map_err(|_| TokenStorageError::DecryptionError("Invalid key length".to_string()))?;
 
-        Ok(plaintext.to_string())
+        // 重新拼接 ciphertext || auth_tag
+        let mut full_ciphertext = encrypted.ciphertext().to_vec();
+        full_ciphertext.extend_from_slice(encrypted.auth_tag());
+
+        let nonce_val = AesGcmNonce::from_slice(encrypted.nonce());
+        let plaintext = cipher
+            .decrypt(nonce_val, full_ciphertext.as_slice())
+            .map_err(|_| TokenStorageError::DecryptionError("Decryption failed".to_string()))?;
+
+        String::from_utf8(plaintext)
+            .map_err(|_| TokenStorageError::DecryptionError("Invalid UTF-8".to_string()))
     }
 
     /// 存储到密钥环
@@ -875,5 +902,65 @@ mod tests {
         let token = generate_new_token();
         assert!(token.starts_with("tok_"));
         assert_eq!(token.len(), 68); // "tok_" + 64 hex chars
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let config = TokenStorageConfig::default();
+        let storage = McpTokenStorage::new(config).unwrap();
+
+        let original = "my-secret-token";
+        let encrypted = storage.encrypt_token(original).unwrap();
+        let decrypted = storage.decrypt_token(&encrypted).unwrap();
+
+        assert_eq!(decrypted, original);
+    }
+
+    #[test]
+    fn test_ciphertext_is_not_plaintext() {
+        let config = TokenStorageConfig::default();
+        let storage = McpTokenStorage::new(config).unwrap();
+
+        let original = "my-secret-token";
+        let encrypted = storage.encrypt_token(original).unwrap();
+
+        // 密文不应与明文相同
+        assert_ne!(encrypted.ciphertext(), original.as_bytes());
+    }
+
+    #[test]
+    fn test_auth_tag_not_zero() {
+        let config = TokenStorageConfig::default();
+        let storage = McpTokenStorage::new(config).unwrap();
+
+        let encrypted = storage.encrypt_token("my-secret-token").unwrap();
+
+        // auth tag 不应全为零（AES-GCM 认证标签是真实计算值）
+        assert_ne!(encrypted.auth_tag(), &[0u8; 16]);
+    }
+
+    #[test]
+    fn test_tampered_ciphertext_fails() {
+        let config = TokenStorageConfig::default();
+        let storage = McpTokenStorage::new(config).unwrap();
+
+        let encrypted = storage.encrypt_token("my-secret-token").unwrap();
+
+        // 篡改密文第一个字节
+        let mut tampered_ciphertext = encrypted.ciphertext().to_vec();
+        tampered_ciphertext[0] ^= 0xFF;
+
+        let tampered = EncryptedToken::new(
+            tampered_ciphertext,
+            *encrypted.auth_tag(),
+            *encrypted.nonce(),
+        );
+
+        // 解密被篡改的数据应当失败
+        let result = storage.decrypt_token(&tampered);
+        assert!(
+            result.is_err(),
+            "解密被篡改的密文应返回错误"
+        );
     }
 }

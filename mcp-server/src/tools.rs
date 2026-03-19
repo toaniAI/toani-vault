@@ -17,9 +17,11 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use rmcp::schemars;
 use tracing::{info, debug, warn};
+use zeroize::Zeroize;
 
 use vault_service::vault::{CredentialId, TenantId, UserId, CredentialFilter, ServiceId, EncryptedPayload};
 use vault_service::audit::{AuditEntry, AuditAction, Outcome, PiiRedactor};
+use vault_service::crypto::{EncryptedBlob, KeyPurpose, decrypt_credential as crypto_decrypt};
 
 // 公开 CredentialType 供其他模块使用
 pub use vault_service::models::CredentialType;
@@ -163,13 +165,56 @@ impl CredBridgeTools {
             ));
         }
 
-        // TODO: 实际的 TEE 解密操作
-        // 这里返回模拟数据，实际实现需要调用 TEE enclave
-        let decrypted_data = serde_json::json!({
-            "username": "[REDACTED]",
-            "password": "[REDACTED]",
-            "note": "This is a placeholder. Actual decryption happens in TEE enclave."
-        });
+        // 获取含加密载荷的完整凭证条目
+        let tenant = TenantId::new(tenant_id);
+        let user = UserId::new(user_id);
+        let cred_id = CredentialId::from_string(credential_id.to_string())
+            .map_err(|e| ToolError::InvalidInput(format!("Invalid credential ID: {}", e)))?;
+
+        let entry = self.state.vault
+            .get_credential(&cred_id, &tenant, &user)
+            .map_err(|e| ToolError::VaultError(e.to_string()))?
+            .ok_or_else(|| ToolError::NotFound(format!("Credential {} not found", credential_id)))?;
+
+        // 构建 EncryptedBlob 供 crypto 模块解密
+        let blob = EncryptedBlob {
+            version: entry.encrypted_payload.version,
+            algorithm: entry.encrypted_payload.algorithm.clone(),
+            kdf: entry.encrypted_payload.kdf.clone(),
+            nonce: entry.encrypted_payload.nonce.clone(),
+            auth_tag: entry.encrypted_payload.auth_tag.clone(),
+            ciphertext: entry.encrypted_payload.ciphertext.clone(),
+            aad_hash: None,
+        };
+
+        // 派生 L3 凭证密钥
+        let l3_key = {
+            let hierarchy = self.state.key_hierarchy.read().await;
+            let l2_key = hierarchy
+                .derive_user_vault_key(entry.tenant_id.as_str(), entry.user_id.hash())
+                .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?;
+            hierarchy
+                .derive_credential_key(&l2_key, entry.credential_id.as_str(), KeyPurpose::CredentialEncryption)
+                .map_err(|e| ToolError::VaultError(format!("L3 key derivation failed: {}", e)))?
+        };
+
+        // 构建 AAD（与加密时保持一致）
+        let aad = format!("{}:{}", entry.tenant_id.as_str(), entry.user_id.hash());
+
+        // 执行 AES-256-GCM 解密
+        let mut plaintext_bytes = crypto_decrypt(&l3_key, &blob, Some(aad.as_bytes()))
+            .map_err(|e| ToolError::VaultError(format!("Decryption failed: {:?}", e)))?;
+
+        // 解析明文为 JSON（先转换，再 zeroize 原始字节）
+        let decrypted_data: serde_json::Value = serde_json::from_slice(&plaintext_bytes)
+            .unwrap_or_else(|_| {
+                String::from_utf8_lossy(&plaintext_bytes)
+                    .to_string()
+                    .into()
+            });
+
+        // 立即清除明文内存，防止在内存中残留敏感数据
+        plaintext_bytes.zeroize();
 
         // 记录成功审计日志（脱敏）
         let audit_entry = AuditEntry::new(
@@ -251,10 +296,30 @@ impl CredBridgeTools {
         let plaintext_bytes = serde_json::to_vec(plaintext_data)
             .map_err(|e| ToolError::InvalidInput(format!("Invalid plaintext data: {}", e)))?;
 
-        // 创建加密载荷（模拟 TEE 加密）
-        // 实际生产环境应该在 TEE 内加密
-        let encrypted_payload = create_encrypted_payload(&plaintext_bytes)
-            .map_err(|e| ToolError::VaultError(e))?;
+        // 预生成 CredentialId，以便在加密时使用相同的 ID 派生 L3 密钥
+        let credential_id_obj = CredentialId::new();
+
+        // 创建用于派生密钥的 user_id
+        let user_for_key = UserId::new(user_id);
+
+        // 通过 key_hierarchy 派生 L3 凭证密钥，保证加密/解密使用同一密钥
+        let l3_key = {
+            let hierarchy = self.state.key_hierarchy.read().await;
+            let l2_key = hierarchy
+                .derive_user_vault_key(tenant_id, user_for_key.hash())
+                .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?;
+            hierarchy
+                .derive_credential_key(&l2_key, credential_id_obj.as_str(), KeyPurpose::CredentialEncryption)
+                .map_err(|e| ToolError::VaultError(format!("L3 key derivation failed: {}", e)))?
+        };
+
+        // 使用 AAD（与 decrypt_credential 一致）
+        let aad = format!("{}:{}", tenant_id, user_for_key.hash());
+
+        // 用 AES-256-GCM 加密明文
+        let blob = vault_service::crypto::encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
+            .map_err(|e| ToolError::VaultError(format!("Encryption failed: {:?}", e)))?;
+        let encrypted_payload = EncryptedPayload::from_blob(&blob);
 
         // 创建凭证
         let tenant = TenantId::new(tenant_id);
@@ -270,7 +335,7 @@ impl CredBridgeTools {
         };
 
         let entry = self.state.vault
-            .create_credential(request, encrypted_payload)
+            .create_credential_with_id(request, encrypted_payload, credential_id_obj)
             .map_err(|e| ToolError::VaultError(e.to_string()))?;
 
         // 记录审计日志
@@ -335,12 +400,25 @@ impl CredBridgeTools {
         let cred_id = CredentialId::from_string(credential_id.to_string())
             .map_err(|e| ToolError::InvalidInput(format!("Invalid credential ID: {}", e)))?;
 
-        // 如果提供了新的明文数据，创建新的加密载荷
+        // 如果提供了新的明文数据，使用 key_hierarchy 派生密钥后加密
         let encrypted_payload = if let Some(data) = plaintext_data {
             let plaintext_bytes = serde_json::to_vec(data)
                 .map_err(|e| ToolError::InvalidInput(format!("Invalid plaintext data: {}", e)))?;
-            Some(create_encrypted_payload(&plaintext_bytes)
-                .map_err(|e| ToolError::VaultError(e))?)
+
+            let user_for_key = UserId::new(user_id);
+            let l3_key = {
+                let hierarchy = self.state.key_hierarchy.read().await;
+                let l2_key = hierarchy
+                    .derive_user_vault_key(tenant_id, user_for_key.hash())
+                    .map_err(|e| ToolError::VaultError(format!("L2 key derivation failed: {}", e)))?;
+                hierarchy
+                    .derive_credential_key(&l2_key, credential_id, KeyPurpose::CredentialEncryption)
+                    .map_err(|e| ToolError::VaultError(format!("L3 key derivation failed: {}", e)))?
+            };
+            let aad = format!("{}:{}", tenant_id, user_for_key.hash());
+            let blob = vault_service::crypto::encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
+                .map_err(|e| ToolError::VaultError(format!("Encryption failed: {:?}", e)))?;
+            Some(EncryptedPayload::from_blob(&blob))
         } else {
             None
         };
@@ -440,34 +518,6 @@ impl CredBridgeTools {
             deleted_at: chrono::Utc::now().to_rfc3339(),
         })
     }
-}
-
-/// 创建加密载荷（模拟 TEE 加密）
-fn create_encrypted_payload(plaintext: &[u8]) -> Result<EncryptedPayload, String> {
-    use vault_service::crypto::constants;
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-
-    // 生成随机 nonce
-    let nonce: Vec<u8> = (0..constants::NONCE_LENGTH).map(|_| rand::random::<u8>()).collect();
-
-    // 模拟加密（实际应该在 TEE 内执行）
-    // 这里使用简单的 XOR 作为演示，实际应使用 AES-256-GCM
-    let ciphertext: Vec<u8> = plaintext.iter()
-        .zip(nonce.iter().cycle())
-        .map(|(p, n)| p ^ n)
-        .collect();
-
-    // 模拟 auth tag
-    let auth_tag: Vec<u8> = (0..constants::AUTH_TAG_LENGTH).map(|_| rand::random::<u8>()).collect();
-
-    Ok(EncryptedPayload::new(
-        constants::PROTOCOL_VERSION,
-        constants::ALGORITHM_AES_256_GCM,
-        constants::KDF_HKDF_SHA256,
-        nonce,
-        auth_tag,
-        ciphertext,
-    ))
 }
 
 /// 工具错误类型
