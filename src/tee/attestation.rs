@@ -892,20 +892,55 @@ impl AttestationService {
     }
 
     /// 验证签名
+    ///
+    /// 验证逻辑分三层：
+    /// 1. 若签名全零：模拟模式允许，非模拟模式拒绝
+    /// 2. 若已配置 `verifier_public_key`：执行真实 ECDSA P-256 验证（固定长度 r||s 格式）
+    /// 3. 若未配置公钥且签名非零：接受（用于内部模拟 Quote，其中签名由哈希填充）
+    ///
+    /// 注意：生产环境应始终调用 `with_verifier_key()` 配置 Intel Attestation Key 公钥。
     fn verify_signature(&self, quote: &Quote) -> Result<(), AttestationError> {
-        // 在实际实现中，这里会使用验证者公钥验证 ECDSA 签名
-        // 这里简化处理，仅检查签名格式
-        if quote.signature.isv_enclave_report_signature.r == [0u8; 32]
-            && quote.signature.isv_enclave_report_signature.s == [0u8; 32]
-        {
-            // 空签名，在模拟模式下允许
+        let sig = &quote.signature.isv_enclave_report_signature;
+
+        // 全零签名检查
+        let sig_is_zero = sig.r == [0u8; 32] && sig.s == [0u8; 32];
+
+        if sig_is_zero {
+            // 全零签名在模拟模式下允许（生成时未设置有效签名）
             if self.allow_simulation {
                 return Ok(());
             }
             return Err(AttestationError::SignatureVerificationFailed);
         }
 
-        Ok(())
+        // 若已配置验证者公钥，执行真实 ECDSA P-256 验证
+        if let Some(ref vk) = self.verifier_public_key {
+            use ring::signature::{self, UnparsedPublicKey};
+
+            // 构建未压缩公钥格式（0x04 || x || y，共 65 字节）
+            let pub_key_bytes = vk.to_uncompressed();
+
+            // 消息为 Report Body 的序列化字节（与签名时相同）
+            let message = quote.report_body.to_bytes();
+
+            // 签名为 r || s（64 字节 raw 固定长度格式）
+            let sig_bytes = sig.to_bytes();
+
+            let key = UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, &pub_key_bytes);
+
+            key.verify(&message, &sig_bytes)
+                .map_err(|_| AttestationError::SignatureVerificationFailed)?;
+
+            return Ok(());
+        }
+
+        // 未配置验证者公钥且签名非零：
+        // - 模拟模式下允许（内部生成的模拟 Quote 使用 SHA-256 哈希填充签名）
+        // - 非模拟模式下拒绝（fail-closed），生产部署必须通过 with_verifier_key() 配置公钥
+        if self.allow_simulation {
+            return Ok(());
+        }
+        Err(AttestationError::SignatureVerificationFailed)
     }
 }
 
@@ -1327,10 +1362,10 @@ mod tests {
         let mut enclave = Enclave::new(config);
         enclave.initialize().unwrap();
 
-        // 创建带白名单的服务
+        // 创建带白名单的服务（测试使用模拟签名，因此允许模拟模式）
         let service = AttestationService::new()
             .allow_mrenclave(enclave.mrenclave())
-            .allow_simulation(false);
+            .allow_simulation(true);
 
         let challenge = b"test_challenge";
         let quote = service.generate_quote(&enclave, challenge).unwrap();
