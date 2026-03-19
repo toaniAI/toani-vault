@@ -241,6 +241,91 @@ impl ToolHandler {
             ),
         ]
     }
+    /// 直接处理 MCP JSON-RPC 请求，返回 JSON-RPC 响应值
+    /// 用于 SSE 后台分发任务（绕过 rmcp 的 RequestContext 要求）
+    pub async fn dispatch_jsonrpc(
+        &self,
+        request_id: &str,
+        payload: &serde_json::Value,
+    ) -> serde_json::Value {
+        let method = payload
+            .get("method")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        match method {
+            "tools/call" => {
+                let params = payload.get("params").cloned().unwrap_or_default();
+                let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let arguments = params
+                    .get("arguments")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .unwrap_or_default();
+
+                match tool_name {
+                    tool_names::LIST_CREDENTIALS => {
+                        match handle_list_credentials(&self.tools, arguments).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    tool_names::GET_CREDENTIAL => {
+                        match handle_get_credential(&self.tools, arguments).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    tool_names::CREATE_CREDENTIAL => {
+                        match handle_create_credential(&self.tools, arguments).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    tool_names::UPDATE_CREDENTIAL => {
+                        match handle_update_credential(&self.tools, arguments).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    tool_names::DELETE_CREDENTIAL => {
+                        match handle_delete_credential(&self.tools, arguments).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    tool_names::DECRYPT_CREDENTIAL => {
+                        match handle_decrypt_credential(&self.tools, arguments).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    tool_names::TEE_STATUS => {
+                        match handle_tee_status(&self.tools).await {
+                            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "result": r }),
+                            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": request_id, "error": { "code": e.code, "message": e.message } }),
+                        }
+                    }
+                    _ => serde_json::json!({
+                        "jsonrpc": "2.0", "id": request_id,
+                        "error": { "code": -32601, "message": format!("Unknown tool: {}", tool_name) }
+                    }),
+                }
+            }
+            "tools/list" => {
+                let tools = Self::get_tool_definitions();
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": { "tools": tools }
+                })
+            }
+            _ => serde_json::json!({
+                "jsonrpc": "2.0", "id": request_id,
+                "error": { "code": -32601, "message": format!("Method not found: {}", method) }
+            }),
+        }
+    }
 }
 
 impl ServerHandler for ToolHandler {

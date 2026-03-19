@@ -245,6 +245,8 @@ pub struct SseAppState {
     pub sessions: Arc<SessionManager>,
     /// Tool Handler
     pub handler: ToolHandler,
+    /// Token 验证器
+    pub token_validator: Arc<crate::auth::TokenValidator>,
 }
 
 /// 创建 SSE Router
@@ -274,35 +276,41 @@ pub async fn sse_handler(
         .strip_prefix("Bearer ")
         .ok_or(SseError::AuthFailed("Invalid token format".to_string()))?;
 
-    // TODO: 实际验证 Token (当前简化处理，仅做演示)
-    // 开发环境接受任何有效的 base64 token
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    let _ = URL_SAFE_NO_PAD.decode(token)
-        .unwrap_or_else(|_| Vec::new());
+    // 使用 TokenValidator 验证 Token
+    let claims = state.token_validator.validate(token).map_err(|e| {
+        use crate::auth::TokenError;
+        match e {
+            TokenError::TokenExpired => SseError::TokenExpired,
+            other => SseError::AuthFailed(other.to_string()),
+        }
+    })?;
+
+    // 验证 mcp:connect scope
+    if !claims.has_scope(crate::auth::SCOPE_MCP_CONNECT) {
+        return Err(SseError::AuthFailed(
+            "Missing required scope: mcp:connect".to_string(),
+        ));
+    }
 
     // 创建消息通道
     let (tx, rx) = mpsc::channel(MESSAGE_QUEUE_CAPACITY);
-    let (msg_tx, _msg_rx) = mpsc::channel(MESSAGE_QUEUE_CAPACITY);
-
-    // 创建简化的 claims (开发环境)
-    let claims = TokenClaims {
-        iss: "credbridge-mcp".to_string(),
-        sub: "dev_user".to_string(),
-        aud: "mcp-agent".to_string(),
-        exp: 9999999999,
-        iat: 1000000000,
-        jti: uuid::Uuid::new_v4().to_string(),
-        sid: params.session_id.clone(),
-        scp: vec!["mcp:connect".to_string()],
-    };
+    let (msg_tx, msg_rx) = mpsc::channel(MESSAGE_QUEUE_CAPACITY);
 
     // 注册 Session
     state
         .sessions
-        .register(params.session_id.clone(), tx, msg_tx, claims)
+        .register(params.session_id.clone(), tx.clone(), msg_tx, claims)
         .await?;
 
     info!("SSE session registered: {}", params.session_id);
+
+    // 启动后台任务：处理 MCP 请求并通过 SSE 返回响应
+    {
+        let handler = state.handler.clone();
+        let response_tx = tx.clone();
+        let session_id = params.session_id.clone();
+        tokio::spawn(dispatch_mcp_requests(msg_rx, handler, response_tx, session_id));
+    }
 
     // 生成 Session Token
     let session_token = base64_encode(&params.session_id);
@@ -319,6 +327,28 @@ pub async fn sse_handler(
 fn base64_encode(s: &str) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     URL_SAFE_NO_PAD.encode(s.as_bytes())
+}
+
+/// 后台任务：从消息队列接收 MCP 请求并分发到 ToolHandler，将响应写回 SSE 通道
+async fn dispatch_mcp_requests(
+    mut msg_rx: mpsc::Receiver<McpRequest>,
+    handler: ToolHandler,
+    response_tx: mpsc::Sender<SseMessage>,
+    session_id: String,
+) {
+    while let Some(request) = msg_rx.recv().await {
+        let response_value = handler
+            .dispatch_jsonrpc(&request.id, &request.payload)
+            .await;
+
+        let msg = SseMessage::Message { data: response_value };
+        if response_tx.send(msg).await.is_err() {
+            debug!("SSE channel closed for session {}, stopping dispatch", session_id);
+            break;
+        }
+    }
+
+    debug!("MCP dispatch task ended for session {}", session_id);
 }
 
 /// 创建 SSE 流
@@ -347,7 +377,7 @@ fn create_sse_stream(
 /// 消息处理器
 pub async fn message_handler(
     Query(params): Query<MessageQueryParams>,
-    State(_state): State<SseAppState>,
+    State(state): State<SseAppState>,
     Json(payload): Json<serde_json::Value>,
 ) -> Json<MessageResponse> {
     debug!("Message received for session: {}", params.session_id);
@@ -359,9 +389,31 @@ pub async fn message_handler(
         .unwrap_or("unknown")
         .to_string();
 
-    info!("Message received: {} for session: {}", message_id, params.session_id);
+    info!(
+        "Message received: {} for session: {}",
+        message_id, params.session_id
+    );
 
-    // TODO: 处理 MCP 请求并发送到 ToolHandler
+    // 获取对应的 session，将请求转发到消息队列
+    if let Some(session) = state.sessions.get_session(&params.session_id).await {
+        let mcp_request = McpRequest {
+            id: message_id.clone(),
+            session_id: params.session_id.clone(),
+            payload,
+        };
+
+        if let Err(e) = session.msg_tx.send(mcp_request).await {
+            warn!(
+                "Failed to dispatch message {} to session {}: {}",
+                message_id, params.session_id, e
+            );
+        }
+    } else {
+        warn!(
+            "No active session found for session_id: {}",
+            params.session_id
+        );
+    }
 
     Json(MessageResponse {
         accepted: true,
