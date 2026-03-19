@@ -325,7 +325,7 @@ async fn get_quote(State(state): State<Arc<AttestationState>>) -> impl IntoRespo
                 Json(QuoteResponse {
                     success: false,
                     data: None,
-                    error: Some(format!("Failed to serialize quote: {}", e)),
+                    error: Some(format!("Failed to serialize quote: {e}")),
                 }),
             ),
         },
@@ -334,7 +334,7 @@ async fn get_quote(State(state): State<Arc<AttestationState>>) -> impl IntoRespo
             Json(QuoteResponse {
                 success: false,
                 data: None,
-                error: Some(format!("No valid quote available: {}", e)),
+                error: Some(format!("No valid quote available: {e}")),
             }),
         ),
     }
@@ -378,7 +378,7 @@ async fn verify_quote(
                     mrenclave: String::new(),
                     mrsigner: String::new(),
                     timestamp: 0,
-                    error: Some(format!("Invalid base64 quote: {}", e)),
+                    error: Some(format!("Invalid base64 quote: {e}")),
                 }),
             );
         }
@@ -408,7 +408,7 @@ async fn verify_quote(
                 mrenclave: String::new(),
                 mrsigner: String::new(),
                 timestamp: 0,
-                error: Some(format!("Verification failed: {}", e)),
+                error: Some(format!("Verification failed: {e}")),
             }),
         ),
     }
@@ -468,7 +468,7 @@ async fn get_report(State(state): State<Arc<AttestationState>>) -> impl IntoResp
             Json(ReportResponse {
                 success: false,
                 data: None,
-                error: Some(format!("Failed to get report: {}", e)),
+                error: Some(format!("Failed to get report: {e}")),
             }),
         ),
     }
@@ -562,7 +562,7 @@ async fn create_challenge(
                         expires_at: 0,
                         mrenclave: String::new(),
                         mrsigner: String::new(),
-                        error: Some(format!("Failed to generate challenge: {}", e)),
+                        error: Some(format!("Failed to generate challenge: {e}")),
                     }),
                 );
             }
@@ -601,7 +601,7 @@ async fn create_challenge(
                     expires_at: 0,
                     mrenclave: String::new(),
                     mrsigner: String::new(),
-                    error: Some(format!("Failed to generate quote: {}", e)),
+                    error: Some(format!("Failed to generate quote: {e}")),
                 }),
             );
         }
@@ -646,7 +646,7 @@ async fn verify_challenge_response(
                     mrenclave: String::new(),
                     mrsigner: String::new(),
                     timestamp: 0,
-                    error: Some(format!("Invalid base64 quote: {}", e)),
+                    error: Some(format!("Invalid base64 quote: {e}")),
                 }),
             );
         }
@@ -664,7 +664,7 @@ async fn verify_challenge_response(
                     mrenclave: String::new(),
                     mrsigner: String::new(),
                     timestamp: 0,
-                    error: Some(format!("Invalid quote format: {}", e)),
+                    error: Some(format!("Invalid quote format: {e}")),
                 }),
             );
         }
@@ -731,7 +731,7 @@ async fn verify_challenge_response(
                 mrenclave: String::new(),
                 mrsigner: String::new(),
                 timestamp: 0,
-                error: Some(format!("Verification failed: {}", e)),
+                error: Some(format!("Verification failed: {e}")),
             }),
         ),
     }
@@ -819,7 +819,7 @@ async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> i
         StatusCode::OK,
         Json(AttestationStatusResponse {
             success: true,
-            status: format!("{:?}", status).to_lowercase(),
+            status: format!("{status:?}").to_lowercase(),
             enclave_state,
             mrenclave,
             mrsigner,
@@ -884,7 +884,7 @@ async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoR
                     success: false,
                     new_quote_b64: None,
                     timestamp: 0,
-                    error: Some(format!("Failed to serialize quote: {}", e)),
+                    error: Some(format!("Failed to serialize quote: {e}")),
                 }),
             ),
         },
@@ -894,7 +894,7 @@ async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoR
                 success: false,
                 new_quote_b64: None,
                 timestamp: 0,
-                error: Some(format!("Failed to refresh quote: {}", e)),
+                error: Some(format!("Failed to refresh quote: {e}")),
             }),
         ),
     }
@@ -1026,10 +1026,10 @@ pub enum AttestationInitError {
 impl std::fmt::Display for AttestationInitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AttestationInitError::EnclaveError(msg) => write!(f, "Enclave error: {}", msg),
-            AttestationInitError::DcapError(msg) => write!(f, "DCAP error: {}", msg),
+            AttestationInitError::EnclaveError(msg) => write!(f, "Enclave error: {msg}"),
+            AttestationInitError::DcapError(msg) => write!(f, "DCAP error: {msg}"),
             AttestationInitError::ConfigurationError(msg) => {
-                write!(f, "Configuration error: {}", msg)
+                write!(f, "Configuration error: {msg}")
             }
         }
     }

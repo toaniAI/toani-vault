@@ -59,19 +59,13 @@ pub struct DefaultAuditLogger;
 impl AuditLogger for DefaultAuditLogger {
     fn log_credential_created(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         log::info!(
-            "[AUDIT] Credential created - tenant: {}, user: {}, credential: {}",
-            tenant_id,
-            user_id,
-            credential_id
+            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
     }
 
     fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         log::info!(
-            "[AUDIT] Credential accessed - tenant: {}, user: {}, credential: {}",
-            tenant_id,
-            user_id,
-            credential_id
+            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
     }
 
@@ -92,11 +86,7 @@ impl AuditLogger for DefaultAuditLogger {
         success: bool,
     ) {
         log::info!(
-            "[AUDIT] Decryption attempt - tenant: {}, user: {}, credential: {}, success: {}",
-            tenant_id,
-            user_id,
-            credential_id,
-            success
+            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}"
         );
     }
 }
@@ -129,14 +119,17 @@ impl StorageAuditLogger {
 
             let entry = AuditEntry::new(
                 user_id_hash,
-                "session",      // session_id
-                "credentials",  // service
+                "session",     // session_id
+                "credentials", // service
                 action,
                 outcome,
-                "mrenclave",    // tee_mrenclave - 简化处理
-                "jti",          // action_token_jti - 简化处理
+                "mrenclave", // tee_mrenclave - 简化处理
+                "jti",       // action_token_jti - 简化处理
             )
-            .with_param("credential_id", RedactedParam::Plain(credential_id.to_string()))
+            .with_param(
+                "credential_id",
+                RedactedParam::Plain(credential_id.to_string()),
+            )
             .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
 
             if let Err(e) = storage.record(entry) {
@@ -168,10 +161,7 @@ impl AuditLogger for StorageAuditLogger {
     fn log_credential_accessed(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         // 打印到控制台
         log::info!(
-            "[AUDIT] Credential accessed - tenant: {}, user: {}, credential: {}",
-            tenant_id,
-            user_id,
-            credential_id
+            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
 
         // 写入存储
@@ -186,10 +176,7 @@ impl AuditLogger for StorageAuditLogger {
     fn log_credential_deleted(&self, tenant_id: &str, user_id: &str, credential_id: &str) {
         // 打印到控制台
         log::info!(
-            "[AUDIT] Credential deleted - tenant: {}, user: {}, credential: {}",
-            tenant_id,
-            user_id,
-            credential_id
+            "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
 
         // 写入存储
@@ -210,11 +197,7 @@ impl AuditLogger for StorageAuditLogger {
     ) {
         // 打印到控制台
         log::info!(
-            "[AUDIT] Decryption attempt - tenant: {}, user: {}, credential: {}, success: {}",
-            tenant_id,
-            user_id,
-            credential_id,
-            success
+            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}"
         );
 
         // 写入存储
@@ -542,7 +525,7 @@ pub async fn decrypt_credential_endpoint(
             Err(e) => {
                 return Err(ApiError::new(
                     "invalid_request",
-                    format!("Failed to decode plaintext as UTF-8: {}", e),
+                    format!("Failed to decode plaintext as UTF-8: {e}"),
                 ));
             }
         },

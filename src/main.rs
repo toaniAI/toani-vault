@@ -241,11 +241,12 @@ async fn initialize_app_state(
 
     // 初始化审计日志存储（使用共享的 Arc，让凭证 API 和审计 API 共享同一个存储）
     let audit_storage = Arc::new(tokio::sync::Mutex::new(
-        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?
+        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?,
     ));
 
     // 创建存储适配器用于审计 API 查询
-    let audit_storage_adapter = MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
+    let audit_storage_adapter =
+        MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
 
     // 创建存储审计日志记录器用于凭证 API 写入
     let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage));
@@ -254,12 +255,12 @@ async fn initialize_app_state(
     let credential_state = CredentialAppState {
         vault,
         key_hierarchy: Arc::new(RwLock::new(hierarchy)),
-        audit_logger,  // 现在写入到共享存储
+        audit_logger, // 现在写入到共享存储
     };
 
     // 创建审计 API 状态
     let audit_state = AuditApiState {
-        storage: Arc::new(audit_storage_adapter),  // 从共享存储查询
+        storage: Arc::new(audit_storage_adapter), // 从共享存储查询
     };
 
     // 创建认证 API 状态

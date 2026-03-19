@@ -117,7 +117,7 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         // 获取所有条目
         let all_entries = storage
             .query_recent(100_000)
-            .map_err(|e| format!("{:?}", e))?;
+            .map_err(|e| format!("{e:?}"))?;
 
         // 过滤
         let filtered: Vec<_> = all_entries
@@ -175,13 +175,13 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         // 搜索所有条目
         let all_entries = storage
             .query_recent(100_000)
-            .map_err(|e| format!("{:?}", e))?;
+            .map_err(|e| format!("{e:?}"))?;
         Ok(all_entries.into_iter().find(|e| e.entry.id == id))
     }
 
     async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String> {
         let storage = self.storage.lock().await;
-        storage.get_by_index(index).map_err(|e| format!("{:?}", e))
+        storage.get_by_index(index).map_err(|e| format!("{e:?}"))
     }
 
     async fn get_verification_proof(
@@ -408,7 +408,7 @@ pub async fn export_audit_logs(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditExportResponse::error(format!("读取请求体失败: {}", e))),
+                Json(AuditExportResponse::error(format!("读取请求体失败：{e}"))),
             )
                 .into_response();
         }
@@ -419,7 +419,7 @@ pub async fn export_audit_logs(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditExportResponse::error(format!("无效的请求体: {}", e))),
+                Json(AuditExportResponse::error(format!("无效的请求体：{e}"))),
             )
                 .into_response();
         }
@@ -566,7 +566,7 @@ pub async fn verify_audit_log(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditVerifyResponse::error(format!("读取请求体失败: {}", e))),
+                Json(AuditVerifyResponse::error(format!("读取请求体失败：{e}"))),
             )
                 .into_response();
         }
@@ -577,7 +577,7 @@ pub async fn verify_audit_log(
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(AuditVerifyResponse::error(format!("无效的请求体: {}", e))),
+                Json(AuditVerifyResponse::error(format!("无效的请求体：{e}"))),
             )
                 .into_response();
         }
