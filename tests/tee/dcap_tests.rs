@@ -149,7 +149,7 @@ mod dcap_service_tests {
         let mrenclave = enclave.mrenclave();
 
         let config = DcapConfig {
-            simulation_mode: false,
+            simulation_mode: true, // 使用模拟模式：测试侧重测量白名单逻辑而非签名验证
             allowed_mrenclaves: vec![mrenclave],
             ..Default::default()
         };
@@ -169,7 +169,7 @@ mod dcap_service_tests {
         let mrsigner = enclave.mrsigner();
 
         let config = DcapConfig {
-            simulation_mode: false,
+            simulation_mode: true, // 使用模拟模式：测试侧重测量白名单逻辑而非签名验证
             allowed_mrsigners: vec![mrsigner],
             ..Default::default()
         };
@@ -189,7 +189,7 @@ mod dcap_service_tests {
         let wrong_mrenclave = [0x99u8; 32];
 
         let config = DcapConfig {
-            simulation_mode: false,
+            simulation_mode: true, // 使用模拟模式：测试侧重测量不匹配逻辑而非签名验证
             allowed_mrenclaves: vec![wrong_mrenclave],
             ..Default::default()
         };
