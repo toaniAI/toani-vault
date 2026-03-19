@@ -1,3 +1,12 @@
+# Hidden directories
+.claude/
+.idea/
+.local/
+.playwright-mcp/
+.qoder/
+.qwen/
+.sealed/
+
 # Build artifacts
 /target
 **/target/
