@@ -14,6 +14,7 @@
 //! 2. 运行时周期性完整性检查
 //! 3. 驱动版本白名单验证
 
+use base64;
 use ring::digest::{SHA256, digest};
 use ring::signature::{self, UnparsedPublicKey};
 use serde::{Deserialize, Serialize};
@@ -202,10 +203,12 @@ impl TeeDriverVerifier {
             return Ok(VerificationStatus::HashMismatch);
         }
 
-        // 步骤 4: 验证驱动签名
+        // 步骤 4: 验证驱动签名（使用原始文件内容，而非哈希值，避免双重哈希）
         if self.config.enable_signature_verification {
+            let driver_content = fs::read(&self.config.driver_path)
+                .map_err(|e| DriverVerifyError::ReadError(e.to_string()))?;
             let signature = self.load_driver_signature(&self.config.driver_path)?;
-            if !self.verify_signature(&driver_hash, &signature)? {
+            if !self.verify_signature(&driver_content, &signature)? {
                 return Ok(VerificationStatus::InvalidSignature);
             }
         }
@@ -242,18 +245,24 @@ impl TeeDriverVerifier {
     }
 
     /// 验证驱动签名
+    ///
+    /// 接受驱动文件的原始字节内容（而非预哈希值），由 ring 内部执行 SHA-256，
+    /// 避免双重哈希问题（CRIT-004 修复）。
     fn verify_signature(
         &self,
-        data_hash: &str,
+        raw_data: &[u8],
         signature: &[u8],
     ) -> Result<bool, DriverVerifyError> {
-        let hash_bytes = hex::decode(data_hash)
-            .map_err(|e| DriverVerifyError::SignatureVerificationFailed(e.to_string()))?;
+        if self.trusted_public_keys.is_empty() {
+            return Err(DriverVerifyError::SignatureVerificationFailed(
+                "No trusted public keys configured".to_string(),
+            ));
+        }
 
         for public_key in &self.trusted_public_keys {
             let public_key = UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_ASN1, public_key);
 
-            match public_key.verify(&hash_bytes, signature) {
+            match public_key.verify(raw_data, signature) {
                 Ok(_) => return Ok(true),
                 Err(_) => continue, // 尝试下一个公钥
             }
@@ -353,11 +362,79 @@ pub fn verify_driver_signature<P: AsRef<Path>>(
 
 /// 获取受信任的公钥
 ///
-/// 在实际实现中，这应该从安全的密钥存储中获取
-fn get_trusted_public_key(_fingerprint: &str) -> Option<Vec<u8>> {
-    // TODO(#TEE-301): 从安全存储加载公钥
-    // 需要: 集成 Vault 或 HSM 密钥存储服务
+/// 查找顺序：
+/// 1. 环境变量 `TRUSTED_PUBLIC_KEY_<FINGERPRINT>`（Base64 编码的 DER 格式公钥）
+/// 2. 环境变量 `TRUSTED_PUBLIC_KEY_DEFAULT`（回退到默认公钥）
+///
+/// 指纹格式：冒号分隔的十六进制字节（如 `AA:BB:CC:DD`）将被规范化为下划线分隔的大写形式。
+///
+/// # 示例
+///
+/// 设置环境变量后即可使用：
+/// ```bash
+/// export TRUSTED_PUBLIC_KEY_AA_BB_CC_DD="<base64-encoded-der-public-key>"
+/// ```
+///
+/// 完整实现应集成 HashiCorp Vault 或 HSM（TODO #TEE-301）。
+fn get_trusted_public_key(fingerprint: &str) -> Option<Vec<u8>> {
+    // 将指纹规范化为环境变量名称友好的格式
+    // 例如 "AA:BB:CC" -> "AA_BB_CC"，"AA-BB-CC" -> "AA_BB_CC"
+    let normalized: String = fingerprint
+        .chars()
+        .map(|c| if c == ':' || c == '-' { '_' } else { c })
+        .collect::<String>()
+        .to_uppercase();
+
+    // 方案1：查找指纹特定的环境变量
+    let env_key = format!("TRUSTED_PUBLIC_KEY_{}", normalized);
+    if let Ok(key_b64) = std::env::var(&env_key) {
+        if let Ok(key_bytes) = decode_base64_key(&key_b64) {
+            log::debug!("Loaded trusted public key for fingerprint {} from env var {}", fingerprint, env_key);
+            return Some(key_bytes);
+        } else {
+            log::warn!("Failed to decode base64 public key from env var {}", env_key);
+        }
+    }
+
+    // 方案2：回退到默认公钥（适用于单密钥配置）
+    if let Ok(key_b64) = std::env::var("TRUSTED_PUBLIC_KEY_DEFAULT") {
+        if let Ok(key_bytes) = decode_base64_key(&key_b64) {
+            log::debug!("Using default trusted public key for fingerprint {}", fingerprint);
+            return Some(key_bytes);
+        }
+    }
+
+    // 未找到公钥
+    // TODO(#TEE-301): 集成 Vault KV 存储：
+    //   let path = format!("secret/tee/driver-keys/{}", fingerprint);
+    //   vault_client.get_secret(&path).ok()?.data.get("public_key")
+    log::warn!("No trusted public key found for fingerprint: {}", fingerprint);
     None
+}
+
+/// 解码 Base64 编码的公钥字节
+///
+/// 支持标准 Base64 和 URL-safe Base64（有无填充均可）
+fn decode_base64_key(b64: &str) -> Result<Vec<u8>, String> {
+    use base64::{Engine as _, engine::general_purpose};
+
+    let trimmed = b64.trim();
+
+    // 尝试标准 Base64
+    if let Ok(bytes) = general_purpose::STANDARD.decode(trimmed) {
+        if !bytes.is_empty() {
+            return Ok(bytes);
+        }
+    }
+
+    // 尝试 URL-safe Base64（无填充）
+    if let Ok(bytes) = general_purpose::URL_SAFE_NO_PAD.decode(trimmed) {
+        if !bytes.is_empty() {
+            return Ok(bytes);
+        }
+    }
+
+    Err(format!("Failed to decode base64 key (length {})", trimmed.len()))
 }
 
 /// 清理敏感的驱动元数据
