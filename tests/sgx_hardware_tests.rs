@@ -23,11 +23,14 @@
 //! - AESM 服务运行中
 
 use ring::digest::{SHA256, digest};
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
-use vault_service::tee::enclave::Enclave;
-
-#[cfg(target_os = "linux")]
-use vault_service::tee::{dcap::DcapConfig, dcap::DcapError, dcap::DcapService};
+use vault_service::tee::{
+    attestation::AttestationResult, challenge::ChallengeProtocol, challenge::ProverProtocol,
+    challenge::SecureChannel, challenge::CHANNEL_KEY_LENGTH, dcap::DcapConfig, dcap::DcapError,
+    dcap::DcapService, enclave::Enclave, enclave::EnclaveConfig, enclave::EnclaveState,
+    sealing::SealPolicy, sealing::SealingService,
+};
 
 // ============================================================================
 // HW-001: SGX 硬件基础验证
