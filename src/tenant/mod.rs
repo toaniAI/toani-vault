@@ -211,7 +211,7 @@ impl std::str::FromStr for TenantRole {
             "serviceaccount" | "service_account" | "service-account" => {
                 Ok(TenantRole::ServiceAccount)
             }
-            _ => Err(format!("Unknown tenant role: {}", s)),
+            _ => Err(format!("Unknown tenant role: {s}")),
         }
     }
 }

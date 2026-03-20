@@ -97,23 +97,23 @@ pub enum DcapError {
 impl std::fmt::Display for DcapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DcapError::QuoteGenerationFailed(msg) => write!(f, "Quote generation failed: {}", msg),
+            DcapError::QuoteGenerationFailed(msg) => write!(f, "Quote generation failed: {msg}"),
             DcapError::QuoteVerificationFailed(msg) => {
-                write!(f, "Quote verification failed: {}", msg)
+                write!(f, "Quote verification failed: {msg}")
             }
             DcapError::PcsCommunicationFailed(msg) => {
-                write!(f, "PCS communication failed: {}", msg)
+                write!(f, "PCS communication failed: {msg}")
             }
             DcapError::CertificateVerificationFailed(msg) => {
-                write!(f, "Certificate verification failed: {}", msg)
+                write!(f, "Certificate verification failed: {msg}")
             }
             DcapError::InvalidCertificateChain => write!(f, "Invalid certificate chain"),
             DcapError::SignatureVerificationFailed => write!(f, "Signature verification failed"),
             DcapError::MeasurementMismatch => write!(f, "Measurement mismatch"),
             DcapError::InvalidQuoteFormat => write!(f, "Invalid quote format"),
-            DcapError::ConfigurationError(msg) => write!(f, "Configuration error: {}", msg),
-            DcapError::EnclaveError(msg) => write!(f, "Enclave error: {}", msg),
-            DcapError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            DcapError::ConfigurationError(msg) => write!(f, "Configuration error: {msg}"),
+            DcapError::EnclaveError(msg) => write!(f, "Enclave error: {msg}"),
+            DcapError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }
@@ -1195,7 +1195,7 @@ fn parse_pem_cert(pem: &str) -> Result<Vec<u8>, DcapError> {
     use base64::{Engine, engine::general_purpose::STANDARD};
     STANDARD
         .decode(&base64_content)
-        .map_err(|e| DcapError::ConfigurationError(format!("Invalid PEM: {}", e)))
+        .map_err(|e| DcapError::ConfigurationError(format!("Invalid PEM: {e}")))
 }
 
 /// 获取当前时间戳

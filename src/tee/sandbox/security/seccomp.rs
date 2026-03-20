@@ -279,7 +279,7 @@ impl SeccompFilter {
                 result.push_str("mode: whitelist\n\n");
 
                 for syscall in &self.allowlist {
-                    result.push_str(&format!("allow {}\n", syscall));
+                    result.push_str(&format!("allow {syscall}\n"));
                 }
 
                 result.push_str("\n# 拒绝其他所有\n");
@@ -290,7 +290,7 @@ impl SeccompFilter {
                 result.push_str("mode: blacklist\n\n");
 
                 for syscall in &self.denylist {
-                    result.push_str(&format!("deny {}\n", syscall));
+                    result.push_str(&format!("deny {syscall}\n"));
                 }
 
                 result.push_str("\n# 允许其他所有\n");

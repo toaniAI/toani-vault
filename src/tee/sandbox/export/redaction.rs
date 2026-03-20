@@ -344,7 +344,7 @@ impl RedactionService {
     ) -> Result<Vec<u8>, ExportError> {
         // 加载图像
         let mut image = image::load_from_memory(image_data)
-            .map_err(|e| ExportError::Redaction(format!("加载图像失败: {}", e)))?;
+            .map_err(|e| ExportError::Redaction(format!("加载图像失败: {e}")))?;
 
         // 按区域应用脱敏
         for region in regions {
@@ -358,7 +358,7 @@ impl RedactionService {
 
             strategy
                 .apply(&mut image, region)
-                .map_err(|e| ExportError::Redaction(format!("应用脱敏策略失败: {}", e)))?;
+                .map_err(|e| ExportError::Redaction(format!("应用脱敏策略失败: {e}")))?;
         }
 
         // 编码图像
@@ -370,7 +370,7 @@ impl RedactionService {
             ImageFormat::Jpeg => image.write_to(&mut cursor, image::ImageFormat::Jpeg),
             ImageFormat::Webp => image.write_to(&mut cursor, image::ImageFormat::WebP),
         }
-        .map_err(|e| ExportError::Redaction(format!("编码图像失败: {}", e)))?;
+        .map_err(|e| ExportError::Redaction(format!("编码图像失败: {e}")))?;
 
         Ok(output)
     }

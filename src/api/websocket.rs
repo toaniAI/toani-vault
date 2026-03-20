@@ -245,7 +245,7 @@ pub async fn handle_socket(
             error!("Invalid session ID: {}", e);
             let error_msg = ServerMessage::Error {
                 code: "invalid_session_id".to_string(),
-                message: format!("Invalid session ID: {}", e),
+                message: format!("Invalid session ID: {e}"),
                 operation_id: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
@@ -260,7 +260,7 @@ pub async fn handle_socket(
             error!("Invalid credential ID: {}", e);
             let error_msg = ServerMessage::Error {
                 code: "invalid_credential_id".to_string(),
-                message: format!("Invalid credential ID: {}", e),
+                message: format!("Invalid credential ID: {e}"),
                 operation_id: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
@@ -354,7 +354,7 @@ pub async fn handle_socket(
                             Err(e) => {
                                 let error_msg = ServerMessage::Error {
                                     code: "invalid_message".to_string(),
-                                    message: format!("Failed to parse message: {}", e),
+                                    message: format!("Failed to parse message: {e}"),
                                     operation_id: None,
                                     timestamp: chrono::Utc::now().to_rfc3339(),
                                 };
@@ -594,7 +594,7 @@ async fn execute_operation_with_timeout(
                 operation_type: op_type.clone(),
                 status: "executing".to_string(),
                 progress: i,
-                message: Some(format!("Progress {}%", i)),
+                message: Some(format!("Progress {i}%")),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
             let _ = progress_tx.send(progress_msg).await;
@@ -692,7 +692,7 @@ async fn take_screenshot(
         }
         Err(e) => {
             warn!("截图失败: session={}, error={}", state.session_id, e);
-            Err(format!("截图失败: {}", e).into())
+            Err(format!("截图失败: {e}").into())
         }
     }
 }

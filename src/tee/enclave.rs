@@ -363,7 +363,7 @@ impl Enclave {
             CachedUserKey {
                 handle: cache_key,
                 tenant_id: tenant_id.to_string(),
-                user_id_hash: format!("hash:{}", user_id),
+                user_id_hash: format!("hash:{user_id}"),
                 created_at: now,
                 last_accessed_at: now,
                 access_count: 0,
@@ -418,7 +418,7 @@ impl Enclave {
         let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
 
         // 构建 AAD
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
 
         // 执行加密（使用 AAD）
         let ciphertext = cipher
@@ -437,7 +437,7 @@ impl Enclave {
         let auth_tag = ciphertext[auth_tag_start..].to_vec();
 
         // 计算 AAD 哈希
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
         let aad_hash = ring::digest::digest(&ring::digest::SHA256, aad.as_bytes());
 
         self.stats.encryption_ops += 1;
@@ -502,7 +502,7 @@ impl Enclave {
         ciphertext.extend_from_slice(&auth_tag);
 
         // 构建 AAD（必须与加密时相同）
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
 
         // 创建 AES-256-GCM cipher
         let cipher = Aes256Gcm::new_from_slice(l3_key.as_bytes())
@@ -691,18 +691,18 @@ impl std::fmt::Display for EnclaveError {
             EnclaveError::AlreadyInitialized => write!(f, "Enclave already initialized"),
             EnclaveError::NotRunning => write!(f, "Enclave not running"),
             EnclaveError::KeyInitializationFailed(msg) => {
-                write!(f, "Key initialization failed: {}", msg)
+                write!(f, "Key initialization failed: {msg}")
             }
-            EnclaveError::KeyDerivationFailed(msg) => write!(f, "Key derivation failed: {}", msg),
-            EnclaveError::EncryptionFailed(msg) => write!(f, "Encryption failed: {}", msg),
-            EnclaveError::DecryptionFailed(msg) => write!(f, "Decryption failed: {}", msg),
+            EnclaveError::KeyDerivationFailed(msg) => write!(f, "Key derivation failed: {msg}"),
+            EnclaveError::EncryptionFailed(msg) => write!(f, "Encryption failed: {msg}"),
+            EnclaveError::DecryptionFailed(msg) => write!(f, "Decryption failed: {msg}"),
             EnclaveError::AuthenticationFailed => write!(f, "Authentication failed"),
-            EnclaveError::SealingFailed(msg) => write!(f, "Sealing failed: {}", msg),
-            EnclaveError::StorageError(msg) => write!(f, "Storage error: {}", msg),
+            EnclaveError::SealingFailed(msg) => write!(f, "Sealing failed: {msg}"),
+            EnclaveError::StorageError(msg) => write!(f, "Storage error: {msg}"),
             EnclaveError::LockTimeout(msg) => {
-                write!(f, "Lock timeout (possible deadlock): {}", msg)
+                write!(f, "Lock timeout (possible deadlock): {msg}")
             }
-            EnclaveError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            EnclaveError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }
@@ -822,7 +822,7 @@ fn acquire_write_lock_sync<T>(
 fn derive_cache_key(tenant_id: &str, user_id: &str) -> KeyHandle {
     use ring::digest::{SHA256, digest};
 
-    let data = format!("{}:{}", tenant_id, user_id);
+    let data = format!("{tenant_id}:{user_id}");
     let hash = digest(&SHA256, data.as_bytes());
 
     let mut key = [0u8; 32];

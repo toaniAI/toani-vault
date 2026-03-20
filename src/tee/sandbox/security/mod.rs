@@ -74,7 +74,7 @@ impl Default for SecurityChecker {
 /// 检查沙箱逃逸尝试
 pub fn check_escape_attempt(pid: u32) -> Result<(), SecurityError> {
     // 检查 /proc/PID/status 中的 CapEff
-    let status_path = PathBuf::from(format!("/proc/{}/status", pid));
+    let status_path = PathBuf::from(format!("/proc/{pid}/status"));
 
     if let Ok(status) = std::fs::read_to_string(&status_path) {
         // 检查是否有不应该有的 capability

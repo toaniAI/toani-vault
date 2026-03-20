@@ -122,17 +122,17 @@ pub mod keys {
 
     /// 生成活跃 Token Set 的 key
     pub fn active_tokens_key(tenant_id: &str) -> String {
-        format!("{}:{}:active", ACTIVE_TOKENS_PREFIX, tenant_id)
+        format!("{ACTIVE_TOKENS_PREFIX}:{tenant_id}:active")
     }
 
     /// 生成撤销 Token Set 的 key
     pub fn revoked_tokens_key(tenant_id: &str) -> String {
-        format!("{}:{}:revoked", REVOKED_TOKENS_PREFIX, tenant_id)
+        format!("{REVOKED_TOKENS_PREFIX}:{tenant_id}:revoked")
     }
 
     /// 生成 Token 元数据 Hash 的 key
     pub fn token_metadata_key(jti: &str) -> String {
-        format!("{}:{}", TOKEN_METADATA_PREFIX, jti)
+        format!("{TOKEN_METADATA_PREFIX}:{jti}")
     }
 }
 

@@ -245,7 +245,7 @@ pub struct EncryptionContext {
 impl EncryptionContext {
     /// 创建加密上下文
     pub fn new(tenant_id: &str, user_id: &str) -> Self {
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
         Self {
             aad_template: aad.into_bytes(),
         }
@@ -269,7 +269,7 @@ pub struct DecryptionContext {
 impl DecryptionContext {
     /// 创建解密上下文
     pub fn new(tenant_id: &str, user_id: &str) -> Self {
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
         Self {
             aad_template: aad.into_bytes(),
         }

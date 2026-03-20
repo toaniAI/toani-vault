@@ -490,7 +490,7 @@ pub async fn export_audit_logs(
                 Err(e) => {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(AuditExportResponse::error(format!("序列化失败: {}", e))),
+                        Json(AuditExportResponse::error(format!("序列化失败: {e}"))),
                     )
                         .into_response();
                 }
@@ -618,7 +618,7 @@ pub async fn verify_audit_log(
             Ok(None) => {
                 return (
                     StatusCode::NOT_FOUND,
-                    Json(AuditVerifyResponse::not_found(format!("索引: {}", index))),
+                    Json(AuditVerifyResponse::not_found(format!("索引: {index}"))),
                 )
                     .into_response();
             }

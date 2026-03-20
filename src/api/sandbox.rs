@@ -335,7 +335,7 @@ pub async fn get_session(
                 user_id: context.user_id,
                 credential_id: context.credential_id,
                 original_intent: context.original_intent.clone(),
-                status: format!("{:?}", status).to_lowercase(),
+                status: format!("{status:?}").to_lowercase(),
                 created_at: context.created_at.to_string(),
                 expires_at: context.expires_at.to_string(),
                 last_activity_at: last_activity.to_string(),
@@ -613,7 +613,7 @@ pub async fn export_data(
                 export_id,
                 data_base64: base64_data,
                 format: format_str.clone(),
-                filename: format!("export_{}. {}", export_id, format_str),
+                filename: format!("export_{export_id}. {format_str}"),
                 size_bytes: export_data.len(),
             };
 

@@ -241,7 +241,7 @@ impl TeeDriverVerifier {
         let sig_path = format!("{}.sig", path.as_ref().display());
 
         fs::read(&sig_path)
-            .map_err(|e| DriverVerifyError::ReadError(format!("无法读取签名文件：{}", e)))
+            .map_err(|e| DriverVerifyError::ReadError(format!("无法读取签名文件：{e}")))
     }
 
     /// 验证驱动签名
@@ -345,8 +345,7 @@ pub fn verify_driver_signature<P: AsRef<Path>>(
     // 验证签名（使用 ECDSA P-256）
     let public_key = get_trusted_public_key(signer_fingerprint).ok_or_else(|| {
         DriverVerifyError::SignatureVerificationFailed(format!(
-            "未找到受信任的公钥：{}",
-            signer_fingerprint
+            "未找到受信任的公钥：{signer_fingerprint}"
         ))
     })?;
 
@@ -386,30 +385,22 @@ fn get_trusted_public_key(fingerprint: &str) -> Option<Vec<u8>> {
         .to_uppercase();
 
     // 方案1：查找指纹特定的环境变量
-    let env_key = format!("TRUSTED_PUBLIC_KEY_{}", normalized);
+    let env_key = format!("TRUSTED_PUBLIC_KEY_{normalized}");
     if let Ok(key_b64) = std::env::var(&env_key) {
         if let Ok(key_bytes) = decode_base64_key(&key_b64) {
             log::debug!(
-                "Loaded trusted public key for fingerprint {} from env var {}",
-                fingerprint,
-                env_key
+                "Loaded trusted public key for fingerprint {fingerprint} from env var {env_key}"
             );
             return Some(key_bytes);
         } else {
-            log::warn!(
-                "Failed to decode base64 public key from env var {}",
-                env_key
-            );
+            log::warn!("Failed to decode base64 public key from env var {env_key}");
         }
     }
 
     // 方案2：回退到默认公钥（适用于单密钥配置）
     if let Ok(key_b64) = std::env::var("TRUSTED_PUBLIC_KEY_DEFAULT") {
         if let Ok(key_bytes) = decode_base64_key(&key_b64) {
-            log::debug!(
-                "Using default trusted public key for fingerprint {}",
-                fingerprint
-            );
+            log::debug!("Using default trusted public key for fingerprint {fingerprint}");
             return Some(key_bytes);
         }
     }
@@ -418,10 +409,7 @@ fn get_trusted_public_key(fingerprint: &str) -> Option<Vec<u8>> {
     // TODO(#TEE-301): 集成 Vault KV 存储：
     //   let path = format!("secret/tee/driver-keys/{}", fingerprint);
     //   vault_client.get_secret(&path).ok()?.data.get("public_key")
-    log::warn!(
-        "No trusted public key found for fingerprint: {}",
-        fingerprint
-    );
+    log::warn!("No trusted public key found for fingerprint: {fingerprint}");
     None
 }
 

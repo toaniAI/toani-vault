@@ -201,10 +201,7 @@ impl IntoResponse for TenantIsolationError {
             TenantIsolationError::CrossTenantAccessDenied { requested, actual } => (
                 StatusCode::FORBIDDEN,
                 "CROSS_TENANT_ACCESS_DENIED",
-                format!(
-                    "跨租户访问被拒绝: 请求租户 '{}' 不匹配资源租户 '{}'",
-                    requested, actual
-                ),
+                format!("跨租户访问被拒绝: 请求租户 '{requested}' 不匹配资源租户 '{actual}'"),
             ),
             TenantIsolationError::MissingTenantContext => (
                 StatusCode::UNAUTHORIZED,
@@ -214,12 +211,12 @@ impl IntoResponse for TenantIsolationError {
             TenantIsolationError::InvalidTenantId(id) => (
                 StatusCode::BAD_REQUEST,
                 "INVALID_TENANT_ID",
-                format!("无效的租户ID: {}", id),
+                format!("无效的租户ID: {id}"),
             ),
             TenantIsolationError::TenantInactive(id) => (
                 StatusCode::FORBIDDEN,
                 "TENANT_INACTIVE",
-                format!("租户未激活: {}", id),
+                format!("租户未激活: {id}"),
             ),
         };
 

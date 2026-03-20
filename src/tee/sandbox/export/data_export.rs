@@ -386,7 +386,7 @@ impl ExportService {
         use base64::Engine;
         let sig_data = base64::engine::general_purpose::STANDARD
             .decode(&signature.signature)
-            .map_err(|e| ExportError::Verification(format!("签名解码失败: {}", e)))?;
+            .map_err(|e| ExportError::Verification(format!("签名解码失败: {e}")))?;
 
         let sig = Signature {
             data: sig_data,
@@ -398,7 +398,7 @@ impl ExportService {
 
         km.verify(&export.data, &sig)
             .await
-            .map_err(|e| ExportError::Verification(format!("签名验证失败: {}", e)))
+            .map_err(|e| ExportError::Verification(format!("签名验证失败: {e}")))
     }
 
     /// 应用脱敏
@@ -624,22 +624,22 @@ impl ExportService {
         match value {
             serde_json::Value::Object(obj) => {
                 for (key, val) in obj {
-                    xml.push_str(&format!("{}<{}>", indent_str, key));
+                    xml.push_str(&format!("{indent_str}<{key}>"));
                     if val.is_object() || val.is_array() {
                         xml.push('\n');
                         self.json_to_xml(val, xml, indent + 1);
-                        xml.push_str(&format!("{}</{}>\n", indent_str, key));
+                        xml.push_str(&format!("{indent_str}</{key}>\n"));
                     } else {
                         xml.push_str(&escape_xml(&val.to_string()));
-                        xml.push_str(&format!("</{}>\n", key));
+                        xml.push_str(&format!("</{key}>\n"));
                     }
                 }
             }
             serde_json::Value::Array(arr) => {
                 for item in arr {
-                    xml.push_str(&format!("{}<item>\n", indent_str));
+                    xml.push_str(&format!("{indent_str}<item>\n"));
                     self.json_to_xml(item, xml, indent + 1);
-                    xml.push_str(&format!("{}</item>\n", indent_str));
+                    xml.push_str(&format!("{indent_str}</item>\n"));
                 }
             }
             serde_json::Value::String(s) => {

@@ -137,7 +137,7 @@ impl LlmService {
         let provider = self
             .get_provider(provider_name)
             .await
-            .ok_or_else(|| LlmError::Config(format!("Provider '{}' not found", provider_name)))?;
+            .ok_or_else(|| LlmError::Config(format!("Provider '{provider_name}' not found")))?;
 
         provider.chat_completion(request).await
     }

@@ -205,7 +205,7 @@ impl WatermarkService {
 
         // 使用 image crate 解码图片
         let img = image::load_from_memory(png_data)
-            .map_err(|e| ExportError::Watermark(format!("加载图片失败：{}", e)))?;
+            .map_err(|e| ExportError::Watermark(format!("加载图片失败：{e}")))?;
         let (width, height) = img.dimensions();
 
         // 使用 png::Encoder 重新编码并添加 tEXt chunks
@@ -219,17 +219,17 @@ impl WatermarkService {
             // 添加文本 chunks
             encoder
                 .add_text_chunk(WATERMARK_SIG_CHUNK_KEY.to_string(), signature_b64.clone())
-                .map_err(|e| ExportError::Watermark(format!("添加签名 chunk 失败：{}", e)))?;
+                .map_err(|e| ExportError::Watermark(format!("添加签名 chunk 失败：{e}")))?;
             encoder
                 .add_text_chunk(
                     WATERMARK_TEXT_CHUNK_KEY.to_string(),
                     watermark_text.to_string(),
                 )
-                .map_err(|e| ExportError::Watermark(format!("添加文本 chunk 失败：{}", e)))?;
+                .map_err(|e| ExportError::Watermark(format!("添加文本 chunk 失败：{e}")))?;
 
             let mut writer = encoder
                 .write_header()
-                .map_err(|e| ExportError::Watermark(format!("写入 PNG 头失败：{}", e)))?;
+                .map_err(|e| ExportError::Watermark(format!("写入 PNG 头失败：{e}")))?;
 
             // 写入原始图片数据 - png::Encoder 的 write_image_data 期望的是不带过滤字节的原始数据
             // 它会自动处理过滤
@@ -237,7 +237,7 @@ impl WatermarkService {
 
             writer
                 .write_image_data(&raw)
-                .map_err(|e| ExportError::Watermark(format!("写入图片数据失败：{}", e)))?;
+                .map_err(|e| ExportError::Watermark(format!("写入图片数据失败：{e}")))?;
             // writer 在这里被 drop，释放对 output 的借用
         }
 
@@ -317,7 +317,7 @@ impl WatermarkService {
 
         let reader = decoder
             .read_info()
-            .map_err(|e| ExportError::Watermark(format!("PNG 解码失败：{}", e)))?;
+            .map_err(|e| ExportError::Watermark(format!("PNG 解码失败：{e}")))?;
 
         // 从 info 中获取文本 chunks (tEXt 类型)
         let info = reader.info();
@@ -383,7 +383,7 @@ impl WatermarkService {
     ) -> Result<Vec<u8>, ExportError> {
         // 解码图片
         let mut image = image::load_from_memory(image_data)
-            .map_err(|e| ExportError::Watermark(format!("解码图片失败：{}", e)))?;
+            .map_err(|e| ExportError::Watermark(format!("解码图片失败：{e}")))?;
 
         // 获取图片尺寸
         let (width, height) = (image.width(), image.height());
@@ -666,7 +666,7 @@ impl WatermarkService {
 
         image
             .write_to(&mut cursor, image::ImageFormat::Png)
-            .map_err(|e| ExportError::Watermark(format!("编码图片失败：{}", e)))?;
+            .map_err(|e| ExportError::Watermark(format!("编码图片失败：{e}")))?;
 
         Ok(output)
     }

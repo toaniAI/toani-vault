@@ -20,17 +20,8 @@
 //! - DCAP Library 1.15+
 //! - AESM 服务运行中
 
-use ring::digest::{SHA256, digest};
-use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
-use vault_service::crypto::{KeyHierarchy, KeyPurpose};
-use vault_service::tee::{
-    attestation::AttestationResult,
-    challenge::{CHANNEL_KEY_LENGTH, ChallengeProtocol, ProverProtocol, SecureChannel},
-    dcap::{DcapConfig, DcapError, DcapQuote, DcapService},
-    enclave::{Enclave, EnclaveConfig, EnclaveState},
-    sealing::{SealPolicy, SealingService},
-};
+use vault_service::tee::enclave::Enclave;
 
 // ============================================================================
 // HW-001: SGX 硬件基础验证
@@ -390,13 +381,14 @@ fn test_sgx_sealing_key_derivation() {
         .seal_data(test_data, b"", SealPolicy::MacBased)
         .expect("密封失败");
 
-    println!("数据密封成功，密封后大小：{} 字节", sealed.ciphertext.len() + sealed.mac.len());
+    println!(
+        "数据密封成功，密封后大小：{} 字节",
+        sealed.ciphertext.len() + sealed.mac.len()
+    );
     assert!(!sealed.ciphertext.is_empty(), "密封数据不应为空");
 
     // 5. 测试解封数据
-    let unsealed = sealing_service
-        .unseal_data(&sealed)
-        .expect("解封失败");
+    let unsealed = sealing_service.unseal_data(&sealed).expect("解封失败");
 
     println!("数据解封成功");
     assert_eq!(unsealed, test_data, "解封数据应与原始数据一致");

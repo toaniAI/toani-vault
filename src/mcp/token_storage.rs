@@ -298,7 +298,7 @@ impl TokenCleanupHandle {
         let metadata_cache = self.metadata_cache.read().await;
         self.stats.update_token_count(metadata_cache.len());
 
-        log::debug!("Token removed from cleanup task: {}", token_id);
+        log::debug!("Token removed from cleanup task: {token_id}");
         Ok(())
     }
 }
@@ -353,13 +353,9 @@ impl McpTokenStorage {
                     log::info!("Keychain initialized successfully");
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Failed to access keychain: {}. Falling back to memory storage",
-                        e
-                    );
+                    log::warn!("Failed to access keychain: {e}. Falling back to memory storage");
                     return Err(TokenStorageError::EncryptionError(format!(
-                        "Keychain access failed: {}",
-                        e
+                        "Keychain access failed: {e}"
                     )));
                 }
             }
@@ -688,7 +684,7 @@ impl McpTokenStorage {
 
             // 添加元数据
             let metadata_json = serde_json::to_string(metadata).map_err(|e| {
-                TokenStorageError::EncryptionError(format!("Metadata serialization failed: {}", e))
+                TokenStorageError::EncryptionError(format!("Metadata serialization failed: {e}"))
             })?;
 
             // 组合数据：token_data + metadata_json
@@ -704,17 +700,13 @@ impl McpTokenStorage {
 
             match set_generic_password(service_name, account_name, &full_data) {
                 Ok(_) => {
-                    log::debug!("Token saved to keychain: {}", token_id);
+                    log::debug!("Token saved to keychain: {token_id}");
                     Ok(())
                 }
                 Err(e) => {
-                    log::warn!(
-                        "Failed to save to keychain: {}. Falling back to memory storage",
-                        e
-                    );
+                    log::warn!("Failed to save to keychain: {e}. Falling back to memory storage");
                     Err(TokenStorageError::EncryptionError(format!(
-                        "Keychain save failed: {}",
-                        e
+                        "Keychain save failed: {e}"
                     )))
                 }
             }
@@ -739,11 +731,11 @@ impl McpTokenStorage {
 
             match delete_generic_password(service_name, account_name) {
                 Ok(_) => {
-                    log::debug!("Token deleted from keychain: {}", token_id);
+                    log::debug!("Token deleted from keychain: {token_id}");
                     Ok(())
                 }
                 Err(e) => {
-                    log::warn!("Failed to delete from keychain: {}", e);
+                    log::warn!("Failed to delete from keychain: {e}");
                     // 如果不存在，不视为错误
                     Ok(())
                 }

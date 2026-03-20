@@ -90,10 +90,10 @@ impl std::fmt::Display for AttestationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AttestationError::QuoteGenerationFailed(msg) => {
-                write!(f, "Quote generation failed: {}", msg)
+                write!(f, "Quote generation failed: {msg}")
             }
             AttestationError::QuoteVerificationFailed(msg) => {
-                write!(f, "Quote verification failed: {}", msg)
+                write!(f, "Quote verification failed: {msg}")
             }
             AttestationError::SignatureVerificationFailed => {
                 write!(f, "Signature verification failed")
@@ -106,7 +106,7 @@ impl std::fmt::Display for AttestationError {
             AttestationError::InvalidQuoteFormat => write!(f, "Invalid quote format"),
             AttestationError::InvalidPublicKey => write!(f, "Invalid public key"),
             AttestationError::AttestationTimeout => write!(f, "Attestation timeout"),
-            AttestationError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            AttestationError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }

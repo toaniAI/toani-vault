@@ -419,14 +419,13 @@ impl BlueGreenUpgradeManager {
         let current_phase = self.current_phase();
         if current_phase != UpgradePhase::StartingNew {
             return Err(UpgradeError::InvalidState(format!(
-                "当前阶段 {:?} 不允许启动新 Enclave",
-                current_phase
+                "当前阶段 {current_phase:?} 不允许启动新 Enclave"
             )));
         }
 
         // 尝试通过环境变量获取新版本二进制路径
         if let Ok(binary_path) = std::env::var("TEE_NEW_ENCLAVE_BINARY") {
-            log::info!("Starting new enclave binary: {}", binary_path);
+            log::info!("Starting new enclave binary: {binary_path}");
 
             // 以独立进程启动新版本 Enclave（非阻塞）
             match std::process::Command::new(&binary_path)
@@ -435,7 +434,7 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(child) => {
                     let pid = child.id();
-                    log::info!("New enclave process started with PID {}", pid);
+                    log::info!("New enclave process started with PID {pid}");
                     // 将 PID 存储到原子变量，避免多线程 env::set_var UB
                     self.new_enclave_pid.store(pid, Ordering::SeqCst);
                     // 持有 child 所有权，避免 mem::forget 导致的资源泄漏
@@ -443,9 +442,8 @@ impl BlueGreenUpgradeManager {
                 }
                 Err(e) => {
                     return Err(UpgradeError::NewEnclaveStartFailed(format!(
-                        "Failed to start new enclave binary '{}': {}. \
-                         Ensure the binary exists and is executable.",
-                        binary_path, e
+                        "Failed to start new enclave binary '{binary_path}': {e}. \
+                         Ensure the binary exists and is executable."
                     )));
                 }
             }
@@ -508,8 +506,7 @@ impl BlueGreenUpgradeManager {
             );
             if failures >= self.max_health_check_failures {
                 return Err(UpgradeError::HealthCheckFailed(format!(
-                    "健康检查连续失败次数达到上限 ({})",
-                    failures
+                    "健康检查连续失败次数达到上限 ({failures})"
                 )));
             }
         } else {
@@ -536,23 +533,20 @@ impl BlueGreenUpgradeManager {
         } else if url.starts_with("http://") {
             "http"
         } else {
-            log::error!(
-                "Health check URL must start with http:// or https://: {}",
-                url
-            );
+            log::error!("Health check URL must start with http:// or https://: {url}");
             return false;
         };
 
         let (host, port, path) = match parse_health_url(url) {
             Some(parts) => parts,
             None => {
-                log::error!("Invalid health check URL: {}", url);
+                log::error!("Invalid health check URL: {url}");
                 return false;
             }
         };
 
         // 根据 scheme 建立连接，分别处理
-        let addr = format!("{}:{}", host, port);
+        let addr = format!("{host}:{port}");
 
         if scheme == "https" {
             // HTTPS: 使用 TLS 连接
@@ -569,15 +563,11 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(Ok(stream)) => stream,
                 Ok(Err(e)) => {
-                    log::warn!("Health check TCP connect failed ({}): {}", addr, e);
+                    log::warn!("Health check TCP connect failed ({addr}): {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!(
-                        "Health check TCP connect timed out after {}s ({})",
-                        timeout_secs,
-                        addr
-                    );
+                    log::warn!("Health check TCP connect timed out after {timeout_secs}s ({addr})");
                     return false;
                 }
             };
@@ -595,7 +585,7 @@ impl BlueGreenUpgradeManager {
             let domain = match rustls::pki_types::ServerName::try_from(host_owned) {
                 Ok(d) => d,
                 Err(e) => {
-                    log::warn!("Invalid DNS name '{}': {}", host, e);
+                    log::warn!("Invalid DNS name '{host}': {e}");
                     return false;
                 }
             };
@@ -608,23 +598,18 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(Ok(s)) => s,
                 Ok(Err(e)) => {
-                    log::warn!("Health check TLS handshake failed: {}", e);
+                    log::warn!("Health check TLS handshake failed: {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!(
-                        "Health check TLS handshake timed out after {}s",
-                        timeout_secs
-                    );
+                    log::warn!("Health check TLS handshake timed out after {timeout_secs}s");
                     return false;
                 }
             };
 
             // 发送 HTTP 请求到 TLS 流
-            let request = format!(
-                "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-                path, host
-            );
+            let request =
+                format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
 
             match tokio::time::timeout(
                 Duration::from_secs(timeout_secs),
@@ -634,11 +619,11 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {
-                    log::warn!("Health check HTTPS write failed: {}", e);
+                    log::warn!("Health check HTTPS write failed: {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check HTTPS write timed out after {}s", timeout_secs);
+                    log::warn!("Health check HTTPS write timed out after {timeout_secs}s");
                     return false;
                 }
             }
@@ -659,7 +644,7 @@ impl BlueGreenUpgradeManager {
                     if let Some(status_str) = first_line.split_whitespace().nth(1) {
                         if let Ok(status) = status_str.parse::<u16>() {
                             let is_healthy = (200..300).contains(&status);
-                            log::debug!("Health check {} returned HTTP {}", url, status);
+                            log::debug!("Health check {url} returned HTTP {status}");
                             return is_healthy;
                         }
                     }
@@ -669,16 +654,16 @@ impl BlueGreenUpgradeManager {
                     return false;
                 }
                 Ok(Err(e)) => {
-                    log::warn!("Health check HTTPS read failed: {}", e);
+                    log::warn!("Health check HTTPS read failed: {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check HTTPS read timed out after {}s", timeout_secs);
+                    log::warn!("Health check HTTPS read timed out after {timeout_secs}s");
                     return false;
                 }
             };
 
-            log::warn!("Health check {} returned unparseable response", url);
+            log::warn!("Health check {url} returned unparseable response");
             false
         } else {
             // HTTP: 使用明文 TCP 连接
@@ -690,24 +675,18 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(Ok(stream)) => stream,
                 Ok(Err(e)) => {
-                    log::warn!("Health check TCP connect failed ({}): {}", addr, e);
+                    log::warn!("Health check TCP connect failed ({addr}): {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!(
-                        "Health check TCP connect timed out after {}s ({})",
-                        timeout_secs,
-                        addr
-                    );
+                    log::warn!("Health check TCP connect timed out after {timeout_secs}s ({addr})");
                     return false;
                 }
             };
 
             // 发送最小化 HTTP/1.1 GET 请求
-            let request = format!(
-                "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-                path, host
-            );
+            let request =
+                format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
 
             match tokio::time::timeout(
                 Duration::from_secs(timeout_secs),
@@ -717,11 +696,11 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {
-                    log::warn!("Health check HTTP write failed: {}", e);
+                    log::warn!("Health check HTTP write failed: {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check HTTP write timed out after {}s", timeout_secs);
+                    log::warn!("Health check HTTP write timed out after {timeout_secs}s");
                     return false;
                 }
             }
@@ -745,7 +724,7 @@ impl BlueGreenUpgradeManager {
                     if let Some(status_str) = first_line.split_whitespace().nth(1) {
                         if let Ok(status) = status_str.parse::<u16>() {
                             let is_healthy = (200..300).contains(&status);
-                            log::debug!("Health check {} returned HTTP {}", url, status);
+                            log::debug!("Health check {url} returned HTTP {status}");
                             return is_healthy;
                         }
                     }
@@ -755,16 +734,16 @@ impl BlueGreenUpgradeManager {
                     return false;
                 }
                 Ok(Err(e)) => {
-                    log::warn!("Health check HTTP read failed: {}", e);
+                    log::warn!("Health check HTTP read failed: {e}");
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check HTTP read timed out after {}s", timeout_secs);
+                    log::warn!("Health check HTTP read timed out after {timeout_secs}s");
                     return false;
                 }
             };
 
-            log::warn!("Health check {} returned unparseable response", url);
+            log::warn!("Health check {url} returned unparseable response");
             false
         }
     }
@@ -786,8 +765,7 @@ impl BlueGreenUpgradeManager {
             && current_phase != UpgradePhase::MigratingTraffic
         {
             return Err(UpgradeError::InvalidState(format!(
-                "当前阶段 {:?} 不允许迁移流量",
-                current_phase
+                "当前阶段 {current_phase:?} 不允许迁移流量"
             )));
         }
 
@@ -800,11 +778,7 @@ impl BlueGreenUpgradeManager {
 
         // 更新流量权重（原子写入，调用者读取此值来配置路由）
         let prev = self.traffic_to_new_pct.swap(clamped, Ordering::SeqCst);
-        log::info!(
-            "Traffic migration: {}% -> {}% routed to new enclave version",
-            prev,
-            clamped
-        );
+        log::info!("Traffic migration: {prev}% -> {clamped}% routed to new enclave version");
 
         // 推进到 Sealing Key 迁移阶段
         // 仅当流量达到 100% 时才推进，否则停留在 MigratingTraffic
@@ -821,8 +795,7 @@ impl BlueGreenUpgradeManager {
         let current_phase = self.current_phase();
         if current_phase != UpgradePhase::MigratingSealingKey {
             return Err(UpgradeError::InvalidState(format!(
-                "当前阶段 {:?} 不允许迁移 Sealing Key",
-                current_phase
+                "当前阶段 {current_phase:?} 不允许迁移 Sealing Key"
             )));
         }
 
@@ -853,8 +826,7 @@ impl BlueGreenUpgradeManager {
         let current_phase = self.current_phase();
         if current_phase != UpgradePhase::Validating && current_phase != UpgradePhase::Completing {
             return Err(UpgradeError::InvalidState(format!(
-                "当前阶段 {:?} 不允许完成升级",
-                current_phase
+                "当前阶段 {current_phase:?} 不允许完成升级"
             )));
         }
 
@@ -894,13 +866,13 @@ impl BlueGreenUpgradeManager {
                                 .status()
                             {
                                 Ok(s) if s.success() => {
-                                    log::info!("Sent SIGTERM to old enclave PID {}", pid);
+                                    log::info!("Sent SIGTERM to old enclave PID {pid}");
                                 }
                                 Ok(s) => {
-                                    log::warn!("kill -TERM {} exited with status: {}", pid, s);
+                                    log::warn!("kill -TERM {pid} exited with status: {s}");
                                 }
                                 Err(e) => {
-                                    log::warn!("Failed to send SIGTERM to PID {}: {}", pid, e);
+                                    log::warn!("Failed to send SIGTERM to PID {pid}: {e}");
                                 }
                             }
                         }
@@ -951,15 +923,11 @@ impl BlueGreenUpgradeManager {
         let current_phase = self.current_phase();
         if !current_phase.can_rollback() {
             return Err(UpgradeError::InvalidState(format!(
-                "当前阶段 {:?} 不允许回滚",
-                current_phase
+                "当前阶段 {current_phase:?} 不允许回滚"
             )));
         }
 
-        log::warn!(
-            "Initiating blue-green upgrade rollback from phase {:?}",
-            current_phase
-        );
+        log::warn!("Initiating blue-green upgrade rollback from phase {current_phase:?}");
 
         // 设置回滚阶段
         self.phase
@@ -1004,8 +972,7 @@ impl BlueGreenUpgradeManager {
         let prev_traffic = self.traffic_to_new_pct.swap(0, Ordering::SeqCst);
         if prev_traffic > 0 {
             log::info!(
-                "Traffic weight reset: {}% that was routed to new enclave reverted to old enclave",
-                prev_traffic
+                "Traffic weight reset: {prev_traffic}% that was routed to new enclave reverted to old enclave"
             );
         }
 
