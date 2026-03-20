@@ -76,7 +76,7 @@ impl SealingKey {
     }
 
     /// 获取密钥材料引用
-    pub(crate) fn as_bytes(&self) -> &[u8; KEY_LENGTH] {
+    pub fn as_bytes(&self) -> &[u8; KEY_LENGTH] {
         &self.key_material
     }
 
@@ -642,7 +642,7 @@ impl SealedStorage {
         let bytes = data.to_bytes();
 
         std::fs::write(&file_path, &bytes)
-            .map_err(|e| CryptoError::EncryptionError(format!("写入密封数据失败: {}", e)))?;
+            .map_err(|e| CryptoError::EncryptionError(format!("写入密封数据失败: {e}")))?;
 
         Ok(())
     }
@@ -651,7 +651,7 @@ impl SealedStorage {
     pub fn load(&self, key: &str) -> Result<SealedData, CryptoError> {
         let file_path = format!("{}/{}.sealed", self.path, key);
         let bytes = std::fs::read(&file_path)
-            .map_err(|e| CryptoError::DecryptionError(format!("读取密封数据失败: {}", e)))?;
+            .map_err(|e| CryptoError::DecryptionError(format!("读取密封数据失败: {e}")))?;
 
         SealedData::from_bytes(&bytes)
     }
@@ -660,7 +660,7 @@ impl SealedStorage {
     pub fn delete(&self, key: &str) -> Result<(), CryptoError> {
         let file_path = format!("{}/{}.sealed", self.path, key);
         std::fs::remove_file(&file_path)
-            .map_err(|e| CryptoError::EncryptionError(format!("删除密封数据失败: {}", e)))?;
+            .map_err(|e| CryptoError::EncryptionError(format!("删除密封数据失败: {e}")))?;
 
         Ok(())
     }

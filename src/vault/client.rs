@@ -168,7 +168,7 @@ impl VaultConfig {
     ///
     /// 路径格式: secret/credbridge/{tenant_id}/{credential_id}
     pub fn build_path(&self, tenant_id: &str, credential_id: &str) -> String {
-        format!("credbridge/{}/{}", tenant_id, credential_id)
+        format!("credbridge/{tenant_id}/{credential_id}")
     }
 }
 
@@ -229,16 +229,16 @@ impl VaultKvClient {
         // 检查引擎是否已挂载
         let mounts = mount::list(&self.client)
             .await
-            .map_err(|e| VaultClientError::ConfigError(format!("Failed to list mounts: {}", e)))?;
+            .map_err(|e| VaultClientError::ConfigError(format!("Failed to list mounts: {e}")))?;
 
         let mount_path = &self.config.mount_path;
 
-        if !mounts.contains_key(&format!("{}/", mount_path)) {
+        if !mounts.contains_key(&format!("{mount_path}/")) {
             // 创建 KV v2 引擎
             mount::enable(&self.client, mount_path, "kv-v2", None)
                 .await
                 .map_err(|e| {
-                    VaultClientError::ConfigError(format!("Failed to enable KV v2: {}", e))
+                    VaultClientError::ConfigError(format!("Failed to enable KV v2: {e}"))
                 })?;
         }
 
@@ -294,8 +294,7 @@ impl VaultKvClient {
             Ok(data) => Ok(data),
             Err(vaultrs::error::ClientError::APIError { code: 404, .. }) => {
                 Err(VaultClientError::SecretNotFound(format!(
-                    "Credential {} not found for tenant {}",
-                    credential_id, tenant_id
+                    "Credential {credential_id} not found for tenant {tenant_id}"
                 )))
             }
             Err(e) => Err(VaultClientError::ReadFailed(e.to_string())),
@@ -317,7 +316,7 @@ impl VaultKvClient {
         // 使用 delete_latest 删除最新版本
         kv2::delete_latest(&self.client, &self.config.mount_path, &path)
             .await
-            .map_err(|e| VaultClientError::DeleteFailed(format!("{:?}", e)))
+            .map_err(|e| VaultClientError::DeleteFailed(format!("{e:?}")))
     }
 
     /// 物理删除凭证密文
@@ -336,7 +335,7 @@ impl VaultKvClient {
         // 删除元数据（永久删除）
         kv2::delete_metadata(&self.client, &self.config.mount_path, &path)
             .await
-            .map_err(|e| VaultClientError::DeleteFailed(format!("{:?}", e)))
+            .map_err(|e| VaultClientError::DeleteFailed(format!("{e:?}")))
     }
 
     /// 恢复软删除的凭证
@@ -363,7 +362,7 @@ impl VaultKvClient {
     pub async fn list_secrets(&self, tenant_id: &str) -> Result<Vec<String>, VaultClientError> {
         use vaultrs::kv2;
 
-        let prefix = format!("credbridge/{}", tenant_id);
+        let prefix = format!("credbridge/{tenant_id}");
 
         let keys = kv2::list(&self.client, &self.config.mount_path, &prefix)
             .await

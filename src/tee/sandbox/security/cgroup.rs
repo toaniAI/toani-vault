@@ -73,12 +73,12 @@ impl CgroupManager {
         let parent = self.sandbox_cgroup.parent().unwrap();
         fs::create_dir_all(parent)
             .await
-            .map_err(|e| SecurityError::Cgroup(format!("Failed to create parent cgroup: {}", e)))?;
+            .map_err(|e| SecurityError::Cgroup(format!("Failed to create parent cgroup: {e}")))?;
 
         // 创建沙箱 cgroup
         fs::create_dir_all(&self.sandbox_cgroup)
             .await
-            .map_err(|e| SecurityError::Cgroup(format!("Failed to create cgroup: {}", e)))?;
+            .map_err(|e| SecurityError::Cgroup(format!("Failed to create cgroup: {e}")))?;
 
         debug!("Created cgroup at {:?}", self.sandbox_cgroup);
         Ok(())
@@ -95,7 +95,7 @@ impl CgroupManager {
 
             fs::remove_dir(&self.sandbox_cgroup)
                 .await
-                .map_err(|e| SecurityError::Cgroup(format!("Failed to delete cgroup: {}", e)))?;
+                .map_err(|e| SecurityError::Cgroup(format!("Failed to delete cgroup: {e}")))?;
 
             debug!("Deleted cgroup at {:?}", self.sandbox_cgroup);
         }
@@ -155,7 +155,7 @@ impl CgroupManager {
         // 将进程移动到根 cgroup
         let root_procs = self.cgroup_root.join("cgroup.procs");
         fs::write(&root_procs, pid.to_string()).await.map_err(|e| {
-            SecurityError::Cgroup(format!("Failed to remove process from cgroup: {}", e))
+            SecurityError::Cgroup(format!("Failed to remove process from cgroup: {e}"))
         })?;
         Ok(())
     }
@@ -176,7 +176,7 @@ impl CgroupManager {
         content
             .trim()
             .parse()
-            .map_err(|e| SecurityError::Cgroup(format!("Failed to parse memory usage: {}", e)))
+            .map_err(|e| SecurityError::Cgroup(format!("Failed to parse memory usage: {e}")))
     }
 
     /// 获取内存限制
@@ -185,7 +185,7 @@ impl CgroupManager {
         content
             .trim()
             .parse()
-            .map_err(|e| SecurityError::Cgroup(format!("Failed to parse memory limit: {}", e)))
+            .map_err(|e| SecurityError::Cgroup(format!("Failed to parse memory limit: {e}")))
     }
 
     /// 获取 CPU 统计
@@ -258,14 +258,14 @@ impl CgroupManager {
         let path = self.sandbox_cgroup.join(filename);
         fs::write(&path, content)
             .await
-            .map_err(|e| SecurityError::Cgroup(format!("Failed to write {}: {}", filename, e)))
+            .map_err(|e| SecurityError::Cgroup(format!("Failed to write {filename}: {e}")))
     }
 
     async fn read_cgroup_file(&self, filename: &str) -> Result<String, SecurityError> {
         let path = self.sandbox_cgroup.join(filename);
         fs::read_to_string(&path)
             .await
-            .map_err(|e| SecurityError::Cgroup(format!("Failed to read {}: {}", filename, e)))
+            .map_err(|e| SecurityError::Cgroup(format!("Failed to read {filename}: {e}")))
     }
 }
 

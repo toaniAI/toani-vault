@@ -199,7 +199,7 @@ impl HttpConnector {
     fn build_url(&self, path: &str) -> String {
         let base = self.config.base_url.trim_end_matches('/');
         let path = path.trim_start_matches('/');
-        format!("{}/{}", base, path)
+        format!("{base}/{path}")
     }
 
     /// 执行 HTTP 请求
@@ -244,7 +244,7 @@ impl HttpConnector {
                         continue;
                     }
                     return Err(ConnectorError::execution_with_source(
-                        format!("HTTP 请求失败: {}", e),
+                        format!("HTTP 请求失败: {e}"),
                         e,
                     ));
                 }
@@ -316,8 +316,7 @@ impl HttpConnector {
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
             return Err(ConnectorError::execution(format!(
-                "HTTP 请求失败: 状态码 {}, 响应: {}",
-                status, error_body
+                "HTTP 请求失败: 状态码 {status}, 响应: {error_body}"
             )));
         }
 
@@ -367,9 +366,9 @@ impl Connector for HttpConnector {
             client_builder = client_builder.default_headers(
                 std::iter::once((
                     reqwest::header::HeaderName::try_from(key.as_str())
-                        .map_err(|e| ConnectorError::config(format!("无效的请求头名称: {}", e)))?,
+                        .map_err(|e| ConnectorError::config(format!("无效的请求头名称: {e}")))?,
                     reqwest::header::HeaderValue::from_str(value)
-                        .map_err(|e| ConnectorError::config(format!("无效的请求头值: {}", e)))?,
+                        .map_err(|e| ConnectorError::config(format!("无效的请求头值: {e}")))?,
                 ))
                 .collect(),
             );
@@ -398,7 +397,7 @@ impl Connector for HttpConnector {
         if !valid_methods.contains(&method.to_uppercase().as_str()) {
             return Err(ValidationError::with_code(
                 Some("method".to_string()),
-                format!("无效的 HTTP 方法: {}", method),
+                format!("无效的 HTTP 方法: {method}"),
                 "INVALID_METHOD",
             ));
         }

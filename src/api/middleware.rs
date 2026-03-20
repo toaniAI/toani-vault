@@ -186,7 +186,7 @@ async fn validate_token(
 ) -> Result<ValidatedToken, AuthError> {
     // 使用 pasetors 验证 v4.local Token
     let validation_result = validate_paseto_token(token, secret_key)
-        .map_err(|e| AuthError::new("invalid_token", format!("Token 验证失败: {}", e)))?;
+        .map_err(|e| AuthError::new("invalid_token", format!("Token 验证失败: {e}")))?;
 
     // 检查是否过期
     let now = SystemTime::now()
@@ -214,12 +214,12 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
 
     // 解析未受信任的 Token
     let untrusted =
-        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {:?}", e))?;
+        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {e:?}"))?;
 
     // 验证 Token
     let validation_rules = ClaimsValidationRules::new();
     let trusted_token = local::decrypt(&sk, &untrusted, &validation_rules, None, None)
-        .map_err(|e| format!("解密失败: {:?}", e))?;
+        .map_err(|e| format!("解密失败: {e:?}"))?;
 
     // 获取 Claims
     let claims = trusted_token

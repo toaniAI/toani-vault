@@ -144,15 +144,15 @@ impl SchemaManager {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
 
         // 创建 Schema
-        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", schema_name);
+        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS \"{schema_name}\"");
 
         sqlx::query(&create_schema_sql)
             .execute(self.db.pool())
             .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create schema: {}", e)))?;
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create schema: {e}")))?;
 
         // 设置 search_path 并创建表结构
-        let set_path_sql = format!("SET search_path TO \"{}\"", schema_name);
+        let set_path_sql = format!("SET search_path TO \"{schema_name}\"");
 
         // 在事务中执行所有 SQL
         let mut tx = self
@@ -166,13 +166,13 @@ impl SchemaManager {
         sqlx::query(&set_path_sql)
             .execute(&mut *tx)
             .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to set search_path: {}", e)))?;
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to set search_path: {e}")))?;
 
         // 创建表结构
         sqlx::query(TENANT_SCHEMA_SQL)
             .execute(&mut *tx)
             .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {}", e)))?;
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {e}")))?;
 
         tx.commit()
             .await
@@ -197,7 +197,7 @@ impl SchemaManager {
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
         // 设置 search_path
-        let set_path_sql = format!("SET search_path TO \"{}\"", schema_name);
+        let set_path_sql = format!("SET search_path TO \"{schema_name}\"");
         sqlx::query(&set_path_sql)
             .execute(&mut *tx)
             .await
@@ -207,7 +207,7 @@ impl SchemaManager {
         sqlx::query(DEFAULT_ROLES_SQL)
             .execute(&mut *tx)
             .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create roles: {}", e)))?;
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create roles: {e}")))?;
 
         tx.commit()
             .await
@@ -227,12 +227,12 @@ impl SchemaManager {
     pub async fn drop_tenant_schema(&self, tenant_id: &str) -> Result<(), DatabaseError> {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
 
-        let drop_sql = format!("DROP SCHEMA IF EXISTS \"{}\" CASCADE", schema_name);
+        let drop_sql = format!("DROP SCHEMA IF EXISTS \"{schema_name}\" CASCADE");
 
         sqlx::query(&drop_sql)
             .execute(self.db.pool())
             .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to drop schema: {}", e)))?;
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to drop schema: {e}")))?;
 
         tracing::warn!("Dropped tenant schema: {}", schema_name);
         Ok(())
@@ -267,7 +267,7 @@ impl SchemaManager {
                 }
             })
             .collect::<String>();
-        format!("tenant_{}", safe_id)
+        format!("tenant_{safe_id}")
     }
 }
 

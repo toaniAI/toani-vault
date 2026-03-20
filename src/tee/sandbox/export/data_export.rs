@@ -386,7 +386,7 @@ impl ExportService {
         use base64::Engine;
         let sig_data = base64::engine::general_purpose::STANDARD
             .decode(&signature.signature)
-            .map_err(|e| ExportError::Verification(format!("签名解码失败: {}", e)))?;
+            .map_err(|e| ExportError::Verification(format!("签名解码失败: {e}")))?;
 
         let sig = Signature {
             data: sig_data,
@@ -398,7 +398,7 @@ impl ExportService {
 
         km.verify(&export.data, &sig)
             .await
-            .map_err(|e| ExportError::Verification(format!("签名验证失败: {}", e)))
+            .map_err(|e| ExportError::Verification(format!("签名验证失败: {e}")))
     }
 
     /// 应用脱敏
@@ -511,7 +511,7 @@ impl ExportService {
                     .find(|v| v.is_object())
                     .and_then(|v| v.as_object());
 
-                if let Some(_) = first_obj {
+                if first_obj.is_some() {
                     // 对象数组路径：收集所有对象的所有键作为统一标题行
                     // 修复：处理不同 Schema 的对象，避免列错位
                     let mut all_keys: Vec<String> = Vec::new();
@@ -531,7 +531,7 @@ impl ExportService {
                     // 如果没有找到任何键（理论上不会发生），降级为标量处理
                     if all_keys.is_empty() {
                         if self.config.csv_header {
-                            wtr.write_record(&["value"])
+                            wtr.write_record(["value"])
                                 .map_err(|e| ExportError::Serialization(e.to_string()))?;
                         }
                         for item in arr {
@@ -561,7 +561,7 @@ impl ExportService {
                             } else {
                                 // 混合类型数组中的非对象元素：按空值填充其他列，第一列为该值
                                 let mut row: Vec<String> = vec![Self::json_value_to_csv_cell(item)];
-                                row.extend(std::iter::repeat(String::new()).take(all_keys.len() - 1));
+                                row.extend(std::iter::repeat_n(String::new(), all_keys.len() - 1));
                                 wtr.write_record(&row)
                                     .map_err(|e| ExportError::Serialization(e.to_string()))?;
                             }
@@ -570,11 +570,11 @@ impl ExportService {
                 } else {
                     // 纯非对象数组（标量/嵌套数组）：单列输出
                     if self.config.csv_header {
-                        wtr.write_record(&["value"])
+                        wtr.write_record(["value"])
                             .map_err(|e| ExportError::Serialization(e.to_string()))?;
                     }
                     for item in arr {
-                        wtr.write_record(&[Self::json_value_to_csv_cell(item)])
+                        wtr.write_record([Self::json_value_to_csv_cell(item)])
                             .map_err(|e| ExportError::Serialization(e.to_string()))?;
                     }
                 }
@@ -592,10 +592,10 @@ impl ExportService {
             // 标量值：单列单行
             scalar => {
                 if self.config.csv_header {
-                    wtr.write_record(&["value"])
+                    wtr.write_record(["value"])
                         .map_err(|e| ExportError::Serialization(e.to_string()))?;
                 }
-                wtr.write_record(&[Self::json_value_to_csv_cell(scalar)])
+                wtr.write_record([Self::json_value_to_csv_cell(scalar)])
                     .map_err(|e| ExportError::Serialization(e.to_string()))?;
             }
         }
@@ -624,22 +624,22 @@ impl ExportService {
         match value {
             serde_json::Value::Object(obj) => {
                 for (key, val) in obj {
-                    xml.push_str(&format!("{}<{}>", indent_str, key));
+                    xml.push_str(&format!("{indent_str}<{key}>"));
                     if val.is_object() || val.is_array() {
                         xml.push('\n');
                         self.json_to_xml(val, xml, indent + 1);
-                        xml.push_str(&format!("{}</{}>\n", indent_str, key));
+                        xml.push_str(&format!("{indent_str}</{key}>\n"));
                     } else {
                         xml.push_str(&escape_xml(&val.to_string()));
-                        xml.push_str(&format!("</{}>\n", key));
+                        xml.push_str(&format!("</{key}>\n"));
                     }
                 }
             }
             serde_json::Value::Array(arr) => {
                 for item in arr {
-                    xml.push_str(&format!("{}<item>\n", indent_str));
+                    xml.push_str(&format!("{indent_str}<item>\n"));
                     self.json_to_xml(item, xml, indent + 1);
-                    xml.push_str(&format!("{}</item>\n", indent_str));
+                    xml.push_str(&format!("{indent_str}</item>\n"));
                 }
             }
             serde_json::Value::String(s) => {

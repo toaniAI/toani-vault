@@ -100,8 +100,8 @@ impl SchemaValidator {
                     && !obj.contains_key(field_name)
                 {
                     return Err(ValidationError::with_code(
-                        Some(format!("{}{}", path, field_name)),
-                        format!("缺少必需字段: {}", field_name),
+                        Some(format!("{path}{field_name}")),
+                        format!("缺少必需字段: {field_name}"),
                         "REQUIRED_FIELD",
                     ));
                 }
@@ -114,7 +114,7 @@ impl SchemaValidator {
         {
             for (prop_name, prop_schema) in properties {
                 if let Some(prop_value) = obj.get(prop_name) {
-                    let prop_path = format!("{}{}.", path, prop_name);
+                    let prop_path = format!("{path}{prop_name}.");
                     self.validate_against_schema(prop_value, prop_schema, &prop_path)?;
                 }
             }
@@ -125,7 +125,7 @@ impl SchemaValidator {
             && let Value::Array(arr) = value
         {
             for (i, item) in arr.iter().enumerate() {
-                let item_path = format!("{}[{}].", path, i);
+                let item_path = format!("{path}[{i}].");
                 self.validate_against_schema(item, items_schema, &item_path)?;
             }
         }
@@ -138,7 +138,7 @@ impl SchemaValidator {
         {
             return Err(ValidationError::with_code(
                 Some(path.to_string()),
-                format!("值 {} 小于最小值 {}", v, min),
+                format!("值 {v} 小于最小值 {min}"),
                 "BELOW_MINIMUM",
             ));
         }
@@ -151,7 +151,7 @@ impl SchemaValidator {
         {
             return Err(ValidationError::with_code(
                 Some(path.to_string()),
-                format!("值 {} 大于最大值 {}", v, max),
+                format!("值 {v} 大于最大值 {max}"),
                 "ABOVE_MAXIMUM",
             ));
         }
@@ -188,7 +188,7 @@ impl SchemaValidator {
         {
             return Err(ValidationError::with_code(
                 Some(path.to_string()),
-                format!("字符串 '{}' 不匹配模式 '{}'", s, pattern),
+                format!("字符串 '{s}' 不匹配模式 '{pattern}'"),
                 "PATTERN_MISMATCH",
             ));
         }
@@ -199,7 +199,7 @@ impl SchemaValidator {
         {
             return Err(ValidationError::with_code(
                 Some(path.to_string()),
-                format!("值 {} 不在允许的枚举值中: {:?}", value, enum_values),
+                format!("值 {value} 不在允许的枚举值中: {enum_values:?}"),
                 "INVALID_ENUM",
             ));
         }
@@ -228,7 +228,7 @@ impl SchemaValidator {
         if !valid {
             return Err(ValidationError::with_code(
                 Some(path.to_string()),
-                format!("类型错误：期望 {}, 实际 {:?}", type_str, value),
+                format!("类型错误：期望 {type_str}, 实际 {value:?}"),
                 "TYPE_MISMATCH",
             ));
         }
@@ -404,7 +404,7 @@ pub mod rules {
             if let Value::Object(obj) = value {
                 for field in &self.fields {
                     if !obj.contains_key(field) {
-                        return Err(format!("缺少必需字段: {}", field));
+                        return Err(format!("缺少必需字段: {field}"));
                     }
                 }
             }
@@ -557,7 +557,7 @@ pub mod rules {
     impl PatternRule {
         pub fn new(field: impl Into<String>, pattern: impl Into<String>) -> Result<Self, String> {
             let pattern_str = pattern.into();
-            let regex = Regex::new(&pattern_str).map_err(|e| format!("无效的正则表达式: {}", e))?;
+            let regex = Regex::new(&pattern_str).map_err(|e| format!("无效的正则表达式: {e}"))?;
             Ok(Self {
                 field: field.into(),
                 pattern: regex,

@@ -96,8 +96,7 @@ impl NsjailSandbox {
                 error!("Failed to start nsjail sandbox {}: {}", self.id, e);
                 *self.status.write().await = SandboxStatus::Error;
                 Err(SandboxError::Process(format!(
-                    "Failed to start nsjail: {}",
-                    e
+                    "Failed to start nsjail: {e}"
                 )))
             }
         }
@@ -252,7 +251,7 @@ impl NsjailSandbox {
         // CPU 限制 (cgroup v2)
         let cpu_max_path = cgroup_path.join("cpu.max");
         let cpu_quota = limits.cpu_percent * 1000; // Convert to microseconds
-        let cpu_max = format!("{} 100000", cpu_quota);
+        let cpu_max = format!("{cpu_quota} 100000");
         tokio::fs::write(&cpu_max_path, cpu_max)
             .await
             .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
@@ -289,7 +288,7 @@ impl NsjailSandbox {
     }
 
     async fn read_process_stats(pid: u32) -> Result<SandboxStats, SandboxError> {
-        let stat_path = format!("/proc/{}/stat", pid);
+        let stat_path = format!("/proc/{pid}/stat");
         let stat_content = tokio::fs::read_to_string(&stat_path)
             .await
             .map_err(SandboxError::Io)?;
@@ -329,7 +328,7 @@ impl NsjailSandbox {
     }
 
     async fn count_open_fds(pid: u32) -> Result<usize, std::io::Error> {
-        let fd_dir = format!("/proc/{}/fd", pid);
+        let fd_dir = format!("/proc/{pid}/fd");
         let mut entries = tokio::fs::read_dir(&fd_dir).await?;
         let mut count = 0;
 

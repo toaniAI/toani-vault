@@ -395,7 +395,7 @@ impl KeyHierarchy {
     ) -> Result<KeyHandle, CryptoError> {
         // HKDF-Extract: L0 -> L1 (使用旧版本参数)
         let salt = Salt::new(HKDF_SHA256, l0_key.as_bytes());
-        let prk = salt.extract(format!("CredBridge Enclave v{}", version).as_bytes());
+        let prk = salt.extract(format!("CredBridge Enclave v{version}").as_bytes());
 
         // HKDF-Expand: 派生 L1 密钥材料
         let mut l1_key_material = [0u8; KEY_LENGTH];
@@ -458,7 +458,7 @@ pub mod utils {
         tenant_id: &str,
         user_id: &str,
     ) -> Result<[u8; KEY_LENGTH], CryptoError> {
-        let info = format!("token-key:{}:{}", tenant_id, user_id);
+        let info = format!("token-key:{tenant_id}:{user_id}");
         let mut key = [0u8; KEY_LENGTH];
 
         let salt = Salt::new(HKDF_SHA256, master_key);

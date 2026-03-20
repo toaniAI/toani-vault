@@ -547,21 +547,20 @@ impl std::fmt::Display for QuoteParseError {
             QuoteParseError::InsufficientData { expected, actual } => {
                 write!(
                     f,
-                    "Insufficient data: expected {} bytes, got {}",
-                    expected, actual
+                    "Insufficient data: expected {expected} bytes, got {actual}"
                 )
             }
             QuoteParseError::InvalidReportBodySize(size) => {
-                write!(f, "Invalid report body size: {} bytes (expected 384)", size)
+                write!(f, "Invalid report body size: {size} bytes (expected 384)")
             }
             QuoteParseError::InvalidVersion(version) => {
-                write!(f, "Invalid quote version: {}", version)
+                write!(f, "Invalid quote version: {version}")
             }
             QuoteParseError::InvalidSignType(sign_type) => {
-                write!(f, "Invalid sign type: {}", sign_type)
+                write!(f, "Invalid sign type: {sign_type}")
             }
             QuoteParseError::UnsupportedFormat(format) => {
-                write!(f, "Unsupported quote format: {}", format)
+                write!(f, "Unsupported quote format: {format}")
             }
         }
     }
@@ -592,13 +591,13 @@ impl std::fmt::Display for QuoteSerializeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             QuoteSerializeError::SerializationFailed(msg) => {
-                write!(f, "Serialization failed: {}", msg)
+                write!(f, "Serialization failed: {msg}")
             }
             QuoteSerializeError::BufferOverflow => {
                 write!(f, "Buffer overflow during serialization")
             }
             QuoteSerializeError::InvalidQuoteData(msg) => {
-                write!(f, "Invalid quote data: {}", msg)
+                write!(f, "Invalid quote data: {msg}")
             }
         }
     }
@@ -635,14 +634,10 @@ impl std::fmt::Display for QuoteValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             QuoteValidationError::VersionMismatch { expected, actual } => {
-                write!(f, "Version mismatch: expected {}, got {}", expected, actual)
+                write!(f, "Version mismatch: expected {expected}, got {actual}")
             }
             QuoteValidationError::SignTypeMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "Sign type mismatch: expected {}, got {}",
-                    expected, actual
-                )
+                write!(f, "Sign type mismatch: expected {expected}, got {actual}")
             }
             QuoteValidationError::InvalidMrenclave => {
                 write!(f, "Invalid MRENCLAVE (all zeros)")
@@ -654,10 +649,10 @@ impl std::fmt::Display for QuoteValidationError {
                 write!(f, "Missing quote signature")
             }
             QuoteValidationError::ParseError(msg) => {
-                write!(f, "Parse error: {}", msg)
+                write!(f, "Parse error: {msg}")
             }
             QuoteValidationError::ValidationFailed(msg) => {
-                write!(f, "Validation failed: {}", msg)
+                write!(f, "Validation failed: {msg}")
             }
         }
     }

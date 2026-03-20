@@ -405,7 +405,7 @@ impl ContentReviewer {
         }
 
         let response: ReviewResponse = serde_json::from_str(json_str)
-            .map_err(|e| ExportError::ContentReview(format!("解析审核响应失败: {}", e)))?;
+            .map_err(|e| ExportError::ContentReview(format!("解析审核响应失败: {e}")))?;
 
         // 转换检测到的项目
         let detected_items: Vec<SensitiveItem> = response

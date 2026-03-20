@@ -245,7 +245,7 @@ pub async fn handle_socket(
             error!("Invalid session ID: {}", e);
             let error_msg = ServerMessage::Error {
                 code: "invalid_session_id".to_string(),
-                message: format!("Invalid session ID: {}", e),
+                message: format!("Invalid session ID: {e}"),
                 operation_id: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
@@ -260,7 +260,7 @@ pub async fn handle_socket(
             error!("Invalid credential ID: {}", e);
             let error_msg = ServerMessage::Error {
                 code: "invalid_credential_id".to_string(),
-                message: format!("Invalid credential ID: {}", e),
+                message: format!("Invalid credential ID: {e}"),
                 operation_id: None,
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
@@ -354,7 +354,7 @@ pub async fn handle_socket(
                             Err(e) => {
                                 let error_msg = ServerMessage::Error {
                                     code: "invalid_message".to_string(),
-                                    message: format!("Failed to parse message: {}", e),
+                                    message: format!("Failed to parse message: {e}"),
                                     operation_id: None,
                                     timestamp: chrono::Utc::now().to_rfc3339(),
                                 };
@@ -594,7 +594,7 @@ async fn execute_operation_with_timeout(
                 operation_type: op_type.clone(),
                 status: "executing".to_string(),
                 progress: i,
-                message: Some(format!("Progress {}%", i)),
+                message: Some(format!("Progress {i}%")),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             };
             let _ = progress_tx.send(progress_msg).await;
@@ -656,18 +656,22 @@ async fn take_screenshot(
     state: &ConnectionState,
     _ctx: &ApiContext,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    use crate::tee::sandbox::export::freezer::PageStateFreezer;
     use crate::tee::sandbox::export::screenshot::{
         PlaywrightClient, ScreenshotConfig, ScreenshotRequest, ScreenshotService,
     };
-    use crate::tee::sandbox::export::freezer::PageStateFreezer;
     use crate::tee::sandbox::export::watermark::WatermarkService;
 
     info!("截图请求: session={}", state.session_id);
 
     // 验证 session_id 格式，避免 PageStateFreezer::new panic
-    let _session_uuid = uuid::Uuid::parse_str(&state.session_id.0.to_string())
-        .map_err(|e| format!("Invalid session_id format: {}. Error: {}", state.session_id.0, e))?;
-    
+    let _session_uuid = uuid::Uuid::parse_str(&state.session_id.0.to_string()).map_err(|e| {
+        format!(
+            "Invalid session_id format: {}. Error: {}",
+            state.session_id.0, e
+        )
+    })?;
+
     // 构建 ScreenshotService（使用 session_id 创建对应的 Freezer）
     let freezer = PageStateFreezer::new(state.session_id);
     let playwright = PlaywrightClient::with_default_config();
@@ -688,7 +692,7 @@ async fn take_screenshot(
         }
         Err(e) => {
             warn!("截图失败: session={}, error={}", state.session_id, e);
-            Err(format!("截图失败: {}", e).into())
+            Err(format!("截图失败: {e}").into())
         }
     }
 }

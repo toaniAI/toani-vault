@@ -249,10 +249,7 @@ impl OperationReviewer {
         let response = match timeout(timeout_duration, review_future).await {
             Ok(Ok(response)) => response,
             Ok(Err(e)) => {
-                return Err(ReviewError::llm_service(format!(
-                    "LLM service error: {}",
-                    e
-                )));
+                return Err(ReviewError::llm_service(format!("LLM service error: {e}")));
             }
             Err(_) => {
                 return Err(ReviewError::Timeout);
@@ -350,7 +347,7 @@ Analyze this operation and provide your security assessment in the required JSON
             .trim();
 
         let parsed: serde_json::Value = serde_json::from_str(json_str)
-            .map_err(|e| ReviewError::ParseResponse(format!("Invalid JSON: {}", e)))?;
+            .map_err(|e| ReviewError::ParseResponse(format!("Invalid JSON: {e}")))?;
 
         let approved = parsed["approved"]
             .as_bool()

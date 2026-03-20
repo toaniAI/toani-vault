@@ -182,13 +182,12 @@ impl StorageAuditLogger {
                 .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
 
                 if let Err(e) = storage.record(entry) {
-                    log::warn!("[AUDIT] 存储审计日志失败：{:?}", e);
+                    log::warn!("[AUDIT] 存储审计日志失败：{e:?}");
                 }
             }
             Err(_) => {
                 log::warn!(
-                    "[AUDIT-DROP] Lock contention: credential={}, action={:?}, user={}",
-                    credential_id, action, user_id
+                    "[AUDIT-DROP] Lock contention: credential={credential_id}, action={action:?}, user={user_id}"
                 );
             }
         }
@@ -206,10 +205,7 @@ impl AuditLogger for StorageAuditLogger {
     ) {
         // 打印到控制台
         log::info!(
-            "[AUDIT] Credential created - tenant: {}, user: {}, credential: {}",
-            tenant_id,
-            user_id,
-            credential_id
+            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
 
         // 写入存储
@@ -434,7 +430,7 @@ async fn encrypt_credential_in_tee(
 ) -> Result<EncryptedPayload, String> {
     // 序列化明文
     let plaintext_bytes =
-        serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {}", e))?;
+        serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {e}"))?;
 
     // 派生 L3 密钥
     // 使用 user_id.hash() 保持与解密流程一致
@@ -442,7 +438,7 @@ async fn encrypt_credential_in_tee(
         let hierarchy = state.key_hierarchy.write().await;
         let l2_key = hierarchy
             .derive_user_vault_key(tenant_id, user_id.hash())
-            .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
+            .map_err(|e| format!("L2 密钥派生失败: {e}"))?;
 
         // 使用预生成的 credential_id 派生密钥，确保与存储的 ID 一致
         hierarchy
@@ -451,14 +447,14 @@ async fn encrypt_credential_in_tee(
                 credential_id.as_str(),
                 KeyPurpose::CredentialEncryption,
             )
-            .map_err(|e| format!("L3 密钥派生失败: {}", e))?
+            .map_err(|e| format!("L3 密钥派生失败: {e}"))?
     };
 
     // 执行加密
     // 使用 user_id.hash() 构建 AAD，与解密流程一致
     let aad = format!("{}:{}", tenant_id, user_id.hash());
     let blob = encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
-        .map_err(|e| format!("加密失败: {}", e))?;
+        .map_err(|e| format!("加密失败: {e}"))?;
 
     Ok(EncryptedPayload::from_blob(&blob))
 }
@@ -661,7 +657,7 @@ async fn decrypt_credential_in_tee(
         let hierarchy = state.key_hierarchy.write().await;
         let l2_key = hierarchy
             .derive_user_vault_key(entry.tenant_id.as_str(), entry.user_id.hash())
-            .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
+            .map_err(|e| format!("L2 密钥派生失败: {e}"))?;
 
         // 注意：AES-GCM 是对称加密，解密时使用与加密相同的 KeyPurpose
         hierarchy
@@ -670,13 +666,13 @@ async fn decrypt_credential_in_tee(
                 entry.credential_id.as_str(),
                 KeyPurpose::CredentialEncryption,
             )
-            .map_err(|e| format!("L3 密钥派生失败: {}", e))?
+            .map_err(|e| format!("L3 密钥派生失败: {e}"))?
     };
 
     // 执行解密
     let aad = format!("{}:{}", entry.tenant_id.as_str(), entry.user_id.hash());
     let plaintext = decrypt_credential(&l3_key, &blob, Some(aad.as_bytes()))
-        .map_err(|e| format!("解密失败: {:?}", e))?;
+        .map_err(|e| format!("解密失败: {e:?}"))?;
 
     Ok(plaintext)
 }
@@ -812,7 +808,7 @@ async fn encrypt_credential_update(
 ) -> Result<EncryptedPayload, String> {
     // 序列化明文
     let plaintext_bytes =
-        serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {}", e))?;
+        serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {e}"))?;
 
     // 派生 L3 密钥
     // 使用 user_id.hash() 保持与解密流程一致
@@ -820,7 +816,7 @@ async fn encrypt_credential_update(
         let hierarchy = state.key_hierarchy.write().await;
         let l2_key = hierarchy
             .derive_user_vault_key(tenant_id, user_id.hash())
-            .map_err(|e| format!("L2 密钥派生失败: {}", e))?;
+            .map_err(|e| format!("L2 密钥派生失败: {e}"))?;
 
         hierarchy
             .derive_credential_key(
@@ -828,7 +824,7 @@ async fn encrypt_credential_update(
                 credential_id.as_str(),
                 KeyPurpose::CredentialEncryption,
             )
-            .map_err(|e| format!("L3 密钥派生失败: {}", e))?
+            .map_err(|e| format!("L3 密钥派生失败: {e}"))?
     };
 
     // 执行加密
@@ -836,7 +832,7 @@ async fn encrypt_credential_update(
     let aad = format!("{}:{}", tenant_id, user_id.hash());
     let blob =
         crate::crypto::cipher::encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
-            .map_err(|e| format!("加密失败: {}", e))?;
+            .map_err(|e| format!("加密失败: {e}"))?;
 
     Ok(EncryptedPayload::from_blob(&blob))
 }

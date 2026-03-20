@@ -490,7 +490,7 @@ pub async fn export_audit_logs(
                 Err(e) => {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(AuditExportResponse::error(format!("序列化失败: {}", e))),
+                        Json(AuditExportResponse::error(format!("序列化失败: {e}"))),
                     )
                         .into_response();
                 }
@@ -618,7 +618,7 @@ pub async fn verify_audit_log(
             Ok(None) => {
                 return (
                     StatusCode::NOT_FOUND,
-                    Json(AuditVerifyResponse::not_found(format!("索引: {}", index))),
+                    Json(AuditVerifyResponse::not_found(format!("索引: {index}"))),
                 )
                     .into_response();
             }
@@ -665,36 +665,16 @@ pub async fn verify_audit_log(
     // 2. 验证签名（Ed25519，与 AuditRecorder::record 签名数据格式一致）
     // 首先检查公钥是否为空，如果为空则返回错误
     let signature_valid = if state.verifier_public_key.is_empty() {
-        log::error!("[AUDIT-VERIFY] 公钥未配置，无法验证签名。请配置 verifier_public_key。");
-        // 返回错误响应，而不是继续处理
-        let mut details = Vec::new();
-        details.push(VerificationDetail {
-            step: "签名验证配置".to_string(),
-            passed: false,
-            message: Some("公钥未配置，无法进行签名验证".to_string()),
-        });
-        
-        let data = AuditVerifyData {
-            id: entry.entry.id.clone(),
-            log_index: entry.log_index,
-            verified: false,
-            content_hash_match: true, // 内容哈希可能已验证
-            signature_valid: false,
-            merkle_proof_valid: true, // Merkle 证明可能已验证
-            details,
-            verified_at: current_timestamp_millis(),
-        };
-        
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(AuditVerifyResponse::invalid(data)),
-        )
-            .into_response();
+        log::warn!("[AUDIT-VERIFY] 公钥未配置，无法验证签名");
+        // 公钥未配置，签名验证跳过
+        false
     } else {
         let combined_data = [entry.content_hash.as_slice(), entry.prev_hash.as_slice()].concat();
         let combined_hash = digest(&SHA256, &combined_data);
         let pub_key = UnparsedPublicKey::new(&ED25519, &state.verifier_public_key);
-        pub_key.verify(combined_hash.as_ref(), &entry.signature).is_ok()
+        pub_key
+            .verify(combined_hash.as_ref(), &entry.signature)
+            .is_ok()
     };
     details.push(VerificationDetail {
         step: "数字签名验证".to_string(),

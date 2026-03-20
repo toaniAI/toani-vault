@@ -261,7 +261,7 @@ async fn initialize_app_state(
     // 创建审计 API 状态
     let audit_state = AuditApiState {
         storage: Arc::new(audit_storage_adapter), // 从共享存储查询
-        verifier_public_key: vec![], // 空向量：未配置公钥时签名验证 fail-closed
+        verifier_public_key: vec![],              // 空向量：未配置公钥时签名验证 fail-closed
     };
 
     // 创建认证 API 状态

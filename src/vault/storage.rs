@@ -790,10 +790,7 @@ impl CredentialVault {
         // 验证目标版本
         if target_version < 1 || target_version >= current_version {
             return Err(VaultError::InvalidVersion {
-                message: format!(
-                    "无效的目标版本: {}, 当前版本: {}",
-                    target_version, current_version
-                ),
+                message: format!("无效的目标版本: {target_version}, 当前版本: {current_version}"),
             });
         }
 
@@ -811,7 +808,7 @@ impl CredentialVault {
             credential_id.as_str().to_string(),
             entry.version,
             entry.encrypted_payload.clone(),
-            Some(format!("rollback: {}", reason)),
+            Some(format!("rollback: {reason}")),
             Some(user_id.hash().to_string()),
         );
         self.backend

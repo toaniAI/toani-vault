@@ -307,7 +307,7 @@ pub async fn login_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthErrorResponse {
                     error: "token_generation_failed".to_string(),
-                    error_description: format!("Token 生成失败: {}", e),
+                    error_description: format!("Token 生成失败: {e}"),
                 }),
             )
                 .into_response();
@@ -322,7 +322,7 @@ pub async fn login_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthErrorResponse {
                     error: "token_generation_failed".to_string(),
-                    error_description: format!("Refresh Token 生成失败: {}", e),
+                    error_description: format!("Refresh Token 生成失败: {e}"),
                 }),
             )
                 .into_response();
@@ -399,7 +399,7 @@ pub async fn create_token_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthErrorResponse {
                     error: "token_generation_failed".to_string(),
-                    error_description: format!("Token 生成失败: {}", e),
+                    error_description: format!("Token 生成失败: {e}"),
                 }),
             )
                 .into_response();
@@ -447,7 +447,7 @@ pub async fn refresh_handler(
                 StatusCode::UNAUTHORIZED,
                 Json(AuthErrorResponse {
                     error: "invalid_refresh_token".to_string(),
-                    error_description: format!("Refresh Token 无效: {}", e),
+                    error_description: format!("Refresh Token 无效: {e}"),
                 }),
             )
                 .into_response();
@@ -483,7 +483,7 @@ pub async fn refresh_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthErrorResponse {
                     error: "token_generation_failed".to_string(),
-                    error_description: format!("Token 生成失败: {}", e),
+                    error_description: format!("Token 生成失败: {e}"),
                 }),
             )
                 .into_response();
@@ -498,7 +498,7 @@ pub async fn refresh_handler(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(AuthErrorResponse {
                     error: "token_generation_failed".to_string(),
-                    error_description: format!("Refresh Token 生成失败: {}", e),
+                    error_description: format!("Refresh Token 生成失败: {e}"),
                 }),
             )
                 .into_response();
@@ -646,16 +646,16 @@ fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken,
 
     // 创建对称密钥
     let sk: SymmetricKey<_> =
-        SymmetricKey::from(secret_key).map_err(|e| format!("无效的密钥: {:?}", e))?;
+        SymmetricKey::from(secret_key).map_err(|e| format!("无效的密钥: {e:?}"))?;
 
     // 解析 Token
     let untrusted =
-        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {:?}", e))?;
+        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {e:?}"))?;
 
     // 解密验证（使用默认验证规则自动验证 exp）
     let validation_rules = ClaimsValidationRules::new();
     let trusted = local::decrypt(&sk, &untrusted, &validation_rules, None, None)
-        .map_err(|e| format!("Token 验证失败: {:?}", e))?;
+        .map_err(|e| format!("Token 验证失败: {e:?}"))?;
 
     // 提取 Claims
     let claims = trusted
