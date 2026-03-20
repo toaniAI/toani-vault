@@ -353,17 +353,23 @@ impl McpTokenStorage {
                     log::info!("Keychain initialized successfully");
                 }
                 Err(e) => {
-                    log::warn!("Failed to access keychain: {}. Falling back to memory storage", e);
-                    return Err(TokenStorageError::EncryptionError(format!("Keychain access failed: {}", e)));
+                    log::warn!(
+                        "Failed to access keychain: {}. Falling back to memory storage",
+                        e
+                    );
+                    return Err(TokenStorageError::EncryptionError(format!(
+                        "Keychain access failed: {}",
+                        e
+                    )));
                 }
             }
         }
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             log::warn!("Keychain storage only supported on macOS. Using memory storage.");
         }
-        
+
         self.keychain_initialized.store(1, Ordering::SeqCst);
         Ok(())
     }
@@ -620,9 +626,10 @@ impl McpTokenStorage {
 
         // 校验 AES-GCM 输出长度（密文 + 16 字节认证标签）
         if combined.len() < 16 {
-            return Err(TokenStorageError::EncryptionError(
-                format!("AES-GCM output too short: {} bytes", combined.len())
-            ));
+            return Err(TokenStorageError::EncryptionError(format!(
+                "AES-GCM output too short: {} bytes",
+                combined.len()
+            )));
         }
 
         // aes-gcm 返回 ciphertext || auth_tag，auth_tag 为最后 16 字节
@@ -642,9 +649,10 @@ impl McpTokenStorage {
 
         // 校验 nonce 长度（AES-GCM 要求 12 字节）
         if encrypted.nonce().len() != 12 {
-            return Err(TokenStorageError::DecryptionError(
-                format!("Invalid nonce length: {}, expected 12", encrypted.nonce().len())
-            ));
+            return Err(TokenStorageError::DecryptionError(format!(
+                "Invalid nonce length: {}, expected 12",
+                encrypted.nonce().len()
+            )));
         }
 
         // 重新拼接 ciphertext || auth_tag
@@ -669,41 +677,48 @@ impl McpTokenStorage {
     ) -> Result<(), TokenStorageError> {
         #[cfg(target_os = "macos")]
         {
-            use security_framework::passwords::{set_generic_password, delete_generic_password};
-            
+            use security_framework::passwords::{delete_generic_password, set_generic_password};
+
             // 序列化 Token 数据
             let mut token_data = Vec::new();
             token_data.extend_from_slice(encrypted.ciphertext());
             token_data.extend_from_slice(encrypted.auth_tag());
             token_data.extend_from_slice(encrypted.nonce());
-            
+
             // 添加元数据
-            let metadata_json = serde_json::to_string(metadata)
-                .map_err(|e| TokenStorageError::EncryptionError(format!("Metadata serialization failed: {}", e)))?;
-            
+            let metadata_json = serde_json::to_string(metadata).map_err(|e| {
+                TokenStorageError::EncryptionError(format!("Metadata serialization failed: {}", e))
+            })?;
+
             // 组合数据：token_data + metadata_json
             let mut full_data = token_data;
             full_data.extend_from_slice(metadata_json.as_bytes());
-            
+
             // 存储到 Keychain
             let service_name = "credbridge-mcp-token";
             let account_name = token_id;
-            
+
             // 尝试删除旧值（如果存在）
             let _ = delete_generic_password(service_name, account_name);
-            
+
             match set_generic_password(service_name, account_name, &full_data) {
                 Ok(_) => {
                     log::debug!("Token saved to keychain: {}", token_id);
-                    return Ok(());
+                    Ok(())
                 }
                 Err(e) => {
-                    log::warn!("Failed to save to keychain: {}. Falling back to memory storage", e);
-                    return Err(TokenStorageError::EncryptionError(format!("Keychain save failed: {}", e)));
+                    log::warn!(
+                        "Failed to save to keychain: {}. Falling back to memory storage",
+                        e
+                    );
+                    Err(TokenStorageError::EncryptionError(format!(
+                        "Keychain save failed: {}",
+                        e
+                    )))
                 }
             }
         }
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             log::debug!("Keychain storage not available on this platform. Using memory storage.");
@@ -716,23 +731,23 @@ impl McpTokenStorage {
         #[cfg(target_os = "macos")]
         {
             use security_framework::passwords::delete_generic_password;
-            
+
             let service_name = "credbridge-mcp-token";
             let account_name = token_id;
-            
+
             match delete_generic_password(service_name, account_name) {
                 Ok(_) => {
                     log::debug!("Token deleted from keychain: {}", token_id);
-                    return Ok(());
+                    Ok(())
                 }
                 Err(e) => {
                     log::warn!("Failed to delete from keychain: {}", e);
                     // 如果不存在，不视为错误
-                    return Ok(());
+                    Ok(())
                 }
             }
         }
-        
+
         #[cfg(not(target_os = "macos"))]
         {
             Ok(())
@@ -1078,9 +1093,6 @@ mod tests {
 
         // 解密被篡改的数据应当失败
         let result = storage.decrypt_token(&tampered);
-        assert!(
-            result.is_err(),
-            "解密被篡改的密文应返回错误"
-        );
+        assert!(result.is_err(), "解密被篡改的密文应返回错误");
     }
 }

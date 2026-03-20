@@ -3,7 +3,7 @@
 //! 为截图添加 Enclave 水印，包含会话信息、时间戳等元数据。
 
 use crate::tee::sandbox::{error::ExportError, types::SessionId};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use hmac::{Hmac, Mac};
 use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
 use sha2::Sha256;
@@ -158,7 +158,10 @@ impl WatermarkService {
         //      PNG tEXt chunk (key: "CredBridge-Watermark-Text", value: watermark_text)
         let signed_data = match self.embed_signature_in_png(&watermarked_data, &watermark_text) {
             Ok(data) => {
-                debug!("HMAC-SHA256 签名已嵌入 PNG tEXt chunk，总大小：{} bytes", data.len());
+                debug!(
+                    "HMAC-SHA256 签名已嵌入 PNG tEXt chunk，总大小：{} bytes",
+                    data.len()
+                );
                 data
             }
             Err(e) => {
@@ -174,8 +177,8 @@ impl WatermarkService {
     ///
     /// 对水印文本进行签名，确保不可伪造
     fn compute_watermark_hmac(&self, watermark_text: &str) -> Vec<u8> {
-        let mut mac = HmacSha256::new_from_slice(&self.hmac_key)
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(&self.hmac_key).expect("HMAC can take key of any size");
         mac.update(watermark_text.as_bytes());
         let result = mac.finalize();
         result.into_bytes().as_slice().to_vec()
@@ -214,9 +217,14 @@ impl WatermarkService {
             encoder.set_depth(png::BitDepth::Eight);
 
             // 添加文本 chunks
-            encoder.add_text_chunk(WATERMARK_SIG_CHUNK_KEY.to_string(), signature_b64.clone())
+            encoder
+                .add_text_chunk(WATERMARK_SIG_CHUNK_KEY.to_string(), signature_b64.clone())
                 .map_err(|e| ExportError::Watermark(format!("添加签名 chunk 失败：{}", e)))?;
-            encoder.add_text_chunk(WATERMARK_TEXT_CHUNK_KEY.to_string(), watermark_text.to_string())
+            encoder
+                .add_text_chunk(
+                    WATERMARK_TEXT_CHUNK_KEY.to_string(),
+                    watermark_text.to_string(),
+                )
                 .map_err(|e| ExportError::Watermark(format!("添加文本 chunk 失败：{}", e)))?;
 
             let mut writer = encoder
@@ -693,7 +701,7 @@ mod tests {
     /// 创建简单的测试 PNG 图片（1x1 像素，红色）
     fn create_test_png() -> Vec<u8> {
         use image::{ImageBuffer, Rgba};
-        
+
         // 使用 image crate 创建 1x1 红色图片
         let img = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_fn(1, 1, |_, _| Rgba([255, 0, 0, 255]));
         let mut output = Vec::new();
@@ -826,9 +834,7 @@ mod tests {
         let test_png = create_test_png();
 
         // 未添加水印的图片应验证失败
-        let result = service
-            .verify_watermark(&test_png)
-            .expect("验证水印失败");
+        let result = service.verify_watermark(&test_png).expect("验证水印失败");
         assert!(!result, "无签名图片应验证失败");
     }
 
@@ -870,13 +876,13 @@ mod tests {
         let watermarked = service
             .add_watermark(&test_png, &metadata, &config)
             .expect("添加水印失败");
-        
+
         // 验证原始水印应通过
         let original_result = service
             .verify_watermark(&watermarked)
             .expect("验证水印失败");
         assert!(original_result, "原始水印应验证通过");
-        
+
         // 注意：由于我们只签名 watermark_text 而非图片数据，
         // 修改图片像素不会影响签名验证结果
         // 这个测试验证的是签名 chunk 本身未被篡改
@@ -906,7 +912,7 @@ mod tests {
             "test-enclave",
             b"wrong-key-0000000000000000000000000".to_vec(),
         );
-        
+
         // 用错误密钥验证应失败
         let wrong_key_result = wrong_service
             .verify_watermark(&watermarked)
@@ -920,8 +926,7 @@ mod tests {
         let test_png = create_test_png();
         let session_id = SessionId::new();
 
-        let result = service
-            .add_standard_watermark(&test_png, session_id, "https://example.com");
+        let result = service.add_standard_watermark(&test_png, session_id, "https://example.com");
 
         assert!(result.is_ok());
         let watermarked = result.unwrap();

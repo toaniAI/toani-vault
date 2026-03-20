@@ -667,13 +667,12 @@ pub async fn verify_audit_log(
     let signature_valid = if state.verifier_public_key.is_empty() {
         log::error!("[AUDIT-VERIFY] 公钥未配置，无法验证签名。请配置 verifier_public_key。");
         // 返回错误响应，而不是继续处理
-        let mut details = Vec::new();
-        details.push(VerificationDetail {
+        let details = vec![VerificationDetail {
             step: "签名验证配置".to_string(),
             passed: false,
             message: Some("公钥未配置，无法进行签名验证".to_string()),
-        });
-        
+        }];
+
         let data = AuditVerifyData {
             id: entry.entry.id.clone(),
             log_index: entry.log_index,
@@ -684,7 +683,7 @@ pub async fn verify_audit_log(
             details,
             verified_at: current_timestamp_millis(),
         };
-        
+
         return (
             StatusCode::BAD_REQUEST,
             Json(AuditVerifyResponse::invalid(data)),
@@ -694,7 +693,9 @@ pub async fn verify_audit_log(
         let combined_data = [entry.content_hash.as_slice(), entry.prev_hash.as_slice()].concat();
         let combined_hash = digest(&SHA256, &combined_data);
         let pub_key = UnparsedPublicKey::new(&ED25519, &state.verifier_public_key);
-        pub_key.verify(combined_hash.as_ref(), &entry.signature).is_ok()
+        pub_key
+            .verify(combined_hash.as_ref(), &entry.signature)
+            .is_ok()
     };
     details.push(VerificationDetail {
         step: "数字签名验证".to_string(),

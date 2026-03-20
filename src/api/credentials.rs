@@ -188,7 +188,9 @@ impl StorageAuditLogger {
             Err(_) => {
                 log::warn!(
                     "[AUDIT-DROP] Lock contention: credential={}, action={:?}, user={}",
-                    credential_id, action, user_id
+                    credential_id,
+                    action,
+                    user_id
                 );
             }
         }

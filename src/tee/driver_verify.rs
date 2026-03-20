@@ -389,17 +389,27 @@ fn get_trusted_public_key(fingerprint: &str) -> Option<Vec<u8>> {
     let env_key = format!("TRUSTED_PUBLIC_KEY_{}", normalized);
     if let Ok(key_b64) = std::env::var(&env_key) {
         if let Ok(key_bytes) = decode_base64_key(&key_b64) {
-            log::debug!("Loaded trusted public key for fingerprint {} from env var {}", fingerprint, env_key);
+            log::debug!(
+                "Loaded trusted public key for fingerprint {} from env var {}",
+                fingerprint,
+                env_key
+            );
             return Some(key_bytes);
         } else {
-            log::warn!("Failed to decode base64 public key from env var {}", env_key);
+            log::warn!(
+                "Failed to decode base64 public key from env var {}",
+                env_key
+            );
         }
     }
 
     // 方案2：回退到默认公钥（适用于单密钥配置）
     if let Ok(key_b64) = std::env::var("TRUSTED_PUBLIC_KEY_DEFAULT") {
         if let Ok(key_bytes) = decode_base64_key(&key_b64) {
-            log::debug!("Using default trusted public key for fingerprint {}", fingerprint);
+            log::debug!(
+                "Using default trusted public key for fingerprint {}",
+                fingerprint
+            );
             return Some(key_bytes);
         }
     }
@@ -408,7 +418,10 @@ fn get_trusted_public_key(fingerprint: &str) -> Option<Vec<u8>> {
     // TODO(#TEE-301): 集成 Vault KV 存储：
     //   let path = format!("secret/tee/driver-keys/{}", fingerprint);
     //   vault_client.get_secret(&path).ok()?.data.get("public_key")
-    log::warn!("No trusted public key found for fingerprint: {}", fingerprint);
+    log::warn!(
+        "No trusted public key found for fingerprint: {}",
+        fingerprint
+    );
     None
 }
 
@@ -434,7 +447,10 @@ fn decode_base64_key(b64: &str) -> Result<Vec<u8>, String> {
         }
     }
 
-    Err(format!("Failed to decode base64 key (length {})", trimmed.len()))
+    Err(format!(
+        "Failed to decode base64 key (length {})",
+        trimmed.len()
+    ))
 }
 
 /// 清理敏感的驱动元数据

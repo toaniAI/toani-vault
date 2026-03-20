@@ -883,7 +883,10 @@ impl TenantConfigCache for RedisTenantConfigCache {
         let mut conn = match self.client.get_multiplexed_async_connection().await {
             Ok(c) => c,
             Err(e) => {
-                log::error!("[TENANT-CONFIG] Failed to get Redis connection for clear: {}", e);
+                log::error!(
+                    "[TENANT-CONFIG] Failed to get Redis connection for clear: {}",
+                    e
+                );
                 return;
             }
         };
@@ -898,9 +901,8 @@ impl TenantConfigCache for RedisTenantConfigCache {
                 .arg(100)
                 .query_async(&mut conn)
                 .await;
-            
-            match scan_result
-            {
+
+            match scan_result {
                 Ok((next_cursor, keys)) => {
                     if !keys.is_empty() {
                         let deleted: Result<(), _> = conn.del(keys).await;

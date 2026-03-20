@@ -430,7 +430,7 @@ impl BlueGreenUpgradeManager {
 
             // 以独立进程启动新版本 Enclave（非阻塞）
             match std::process::Command::new(&binary_path)
-                .env("TEE_ROLE", "green")  // 标记为新版本（绿色）
+                .env("TEE_ROLE", "green") // 标记为新版本（绿色）
                 .spawn()
             {
                 Ok(child) => {
@@ -501,7 +501,11 @@ impl BlueGreenUpgradeManager {
 
         if !healthy {
             let failures = self.health_check_failures.fetch_add(1, Ordering::SeqCst) + 1;
-            log::warn!("Health check failed ({}/{})", failures, self.max_health_check_failures);
+            log::warn!(
+                "Health check failed ({}/{})",
+                failures,
+                self.max_health_check_failures
+            );
             if failures >= self.max_health_check_failures {
                 return Err(UpgradeError::HealthCheckFailed(format!(
                     "健康检查连续失败次数达到上限 ({})",
@@ -532,7 +536,10 @@ impl BlueGreenUpgradeManager {
         } else if url.starts_with("http://") {
             "http"
         } else {
-            log::error!("Health check URL must start with http:// or https://: {}", url);
+            log::error!(
+                "Health check URL must start with http:// or https://: {}",
+                url
+            );
             return false;
         };
 
@@ -549,9 +556,9 @@ impl BlueGreenUpgradeManager {
 
         if scheme == "https" {
             // HTTPS: 使用 TLS 连接
-            use tokio_rustls::TlsConnector;
             use rustls::ClientConfig;
             use std::sync::Arc;
+            use tokio_rustls::TlsConnector;
             use webpki_roots::TLS_SERVER_ROOTS;
 
             let tcp_stream = match tokio::time::timeout(
@@ -566,14 +573,18 @@ impl BlueGreenUpgradeManager {
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check TCP connect timed out after {}s ({})", timeout_secs, addr);
+                    log::warn!(
+                        "Health check TCP connect timed out after {}s ({})",
+                        timeout_secs,
+                        addr
+                    );
                     return false;
                 }
             };
 
             // 配置 TLS
             let root_store = Arc::new(rustls::RootCertStore::from_iter(
-                TLS_SERVER_ROOTS.iter().cloned()
+                TLS_SERVER_ROOTS.iter().cloned(),
             ));
             let config = ClientConfig::builder()
                 .with_root_certificates(root_store)
@@ -601,7 +612,10 @@ impl BlueGreenUpgradeManager {
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check TLS handshake timed out after {}s", timeout_secs);
+                    log::warn!(
+                        "Health check TLS handshake timed out after {}s",
+                        timeout_secs
+                    );
                     return false;
                 }
             };
@@ -641,14 +655,14 @@ impl BlueGreenUpgradeManager {
             .await
             {
                 Ok(Ok(n)) if n > 0 => {
-                let first_line = response_line.trim();
-                if let Some(status_str) = first_line.split_whitespace().nth(1) {
-                    if let Ok(status) = status_str.parse::<u16>() {
-                        let is_healthy = (200..300).contains(&status);
-                        log::debug!("Health check {} returned HTTP {}", url, status);
-                        return is_healthy;
+                    let first_line = response_line.trim();
+                    if let Some(status_str) = first_line.split_whitespace().nth(1) {
+                        if let Ok(status) = status_str.parse::<u16>() {
+                            let is_healthy = (200..300).contains(&status);
+                            log::debug!("Health check {} returned HTTP {}", url, status);
+                            return is_healthy;
+                        }
                     }
-                }
                 }
                 Ok(Ok(_)) => {
                     log::warn!("Health check HTTPS read returned empty");
@@ -665,7 +679,7 @@ impl BlueGreenUpgradeManager {
             };
 
             log::warn!("Health check {} returned unparseable response", url);
-            return false;
+            false
         } else {
             // HTTP: 使用明文 TCP 连接
             let mut tcp_stream = match tokio::time::timeout(
@@ -680,7 +694,11 @@ impl BlueGreenUpgradeManager {
                     return false;
                 }
                 Err(_) => {
-                    log::warn!("Health check TCP connect timed out after {}s ({})", timeout_secs, addr);
+                    log::warn!(
+                        "Health check TCP connect timed out after {}s ({})",
+                        timeout_secs,
+                        addr
+                    );
                     return false;
                 }
             };
@@ -857,7 +875,10 @@ impl BlueGreenUpgradeManager {
                 log::info!(
                     "Upgrade complete: old enclave {} retired, new enclave {} is now active",
                     old.version,
-                    active.as_ref().map(|v| v.version.as_str()).unwrap_or("unknown")
+                    active
+                        .as_ref()
+                        .map(|v| v.version.as_str())
+                        .unwrap_or("unknown")
                 );
 
                 // 尝试向旧版本发送停止信号
@@ -868,7 +889,10 @@ impl BlueGreenUpgradeManager {
                         #[cfg(unix)]
                         {
                             use std::process::Command;
-                            match Command::new("kill").args(["-TERM", &pid.to_string()]).status() {
+                            match Command::new("kill")
+                                .args(["-TERM", &pid.to_string()])
+                                .status()
+                            {
                                 Ok(s) if s.success() => {
                                     log::info!("Sent SIGTERM to old enclave PID {}", pid);
                                 }
@@ -908,8 +932,10 @@ impl BlueGreenUpgradeManager {
         self.phase
             .store(UpgradePhase::Completed as u8, Ordering::SeqCst);
 
-        log::info!("Blue-green upgrade completed successfully at timestamp {}",
-                   self.upgrade_complete_time.load(Ordering::SeqCst));
+        log::info!(
+            "Blue-green upgrade completed successfully at timestamp {}",
+            self.upgrade_complete_time.load(Ordering::SeqCst)
+        );
 
         Ok(UpgradeResult::Success)
     }
@@ -930,7 +956,10 @@ impl BlueGreenUpgradeManager {
             )));
         }
 
-        log::warn!("Initiating blue-green upgrade rollback from phase {:?}", current_phase);
+        log::warn!(
+            "Initiating blue-green upgrade rollback from phase {:?}",
+            current_phase
+        );
 
         // 设置回滚阶段
         self.phase
@@ -974,7 +1003,10 @@ impl BlueGreenUpgradeManager {
         // 3. 重置流量权重（全部回到旧版本）
         let prev_traffic = self.traffic_to_new_pct.swap(0, Ordering::SeqCst);
         if prev_traffic > 0 {
-            log::info!("Traffic weight reset: {}% that was routed to new enclave reverted to old enclave", prev_traffic);
+            log::info!(
+                "Traffic weight reset: {}% that was routed to new enclave reverted to old enclave",
+                prev_traffic
+            );
         }
 
         // 4. 重置所有计数器和状态

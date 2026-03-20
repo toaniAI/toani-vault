@@ -656,18 +656,22 @@ async fn take_screenshot(
     state: &ConnectionState,
     _ctx: &ApiContext,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    use crate::tee::sandbox::export::freezer::PageStateFreezer;
     use crate::tee::sandbox::export::screenshot::{
         PlaywrightClient, ScreenshotConfig, ScreenshotRequest, ScreenshotService,
     };
-    use crate::tee::sandbox::export::freezer::PageStateFreezer;
     use crate::tee::sandbox::export::watermark::WatermarkService;
 
     info!("截图请求: session={}", state.session_id);
 
     // 验证 session_id 格式，避免 PageStateFreezer::new panic
-    let _session_uuid = uuid::Uuid::parse_str(&state.session_id.0.to_string())
-        .map_err(|e| format!("Invalid session_id format: {}. Error: {}", state.session_id.0, e))?;
-    
+    let _session_uuid = uuid::Uuid::parse_str(&state.session_id.0.to_string()).map_err(|e| {
+        format!(
+            "Invalid session_id format: {}. Error: {}",
+            state.session_id.0, e
+        )
+    })?;
+
     // 构建 ScreenshotService（使用 session_id 创建对应的 Freezer）
     let freezer = PageStateFreezer::new(state.session_id);
     let playwright = PlaywrightClient::with_default_config();
