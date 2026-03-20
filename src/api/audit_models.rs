@@ -544,6 +544,7 @@ pub struct AuditVerifyRequest {
     #[serde(default)]
     pub id: String,
     /// 日志索引（可选，优先于 ID）
+    #[serde(default)]
     pub log_index: Option<u64>,
 }
 
