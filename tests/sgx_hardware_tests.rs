@@ -44,8 +44,11 @@ use vault_service::tee::{
 /// - Enclave 初始化成功
 /// - MRENCLAVE/MRSIGNER 为非零哈希值
 /// - Enclave 状态为 Running
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_sgx_hardware_availability() {
     println!("\n=== HW-001: SGX 硬件基础验证 ===");
 
@@ -92,8 +95,11 @@ fn test_sgx_hardware_availability() {
 /// **通过标准**:
 /// - 多次初始化产生相同的 MRENCLAVE
 /// - 测量值符合 SGX 规范（32 字节 SHA-256 哈希）
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_enclave_measurement_consistency() {
     println!("\n=== HW-002: Enclave 测量值一致性验证 ===");
 
@@ -140,8 +146,11 @@ fn test_enclave_measurement_consistency() {
 /// - Quote 生成成功（调用硬件 DCAP）
 /// - Quote 包含真实的 ECDSA 签名
 /// - 测量值与 Enclave 一致
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_dcap_quote_generation_hardware() {
     println!("\n=== HW-003: DCAP Quote 生成（硬件模式） ===");
 
@@ -210,8 +219,11 @@ fn test_dcap_quote_generation_hardware() {
 /// **通过标准**:
 /// - Quote 验证成功
 /// - 认证报告显示正确的测量值
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_dcap_quote_verification_hardware() {
     println!("\n=== HW-004: DCAP Quote 验证（硬件模式） ===");
 
@@ -287,8 +299,11 @@ fn test_dcap_quote_verification_hardware() {
 /// - 挑战生成成功
 /// - Quote 生成成功（硬件）
 /// - 响应验证通过
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_challenge_response_protocol_hardware() {
     println!("\n=== HW-005: 挑战 - 响应协议完整流程 ===");
 
@@ -356,8 +371,11 @@ fn test_challenge_response_protocol_hardware() {
 /// - Sealing Key 从硬件 SGX 正确获取
 /// - 数据密封成功
 /// - 数据解封成功且内容一致
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_sgx_sealing_key_derivation() {
     println!("\n=== HW-006: SGX Sealing 密钥派生 ===");
 
@@ -417,8 +435,11 @@ fn test_sgx_sealing_key_derivation() {
 /// - L2 密钥正确派生
 /// - 加密/解密成功
 /// - 租户隔离有效
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_key_hierarchy_hardware() {
     println!("\n=== HW-007: 密钥层次结构验证 ===");
 
@@ -482,8 +503,11 @@ fn test_key_hierarchy_hardware() {
 /// - 安全通道建立成功
 /// - 会话密钥正确派生
 /// - 加密/解密成功
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_secure_channel_establishment_hardware() {
     println!("\n=== HW-008: 安全通道建立与加密通信 ===");
 
@@ -548,8 +572,11 @@ fn test_secure_channel_establishment_hardware() {
 /// **通过标准**:
 /// - 匹配的白名单接受
 /// - 不匹配的白名单拒绝
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_measurement_whitelist_hardware() {
     println!("\n=== HW-009: 测量值白名单验证 ===");
 
@@ -627,8 +654,11 @@ fn test_measurement_whitelist_hardware() {
 /// **通过标准**:
 /// - Nonce 正确绑定到 Quote
 /// - 重放攻击可被检测
+///
+/// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "requires Intel SGX hardware support"]
 fn test_replay_attack_protection_hardware() {
     println!("\n=== HW-010: 重放攻击防护验证 ===");
 
