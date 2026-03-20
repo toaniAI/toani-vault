@@ -20,8 +20,15 @@
 //! - DCAP Library 1.15+
 //! - AESM 服务运行中
 
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
-use vault_service::tee::enclave::Enclave;
+use vault_service::tee::{
+    attestation::AttestationService, challenge::ChallengeProtocol, challenge::ProverProtocol,
+    challenge::SecureChannel, challenge::CHANNEL_KEY_LENGTH, dcap::DcapConfig, dcap::DcapError,
+    dcap::DcapService, enclave::Enclave, sealing::SealPolicy, sealing::SealingService,
+    AttestationResult, EnclaveConfig, EnclaveState,
+};
+use ring::digest::{digest, SHA256};
 
 // ============================================================================
 // HW-001: SGX 硬件基础验证
