@@ -669,6 +669,7 @@ impl McpTokenStorage {
     }
 
     /// 存储到密钥环
+    #[allow(unused_variables)]
     async fn store_to_keychain(
         &self,
         token_id: &str,
@@ -727,6 +728,7 @@ impl McpTokenStorage {
     }
 
     /// 从密钥环删除
+    #[allow(unused_variables)]
     async fn delete_from_keychain(&self, token_id: &str) -> Result<(), TokenStorageError> {
         #[cfg(target_os = "macos")]
         {
