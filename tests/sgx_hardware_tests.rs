@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 //! SGX 硬件环境真实系统测试
 //!
 //! 本测试套件用于在真实 Intel SGX 硬件环境下验证 CredBridge TEE 功能
@@ -20,15 +22,12 @@
 //! - DCAP Library 1.15+
 //! - AESM 服务运行中
 
-use std::collections::HashSet;
+use ring::digest::{SHA256, digest};
 use std::time::{SystemTime, UNIX_EPOCH};
-use vault_service::tee::{
-    attestation::AttestationService, challenge::ChallengeProtocol, challenge::ProverProtocol,
-    challenge::SecureChannel, challenge::CHANNEL_KEY_LENGTH, dcap::DcapConfig, dcap::DcapError,
-    dcap::DcapService, enclave::Enclave, sealing::SealPolicy, sealing::SealingService,
-    AttestationResult, EnclaveConfig, EnclaveState,
-};
-use ring::digest::{digest, SHA256};
+use vault_service::tee::enclave::Enclave;
+
+#[cfg(target_os = "linux")]
+use vault_service::tee::{dcap::DcapConfig, dcap::DcapError, dcap::DcapService};
 
 // ============================================================================
 // HW-001: SGX 硬件基础验证
@@ -385,7 +384,7 @@ fn test_sgx_sealing_key_derivation() {
     // 4. 测试密封数据
     let test_data = b"Test sensitive data for sealing";
     let sealed = sealing_service
-        .seal_data(test_data, b"", SealPolicy::MacBased)
+        .seal_data(test_data, b"", SealPolicy::Mrsigner)
         .expect("密封失败");
 
     println!(
@@ -652,7 +651,7 @@ fn test_replay_attack_protection_hardware() {
 
     // 2. 获取 Quote
     let quote = dcap_service.get_current_quote().unwrap();
-    let quote_bytes = dcap_service.quote_to_bytes(&quote).unwrap();
+    let _quote_bytes = dcap_service.quote_to_bytes(&quote).unwrap();
 
     // 3. 验证 nonce 绑定
     let report_data = quote.report_body.report_data;

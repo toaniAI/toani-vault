@@ -4,6 +4,18 @@
 
 CredBridge 是一个 AI 原生零信任凭证保险库系统，采用 Intel SGX TEE（可信执行环境）技术，实现四层密钥层次架构，确保凭证数据在硬件级别的安全隔离中处理。
 
+## 📚 文档导航
+
+**完整文档**: 请查看 [docs/README.md](docs/README.md)
+
+- **项目介绍**: [docs/01-项目概述/](docs/01-项目概述/README.md)
+- **功能模块**: [docs/02-核心功能模块/](docs/02-核心功能模块/README.md)
+- **API 参考**: [docs/03-API 参考/](docs/03-API 参考/README.md)
+- **SDK 使用**: [docs/04-SDK 与工具/](docs/04-SDK 与工具/README.md)
+- **部署运维**: [docs/05-部署与运维/](docs/05-部署与运维/README.md)
+- **开发者指南**: [docs/07-开发者指南/](docs/07-开发者指南/README.md)
+- **用户手册**: [docs/08-用户指南/](docs/08-用户指南/USER_MANUAL.md)
+
 ## 功能特性
 
 | 功能 | 状态 | 描述 |
