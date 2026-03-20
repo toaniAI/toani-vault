@@ -26,8 +26,8 @@ use ring::digest::{SHA256, digest};
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use vault_service::tee::{
-    attestation::AttestationResult, challenge::ChallengeProtocol, challenge::ProverProtocol,
-    challenge::SecureChannel, challenge::CHANNEL_KEY_LENGTH, dcap::DcapConfig, dcap::DcapError,
+    attestation::AttestationResult, challenge::CHANNEL_KEY_LENGTH, challenge::ChallengeProtocol,
+    challenge::ProverProtocol, challenge::SecureChannel, dcap::DcapConfig, dcap::DcapError,
     dcap::DcapService, enclave::Enclave, enclave::EnclaveConfig, enclave::EnclaveState,
     sealing::SealPolicy, sealing::SealingService,
 };
