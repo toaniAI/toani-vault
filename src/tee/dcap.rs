@@ -1083,7 +1083,7 @@ impl DcapService {
     }
 
     /// 将 Quote 序列化为字节
-    fn quote_to_bytes(&self, quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
+    pub fn quote_to_bytes(&self, quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
         let mut bytes = Vec::new();
 
         bytes.extend_from_slice(&quote.version.to_le_bytes());

@@ -387,15 +387,15 @@ fn test_sgx_sealing_key_derivation() {
     // 4. 测试密封数据
     let test_data = b"Test sensitive data for sealing";
     let sealed = sealing_service
-        .seal_data(&sealing_key, test_data)
+        .seal_data(test_data, b"", SealPolicy::MacBased)
         .expect("密封失败");
 
-    println!("数据密封成功，密封后大小：{} 字节", sealed.len());
-    assert!(!sealed.is_empty(), "密封数据不应为空");
+    println!("数据密封成功，密封后大小：{} 字节", sealed.ciphertext.len() + sealed.mac.len());
+    assert!(!sealed.ciphertext.is_empty(), "密封数据不应为空");
 
     // 5. 测试解封数据
     let unsealed = sealing_service
-        .unseal_data(&sealing_key, &sealed)
+        .unseal_data(&sealed)
         .expect("解封失败");
 
     println!("数据解封成功");

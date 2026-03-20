@@ -76,7 +76,7 @@ impl SealingKey {
     }
 
     /// 获取密钥材料引用
-    pub(crate) fn as_bytes(&self) -> &[u8; KEY_LENGTH] {
+    pub fn as_bytes(&self) -> &[u8; KEY_LENGTH] {
         &self.key_material
     }
 

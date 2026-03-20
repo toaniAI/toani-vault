@@ -653,6 +653,49 @@ impl SecureChannel {
     pub fn session_key(&self) -> &[u8; CHANNEL_KEY_LENGTH] {
         &self.session_key
     }
+
+    /// 加密数据
+    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, ChallengeError> {
+        use aes_gcm::{
+            Aes256Gcm,
+            aead::{Aead, AeadCore, KeyInit, OsRng},
+        };
+
+        let cipher = Aes256Gcm::new_from_slice(&self.session_key)
+            .map_err(|e| ChallengeError::InternalError(format!("Cipher initialization failed: {}", e)))?;
+
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let mut ciphertext = cipher.encrypt(&nonce, plaintext)
+            .map_err(|e| ChallengeError::InternalError(format!("Encryption failed: {}", e)))?;
+
+        // 将 nonce 和密文组合在一起
+        let mut result = Vec::with_capacity(nonce.len() + ciphertext.len());
+        result.extend_from_slice(&nonce);
+        result.append(&mut ciphertext);
+
+        Ok(result)
+    }
+
+    /// 解密数据
+    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, ChallengeError> {
+        use aes_gcm::{
+            Aes256Gcm,
+            aead::{Aead, KeyInit},
+        };
+        use aes_gcm::Nonce;
+
+        if ciphertext.len() <= 12 {
+            return Err(ChallengeError::InternalError("Ciphertext too short".to_string()));
+        }
+
+        let (nonce_bytes, encrypted) = ciphertext.split_at(12);
+        let cipher = Aes256Gcm::new_from_slice(&self.session_key)
+            .map_err(|e| ChallengeError::InternalError(format!("Cipher initialization failed: {}", e)))?;
+
+        let nonce = Nonce::from_slice(nonce_bytes);
+        cipher.decrypt(nonce, encrypted)
+            .map_err(|e| ChallengeError::InternalError(format!("Decryption failed: {}", e)))
+    }
 }
 
 /// 生成安全的随机 nonce
