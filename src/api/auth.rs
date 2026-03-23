@@ -6,19 +6,24 @@
 //! - POST /api/v1/tokens - 创建新 Token
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use bcrypt::{DEFAULT_COST, hash, verify};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use super::i18n::{I18nParams, ResolvedLocale, invalid_locale_response, normalize_locale};
 use super::middleware::{TokenScope, ValidatedToken};
+use super::response::{ApiErrorResponse, ErrorCode};
 
 /// 认证 API 状态
 #[derive(Clone)]
@@ -32,16 +37,18 @@ pub struct AuthApiState {
 /// 内存用户存储
 #[derive(Debug, Clone)]
 pub struct MemoryUserStore {
-    users: std::collections::HashMap<String, UserInfo>,
+    users: Arc<RwLock<HashMap<String, UserInfo>>>,
 }
 
 /// 用户信息
 #[derive(Debug, Clone)]
 pub struct UserInfo {
+    pub username: String,
     pub user_id: String,
     pub tenant_id: String,
     pub password_hash: String,
     pub scopes: Vec<TokenScope>,
+    pub locale: Option<String>,
 }
 
 impl Default for MemoryUserStore {
@@ -67,24 +74,30 @@ impl MemoryUserStore {
         users.insert(
             "admin".to_string(),
             UserInfo {
+                username: "admin".to_string(),
                 user_id: "user-001".to_string(),
                 tenant_id: "tenant-001".to_string(),
                 password_hash: admin_password_hash,
                 scopes: vec![TokenScope::Admin],
+                locale: Some("en-US".to_string()),
             },
         );
 
         users.insert(
             "user".to_string(),
             UserInfo {
+                username: "user".to_string(),
                 user_id: "user-002".to_string(),
                 tenant_id: "tenant-001".to_string(),
                 password_hash: user_password_hash,
                 scopes: vec![TokenScope::CredentialRead, TokenScope::CredentialDecrypt],
+                locale: None,
             },
         );
 
-        Self { users }
+        Self {
+            users: Arc::new(RwLock::new(users)),
+        }
     }
 }
 
@@ -113,19 +126,36 @@ impl AuthApiState {
 
 impl MemoryUserStore {
     /// 验证用户凭据
-    pub fn verify_user(&self, username: &str, password: &str) -> Option<UserInfo> {
-        self.users
-            .get(username)
-            .and_then(|user| match verify(password, &user.password_hash) {
+    pub async fn verify_user(&self, username: &str, password: &str) -> Option<UserInfo> {
+        self.users.read().await.get(username).and_then(|user| {
+            match verify(password, &user.password_hash) {
                 Ok(true) => Some(user.clone()),
                 Ok(false) => None,
                 Err(_) => None,
-            })
+            }
+        })
     }
 
     /// 获取用户信息
-    pub fn get_user(&self, user_id: &str) -> Option<&UserInfo> {
-        self.users.values().find(|u| u.user_id == user_id)
+    pub async fn get_user(&self, user_id: &str) -> Option<UserInfo> {
+        self.users
+            .read()
+            .await
+            .values()
+            .find(|u| u.user_id == user_id)
+            .cloned()
+    }
+
+    /// 更新用户 locale 偏好
+    pub async fn update_locale(&self, user_id: &str, locale: Option<String>) -> Option<UserInfo> {
+        let mut users = self.users.write().await;
+        let username = users
+            .iter()
+            .find(|(_, user)| user.user_id == user_id)
+            .map(|(username, _)| username.clone())?;
+        let user = users.get_mut(&username)?;
+        user.locale = locale;
+        Some(user.clone())
     }
 }
 
@@ -151,6 +181,7 @@ pub struct UserInfoResponse {
     pub role: String,
     pub tenant_id: String,
     pub mfa_enabled: bool,
+    pub locale: String,
 }
 
 /// 登录响应
@@ -244,18 +275,32 @@ pub struct VerifyTokenResponse {
     pub expires_at: Option<u64>,
 }
 
-/// 错误响应
+/// 登录错误响应
 #[derive(Debug, Serialize)]
 pub struct AuthErrorResponse {
     pub error: String,
+    pub message: String,
     pub error_description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub i18n: Option<super::i18n::I18nMetadata>,
+    pub locale: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserPreferencesResponse {
+    pub locale: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserPreferencesRequest {
+    pub locale: String,
 }
 
 // ============================================================================
 // API 处理器
 // ============================================================================
 
-/// 创建认证路由
+/// 创建公开认证路由
 pub fn auth_routes() -> Router<AuthApiState> {
     Router::new()
         // 登录
@@ -266,30 +311,61 @@ pub fn auth_routes() -> Router<AuthApiState> {
         .route("/tokens", post(create_token_handler))
         // Token 验证
         .route("/tokens/verify", post(verify_token_handler))
-        // 获取当前用户信息
+}
+
+/// 创建受保护的认证路由
+pub fn protected_auth_routes() -> Router<AuthApiState> {
+    Router::new()
         .route("/auth/me", get(current_user_handler))
+        .route("/users/me/preferences", get(get_user_preferences_handler))
+        .route(
+            "/users/me/preferences",
+            patch(update_user_preferences_handler),
+        )
+}
+
+fn auth_error_response(
+    status: StatusCode,
+    error: &str,
+    locale: &ResolvedLocale,
+    key: &str,
+    params: I18nParams,
+) -> Response {
+    let message = super::i18n::translate(locale.as_str(), key, &params);
+    let payload = AuthErrorResponse {
+        error: error.to_string(),
+        message: message.clone(),
+        error_description: message,
+        i18n: Some(super::i18n::I18nMetadata::new(key).with_params(params)),
+        locale: locale.as_str().to_string(),
+    };
+
+    let mut response = (status, Json(payload)).into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
 }
 
 /// 登录处理器
 pub async fn login_handler(
     State(state): State<AuthApiState>,
+    locale: ResolvedLocale,
     Json(request): Json<LoginRequest>,
 ) -> Response {
     // 验证用户凭据
     let user = match state
         .user_store
         .verify_user(&request.username, &request.password)
+        .await
     {
         Some(u) => u,
         None => {
-            return (
+            return auth_error_response(
                 StatusCode::UNAUTHORIZED,
-                Json(AuthErrorResponse {
-                    error: "invalid_credentials".to_string(),
-                    error_description: "用户名或密码错误".to_string(),
-                }),
-            )
-                .into_response();
+                "invalid_credentials",
+                &locale,
+                "errors.auth.invalid_credentials",
+                I18nParams::new(),
+            );
         }
     };
 
@@ -303,14 +379,15 @@ pub async fn login_handler(
     ) {
         Ok(t) => t,
         Err(e) => {
-            return (
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AuthErrorResponse {
-                    error: "token_generation_failed".to_string(),
-                    error_description: format!("Token 生成失败: {e}"),
-                }),
-            )
-                .into_response();
+                "token_generation_failed",
+                &locale,
+                "errors.auth.token_generation_failed",
+                params,
+            );
         }
     };
 
@@ -318,22 +395,23 @@ pub async fn login_handler(
     let refresh_token = match generate_refresh_token(&user.user_id, &user.tenant_id) {
         Ok(t) => t,
         Err(e) => {
-            return (
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AuthErrorResponse {
-                    error: "token_generation_failed".to_string(),
-                    error_description: format!("Refresh Token 生成失败: {e}"),
-                }),
-            )
-                .into_response();
+                "token_generation_failed",
+                &locale,
+                "errors.auth.refresh_token_generation_failed",
+                params,
+            );
         }
     };
 
     // 构建用户信息
     let user_response = UserInfoResponse {
         id: user.user_id.clone(),
-        username: request.username.clone(),
-        email: format!("{}@credbridge.local", request.username),
+        username: user.username.clone(),
+        email: format!("{}@credbridge.local", user.username),
         role: if user.scopes.contains(&TokenScope::Admin) {
             "admin".to_string()
         } else {
@@ -341,10 +419,13 @@ pub async fn login_handler(
         },
         tenant_id: user.tenant_id.clone(),
         mfa_enabled: false,
+        locale: user
+            .locale
+            .unwrap_or_else(|| normalize_locale(locale.as_str()).to_string()),
     };
 
     // 构建响应
-    (
+    let mut response = (
         StatusCode::OK,
         Json(LoginResponse {
             access_token,
@@ -354,12 +435,15 @@ pub async fn login_handler(
             user: user_response,
         }),
     )
-        .into_response()
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
 }
 
 /// Token 创建处理器
 pub async fn create_token_handler(
     State(state): State<AuthApiState>,
+    locale: ResolvedLocale,
     Json(request): Json<CreateTokenRequest>,
 ) -> Response {
     // 确定 user_id
@@ -373,14 +457,13 @@ pub async fn create_token_handler(
         .collect();
 
     if scopes.is_empty() {
-        return (
+        return auth_error_response(
             StatusCode::BAD_REQUEST,
-            Json(AuthErrorResponse {
-                error: "invalid_scope".to_string(),
-                error_description: "至少需要一个有效的 scope".to_string(),
-            }),
-        )
-            .into_response();
+            "invalid_scope",
+            &locale,
+            "errors.auth.invalid_scope",
+            I18nParams::new(),
+        );
     }
 
     let expires_in = request.expires_in.unwrap_or(900);
@@ -395,14 +478,15 @@ pub async fn create_token_handler(
     ) {
         Ok(t) => t,
         Err(e) => {
-            return (
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AuthErrorResponse {
-                    error: "token_generation_failed".to_string(),
-                    error_description: format!("Token 生成失败: {e}"),
-                }),
-            )
-                .into_response();
+                "token_generation_failed",
+                &locale,
+                "errors.auth.token_generation_failed",
+                params,
+            );
         }
     };
 
@@ -419,7 +503,7 @@ pub async fn create_token_handler(
         .collect::<Vec<_>>()
         .join(" ");
 
-    (
+    let mut response = (
         StatusCode::OK,
         Json(CreateTokenResponse {
             access_token,
@@ -431,41 +515,44 @@ pub async fn create_token_handler(
             expires_at: now + expires_in,
         }),
     )
-        .into_response()
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
 }
 
 /// Token 刷新处理器
 pub async fn refresh_handler(
     State(state): State<AuthApiState>,
+    locale: ResolvedLocale,
     Json(request): Json<RefreshTokenRequest>,
 ) -> Response {
     // 验证 Refresh Token
     let (user_id, _tenant_id) = match verify_refresh_token(&request.refresh_token) {
         Ok((uid, tid)) => (uid, tid),
         Err(e) => {
-            return (
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
                 StatusCode::UNAUTHORIZED,
-                Json(AuthErrorResponse {
-                    error: "invalid_refresh_token".to_string(),
-                    error_description: format!("Refresh Token 无效: {e}"),
-                }),
-            )
-                .into_response();
+                "invalid_refresh_token",
+                &locale,
+                "errors.auth.invalid_refresh_token",
+                params,
+            );
         }
     };
 
     // 获取用户信息
-    let user = match state.user_store.get_user(&user_id) {
-        Some(u) => u.clone(),
+    let user = match state.user_store.get_user(&user_id).await {
+        Some(u) => u,
         None => {
-            return (
+            return auth_error_response(
                 StatusCode::UNAUTHORIZED,
-                Json(AuthErrorResponse {
-                    error: "user_not_found".to_string(),
-                    error_description: "用户不存在".to_string(),
-                }),
-            )
-                .into_response();
+                "user_not_found",
+                &locale,
+                "errors.auth.user_not_found",
+                I18nParams::new(),
+            );
         }
     };
 
@@ -479,14 +566,15 @@ pub async fn refresh_handler(
     ) {
         Ok(t) => t,
         Err(e) => {
-            return (
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AuthErrorResponse {
-                    error: "token_generation_failed".to_string(),
-                    error_description: format!("Token 生成失败: {e}"),
-                }),
-            )
-                .into_response();
+                "token_generation_failed",
+                &locale,
+                "errors.auth.token_generation_failed",
+                params,
+            );
         }
     };
 
@@ -494,18 +582,19 @@ pub async fn refresh_handler(
     let refresh_token = match generate_refresh_token(&user.user_id, &user.tenant_id) {
         Ok(t) => t,
         Err(e) => {
-            return (
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AuthErrorResponse {
-                    error: "token_generation_failed".to_string(),
-                    error_description: format!("Refresh Token 生成失败: {e}"),
-                }),
-            )
-                .into_response();
+                "token_generation_failed",
+                &locale,
+                "errors.auth.refresh_token_generation_failed",
+                params,
+            );
         }
     };
 
-    (
+    let mut response = (
         StatusCode::OK,
         Json(RefreshTokenResponse {
             access_token,
@@ -514,15 +603,19 @@ pub async fn refresh_handler(
             expires_in: 900,
         }),
     )
-        .into_response()
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
 }
 
 /// Token 验证处理器
 pub async fn verify_token_handler(
     State(state): State<AuthApiState>,
+    locale: ResolvedLocale,
     Json(request): Json<VerifyTokenRequest>,
 ) -> Response {
-    match verify_paseto_token(&request.token, &state.secret_key) {
+    let mut response = match verify_paseto_token(&request.token, &state.secret_key, locale.as_str())
+    {
         Ok(validated) => {
             let scopes: Vec<String> = validated
                 .scopes
@@ -555,23 +648,104 @@ pub async fn verify_token_handler(
             }),
         )
             .into_response(),
-    }
+    };
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
 }
 
 /// 获取当前用户信息处理器
-pub async fn current_user_handler(State(_state): State<AuthApiState>) -> Response {
-    // 注意：此处理器应该由认证中间件保护
-    // 返回示例用户信息用于测试
-    (
+pub async fn current_user_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+) -> Response {
+    let Some(user) = state.user_store.get_user(&token.user_id).await else {
+        return ApiErrorResponse::localized(
+            ErrorCode::Unauthorized,
+            locale.as_str(),
+            "errors.auth.user_not_found",
+            I18nParams::new(),
+        )
+        .into_response();
+    };
+
+    let mut response = (
         StatusCode::OK,
         Json(serde_json::json!({
-            "user_id": "user-001",
-            "tenant_id": "tenant-001",
-            "username": "admin",
-            "scopes": ["admin"]
+            "user_id": user.user_id,
+            "tenant_id": user.tenant_id,
+            "username": user.username,
+            "scopes": user.scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>(),
+            "locale": user.locale.unwrap_or_else(|| normalize_locale(locale.as_str()).to_string()),
         })),
     )
-        .into_response()
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
+}
+
+pub async fn get_user_preferences_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+) -> Response {
+    let Some(user) = state.user_store.get_user(&token.user_id).await else {
+        return ApiErrorResponse::localized(
+            ErrorCode::Unauthorized,
+            locale.as_str(),
+            "errors.auth.user_not_found",
+            I18nParams::new(),
+        )
+        .into_response();
+    };
+
+    let mut response = (
+        StatusCode::OK,
+        Json(UserPreferencesResponse {
+            locale: user
+                .locale
+                .unwrap_or_else(|| normalize_locale(locale.as_str()).to_string()),
+        }),
+    )
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
+}
+
+pub async fn update_user_preferences_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+    Json(request): Json<UpdateUserPreferencesRequest>,
+) -> Response {
+    let normalized = normalize_locale(&request.locale).to_string();
+    if normalized != request.locale {
+        return invalid_locale_response(locale.as_str(), &request.locale);
+    }
+
+    let Some(user) = state
+        .user_store
+        .update_locale(&token.user_id, Some(normalized.clone()))
+        .await
+    else {
+        return ApiErrorResponse::localized(
+            ErrorCode::Unauthorized,
+            locale.as_str(),
+            "errors.auth.user_not_found",
+            I18nParams::new(),
+        )
+        .into_response();
+    };
+
+    let mut response = (
+        StatusCode::OK,
+        Json(UserPreferencesResponse {
+            locale: user.locale.unwrap_or(normalized),
+        }),
+    )
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
 }
 
 // ============================================================================
@@ -637,7 +811,11 @@ fn generate_paseto_token(
 }
 
 /// 验证 PASETO Token
-fn verify_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken, String> {
+fn verify_paseto_token(
+    token: &str,
+    secret_key: &[u8],
+    _locale: &str,
+) -> Result<ValidatedToken, String> {
     use pasetors::claims::ClaimsValidationRules;
     use pasetors::keys::SymmetricKey;
     use pasetors::local;
@@ -768,18 +946,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_user_verification() {
+    #[tokio::test]
+    async fn test_user_verification() {
         let store = MemoryUserStore::new();
 
         // 正确凭据
-        let user = store.verify_user("admin", "admin123");
+        let user = store.verify_user("admin", "admin123").await;
         assert!(user.is_some());
         let user = user.unwrap();
         assert_eq!(user.user_id, "user-001");
+        assert_eq!(user.locale.as_deref(), Some("en-US"));
 
         // 错误凭据
-        let user = store.verify_user("admin", "wrong");
+        let user = store.verify_user("admin", "wrong").await;
         assert!(user.is_none());
     }
 
@@ -802,7 +981,7 @@ mod tests {
 
         let token = generate_paseto_token(&key, "user-001", "tenant-001", &scopes, 900).unwrap();
 
-        let validated = verify_paseto_token(&token, &key);
+        let validated = verify_paseto_token(&token, &key, "zh-CN");
         if let Err(ref e) = validated {
             eprintln!("Token verification error: {e}");
         }
@@ -818,8 +997,19 @@ mod tests {
     fn test_invalid_token() {
         let key = get_test_key();
 
-        let result = verify_paseto_token("invalid_token", &key);
+        let result = verify_paseto_token("invalid_token", &key, "zh-CN");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_update_user_locale() {
+        let store = MemoryUserStore::new();
+        let updated = store
+            .update_locale("user-002", Some("zh-CN".to_string()))
+            .await
+            .unwrap();
+
+        assert_eq!(updated.locale.as_deref(), Some("zh-CN"));
     }
 
     #[test]
