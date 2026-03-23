@@ -453,12 +453,41 @@ fn auth_error_response(
     response
 }
 
+fn contains_chinese_characters(value: &str) -> bool {
+    value.chars().any(|ch| {
+        matches!(
+            ch as u32,
+            0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF
+        )
+    })
+}
+
 /// 登录处理器
 pub async fn login_handler(
     State(state): State<AuthApiState>,
     locale: ResolvedLocale,
     Json(request): Json<LoginRequest>,
 ) -> Response {
+    if contains_chinese_characters(&request.username) {
+        return auth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &locale,
+            "errors.auth.invalid_username_characters",
+            I18nParams::new(),
+        );
+    }
+
+    if contains_chinese_characters(&request.password) {
+        return auth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &locale,
+            "errors.auth.invalid_password_characters",
+            I18nParams::new(),
+        );
+    }
+
     // 验证用户凭据
     let user = match state
         .user_store
@@ -1199,6 +1228,78 @@ mod tests {
         // 错误凭据
         let user = store.verify_user("admin", "wrong").await;
         assert!(user.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_login_handler_rejects_chinese_username() {
+        let response = login_handler(
+            State(get_test_state()),
+            ResolvedLocale::default(),
+            Json(LoginRequest {
+                username: "管理员".to_string(),
+                password: "admin123".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"].as_str(), Some("invalid_request"));
+        assert_eq!(
+            payload["i18n"]["key"].as_str(),
+            Some("errors.auth.invalid_username_characters")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_login_handler_rejects_chinese_password() {
+        let response = login_handler(
+            State(get_test_state()),
+            ResolvedLocale::default(),
+            Json(LoginRequest {
+                username: "admin".to_string(),
+                password: "密码123".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"].as_str(), Some("invalid_request"));
+        assert_eq!(
+            payload["i18n"]["key"].as_str(),
+            Some("errors.auth.invalid_password_characters")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_login_handler_still_returns_invalid_credentials_for_ascii_mismatch() {
+        let response = login_handler(
+            State(get_test_state()),
+            ResolvedLocale::default(),
+            Json(LoginRequest {
+                username: "admin".to_string(),
+                password: "wrong-password".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"].as_str(), Some("invalid_credentials"));
+        assert_eq!(
+            payload["i18n"]["key"].as_str(),
+            Some("errors.auth.invalid_credentials")
+        );
     }
 
     #[tokio::test]

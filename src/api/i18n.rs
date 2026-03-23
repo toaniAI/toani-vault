@@ -215,6 +215,14 @@ pub fn translate(locale: &str, key: &str, params: &I18nParams) -> String {
         }
         ("zh-CN", "errors.auth.invalid_credentials") => "用户名或密码错误",
         ("en-US", "errors.auth.invalid_credentials") => "Invalid username or password",
+        ("zh-CN", "errors.auth.invalid_username_characters") => "用户名不能包含中文",
+        ("en-US", "errors.auth.invalid_username_characters") => {
+            "Username cannot contain Chinese characters"
+        }
+        ("zh-CN", "errors.auth.invalid_password_characters") => "密码不能包含中文",
+        ("en-US", "errors.auth.invalid_password_characters") => {
+            "Password cannot contain Chinese characters"
+        }
         ("zh-CN", "errors.auth.token_generation_failed") => "Token 生成失败: {reason}",
         ("en-US", "errors.auth.token_generation_failed") => "Token generation failed: {reason}",
         ("zh-CN", "errors.auth.refresh_token_generation_failed") => {
