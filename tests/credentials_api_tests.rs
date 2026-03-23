@@ -220,6 +220,196 @@ async fn test_list_credentials_includes_expired_entries() {
     );
 }
 
+/// 测试按服务标识过滤凭证列表
+#[tokio::test]
+async fn test_list_credentials_filters_by_service_id() {
+    let state = setup_test_state().await;
+
+    state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("github-prod"),
+                credential_type: vault_service::models::CredentialType::ApiKey,
+                expires_at: None,
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("aws-dev"),
+                credential_type: vault_service::models::CredentialType::UsernamePassword,
+                expires_at: None,
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?service_id=github-prod")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let credentials = json["credentials"].as_array().unwrap();
+
+    assert_eq!(json["total"].as_u64(), Some(1));
+    assert_eq!(credentials.len(), 1);
+    assert_eq!(credentials[0]["service_id"].as_str(), Some("github-prod"));
+}
+
+/// 测试按凭证类型过滤凭证列表
+#[tokio::test]
+async fn test_list_credentials_filters_by_credential_type() {
+    let state = setup_test_state().await;
+
+    state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("github-prod"),
+                credential_type: vault_service::models::CredentialType::ApiKey,
+                expires_at: None,
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("aws-dev"),
+                credential_type: vault_service::models::CredentialType::UsernamePassword,
+                expires_at: None,
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?credential_type=api_key")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let credentials = json["credentials"].as_array().unwrap();
+
+    assert_eq!(json["total"].as_u64(), Some(1));
+    assert_eq!(credentials.len(), 1);
+    assert_eq!(credentials[0]["credential_type"].as_str(), Some("api_key"));
+}
+
+/// 测试 only_valid=true 时过滤掉已过期凭证
+#[tokio::test]
+async fn test_list_credentials_only_valid_filters_expired_entries() {
+    let state = setup_test_state().await;
+    let expired_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .saturating_sub(60);
+
+    state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("expired-service"),
+                credential_type: vault_service::models::CredentialType::ApiKey,
+                expires_at: Some(expired_at),
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("valid-service"),
+                credential_type: vault_service::models::CredentialType::ApiKey,
+                expires_at: None,
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?only_valid=true")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let credentials = json["credentials"].as_array().unwrap();
+
+    assert_eq!(json["total"].as_u64(), Some(1));
+    assert_eq!(credentials.len(), 1);
+    assert_eq!(credentials[0]["service_id"].as_str(), Some("valid-service"));
+}
+
+/// 测试未知凭证类型返回 400，避免无声忽略无效筛选
+#[tokio::test]
+async fn test_list_credentials_rejects_unknown_credential_type() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?credential_type=database_connection")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
 /// 测试获取凭证列表缺少 read scope
 #[tokio::test]
 async fn test_list_credentials_missing_scope() {

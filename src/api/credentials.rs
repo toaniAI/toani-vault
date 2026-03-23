@@ -19,7 +19,7 @@ use crate::vault::models::{
 use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -491,10 +491,32 @@ pub struct ListCredentialsResponse {
     pub total: usize,
 }
 
+#[derive(Debug, Deserialize, Default)]
+pub struct ListCredentialsQuery {
+    pub service_id: Option<String>,
+    pub credential_type: Option<String>,
+    pub only_valid: Option<bool>,
+}
+
+fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
+    match value {
+        "username_password" => Ok(CredentialType::UsernamePassword),
+        "oauth_refresh" | "oauth_token" | "o_auth_refresh" => Ok(CredentialType::OAuthRefresh),
+        "api_key" => Ok(CredentialType::ApiKey),
+        "session_cookie" => Ok(CredentialType::SessionCookie),
+        "kyc_document" => Ok(CredentialType::KycDocument),
+        _ => Err(ApiError::new(
+            "invalid_request",
+            format!("不支持的凭证类型: {value}"),
+        )),
+    }
+}
+
 /// GET /api/v1/credentials - 获取凭证列表
 pub async fn list_credentials(
     State(state): State<AppState>,
     Extension(token): Extension<ValidatedToken>,
+    Query(query): Query<ListCredentialsQuery>,
 ) -> Result<Json<ListCredentialsResponse>, ApiError> {
     // 验证 Scope: credential:read
     require_scope(TokenScope::CredentialRead)(&token)
@@ -503,8 +525,25 @@ pub async fn list_credentials(
     let tenant_id = TenantId::new(&token.tenant_id);
     let user_id = UserId::new(&token.user_id);
 
+    let service_id = query
+        .service_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ServiceId::new);
+    let credential_type = query
+        .credential_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(parse_credential_type)
+        .transpose()?;
+
     let filter = CredentialFilter {
+        service_id,
+        credential_type,
         include_deleted: false,
+        only_valid: query.only_valid.unwrap_or(false),
         ..Default::default()
     };
 
