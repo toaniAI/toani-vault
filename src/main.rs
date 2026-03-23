@@ -47,7 +47,9 @@ use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::tenant::{
     MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
 };
-use vault_service::vault::{CredentialVault, PostgresStorageBackend, VaultStorageBackend};
+use vault_service::vault::backend::VaultStorageBackend;
+use vault_service::vault::postgres::PostgresStorageBackend;
+use vault_service::vault::storage::CredentialVault;
 
 /// API 根响应
 #[derive(Debug, Serialize)]
