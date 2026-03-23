@@ -63,6 +63,7 @@
 pub mod backend;
 pub mod client;
 pub mod models;
+pub mod postgres;
 pub mod storage;
 pub mod version;
 
@@ -79,6 +80,7 @@ pub use backend::{
     VaultBackendError, VaultHealthStatus, VaultStorageBackend, VaultStorageBackendBuilder,
     check_vault_health,
 };
+pub use postgres::{PostgresBackendError, PostgresStorageBackend};
 
 pub use client::{VaultClientError, VaultConfig, VaultCredentialData, VaultKvClient};
 
