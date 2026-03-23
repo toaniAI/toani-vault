@@ -36,6 +36,14 @@ pub struct AuthApiState {
     pub user_store: Arc<MemoryUserStore>,
     /// 共享审计存储
     pub audit_storage: Option<Arc<tokio::sync::Mutex<MemoryAuditStorage>>>,
+    /// 已签发 Token 状态
+    issued_tokens: Arc<RwLock<HashMap<String, IssuedTokenRecord>>>,
+}
+
+#[derive(Debug, Clone)]
+struct IssuedTokenRecord {
+    tenant_id: String,
+    expires_at: u64,
 }
 
 /// 内存用户存储
@@ -125,6 +133,7 @@ impl AuthApiState {
             secret_key,
             user_store: Arc::new(MemoryUserStore::new()),
             audit_storage: None,
+            issued_tokens: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -161,6 +170,59 @@ impl AuthApiState {
         if let Err(error) = storage.lock().await.record(entry) {
             log::warn!("[AUDIT] Token validation audit record failed: {error:?}");
         }
+    }
+
+    async fn record_token_issue_audit(&self, validated: &ValidatedToken) {
+        let Some(storage) = &self.audit_storage else {
+            return;
+        };
+
+        let entry = AuditEntry::new(
+            crate::audit::events::hash_user_id(&validated.user_id),
+            "session",
+            "auth",
+            AuditAction::TokenIssue,
+            Outcome::Success,
+            "software_mode",
+            validated.token_id.clone(),
+        )
+        .with_param(
+            "issued_token_id",
+            RedactedParam::Plain(validated.token_id.clone()),
+        )
+        .with_param(
+            "tenant_id",
+            RedactedParam::Plain(validated.tenant_id.clone()),
+        )
+        .with_param(
+            "expires_at",
+            RedactedParam::Plain(validated.expires_at.to_string()),
+        );
+
+        if let Err(error) = storage.lock().await.record(entry) {
+            log::warn!("[AUDIT] Token issue audit record failed: {error:?}");
+        }
+    }
+
+    async fn register_issued_token(&self, validated: &ValidatedToken) {
+        self.issued_tokens.write().await.insert(
+            validated.token_id.clone(),
+            IssuedTokenRecord {
+                tenant_id: validated.tenant_id.clone(),
+                expires_at: validated.expires_at,
+            },
+        );
+    }
+
+    async fn count_active_tokens_for_tenant(&self, tenant_id: &str) -> u64 {
+        let now = now_timestamp();
+        let mut issued_tokens = self.issued_tokens.write().await;
+        issued_tokens.retain(|_, token| token.expires_at > now);
+
+        issued_tokens
+            .values()
+            .filter(|token| token.tenant_id == tenant_id)
+            .count() as u64
     }
 }
 
@@ -253,7 +315,7 @@ pub struct CreateTokenRequest {
 }
 
 /// Token 创建响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTokenResponse {
     /// 访问 Token
     pub access_token: String,
@@ -315,6 +377,11 @@ pub struct VerifyTokenResponse {
     pub expires_at: Option<u64>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TokenStatsResponse {
+    pub active_tokens: u64,
+}
+
 /// 登录错误响应
 #[derive(Debug, Serialize)]
 pub struct AuthErrorResponse {
@@ -357,6 +424,7 @@ pub fn auth_routes() -> Router<AuthApiState> {
 pub fn protected_auth_routes() -> Router<AuthApiState> {
     Router::new()
         .route("/auth/me", get(current_user_handler))
+        .route("/tokens/stats", get(token_stats_handler))
         .route("/users/me/preferences", get(get_user_preferences_handler))
         .route(
             "/users/me/preferences",
@@ -530,12 +598,23 @@ pub async fn create_token_handler(
         }
     };
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("System time before Unix epoch")
-        .as_secs();
+    let validated = match verify_paseto_token(&access_token, &state.secret_key, locale.as_str()) {
+        Ok(validated) => validated,
+        Err(e) => {
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e));
+            return auth_error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "token_generation_failed",
+                &locale,
+                "errors.auth.token_generation_failed",
+                params,
+            );
+        }
+    };
 
-    let token_id = Uuid::now_v7().to_string();
+    state.register_issued_token(&validated).await;
+    state.record_token_issue_audit(&validated).await;
 
     let scope = scopes
         .iter()
@@ -547,12 +626,12 @@ pub async fn create_token_handler(
         StatusCode::OK,
         Json(CreateTokenResponse {
             access_token,
-            token_id,
+            token_id: validated.token_id,
             token_type: "Bearer".to_string(),
             expires_in,
             scope,
-            issued_at: now,
-            expires_at: now + expires_in,
+            issued_at: validated.issued_at,
+            expires_at: validated.expires_at,
         }),
     )
         .into_response();
@@ -690,6 +769,21 @@ pub async fn verify_token_handler(
         )
             .into_response(),
     };
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
+}
+
+pub async fn token_stats_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+) -> Response {
+    let active_tokens = state.count_active_tokens_for_tenant(&token.tenant_id).await;
+    let mut response = (
+        StatusCode::OK,
+        Json(TokenStatsResponse { active_tokens }),
+    )
+        .into_response();
     super::i18n::set_content_language(response.headers_mut(), locale.as_str());
     response
 }
@@ -985,7 +1079,110 @@ mod tests {
             secret_key: get_test_key(),
             user_store: Arc::new(MemoryUserStore::new()),
             audit_storage: None,
+            issued_tokens: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    #[tokio::test]
+    async fn test_token_stats_handler_counts_only_unexpired_tokens_for_current_tenant() {
+        let state = get_test_state();
+        let now = now_timestamp();
+
+        state
+            .issued_tokens
+            .write()
+            .await
+            .insert(
+                "token-active".to_string(),
+                IssuedTokenRecord {
+                    tenant_id: "tenant-001".to_string(),
+                    expires_at: now + 300,
+                },
+            );
+        state
+            .issued_tokens
+            .write()
+            .await
+            .insert(
+                "token-expired".to_string(),
+                IssuedTokenRecord {
+                    tenant_id: "tenant-001".to_string(),
+                    expires_at: now.saturating_sub(1),
+                },
+            );
+        state
+            .issued_tokens
+            .write()
+            .await
+            .insert(
+                "token-other-tenant".to_string(),
+                IssuedTokenRecord {
+                    tenant_id: "tenant-002".to_string(),
+                    expires_at: now + 300,
+                },
+            );
+
+        let response = token_stats_handler(
+            State(state.clone()),
+            Extension(ValidatedToken {
+                token_id: "viewer-token".to_string(),
+                subject: "tenant-001:user-001".to_string(),
+                tenant_id: "tenant-001".to_string(),
+                user_id: "user-001".to_string(),
+                expires_at: now + 300,
+                scopes: vec![TokenScope::Admin],
+                issued_at: now,
+            }),
+            ResolvedLocale::default(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let stats: TokenStatsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(stats.active_tokens, 1);
+
+        let issued_tokens = state.issued_tokens.read().await;
+        assert!(!issued_tokens.contains_key("token-expired"));
+    }
+
+    #[tokio::test]
+    async fn test_create_token_handler_registers_token_and_records_issue_audit() {
+        let audit_storage = Arc::new(tokio::sync::Mutex::new(
+            MemoryAuditStorage::new(16).unwrap(),
+        ));
+        let state = AuthApiState::with_audit_storage(audit_storage.clone());
+
+        let response = create_token_handler(
+            State(state.clone()),
+            ResolvedLocale::default(),
+            Json(CreateTokenRequest {
+                user_id: Some("user-001".to_string()),
+                scopes: vec!["audit:read".to_string()],
+                expires_in: Some(900),
+                credential_ids: None,
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let created: CreateTokenResponse = serde_json::from_slice(&body).unwrap();
+
+        let active_tokens = state.count_active_tokens_for_tenant("default-tenant").await;
+        assert_eq!(active_tokens, 1);
+        let issued_tokens = state.issued_tokens.read().await;
+        let stored = issued_tokens.get(&created.token_id).unwrap();
+        assert_eq!(stored.expires_at, created.expires_at);
+
+        let entries = audit_storage.lock().await.query_recent(10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].entry.action, AuditAction::TokenIssue);
+        assert_eq!(entries[0].entry.outcome, Outcome::Success);
     }
 
     #[tokio::test]
