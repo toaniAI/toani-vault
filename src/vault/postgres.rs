@@ -155,7 +155,7 @@ impl PostgresStorageBackend {
     fn credential_type_from_str(value: &str) -> CredentialType {
         match value {
             "username_password" => CredentialType::UsernamePassword,
-            "oauth_refresh" => CredentialType::OAuthRefresh,
+            "oauth_refresh" | "oauth_token" | "o_auth_refresh" => CredentialType::OAuthRefresh,
             "api_key" => CredentialType::ApiKey,
             "session_cookie" => CredentialType::SessionCookie,
             "kyc_document" => CredentialType::KycDocument,

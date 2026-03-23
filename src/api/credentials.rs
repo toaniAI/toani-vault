@@ -342,6 +342,29 @@ pub struct CreateCredentialApiRequest {
     pub expires_at: Option<u64>,
 }
 
+fn normalize_oauth_plaintext_data(
+    credential_type: CredentialType,
+    plaintext_data: &serde_json::Value,
+) -> serde_json::Value {
+    if credential_type != CredentialType::OAuthRefresh {
+        return plaintext_data.clone();
+    }
+
+    let mut normalized = plaintext_data.clone();
+    let Some(map) = normalized.as_object_mut() else {
+        return normalized;
+    };
+
+    if !map.contains_key("refreshToken") {
+        if let Some(legacy_value) = map.get("refresh_token").cloned() {
+            map.insert("refreshToken".to_string(), legacy_value);
+        }
+    }
+
+    map.remove("refresh_token");
+    normalized
+}
+
 /// 创建凭证响应
 #[derive(Debug, Serialize)]
 pub struct CreateCredentialResponse {
@@ -368,6 +391,8 @@ pub async fn create_credential(
 
     // 先生成 credential_id，确保加密时使用的 ID 与存储时一致
     let credential_id = CredentialId::new();
+    let normalized_plaintext_data =
+        normalize_oauth_plaintext_data(request.credential_type, &request.plaintext_data);
 
     // 加密凭证内容（在 TEE 内完成）
     let encrypted_payload = encrypt_credential_in_tee(
@@ -375,7 +400,7 @@ pub async fn create_credential(
         tenant_id.as_str(),
         &user_id,
         &credential_id,
-        &request.plaintext_data,
+        &normalized_plaintext_data,
     )
     .await
     .map_err(|e| ApiError::new("internal_error", e))?;
@@ -870,6 +895,7 @@ mod tests {
     use super::*;
     use crate::api::middleware::TokenScope;
     use crate::api::middleware::tests::create_mock_token;
+    use serde_json::json;
 
     #[test]
     fn test_scope_checking() {
@@ -902,5 +928,60 @@ mod tests {
 
         assert!(token.has_any_scope(&[TokenScope::CredentialRead, TokenScope::CredentialWrite]));
         assert!(!token.has_any_scope(&[TokenScope::CredentialRead, TokenScope::CredentialDecrypt]));
+    }
+
+    #[test]
+    fn test_create_request_accepts_oauth_aliases() {
+        let payloads = [
+            json!({
+                "service_id": "github",
+                "credential_type": "oauth_refresh",
+                "plaintext_data": { "refreshToken": "rt_123" }
+            }),
+            json!({
+                "service_id": "github",
+                "credential_type": "oauth_token",
+                "plaintext_data": { "refresh_token": "rt_legacy" }
+            }),
+            json!({
+                "service_id": "github",
+                "credential_type": "o_auth_refresh",
+                "plaintext_data": { "refreshToken": "rt_weird" }
+            }),
+        ];
+
+        for payload in payloads {
+            let parsed: CreateCredentialApiRequest = serde_json::from_value(payload).unwrap();
+            assert_eq!(parsed.credential_type, CredentialType::OAuthRefresh);
+        }
+    }
+
+    #[test]
+    fn test_normalize_oauth_plaintext_data_uses_refresh_token_canonical_key() {
+        let normalized = normalize_oauth_plaintext_data(
+            CredentialType::OAuthRefresh,
+            &json!({
+                "refresh_token": "rt_legacy",
+                "note": "preserved"
+            }),
+        );
+
+        assert_eq!(normalized["refreshToken"], "rt_legacy");
+        assert!(normalized.get("refresh_token").is_none());
+        assert_eq!(normalized["note"], "preserved");
+    }
+
+    #[test]
+    fn test_normalize_oauth_plaintext_data_preserves_existing_canonical_key() {
+        let normalized = normalize_oauth_plaintext_data(
+            CredentialType::OAuthRefresh,
+            &json!({
+                "refreshToken": "rt_new",
+                "refresh_token": "rt_old"
+            }),
+        );
+
+        assert_eq!(normalized["refreshToken"], "rt_new");
+        assert!(normalized.get("refresh_token").is_none());
     }
 }

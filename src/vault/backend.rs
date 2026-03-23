@@ -153,7 +153,9 @@ impl VaultStorageBackend {
             service_id: ServiceId::new(data.service_id.clone()),
             credential_type: match data.credential_type.as_str() {
                 "username_password" => crate::models::CredentialType::UsernamePassword,
-                "oauth_refresh" => crate::models::CredentialType::OAuthRefresh,
+                "oauth_refresh" | "oauth_token" | "o_auth_refresh" => {
+                    crate::models::CredentialType::OAuthRefresh
+                }
                 "api_key" => crate::models::CredentialType::ApiKey,
                 "session_cookie" => crate::models::CredentialType::SessionCookie,
                 "kyc_document" => crate::models::CredentialType::KycDocument,
