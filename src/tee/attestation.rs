@@ -1242,7 +1242,7 @@ mod tests {
         let header_size = 2 + 2 + 4 + 2 + 2 + 4 + 32; // 48 bytes
         let report_body_size = 384;
         let expected_min_size = header_size + report_body_size + 4 + quote.signature.len();
-        eprintln!("Expected min size: {}", expected_min_size);
+        eprintln!("Expected min size: {expected_min_size}");
         assert!(
             bytes.len() >= expected_min_size,
             "Serialized bytes too short: {} < {}",

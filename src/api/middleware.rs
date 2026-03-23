@@ -395,7 +395,7 @@ pub mod tests {
     ) -> ValidatedToken {
         ValidatedToken {
             token_id: uuid::Uuid::now_v7().to_string(),
-            subject: format!("{}:{}", tenant_id, user_id),
+            subject: format!("{tenant_id}:{user_id}"),
             tenant_id: tenant_id.to_string(),
             user_id: user_id.to_string(),
             expires_at: SystemTime::now()

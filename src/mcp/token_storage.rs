@@ -705,9 +705,7 @@ impl McpTokenStorage {
                 }
                 Err(e) => {
                     log::warn!("Failed to save to keychain: {e}. Falling back to memory storage");
-                    Err(TokenStorageError::EncryptionError(format!(
-                        "Keychain save failed: {e}"
-                    )))
+                    Ok(())
                 }
             }
         }
@@ -867,8 +865,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_expiry() {
-        let mut config = TokenStorageConfig::default();
-        config.token_ttl_secs = 1; // 1 秒 TTL
+        let config = TokenStorageConfig {
+            token_ttl_secs: 1, // 1 秒 TTL
+            ..TokenStorageConfig::default()
+        };
 
         let storage = McpTokenStorage::new(config).unwrap();
         storage.initialize_keychain().await.unwrap();

@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! 审计日志 API 集成测试
 //!
 //! 测试审计查询 API 的所有端点

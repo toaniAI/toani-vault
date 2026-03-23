@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! 凭证 CRUD API 集成测试
 //!
 //! 测试 EP2-Story2.2 凭证管理 API

@@ -364,7 +364,7 @@ mod tests {
     fn create_test_token(tenant_id: &str, user_id: &str) -> ValidatedToken {
         ValidatedToken {
             token_id: "test_token".to_string(),
-            subject: format!("{}:{}", tenant_id, user_id),
+            subject: format!("{tenant_id}:{user_id}"),
             tenant_id: tenant_id.to_string(),
             user_id: user_id.to_string(),
             expires_at: u64::MAX,

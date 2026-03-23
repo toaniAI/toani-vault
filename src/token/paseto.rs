@@ -505,8 +505,7 @@ mod tests {
                     | Err(TokenError::ClaimsError(ClaimsError::InvalidAudience { .. }))
                     | Err(TokenError::Expired)
             ),
-            "Expected validation error, got {:?}",
-            result
+            "Expected validation error, got {result:?}"
         );
     }
 

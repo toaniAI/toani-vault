@@ -807,12 +807,12 @@ mod tests {
         for i in 0..3 {
             let entry = CachedKeyEntry::new(
                 [i as u8; 32],
-                format!("tenant_{}", i),
-                format!("user_{}", i),
+                format!("tenant_{i}"),
+                format!("user_{i}"),
                 [i as u8; KEY_LENGTH],
                 KeyType::UserVault,
             );
-            cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+            cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
         }
 
         assert_eq!(cache.len(), 3);
@@ -834,12 +834,12 @@ mod tests {
         for i in 0..3 {
             let entry = CachedKeyEntry::new(
                 [i as u8; 32],
-                format!("tenant_{}", i),
-                format!("user_{}", i),
+                format!("tenant_{i}"),
+                format!("user_{i}"),
                 [i as u8; KEY_LENGTH],
                 KeyType::UserVault,
             );
-            cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+            cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
         }
 
         assert_eq!(cache.len(), 3);

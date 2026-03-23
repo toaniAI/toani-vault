@@ -524,13 +524,13 @@ mod tests {
 
     fn create_test_entry(index: u64) -> SignedAuditEntry {
         let entry = AuditEntry::new(
-            format!("user_{}", index),
+            format!("user_{index}"),
             "session_test",
             "test-service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave_test",
-            format!("jti_{}", index),
+            format!("jti_{index}"),
         );
 
         SignedAuditEntry {

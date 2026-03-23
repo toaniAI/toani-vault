@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! 远程认证协议集成测试
 //!
 //! 测试 SGX DCAP 远程认证协议的完整流程，包括：

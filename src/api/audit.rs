@@ -765,6 +765,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn create_test_storage() -> MemoryAuditStorageAdapter {
         let storage = MemoryAuditStorage::new(1000).unwrap();
         MemoryAuditStorageAdapter::new(storage)

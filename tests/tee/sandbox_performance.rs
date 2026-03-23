@@ -1,3 +1,8 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::redundant_pattern_matching)]
+
 //! Sandbox 性能测试
 //!
 //! 测试目标:

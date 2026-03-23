@@ -47,7 +47,7 @@ use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::tenant::{
     MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
 };
-use vault_service::vault::storage::CredentialVault;
+use vault_service::vault::{CredentialVault, PostgresStorageBackend, VaultStorageBackend};
 
 /// API 根响应
 #[derive(Debug, Serialize)]
@@ -95,12 +95,21 @@ struct ServerConfig {
     port: u16,
     environment: Environment,
     log_level: String,
+    storage_backend: StorageBackendKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Environment {
     Development,
     Production,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StorageBackendKind {
+    Auto,
+    Memory,
+    Postgres,
+    Vault,
 }
 
 impl Environment {
@@ -119,6 +128,30 @@ impl Environment {
     }
 }
 
+impl StorageBackendKind {
+    fn from_env() -> Self {
+        match env::var("CREDBRIDGE_STORAGE_BACKEND")
+            .unwrap_or_else(|_| "auto".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "memory" => StorageBackendKind::Memory,
+            "postgres" | "postgresql" | "db" => StorageBackendKind::Postgres,
+            "vault" => StorageBackendKind::Vault,
+            _ => StorageBackendKind::Auto,
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            StorageBackendKind::Auto => "auto",
+            StorageBackendKind::Memory => "memory",
+            StorageBackendKind::Postgres => "postgres",
+            StorageBackendKind::Vault => "vault",
+        }
+    }
+}
+
 impl ServerConfig {
     /// 从环境变量加载配置
     fn from_env() -> Self {
@@ -132,6 +165,7 @@ impl ServerConfig {
                 &env::var("CREDBRIDGE_ENV").unwrap_or_else(|_| "development".to_string()),
             ),
             log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            storage_backend: StorageBackendKind::from_env(),
         }
     }
 
@@ -171,6 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 正在启动 HTTP 服务器...");
     info!("📍 环境: {}", config.environment.as_str());
     info!("🌐 地址: http://{}:{}", config.host, config.port);
+    info!("🗄️  存储后端: {}", config.storage_backend.as_str());
 
     // 显示速率限制配置
     let rate_limit_config = RateLimitConfig::from_env();
@@ -214,7 +249,7 @@ fn init_logging(config: &ServerConfig) {
     };
 
     // 使用简单的日志初始化
-    eprintln!("[INFO] 初始化日志系统，级别: {:?}", level);
+    eprintln!("[INFO] 初始化日志系统，级别: {level:?}");
 }
 
 /// 初始化应用状态
@@ -236,12 +271,12 @@ async fn initialize_app_state(
     let mut hierarchy = KeyHierarchy::new();
     let _l1_handle = hierarchy.initialize_master_key(&l0)?;
 
-    // 初始化 Vault（内存存储模式）
-    let vault = Arc::new(CredentialVault::new_in_memory());
+    // 初始化凭证存储后端
+    let vault = Arc::new(build_credential_vault(config).await?);
 
     // 初始化审计日志存储（使用共享的 Arc，让凭证 API 和审计 API 共享同一个存储）
     let audit_storage = Arc::new(tokio::sync::Mutex::new(
-        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?,
+        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {e:?}"))?,
     ));
 
     // 创建存储适配器用于审计 API 查询
@@ -278,10 +313,7 @@ async fn initialize_app_state(
     }) {
         Ok(state) => Some(state),
         Err(e) => {
-            eprintln!(
-                "[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {}",
-                e
-            );
+            eprintln!("[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {e}");
             None
         }
     };
@@ -293,7 +325,7 @@ async fn initialize_app_state(
             Some(state)
         }
         Err(e) => {
-            eprintln!("[WARN] 沙箱 API 初始化失败（将跳过沙箱路由）: {}", e);
+            eprintln!("[WARN] 沙箱 API 初始化失败（将跳过沙箱路由）: {e}");
             None
         }
     };
@@ -309,6 +341,43 @@ async fn initialize_app_state(
     })
 }
 
+async fn build_credential_vault(
+    config: &ServerConfig,
+) -> Result<CredentialVault, Box<dyn std::error::Error>> {
+    let backend = match config.storage_backend {
+        StorageBackendKind::Memory => CredentialVault::new_in_memory(),
+        StorageBackendKind::Vault => {
+            let backend = VaultStorageBackend::from_env().await?;
+            info!("✅ 凭证存储已连接到 HashiCorp Vault");
+            CredentialVault::with_backend(Box::new(backend))
+        }
+        StorageBackendKind::Postgres => {
+            let backend = PostgresStorageBackend::from_env().await?;
+            info!("✅ 凭证存储已连接到 PostgreSQL schema={}", backend.schema());
+            CredentialVault::with_backend(Box::new(backend))
+        }
+        StorageBackendKind::Auto => {
+            if env::var("DATABASE_URL").is_ok() {
+                let backend = PostgresStorageBackend::from_env().await?;
+                info!(
+                    "✅ 自动选择 PostgreSQL 作为凭证持久化后端 schema={}",
+                    backend.schema()
+                );
+                CredentialVault::with_backend(Box::new(backend))
+            } else if env::var("VAULT_ADDR").is_ok() && env::var("VAULT_TOKEN").is_ok() {
+                let backend = VaultStorageBackend::from_env().await?;
+                info!("✅ 自动选择 HashiCorp Vault 作为凭证持久化后端");
+                CredentialVault::with_backend(Box::new(backend))
+            } else {
+                info!("⚠️ 未检测到 DATABASE_URL 或 Vault 配置，回退到内存存储");
+                CredentialVault::new_in_memory()
+            }
+        }
+    };
+
+    Ok(backend)
+}
+
 /// 初始化沙箱状态
 async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::Error>> {
     use vault_service::tee::sandbox::config::SandboxConfig;
@@ -316,7 +385,7 @@ async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::
     let config = SandboxConfig::default();
     let state = SandboxState::new(config)
         .await
-        .map_err(|e| format!("沙箱初始化失败: {:?}", e))?;
+        .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 
     Ok(state)
 }
@@ -494,15 +563,15 @@ async fn api_root_handler(Extension(state): Extension<AppState>) -> impl IntoRes
         environment: state.config.environment.as_str().to_string(),
         endpoints: vec![
             ApiEndpoint {
-                path: format!("{}/credentials", API_BASE_PATH),
+                path: format!("{API_BASE_PATH}/credentials"),
                 description: "凭证管理 API".to_string(),
             },
             ApiEndpoint {
-                path: format!("{}/audit/logs", API_BASE_PATH),
+                path: format!("{API_BASE_PATH}/audit/logs"),
                 description: "审计日志 API".to_string(),
             },
             ApiEndpoint {
-                path: format!("{}/tenants", API_BASE_PATH),
+                path: format!("{API_BASE_PATH}/tenants"),
                 description: "租户管理 API".to_string(),
             },
             ApiEndpoint {
@@ -668,7 +737,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        write!(&mut result, "{:02x}", byte).unwrap();
+        write!(&mut result, "{byte:02x}").unwrap();
     }
     result
 }

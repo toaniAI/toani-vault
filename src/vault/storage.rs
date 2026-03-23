@@ -1281,8 +1281,8 @@ mod tests {
             let handle = thread::spawn(move || {
                 let entry = VaultEntry::new(
                     TenantId::new("tenant_1"),
-                    UserId::new(format!("user_{}", i)),
-                    ServiceId::new(format!("service_{}", i)),
+                    UserId::new(format!("user_{i}")),
+                    ServiceId::new(format!("service_{i}")),
                     CredentialType::ApiKey,
                     create_test_payload(),
                     None,

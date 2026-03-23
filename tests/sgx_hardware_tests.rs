@@ -1,4 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::uninlined_format_args)]
 #![allow(unused_imports)]
+#![allow(dead_code)]
 
 //! SGX 硬件环境真实系统测试
 //!

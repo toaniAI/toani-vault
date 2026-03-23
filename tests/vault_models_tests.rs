@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! Vault 数据模型测试
 //!
 //! 测试 EP2-Story2.1 凭证数据模型的核心功能

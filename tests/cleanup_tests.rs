@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! TEE 内存安全与密钥清理集成测试
 //!
 //! 验证以下安全特性：

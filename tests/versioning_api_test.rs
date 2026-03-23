@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! 凭证版本控制 API 集成测试
 //!
 //! 测试 EP2-Story2.4 凭证版本控制功能

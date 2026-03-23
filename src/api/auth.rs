@@ -760,6 +760,7 @@ mod tests {
         vec![0u8; 32]
     }
 
+    #[allow(dead_code)]
     fn get_test_state() -> AuthApiState {
         AuthApiState {
             secret_key: get_test_key(),
@@ -803,7 +804,7 @@ mod tests {
 
         let validated = verify_paseto_token(&token, &key);
         if let Err(ref e) = validated {
-            eprintln!("Token verification error: {}", e);
+            eprintln!("Token verification error: {e}");
         }
         assert!(validated.is_ok(), "Token verification should succeed");
 

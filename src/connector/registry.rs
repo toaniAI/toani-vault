@@ -475,7 +475,7 @@ mod tests {
         // 检查错误类型
         match result {
             Err(ConnectorError::NotFound { name }) => assert_eq!(name, "nonexistent"),
-            Err(e) => panic!("Expected NotFound error, got {}", e),
+            Err(e) => panic!("Expected NotFound error, got {e}"),
             Ok(_) => panic!("Expected error, got Ok"),
         }
     }

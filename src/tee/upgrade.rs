@@ -1079,7 +1079,7 @@ mod tests {
         let mut mrenclave = [0u8; 32];
         mrenclave[0] = mrenclave_byte;
 
-        EnclaveVersion::new(mrenclave, [0x42u8; 32], format!("1.0.{}", mrenclave_byte))
+        EnclaveVersion::new(mrenclave, [0x42u8; 32], format!("1.0.{mrenclave_byte}"))
     }
 
     fn create_test_sealing_key() -> SealingKeyCustody {

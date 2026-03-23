@@ -1,3 +1,8 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(deprecated)]
+
 //! DCAP 集成测试
 //!
 //! 测试 DCAP Quote 生成、验证和远程认证 API 功能

@@ -1,3 +1,5 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::uninlined_format_args)]
 //! 租户配置管理测试
 //!
 //! 测试租户配置管理的核心功能：
