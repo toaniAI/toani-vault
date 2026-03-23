@@ -7,6 +7,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use axum::response::IntoResponse;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
@@ -141,6 +142,50 @@ async fn test_create_credential_missing_scope() {
 
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// 测试创建凭证时拒绝过去时间的 expires_at
+#[tokio::test]
+async fn test_create_credential_rejects_past_expires_at() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+    let past_expires_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .saturating_sub(60);
+
+    let response = create_credential(
+        axum::extract::State(state),
+        axum::Extension(token),
+        axum::Json(
+            vault_service::api::credentials::CreateCredentialApiRequest {
+                service_id: "test_service".to_string(),
+                credential_type: vault_service::models::CredentialType::UsernamePassword,
+                plaintext_data: serde_json::json!({
+                    "username": "test_user",
+                    "password": "secret123"
+                }),
+                expires_at: Some(past_expires_at),
+            },
+        ),
+    )
+    .await
+    .unwrap_err()
+    .into_response();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert_eq!(
+        json["message"].as_str(),
+        Some("expires_at must be in the future")
+    );
 }
 
 /// 测试获取凭证列表

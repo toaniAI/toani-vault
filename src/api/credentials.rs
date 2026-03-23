@@ -26,6 +26,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
 /// 应用状态
@@ -375,6 +376,26 @@ pub struct CreateCredentialResponse {
     pub expires_at: Option<String>,
 }
 
+fn validate_expires_at(expires_at: Option<u64>) -> Result<(), ApiError> {
+    let Some(expires_at) = expires_at else {
+        return Ok(());
+    };
+
+    let current_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ApiError::new("internal_error", "系统时间异常"))?
+        .as_secs();
+
+    if expires_at <= current_timestamp {
+        return Err(ApiError::new(
+            "invalid_request",
+            "expires_at must be in the future",
+        ));
+    }
+
+    Ok(())
+}
+
 /// POST /api/v1/credentials - 创建凭证
 pub async fn create_credential(
     State(state): State<AppState>,
@@ -384,6 +405,8 @@ pub async fn create_credential(
     // 验证 Scope: credential:write
     require_scope(TokenScope::CredentialWrite)(&token)
         .map_err(|e| ApiError::new("forbidden", e.message))?;
+
+    validate_expires_at(request.expires_at)?;
 
     // 先创建 UserId 对象，用于加密和存储
     let user_id = UserId::new(&token.user_id);
@@ -1022,5 +1045,18 @@ mod tests {
 
         assert_eq!(normalized["refreshToken"], "rt_new");
         assert!(normalized.get("refresh_token").is_none());
+    }
+
+    #[test]
+    fn test_validate_expires_at_rejects_past_and_current_timestamps() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        assert!(validate_expires_at(Some(now.saturating_sub(1))).is_err());
+        assert!(validate_expires_at(Some(now)).is_err());
+        assert!(validate_expires_at(Some(now + 1)).is_ok());
+        assert!(validate_expires_at(None).is_ok());
     }
 }
