@@ -480,7 +480,6 @@ pub async fn list_credentials(
 
     let filter = CredentialFilter {
         include_deleted: false,
-        only_valid: true,
         ..Default::default()
     };
 

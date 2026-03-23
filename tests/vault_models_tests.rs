@@ -383,6 +383,57 @@ fn test_credential_expiration() {
     assert!(expired_entry.is_expired(), "凭证应该已经过期");
 }
 
+/// 测试：默认列表包含已过期但未删除的凭证，而 only_valid 会过滤它们
+#[test]
+fn test_list_credentials_expired_filter_behavior() {
+    let vault = CredentialVault::new_in_memory();
+    let tenant_id = TenantId::new("tenant_123");
+    let user_id = UserId::new("user_456");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let expired_entry = vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: tenant_id.clone(),
+                user_id: user_id.clone(),
+                service_id: ServiceId::new("expired_service"),
+                credential_type: CredentialType::ApiKey,
+                expires_at: Some(now.saturating_sub(60)),
+            },
+            create_test_payload(),
+        )
+        .expect("应该能创建已过期凭证");
+
+    let default_result = vault
+        .list_credentials(
+            &tenant_id,
+            &UserId::from_hash(user_id.hash()),
+            CredentialFilter::default(),
+        )
+        .expect("默认列表应该返回结果");
+    assert_eq!(default_result.total, 1);
+    assert_eq!(
+        default_result.credentials[0].credential_id,
+        expired_entry.credential_id.as_str()
+    );
+
+    let only_valid_result = vault
+        .list_credentials(
+            &tenant_id,
+            &UserId::from_hash(user_id.hash()),
+            CredentialFilter {
+                only_valid: true,
+                ..Default::default()
+            },
+        )
+        .expect("only_valid 过滤应该返回结果");
+    assert_eq!(only_valid_result.total, 0);
+    assert!(only_valid_result.credentials.is_empty());
+}
+
 /// 测试：凭证软删除
 #[test]
 fn test_credential_soft_delete() {

@@ -16,7 +16,11 @@ use vault_service::api::credentials::{
     delete_credential, get_credential, list_credentials,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
+use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
+use vault_service::vault::models::{
+    CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId,
+};
 use vault_service::vault::storage::CredentialVault;
 
 /// 设置测试状态
@@ -30,6 +34,17 @@ async fn setup_test_state() -> AppState {
         key_hierarchy,
         audit_logger,
     }
+}
+
+fn create_test_payload() -> EncryptedPayload {
+    EncryptedPayload::new(
+        constants::PROTOCOL_VERSION,
+        constants::ALGORITHM_AES_256_GCM,
+        constants::KDF_HKDF_SHA256,
+        vec![0u8; constants::NONCE_LENGTH],
+        vec![0u8; constants::AUTH_TAG_LENGTH],
+        vec![1, 2, 3, 4, 5],
+    )
 }
 
 /// 创建模拟的已验证 Token
@@ -144,6 +159,65 @@ async fn test_list_credentials() {
 
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+/// 测试获取凭证列表时保留已过期但未删除的凭证
+#[tokio::test]
+async fn test_list_credentials_includes_expired_entries() {
+    let state = setup_test_state().await;
+    let expired_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .saturating_sub(60);
+
+    let expired_entry = state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: TenantId::new("tenant_123"),
+                user_id: UserId::new("user_456"),
+                service_id: ServiceId::new("expired_service"),
+                credential_type: vault_service::models::CredentialType::ApiKey,
+                expires_at: Some(expired_at),
+            },
+            create_test_payload(),
+        )
+        .unwrap();
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let credentials = json["credentials"].as_array().unwrap();
+
+    assert_eq!(json["total"].as_u64(), Some(1));
+    assert_eq!(credentials.len(), 1);
+    assert_eq!(
+        credentials[0]["credential_id"].as_str(),
+        Some(expired_entry.credential_id.as_str())
+    );
+    assert_eq!(
+        credentials[0]["service_id"].as_str(),
+        Some("expired_service")
+    );
+    assert_eq!(credentials[0]["is_deleted"].as_bool(), Some(false));
+    assert_eq!(
+        credentials[0]["expires_at"].as_str(),
+        expired_entry.metadata().expires_at.as_deref()
+    );
 }
 
 /// 测试获取凭证列表缺少 read scope
