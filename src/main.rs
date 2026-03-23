@@ -30,10 +30,11 @@ use vault_service::api::{
         AttestationApiConfig, AttestationState, attestation_routes, init_attestation_api,
     },
     audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
-    auth::{AuthApiState, auth_routes},
+    auth::{AuthApiState, auth_routes, protected_auth_routes},
     credentials::{
         AppState as CredentialAppState, StorageAuditLogger, routes as credential_routes,
     },
+    i18n::{LocaleResolverState, locale_middleware},
     middleware::auth_middleware,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
@@ -185,6 +186,7 @@ struct AppState {
     credential_state: CredentialAppState,
     audit_state: AuditApiState,
     auth_state: AuthApiState,
+    tenant_store: MemoryTenantConfigStore,
     rate_limit_state: RateLimitState,
     attestation_state: Option<Arc<AttestationState>>,
     sandbox_state: Option<SandboxState>,
@@ -304,6 +306,19 @@ async fn initialize_app_state(
     // 创建认证 API 状态
     let auth_state = AuthApiState::new();
 
+    // 初始化租户配置存储
+    let tenant_store = MemoryTenantConfigStore::new();
+    let mut default_tenant_config = vault_service::tenant::TenantConfig::default();
+    default_tenant_config.settings.language = "zh-CN".to_string();
+    use vault_service::tenant::TenantConfigStore;
+    tenant_store
+        .save_config(
+            &vault_service::tenant::TenantId::from_string("tenant-001"),
+            &default_tenant_config,
+        )
+        .await
+        .map_err(|e| format!("初始化默认租户配置失败: {e}"))?;
+
     // 初始化速率限制状态
     let rate_limit_config = RateLimitConfig::from_env();
     let rate_limit_state = RateLimitState::new(rate_limit_config);
@@ -337,6 +352,7 @@ async fn initialize_app_state(
         credential_state,
         audit_state,
         auth_state,
+        tenant_store,
         rate_limit_state,
         attestation_state,
         sandbox_state,
@@ -465,7 +481,19 @@ fn build_api_routes(app_state: AppState) -> Router {
     let secret_key = app_state.auth_state.secret_key.clone();
 
     // 认证路由（公开，不需要认证）
-    let auth_routes = auth_routes().with_state(app_state.auth_state.clone());
+    let locale_state = LocaleResolverState::new(
+        app_state.auth_state.user_store.clone(),
+        app_state.tenant_store.clone(),
+    );
+    let public_locale_layer =
+        axum::middleware::from_fn_with_state(locale_state.clone(), locale_middleware);
+    let protected_locale_layer =
+        axum::middleware::from_fn_with_state(locale_state, locale_middleware);
+
+    let auth_routes = auth_routes()
+        .with_state(app_state.auth_state.clone())
+        .layer(public_locale_layer);
+    let protected_auth_routes = protected_auth_routes().with_state(app_state.auth_state.clone());
 
     // ========== 受保护的路由（需要认证） ==========
 
@@ -476,7 +504,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     let audit_routes = audit_routes(app_state.audit_state.clone());
 
     // 租户管理路由（使用内存存储）
-    let tenant_store = MemoryTenantConfigStore::new();
+    let tenant_store = app_state.tenant_store.clone();
     let tenant_manager = TenantManager::new_simple(tenant_store);
     let tenant_service: Arc<dyn TenantService> = Arc::new(MemoryTenantStorage::new());
 
@@ -501,6 +529,10 @@ fn build_api_routes(app_state: AppState) -> Router {
         .merge(audit_routes)
         // 嵌套租户路由
         .merge(tenant_routes)
+        // 认证用户信息与偏好
+        .merge(protected_auth_routes)
+        // locale 解析
+        .layer(protected_locale_layer)
         // 应用认证中间件
         .layer(auth_layer);
 
