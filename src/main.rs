@@ -155,6 +155,38 @@ impl StorageBackendKind {
     }
 }
 
+fn env_var_present(name: &str) -> bool {
+    env::var_os(name).is_some_and(|value| !value.is_empty())
+}
+
+fn resolve_auto_storage_backend(
+    has_database_url: bool,
+    has_vault_addr: bool,
+    has_vault_token: bool,
+) -> Result<StorageBackendKind, String> {
+    if has_database_url {
+        Ok(StorageBackendKind::Postgres)
+    } else if has_vault_addr && has_vault_token {
+        Ok(StorageBackendKind::Vault)
+    } else {
+        Err(
+            "自动存储后端选择失败：未检测到 DATABASE_URL，且 VAULT_ADDR/VAULT_TOKEN 未同时配置。请显式配置 PostgreSQL/Vault 持久化后端，或仅在开发/测试场景下设置 CREDBRIDGE_STORAGE_BACKEND=memory。"
+                .to_string(),
+        )
+    }
+}
+
+fn resolve_storage_backend(config: &ServerConfig) -> Result<StorageBackendKind, String> {
+    match config.storage_backend {
+        StorageBackendKind::Auto => resolve_auto_storage_backend(
+            env_var_present("DATABASE_URL"),
+            env_var_present("VAULT_ADDR"),
+            env_var_present("VAULT_TOKEN"),
+        ),
+        backend => Ok(backend),
+    }
+}
+
 impl ServerConfig {
     /// 从环境变量加载配置
     fn from_env() -> Self {
@@ -362,7 +394,10 @@ async fn initialize_app_state(
 async fn build_credential_vault(
     config: &ServerConfig,
 ) -> Result<CredentialVault, Box<dyn std::error::Error>> {
-    let backend = match config.storage_backend {
+    let resolved_backend = resolve_storage_backend(config)
+        .map_err(|message| std::io::Error::other(message))?;
+
+    let backend = match resolved_backend {
         StorageBackendKind::Memory => CredentialVault::new_in_memory(),
         StorageBackendKind::Vault => {
             let backend = VaultStorageBackend::from_env().await?;
@@ -374,23 +409,7 @@ async fn build_credential_vault(
             info!("✅ 凭证存储已连接到 PostgreSQL schema={}", backend.schema());
             CredentialVault::with_backend(Box::new(backend))
         }
-        StorageBackendKind::Auto => {
-            if env::var("DATABASE_URL").is_ok() {
-                let backend = PostgresStorageBackend::from_env().await?;
-                info!(
-                    "✅ 自动选择 PostgreSQL 作为凭证持久化后端 schema={}",
-                    backend.schema()
-                );
-                CredentialVault::with_backend(Box::new(backend))
-            } else if env::var("VAULT_ADDR").is_ok() && env::var("VAULT_TOKEN").is_ok() {
-                let backend = VaultStorageBackend::from_env().await?;
-                info!("✅ 自动选择 HashiCorp Vault 作为凭证持久化后端");
-                CredentialVault::with_backend(Box::new(backend))
-            } else {
-                info!("⚠️ 未检测到 DATABASE_URL 或 Vault 配置，回退到内存存储");
-                CredentialVault::new_in_memory()
-            }
-        }
+        StorageBackendKind::Auto => unreachable!("auto backend should be resolved before init"),
     };
 
     Ok(backend)
@@ -774,4 +793,33 @@ fn hex_encode(bytes: &[u8]) -> String {
         write!(&mut result, "{byte:02x}").unwrap();
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StorageBackendKind, resolve_auto_storage_backend};
+
+    #[test]
+    fn auto_backend_prefers_postgres_when_database_url_exists() {
+        let backend = resolve_auto_storage_backend(true, false, false).unwrap();
+        assert_eq!(backend, StorageBackendKind::Postgres);
+    }
+
+    #[test]
+    fn auto_backend_uses_vault_when_both_vault_vars_exist() {
+        let backend = resolve_auto_storage_backend(false, true, true).unwrap();
+        assert_eq!(backend, StorageBackendKind::Vault);
+    }
+
+    #[test]
+    fn auto_backend_rejects_missing_persistent_configuration() {
+        let error = resolve_auto_storage_backend(false, false, false).unwrap_err();
+        assert!(error.contains("CREDBRIDGE_STORAGE_BACKEND=memory"));
+    }
+
+    #[test]
+    fn auto_backend_rejects_partial_vault_configuration() {
+        let error = resolve_auto_storage_backend(false, true, false).unwrap_err();
+        assert!(error.contains("VAULT_ADDR/VAULT_TOKEN"));
+    }
 }
