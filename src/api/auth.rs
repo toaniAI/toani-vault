@@ -21,6 +21,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RedactedParam};
+
 use super::i18n::{I18nParams, ResolvedLocale, invalid_locale_response, normalize_locale};
 use super::middleware::{TokenScope, ValidatedToken};
 use super::response::{ApiErrorResponse, ErrorCode};
@@ -32,6 +34,8 @@ pub struct AuthApiState {
     pub secret_key: Vec<u8>,
     /// 用户存储（内存模拟）
     pub user_store: Arc<MemoryUserStore>,
+    /// 共享审计存储
+    pub audit_storage: Option<Arc<tokio::sync::Mutex<MemoryAuditStorage>>>,
 }
 
 /// 内存用户存储
@@ -120,6 +124,42 @@ impl AuthApiState {
         Self {
             secret_key,
             user_store: Arc::new(MemoryUserStore::new()),
+            audit_storage: None,
+        }
+    }
+
+    /// 创建带共享审计存储的认证 API 状态
+    pub fn with_audit_storage(audit_storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>) -> Self {
+        let mut state = Self::new();
+        state.audit_storage = Some(audit_storage);
+        state
+    }
+
+    async fn record_token_validation_audit(&self, validated: &ValidatedToken) {
+        let Some(storage) = &self.audit_storage else {
+            return;
+        };
+
+        let entry = AuditEntry::new(
+            crate::audit::events::hash_user_id(&validated.user_id),
+            "session",
+            "auth",
+            AuditAction::TokenValidate,
+            Outcome::Success,
+            "software_mode",
+            validated.token_id.clone(),
+        )
+        .with_param(
+            "verified_token_id",
+            RedactedParam::Plain(validated.token_id.clone()),
+        )
+        .with_param(
+            "tenant_id",
+            RedactedParam::Plain(validated.tenant_id.clone()),
+        );
+
+        if let Err(error) = storage.lock().await.record(entry) {
+            log::warn!("[AUDIT] Token validation audit record failed: {error:?}");
         }
     }
 }
@@ -617,6 +657,7 @@ pub async fn verify_token_handler(
     let mut response = match verify_paseto_token(&request.token, &state.secret_key, locale.as_str())
     {
         Ok(validated) => {
+            state.record_token_validation_audit(&validated).await;
             let scopes: Vec<String> = validated
                 .scopes
                 .iter()
@@ -943,6 +984,7 @@ mod tests {
         AuthApiState {
             secret_key: get_test_key(),
             user_store: Arc::new(MemoryUserStore::new()),
+            audit_storage: None,
         }
     }
 
@@ -960,6 +1002,57 @@ mod tests {
         // 错误凭据
         let user = store.verify_user("admin", "wrong").await;
         assert!(user.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_verify_token_handler_records_audit_on_success() {
+        let audit_storage = Arc::new(tokio::sync::Mutex::new(
+            MemoryAuditStorage::new(16).unwrap(),
+        ));
+        let state = AuthApiState::with_audit_storage(audit_storage.clone());
+        let token = generate_paseto_token(
+            &state.secret_key,
+            "user-001",
+            "tenant-001",
+            &[TokenScope::AuditRead],
+            900,
+        )
+        .unwrap();
+
+        let response = verify_token_handler(
+            State(state),
+            ResolvedLocale::default(),
+            Json(VerifyTokenRequest { token }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let entries = audit_storage.lock().await.query_recent(10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].entry.action, AuditAction::TokenValidate);
+        assert_eq!(entries[0].entry.outcome, Outcome::Success);
+    }
+
+    #[tokio::test]
+    async fn test_verify_token_handler_does_not_record_audit_on_failure() {
+        let audit_storage = Arc::new(tokio::sync::Mutex::new(
+            MemoryAuditStorage::new(16).unwrap(),
+        ));
+        let state = AuthApiState::with_audit_storage(audit_storage.clone());
+
+        let response = verify_token_handler(
+            State(state),
+            ResolvedLocale::default(),
+            Json(VerifyTokenRequest {
+                token: "invalid-token".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let entries = audit_storage.lock().await.query_recent(10).unwrap();
+        assert!(entries.is_empty());
     }
 
     #[test]

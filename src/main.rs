@@ -288,7 +288,7 @@ async fn initialize_app_state(
         MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
 
     // 创建存储审计日志记录器用于凭证 API 写入
-    let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage));
+    let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage.clone()));
 
     // 创建凭证 API 状态
     let credential_state = CredentialAppState {
@@ -304,7 +304,7 @@ async fn initialize_app_state(
     };
 
     // 创建认证 API 状态
-    let auth_state = AuthApiState::new();
+    let auth_state = AuthApiState::with_audit_storage(audit_storage.clone());
 
     // 初始化租户配置存储
     let tenant_store = MemoryTenantConfigStore::new();
