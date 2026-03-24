@@ -11,6 +11,7 @@
 - [快速开始](01-项目概述/快速开始.md)
 - [CredBridge 设计规范](01-项目概述/CredBridge_CN_设计规范_v1.0.md)
 - [技术债务](01-项目概述/技术债务.md)
+- [1Password 差距落地清单](01-项目概述/1Password-差距落地清单.md)
 - [项目上下文](01-项目概述/project-context.md)
 - [变更日志](01-项目概述/CHANGELOG.md)
 
