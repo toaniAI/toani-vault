@@ -129,13 +129,18 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
         verifier_public_key: vec![],
     };
     let app = Router::new()
-        .merge(auth_routes().with_state(auth_state))
+        .merge(auth_routes().with_state(auth_state.clone()))
+        .merge(protected_auth_routes().with_state(auth_state))
         .merge(audit_routes(audit_state));
+
+    // 使用 ValidatedToken 扩展来模拟已认证用户
+    let test_token = create_audit_token();
 
     let create_request = Request::builder()
         .uri("/tokens")
         .method("POST")
         .header("Content-Type", "application/json")
+        .extension(test_token.clone())
         .body(Body::from(
             json!({
                 "scopes": ["audit:read"],
@@ -211,11 +216,23 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
         .merge(auth_routes().with_state(auth_state.clone()))
         .merge(protected_auth_routes().with_state(auth_state));
 
+    // 使用统一的测试 token（与 stats 端点使用相同的 tenant）
+    let test_token = ValidatedToken {
+        token_id: Uuid::now_v7().to_string(),
+        subject: "default-tenant:user-001".to_string(),
+        tenant_id: "default-tenant".to_string(),
+        user_id: "user-001".to_string(),
+        expires_at: u64::MAX,
+        scopes: vec![TokenScope::Admin],
+        issued_at: 1000,
+    };
+
     for expires_in in [900_u64, 1800_u64] {
         let create_request = Request::builder()
             .uri("/tokens")
             .method("POST")
             .header("Content-Type", "application/json")
+            .extension(test_token.clone())
             .body(Body::from(
                 json!({
                     "scopes": ["audit:read"],
@@ -233,15 +250,7 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
         .uri("/tokens/stats")
         .method("GET")
         .header("Authorization", "Bearer test_token")
-        .extension(ValidatedToken {
-            token_id: Uuid::now_v7().to_string(),
-            subject: "default-tenant:user-001".to_string(),
-            tenant_id: "default-tenant".to_string(),
-            user_id: "user-001".to_string(),
-            expires_at: u64::MAX,
-            scopes: vec![TokenScope::Admin],
-            issued_at: 1000,
-        })
+        .extension(test_token)
         .body(Body::empty())
         .unwrap();
 

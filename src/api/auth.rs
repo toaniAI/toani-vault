@@ -414,8 +414,6 @@ pub fn auth_routes() -> Router<AuthApiState> {
         .route("/auth/login", post(login_handler))
         // Token 刷新
         .route("/auth/refresh", post(refresh_handler))
-        // Token 创建
-        .route("/tokens", post(create_token_handler))
         // Token 验证
         .route("/tokens/verify", post(verify_token_handler))
 }
@@ -424,6 +422,8 @@ pub fn auth_routes() -> Router<AuthApiState> {
 pub fn protected_auth_routes() -> Router<AuthApiState> {
     Router::new()
         .route("/auth/me", get(current_user_handler))
+        // Token 创建（需要认证）
+        .route("/tokens", post(create_token_handler))
         .route("/tokens/stats", get(token_stats_handler))
         .route("/users/me/preferences", get(get_user_preferences_handler))
         .route(
@@ -581,10 +581,12 @@ pub async fn login_handler(
 pub async fn create_token_handler(
     State(state): State<AuthApiState>,
     locale: ResolvedLocale,
+    Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateTokenRequest>,
 ) -> Response {
-    // 确定 user_id
-    let user_id = request.user_id.unwrap_or_else(|| "anonymous".to_string());
+    // 从已认证的 Token 中获取 tenant_id 和 user_id
+    let tenant_id = token.tenant_id.clone();
+    let user_id = request.user_id.unwrap_or_else(|| token.user_id.clone());
 
     // 解析 Scope
     let scopes: Vec<TokenScope> = request
@@ -606,26 +608,21 @@ pub async fn create_token_handler(
     let expires_in = request.expires_in.unwrap_or(900);
 
     // 生成 Token
-    let access_token = match generate_paseto_token(
-        &state.secret_key,
-        &user_id,
-        "default-tenant",
-        &scopes,
-        expires_in,
-    ) {
-        Ok(t) => t,
-        Err(e) => {
-            let mut params = I18nParams::new();
-            params.insert("reason".to_string(), Value::String(e));
-            return auth_error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "token_generation_failed",
-                &locale,
-                "errors.auth.token_generation_failed",
-                params,
-            );
-        }
-    };
+    let access_token =
+        match generate_paseto_token(&state.secret_key, &user_id, &tenant_id, &scopes, expires_in) {
+            Ok(t) => t,
+            Err(e) => {
+                let mut params = I18nParams::new();
+                params.insert("reason".to_string(), Value::String(e));
+                return auth_error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "token_generation_failed",
+                    &locale,
+                    "errors.auth.token_generation_failed",
+                    params,
+                );
+            }
+        };
 
     let validated = match verify_paseto_token(&access_token, &state.secret_key, locale.as_str()) {
         Ok(validated) => validated,
@@ -1168,11 +1165,23 @@ mod tests {
         ));
         let state = AuthApiState::with_audit_storage(audit_storage.clone());
 
+        // 创建测试用的 ValidatedToken
+        let test_token = ValidatedToken {
+            token_id: "test-token-id".to_string(),
+            subject: "tenant-001:user-001".to_string(),
+            tenant_id: "tenant-001".to_string(),
+            user_id: "user-001".to_string(),
+            expires_at: 9999999999,
+            scopes: vec![TokenScope::AuditRead],
+            issued_at: 1000,
+        };
+
         let response = create_token_handler(
             State(state.clone()),
             ResolvedLocale::default(),
+            Extension(test_token),
             Json(CreateTokenRequest {
-                user_id: Some("user-001".to_string()),
+                user_id: None, // 使用 token 中的 user_id
                 scopes: vec!["audit:read".to_string()],
                 expires_in: Some(900),
                 credential_ids: None,
@@ -1186,11 +1195,15 @@ mod tests {
             .unwrap();
         let created: CreateTokenResponse = serde_json::from_slice(&body).unwrap();
 
-        let active_tokens = state.count_active_tokens_for_tenant("default-tenant").await;
+        // 验证 token 被注册到正确的 tenant
+        let active_tokens = state.count_active_tokens_for_tenant("tenant-001").await;
         assert_eq!(active_tokens, 1);
+
+        // 验证存储的 token 记录有正确的 tenant_id
         let issued_tokens = state.issued_tokens.read().await;
         let stored = issued_tokens.get(&created.token_id).unwrap();
         assert_eq!(stored.expires_at, created.expires_at);
+        assert_eq!(stored.tenant_id, "tenant-001"); // 验证 tenant_id 正确
 
         let entries = audit_storage.lock().await.query_recent(10).unwrap();
         assert_eq!(entries.len(), 1);
