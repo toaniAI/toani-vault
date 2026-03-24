@@ -146,7 +146,7 @@ sudo nano /etc/sgx_default_qcnl.conf
 
 ### 选项 1: 使用 Intel 公有 PCS 服务
 
-对于开发和测试，可以直接使用 Intel 的公有 PCS 服务：
+当你显式选择 `TEE_MODE=hardware` 且需要直接访问 Intel PCS 时，可以使用 Intel 的公有 PCS 服务：
 
 ```
 https://api.trustedservices.intel.com/sgx/certification/v4/
@@ -156,7 +156,7 @@ https://api.trustedservices.intel.com/sgx/certification/v4/
 
 ### 选项 2: 部署本地 PCCS (Provisioning Certificate Caching Service)
 
-对于生产环境，建议部署本地 PCCS：
+当你显式选择 `TEE_MODE=hardware` 并准备长期运行硬件 attestation 时，建议部署本地 PCCS：
 
 ```bash
 # 安装 PCCS
@@ -182,8 +182,11 @@ sudo systemctl enable pccs
 ### 环境变量配置
 
 ```bash
-# DCAP 模式
-export CRED_BRIDGE_DCAP_MODE=production  # 或 simulation
+# TEE 运行模式（必须显式设置）
+export TEE_MODE=hardware
+
+# 显式 simulation 示例
+# export TEE_MODE=simulation
 
 # Intel PCS URL
 export INTEL_PCS_URL=https://api.trustedservices.intel.com/sgx/certification/v4/
@@ -198,9 +201,13 @@ export DCAP_QUOTE_MAX_AGE=3600
 export DCAP_VERIFY_CERT_CHAIN=true
 ```
 
+- `TEE_MODE=hardware` 会走真实 SGX/DCAP 路径；若 SGX/DCAP/AESM/PCCS（或 Intel PCS）未就绪，将 fail-closed。
+- `TEE_MODE=simulation` 只用于显式模拟路径；相关模拟状态字段只会在该模式下出现。
+
 ### 代码配置示例
 
 ```rust
+use vault_service::config::TeeRuntimeMode;
 use vault_service::tee::{
     dcap::{DcapConfig, DcapService, INTEL_PCS_BASE_URL_PROD},
     enclave::{Enclave, EnclaveConfig},
@@ -208,6 +215,7 @@ use vault_service::tee::{
 
 // 创建 DCAP 配置
 let dcap_config = DcapConfig {
+    runtime_mode: TeeRuntimeMode::Hardware,
     pcs_base_url: INTEL_PCS_BASE_URL_PROD.to_string(),
     use_test_environment: false,
     api_key: Some("your_api_key".to_string()),
@@ -221,7 +229,7 @@ let dcap_config = DcapConfig {
         // 允许的 MRSIGNER 白名单
         hex::decode("fedcba9876543210...").unwrap().try_into().unwrap(),
     ],
-    simulation_mode: false,
+    ..Default::default()
 };
 
 // 创建 DCAP 服务
@@ -237,13 +245,15 @@ println!("MRENCLAVE: {}", hex::encode(quote.report_body.mrenclave));
 println!("MRSIGNER: {}", hex::encode(quote.report_body.mrsigner));
 ```
 
-### 模拟模式配置（开发测试）
+### 显式 simulation 模式配置
 
-在没有 SGX 硬件的环境中进行开发：
+在没有 SGX 硬件的环境中，如需运行 simulation-safe 测试或文档示例，请显式设置 `TEE_MODE=simulation`：
 
 ```rust
+use vault_service::config::TeeRuntimeMode;
+
 let dcap_config = DcapConfig {
-    simulation_mode: true,
+    runtime_mode: TeeRuntimeMode::Simulation,
     ..Default::default()
 };
 
@@ -357,6 +367,8 @@ curl http://localhost:3000/api/v1/attestation/health
   "quote_valid": true
 }
 ```
+
+显式 `TEE_MODE=simulation` 时，相关状态接口才会出现模拟标记；若设置 `TEE_MODE=hardware` 但真实能力未接通，请预期初始化失败，而不是得到模拟健康状态。
 
 ### 客户端验证示例
 
@@ -473,6 +485,11 @@ cargo run
 # 检查 Quote 生成
 /opt/intel/sgxsdk/SampleCode/SampleAttestedTLS/build/sample_attested_tls_app
 ```
+
+## CI / 验收语义
+
+- 默认 CI 只运行 simulation-safe 测试，并显式设置 `TEE_MODE=simulation`。
+- hardware-only 测试应在带 SGX/DCAP/AESM 的专用 runner 或 staging 主机执行，并显式设置 `TEE_MODE=hardware`。
 
 ### 联系支持
 

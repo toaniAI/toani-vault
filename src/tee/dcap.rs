@@ -19,6 +19,7 @@
 //! - **不可否认**: ECDSA 签名提供不可否认性
 //! - **证书链**: 完整的 PCK 证书链验证
 
+use crate::config::{TeeRuntimeConfig, TeeRuntimeMode};
 use crate::tee::{
     attestation::{AttestationError, AttestationResult, ReportData, SGX_MEASUREMENT_LEN},
     enclave::{Enclave, EnclaveError},
@@ -165,8 +166,8 @@ pub struct DcapConfig {
     /// 允许的 MRSIGNER 白名单
     pub allowed_mrsigners: Vec<[u8; SGX_MEASUREMENT_LEN]>,
 
-    /// 是否启用模拟模式
-    pub simulation_mode: bool,
+    /// TEE 运行模式
+    pub runtime_mode: TeeRuntimeMode,
 }
 
 impl Default for DcapConfig {
@@ -179,7 +180,17 @@ impl Default for DcapConfig {
             verify_certificate_chain: true,
             allowed_mrenclaves: Vec::new(),
             allowed_mrsigners: Vec::new(),
-            simulation_mode: false,
+            runtime_mode: TeeRuntimeMode::Hardware,
+        }
+    }
+}
+
+impl DcapConfig {
+    pub fn from_runtime(runtime: &TeeRuntimeConfig) -> Self {
+        Self {
+            pcs_base_url: runtime.pcs_base_url.clone(),
+            runtime_mode: runtime.mode,
+            ..Default::default()
         }
     }
 }
@@ -458,6 +469,8 @@ impl std::fmt::Debug for DcapService {
 impl DcapService {
     /// 创建新的 DCAP 服务
     pub fn new(config: DcapConfig) -> Result<Self, DcapError> {
+        validate_dcap_config(&config)?;
+
         // 解析根证书
         let root_cert = parse_pem_cert(INTEL_SGX_ROOT_CERT_PEM)
             .map_err(|e| DcapError::ConfigurationError(e.to_string()))?;
@@ -497,12 +510,11 @@ impl DcapService {
         }
 
         // 3. 模拟模式下跳过 PCS 注册
-        if !self.config.simulation_mode {
-            // 实际环境中向 Intel PCS 注册
-            // 这里仅模拟
-            tracing::info!("DCAP service initialized in production mode");
-        } else {
+        if self.config.runtime_mode.allows_simulation() {
             tracing::info!("DCAP service initialized in simulation mode");
+        } else {
+            self.register_with_pcs(&quote)?;
+            tracing::info!("DCAP service initialized in hardware mode");
         }
 
         Ok(quote)
@@ -514,6 +526,12 @@ impl DcapService {
     fn generate_dcap_quote(&self, enclave: &Enclave) -> Result<DcapQuote, DcapError> {
         if !enclave.is_running() {
             return Err(DcapError::EnclaveError("Enclave not running".to_string()));
+        }
+
+        if !self.config.runtime_mode.allows_simulation() {
+            return Err(DcapError::QuoteGenerationFailed(
+                "hardware mode requires real SGX DCAP quote generation, but this build only supports explicit simulation; refusing silent fallback".to_string(),
+            ));
         }
 
         // 生成 Report Data（包含时间戳防止重放）
@@ -564,6 +582,10 @@ impl DcapService {
         quote_bytes: &[u8],
         nonce: Option<&[u8]>,
     ) -> Result<DcapAttestationReport, DcapError> {
+        if self.config.runtime_mode.is_hardware() {
+            return Err(hardware_verification_unavailable_error());
+        }
+
         // 1. 解析 Quote
         let quote = self.parse_quote(quote_bytes)?;
 
@@ -621,7 +643,7 @@ impl DcapService {
     ///
     /// 在实际生产环境中，这将调用 Intel PCS API
     pub fn register_with_pcs(&self, _quote: &DcapQuote) -> Result<String, DcapError> {
-        if self.config.simulation_mode {
+        if self.config.runtime_mode.allows_simulation() {
             tracing::info!("Skipping PCS registration in simulation mode");
             return Ok("simulated-pcs-id".to_string());
         }
@@ -632,8 +654,9 @@ impl DcapService {
         // 3. 获取 PCK 证书
         // 4. 存储证书用于后续验证
 
-        tracing::info!("Registering with Intel PCS...");
-        Ok("pcs-registration-id".to_string())
+        Err(DcapError::PcsCommunicationFailed(
+            "hardware mode requires real Intel PCS registration, but no production PCS integration is implemented".to_string(),
+        ))
     }
 
     /// 刷新 Quote
@@ -898,7 +921,7 @@ impl DcapService {
     /// 验证 Quote 签名
     fn verify_quote_signature(&self, quote: &DcapQuote) -> Result<(), DcapError> {
         // 模拟模式下跳过签名验证
-        if self.config.simulation_mode {
+        if self.config.runtime_mode.allows_simulation() {
             return Ok(());
         }
 
@@ -926,7 +949,11 @@ impl DcapService {
     /// 注意：完整的 PKI 路径验证（含 OCSP/CRL 撤销检查）需要 webpki 或 x509-cert crate。
     /// 当前实现提供格式完整性验证；模拟 Quote（qe_certification_data 全零）自动跳过。
     fn verify_certificate_chain(&self, quote: &DcapQuote) -> Result<(), DcapError> {
-        if self.config.simulation_mode {
+        if self.config.runtime_mode.is_hardware() {
+            return Err(hardware_verification_unavailable_error());
+        }
+
+        if self.config.runtime_mode.allows_simulation() {
             return Ok(());
         }
 
@@ -983,7 +1010,7 @@ impl DcapService {
     fn verify_measurement_whitelist(&self, quote: &DcapQuote) -> Result<(), DcapError> {
         // 如果白名单为空，跳过验证（仅用于测试）
         if self.config.allowed_mrenclaves.is_empty() && self.config.allowed_mrsigners.is_empty() {
-            if !self.config.simulation_mode {
+            if !self.config.runtime_mode.allows_simulation() {
                 return Err(DcapError::MeasurementMismatch);
             }
             return Ok(());
@@ -1180,6 +1207,32 @@ impl DcapService {
     }
 }
 
+fn validate_dcap_config(config: &DcapConfig) -> Result<(), DcapError> {
+    if config.runtime_mode.is_hardware() {
+        if !config.verify_certificate_chain {
+            return Err(DcapError::ConfigurationError(
+                "hardware mode requires verify_certificate_chain=true; refusing a certificate-chain bypass"
+                    .to_string(),
+            ));
+        }
+
+        if config.use_test_environment {
+            return Err(DcapError::ConfigurationError(
+                "hardware mode requires an explicitly production-safe DCAP environment; use_test_environment=true is not allowed"
+                    .to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn hardware_verification_unavailable_error() -> DcapError {
+    DcapError::QuoteVerificationFailed(
+        "hardware mode requires full quote generation, Intel PCS integration, and certificate-chain verification; the current DCAP implementation is intentionally fail-closed until those capabilities are complete".to_string(),
+    )
+}
+
 /// 解析 PEM 证书
 fn parse_pem_cert(pem: &str) -> Result<Vec<u8>, DcapError> {
     let lines: Vec<&str> = pem.lines().collect();
@@ -1209,6 +1262,7 @@ fn current_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TeeRuntimeMode;
     use crate::tee::EnclaveConfig;
 
     #[test]
@@ -1218,13 +1272,26 @@ mod tests {
         assert!(!config.use_test_environment);
         assert_eq!(config.quote_max_age_seconds, 3600);
         assert!(config.verify_certificate_chain);
-        assert!(!config.simulation_mode);
+        assert_eq!(config.runtime_mode, TeeRuntimeMode::Hardware);
+    }
+
+    #[test]
+    fn test_dcap_config_from_runtime_does_not_derive_test_environment() {
+        let runtime = TeeRuntimeConfig::simulation();
+        let config = DcapConfig::from_runtime(&runtime);
+
+        assert_eq!(config.runtime_mode, TeeRuntimeMode::Simulation);
+        assert_eq!(config.pcs_base_url, runtime.pcs_base_url);
+        assert!(
+            !config.use_test_environment,
+            "DCAP test-environment selection must be explicit"
+        );
     }
 
     #[test]
     fn test_dcap_service_creation() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config);
@@ -1250,7 +1317,7 @@ mod tests {
     #[test]
     fn test_dcap_service_initialize() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1272,7 +1339,7 @@ mod tests {
     #[test]
     fn test_get_current_quote() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1293,9 +1360,53 @@ mod tests {
     }
 
     #[test]
+    fn test_hardware_mode_initialize_fails_closed() {
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let mut enclave = Enclave::new(EnclaveConfig {
+            debug_mode: true,
+            ..Default::default()
+        });
+        enclave.initialize().unwrap();
+
+        let error = service.initialize(&enclave).unwrap_err();
+        assert!(matches!(error, DcapError::QuoteGenerationFailed(_)));
+    }
+
+    #[test]
+    fn test_hardware_mode_rejects_disabled_certificate_verification() {
+        let error = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            verify_certificate_chain: false,
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, DcapError::ConfigurationError(_)));
+        assert!(error.to_string().contains("verify_certificate_chain=true"));
+    }
+
+    #[test]
+    fn test_hardware_mode_rejects_implicit_test_environment() {
+        let error = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            use_test_environment: true,
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, DcapError::ConfigurationError(_)));
+        assert!(error.to_string().contains("use_test_environment=true"));
+    }
+
+    #[test]
     fn test_attestation_report() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1330,7 +1441,7 @@ mod tests {
 
         // 使用白名单创建服务（测试使用模拟 Quote，因此使用 simulation_mode: true）
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             allowed_mrenclaves: vec![mrenclave],
             ..Default::default()
         };
@@ -1358,7 +1469,7 @@ mod tests {
 
         // 使用错误白名单创建服务（测试使用模拟 Quote，因此使用 simulation_mode: true）
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             allowed_mrenclaves: vec![wrong_mrenclave],
             ..Default::default()
         };
@@ -1381,7 +1492,7 @@ mod tests {
     #[test]
     fn test_refresh_quote() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1404,9 +1515,87 @@ mod tests {
     }
 
     #[test]
+    fn test_register_with_pcs_hardware_mode_fails_closed() {
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let quote = DcapQuote {
+            version: 3,
+            sign_type: 2,
+            epid_group_id: 0,
+            qe_svn: 1,
+            pce_svn: 1,
+            xeid: 0,
+            basename: [0u8; 32],
+            report_body: DcapReportBody {
+                cpusvn: [0u8; 16],
+                miscselect: 0,
+                reserved1: [0u8; 12],
+                isvextprodid: [0u8; 16],
+                attributes: [0u8; 16],
+                mrenclave: [0x42u8; 32],
+                reserved2: [0u8; 32],
+                mrsigner: [0x24u8; 32],
+                reserved3: [0u8; 96],
+                isvprodid: 1,
+                isvsvn: 1,
+                reserved4: [0u8; 60],
+                report_data: ReportData::empty(),
+            },
+            signature_len: 0,
+            signature: DcapQuoteSignature {
+                isv_enclave_report_signature: EcdsaSignatureDcap::new([0u8; 32], [0u8; 32]),
+                qe_report: Vec::new(),
+                qe_report_signature: EcdsaSignatureDcap::new([0u8; 32], [0u8; 32]),
+                qe_authentication_data: Vec::new(),
+                qe_certification_data: Vec::new(),
+            },
+            timestamp: current_timestamp(),
+        };
+
+        let error = service.register_with_pcs(&quote).unwrap_err();
+        assert!(matches!(error, DcapError::PcsCommunicationFailed(_)));
+    }
+
+    #[test]
+    fn test_verify_attestation_hardware_mode_fails_closed() {
+        let simulation_service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Simulation,
+            allowed_mrenclaves: vec![[0x42u8; 32]],
+            ..Default::default()
+        })
+        .unwrap();
+
+        let mut enclave = Enclave::new(EnclaveConfig {
+            debug_mode: true,
+            ..Default::default()
+        });
+        enclave.initialize().unwrap();
+        simulation_service.initialize(&enclave).unwrap();
+
+        let quote = simulation_service.get_current_quote().unwrap();
+        let quote_bytes = simulation_service.quote_to_bytes(&quote).unwrap();
+
+        let verifier = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            allowed_mrenclaves: vec![quote.report_body.mrenclave],
+            allowed_mrsigners: vec![quote.report_body.mrsigner],
+            ..Default::default()
+        })
+        .unwrap();
+
+        let error = verifier.verify_attestation(&quote_bytes, None).unwrap_err();
+        assert!(matches!(error, DcapError::QuoteVerificationFailed(_)));
+        assert!(error.to_string().contains("fail-closed"));
+    }
+
+    #[test]
     fn test_allow_mrenclave_mrsigner() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let mut service = DcapService::new(config).unwrap();

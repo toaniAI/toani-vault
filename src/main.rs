@@ -8,6 +8,8 @@
 //! - `CREDBRIDGE_PORT` - 服务器端口 (默认: 8080)
 //! - `CREDBRIDGE_HOST` - 服务器主机 (默认: 0.0.0.0)
 //! - `CREDBRIDGE_ENV` - 运行环境 (development/production, 默认: development)
+//! - `TEE_MODE` - TEE 运行模式 (`hardware`/`simulation`, 默认: hardware)
+//! - `TEE_DEBUG` - 是否启用 TEE 调试模式
 //! - `RUST_LOG` - 日志级别 (默认: info)
 //! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - 速率限制请求数/窗口 (默认: 100)
 //! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - 速率限制窗口（秒）(默认: 60)
@@ -42,9 +44,10 @@ use vault_service::api::{
     token_blacklist::create_token_store,
 };
 use vault_service::audit::MemoryAuditStorage;
+use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
 use vault_service::crypto::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
-use vault_service::tee::{Enclave, EnclaveConfig};
+use vault_service::tee::{Enclave, EnclaveConfig, validate_runtime_requirements};
 use vault_service::tenant::{
     MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
 };
@@ -97,6 +100,7 @@ struct ServerConfig {
     host: String,
     port: u16,
     environment: Environment,
+    tee_runtime: TeeRuntimeConfig,
     log_level: String,
     storage_backend: StorageBackendKind,
 }
@@ -189,8 +193,8 @@ fn resolve_storage_backend(config: &ServerConfig) -> Result<StorageBackendKind, 
 
 impl ServerConfig {
     /// 从环境变量加载配置
-    fn from_env() -> Self {
-        Self {
+    fn from_env() -> Result<Self, ConfigError> {
+        Ok(Self {
             host: env::var("CREDBRIDGE_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("CREDBRIDGE_PORT")
                 .ok()
@@ -199,9 +203,10 @@ impl ServerConfig {
             environment: Environment::from_str(
                 &env::var("CREDBRIDGE_ENV").unwrap_or_else(|_| "development".to_string()),
             ),
+            tee_runtime: TeeRuntimeConfig::from_env()?,
             log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
             storage_backend: StorageBackendKind::from_env(),
-        }
+        })
     }
 
     fn socket_addr(&self) -> SocketAddr {
@@ -227,7 +232,7 @@ struct AppState {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 加载配置
-    let config = ServerConfig::from_env();
+    let config = ServerConfig::from_env()?;
 
     // 初始化日志
     init_logging(&config);
@@ -240,6 +245,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("");
     info!("🚀 正在启动 HTTP 服务器...");
     info!("📍 环境: {}", config.environment.as_str());
+    info!("🔐 TEE 模式: {}", config.tee_runtime.mode);
     info!("🌐 地址: http://{}:{}", config.host, config.port);
     info!("🗄️  存储后端: {}", config.storage_backend.as_str());
 
@@ -298,17 +304,16 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化 TEE Enclave"
     );
+    let tee_capabilities = validate_runtime_requirements(&config.tee_runtime)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     let enclave_config = EnclaveConfig {
-        debug_mode: config.environment == Environment::Development,
+        debug_mode: config.tee_runtime.debug_mode,
         ..Default::default()
     };
     let mut enclave = Enclave::new(enclave_config);
     enclave.initialize()?;
-    let tee_boot_profile = if config.environment == Environment::Development {
-        "simulation"
-    } else {
-        "hardware_expected"
-    };
+    let tee_boot_profile = config.tee_runtime.mode.as_str();
+    let tee_effective_mode = config.tee_runtime.mode.as_str();
     let tee_enclave_running = enclave.is_running();
     let tee_mrenclave_hex = if tee_enclave_running {
         hex::encode(enclave.mrenclave())
@@ -319,7 +324,10 @@ async fn initialize_app_state(
         module = "enclave",
         status = "ready",
         tee_initialized = tee_enclave_running,
-        tee_boot_mode = tee_boot_profile,
+        tee_requested_mode = tee_boot_profile,
+        tee_effective_mode = tee_effective_mode,
+        tee_detected_type = tee_capabilities.detected_type.description(),
+        tee_remote_attestation_available = tee_capabilities.remote_attestation_available,
         mrenclave = %tee_mrenclave_hex,
         "TEE Enclave 初始化完成"
     );
@@ -331,12 +339,16 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化密钥层次结构"
     );
-    let l0 = HardwareRootKey::for_simulation()?;
+    let l0 = HardwareRootKey::for_runtime_mode(config.tee_runtime.mode)?;
+    let root_key_source = l0.source();
     let mut hierarchy = KeyHierarchy::new();
     let _l1_handle = hierarchy.initialize_master_key(&l0)?;
     info!(
         module = "key_hierarchy",
         status = "ready",
+        requested_mode = tee_boot_profile,
+        effective_mode = tee_effective_mode,
+        root_key_source = root_key_source.as_str(),
         "密钥层次结构就绪 (L0 -> L1)"
     );
 
@@ -379,7 +391,9 @@ async fn initialize_app_state(
     info!(
         event = "CREDBRIDGE_TEE_OPS_READY",
         tee_enclave_running = tee_enclave_running,
-        tee_boot_profile = tee_boot_profile,
+        requested_mode = tee_boot_profile,
+        effective_mode = tee_effective_mode,
+        root_key_source = root_key_source.as_str(),
         mrenclave = %tee_mrenclave_hex,
         storage_backend = config.storage_backend.as_str(),
         "TEE 已就绪，凭证业务加密路径已绑定 Enclave"
@@ -434,20 +448,23 @@ async fn initialize_app_state(
         "开始初始化 Attestation API"
     );
     let attestation_state = match init_attestation_api(AttestationApiConfig {
-        simulation_mode: config.environment == Environment::Development,
+        tee_runtime: config.tee_runtime.clone(),
+        root_key_source: root_key_source.as_str().to_string(),
         ..Default::default()
     }) {
         Ok(state) => {
             info!(
                 module = "attestation",
                 status = "ready",
+                requested_mode = tee_boot_profile,
+                effective_mode = tee_effective_mode,
+                root_key_source = root_key_source.as_str(),
                 "Attestation API 就绪"
             );
             Some(state)
         }
         Err(e) => {
-            warn!(module = "attestation", status = "skipped", error = %e, "Attestation API 初始化失败，跳过");
-            None
+            return Err(std::io::Error::other(format!("Attestation API 初始化失败: {e}")).into());
         }
     };
 
@@ -813,8 +830,8 @@ async fn health_check_detail(Extension(state): Extension<AppState>) -> impl Into
 
     // 检查各个组件状态
     let vault_status = "healthy";
-    let enclave_status = if state.config.environment == Environment::Development {
-        "simulation_mode"
+    let enclave_status = if state.config.tee_runtime.is_simulation() {
+        "simulation"
     } else {
         "healthy"
     };
@@ -866,7 +883,7 @@ fn demonstrate_key_hierarchy() -> Result<(), Box<dyn std::error::Error>> {
 
     // 从 L0 派生 L1
     println!("[Step 2] 从 L0 派生 L1 Enclave Master Key");
-    let l0 = HardwareRootKey::for_simulation()?;
+    let l0 = HardwareRootKey::for_runtime_mode(TeeRuntimeMode::Simulation)?;
     let mut hierarchy = KeyHierarchy::new();
     let l1_handle = hierarchy.initialize_master_key(&l0)?;
     println!("  ✓ L1 Master Key 句柄: {}", hex_encode(&l1_handle[..8]));

@@ -19,12 +19,15 @@
 //! POST /api/v1/attestation/refresh        - 刷新 Quote
 //! ```
 
+use crate::config::TeeRuntimeConfig;
 use crate::tee::{
+    TeeCapabilities,
     attestation::AttestationService,
     challenge::{ChallengeMetadata, ChallengeProtocol, ChallengeResponse, ProverProtocol},
-    dcap::{DcapConfig, DcapService, INTEL_PCS_BASE_URL_PROD, INTEL_PCS_BASE_URL_TEST},
+    dcap::{DcapConfig, DcapService},
     enclave::{Enclave, EnclaveConfig},
     quote::QuoteSerializer,
+    validate_runtime_requirements,
 };
 use axum::{
     Router,
@@ -48,6 +51,9 @@ pub struct AttestationState {
 
     /// 服务配置
     config: AttestationApiConfig,
+
+    /// 运行时能力探测结果
+    tee_capabilities: TeeCapabilities,
 
     /// 挑战-响应协议处理器
     challenge_protocol: Arc<RwLock<ChallengeProtocol>>,
@@ -78,6 +84,7 @@ impl Clone for AttestationState {
             dcap_service: Arc::clone(&self.dcap_service),
             enclave: Arc::clone(&self.enclave),
             config: self.config.clone(),
+            tee_capabilities: self.tee_capabilities.clone(),
             challenge_protocol: Arc::clone(&self.challenge_protocol),
             prover_protocol: Arc::clone(&self.prover_protocol),
             attestation_service: Arc::clone(&self.attestation_service),
@@ -88,8 +95,11 @@ impl Clone for AttestationState {
 /// API 配置
 #[derive(Debug, Clone)]
 pub struct AttestationApiConfig {
-    /// 是否启用模拟模式
-    pub simulation_mode: bool,
+    /// TEE 运行时配置
+    pub tee_runtime: TeeRuntimeConfig,
+
+    /// 当前进程实际使用的 L0 根密钥来源
+    pub root_key_source: String,
 
     /// 是否需要 API 密钥
     pub require_api_key: bool,
@@ -104,7 +114,8 @@ pub struct AttestationApiConfig {
 impl Default for AttestationApiConfig {
     fn default() -> Self {
         Self {
-            simulation_mode: false,
+            tee_runtime: TeeRuntimeConfig::hardware(),
+            root_key_source: "unknown".to_string(),
             require_api_key: false,
             quote_max_age: 3600,
             enable_pcs_registration: true,
@@ -239,6 +250,12 @@ pub struct VerifyChallengeResponseResult {
 pub struct AttestationStatusResponse {
     pub success: bool,
     pub status: String,
+    pub requested_mode: String,
+    pub effective_mode: String,
+    pub root_key_source: String,
+    pub detected_type: String,
+    pub hardware_available: bool,
+    pub remote_attestation_available: bool,
     pub enclave_state: String,
     pub mrenclave: String,
     pub mrsigner: String,
@@ -262,6 +279,17 @@ pub enum ApiAttestationStatus {
     Uninitialized,
 }
 
+impl ApiAttestationStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            ApiAttestationStatus::Authenticated => "authenticated",
+            ApiAttestationStatus::PendingVerification => "pending_verification",
+            ApiAttestationStatus::Expired => "expired",
+            ApiAttestationStatus::Uninitialized => "uninitialized",
+        }
+    }
+}
+
 /// 刷新响应
 #[derive(Debug, Serialize)]
 pub struct RefreshResponse {
@@ -275,6 +303,10 @@ pub struct RefreshResponse {
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: String,
+    pub requested_mode: String,
+    pub effective_mode: String,
+    pub root_key_source: String,
+    pub detected_type: String,
     pub enclave_state: String,
     pub dcap_version: String,
     pub quote_valid: bool,
@@ -751,6 +783,18 @@ async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> i
                 Json(AttestationStatusResponse {
                     success: false,
                     status: "error".to_string(),
+                    requested_mode: state.config.tee_runtime.mode.to_string(),
+                    effective_mode: state.config.tee_runtime.mode.to_string(),
+                    root_key_source: state.config.root_key_source.clone(),
+                    detected_type: state
+                        .tee_capabilities
+                        .detected_type
+                        .description()
+                        .to_string(),
+                    hardware_available: state.tee_capabilities.hardware_available,
+                    remote_attestation_available: state
+                        .tee_capabilities
+                        .remote_attestation_available,
                     enclave_state: "unknown".to_string(),
                     mrenclave: String::new(),
                     mrsigner: String::new(),
@@ -771,6 +815,18 @@ async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> i
                 Json(AttestationStatusResponse {
                     success: false,
                     status: "error".to_string(),
+                    requested_mode: state.config.tee_runtime.mode.to_string(),
+                    effective_mode: state.config.tee_runtime.mode.to_string(),
+                    root_key_source: state.config.root_key_source.clone(),
+                    detected_type: state
+                        .tee_capabilities
+                        .detected_type
+                        .description()
+                        .to_string(),
+                    hardware_available: state.tee_capabilities.hardware_available,
+                    remote_attestation_available: state
+                        .tee_capabilities
+                        .remote_attestation_available,
                     enclave_state: "unknown".to_string(),
                     mrenclave: String::new(),
                     mrsigner: String::new(),
@@ -819,7 +875,17 @@ async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> i
         StatusCode::OK,
         Json(AttestationStatusResponse {
             success: true,
-            status: format!("{status:?}").to_lowercase(),
+            status: status.as_str().to_string(),
+            requested_mode: state.config.tee_runtime.mode.to_string(),
+            effective_mode: state.config.tee_runtime.mode.to_string(),
+            root_key_source: state.config.root_key_source.clone(),
+            detected_type: state
+                .tee_capabilities
+                .detected_type
+                .description()
+                .to_string(),
+            hardware_available: state.tee_capabilities.hardware_available,
+            remote_attestation_available: state.tee_capabilities.remote_attestation_available,
             enclave_state,
             mrenclave,
             mrsigner,
@@ -920,6 +986,14 @@ async fn health_check(State(state): State<Arc<AttestationState>>) -> impl IntoRe
         StatusCode::OK,
         Json(HealthResponse {
             status: "healthy".to_string(),
+            requested_mode: state.config.tee_runtime.mode.to_string(),
+            effective_mode: state.config.tee_runtime.mode.to_string(),
+            root_key_source: state.config.root_key_source.clone(),
+            detected_type: state
+                .tee_capabilities
+                .detected_type
+                .description()
+                .to_string(),
             enclave_state,
             dcap_version: "1.0.0".to_string(),
             quote_valid,
@@ -963,11 +1037,28 @@ fn current_timestamp() -> u64 {
 ///
 /// 创建并初始化认证状态
 pub fn init_attestation_api(
-    config: AttestationApiConfig,
+    mut config: AttestationApiConfig,
 ) -> Result<Arc<AttestationState>, AttestationInitError> {
+    if config.root_key_source.is_empty() {
+        config.root_key_source = if config.tee_runtime.is_simulation() {
+            "simulation".to_string()
+        } else {
+            "unknown".to_string()
+        };
+    }
+
+    if config.tee_runtime.is_hardware() && config.root_key_source == "simulation" {
+        return Err(AttestationInitError::ConfigurationError(
+            "TEE_MODE=hardware requested, but attestation API was configured with a simulation root key source".to_string(),
+        ));
+    }
+
+    let tee_capabilities = validate_runtime_requirements(&config.tee_runtime)
+        .map_err(|e| AttestationInitError::ConfigurationError(e.to_string()))?;
+
     // 创建 Enclave
     let enclave_config = EnclaveConfig {
-        debug_mode: config.simulation_mode,
+        debug_mode: config.tee_runtime.debug_mode,
         ..Default::default()
     };
 
@@ -977,15 +1068,7 @@ pub fn init_attestation_api(
         .map_err(|e| AttestationInitError::EnclaveError(e.to_string()))?;
 
     // 创建 DCAP 服务
-    let dcap_config = DcapConfig {
-        simulation_mode: config.simulation_mode,
-        pcs_base_url: if config.simulation_mode {
-            INTEL_PCS_BASE_URL_TEST.to_string()
-        } else {
-            INTEL_PCS_BASE_URL_PROD.to_string()
-        },
-        ..Default::default()
-    };
+    let dcap_config = DcapConfig::from_runtime(&config.tee_runtime);
 
     let dcap_service = DcapService::new(dcap_config)
         .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
@@ -996,7 +1079,7 @@ pub fn init_attestation_api(
         .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
 
     // 创建认证服务
-    let attestation_service = AttestationService::new().allow_simulation(config.simulation_mode);
+    let attestation_service = AttestationService::new(config.tee_runtime.mode);
 
     // 创建挑战-响应协议处理器
     let challenge_protocol =
@@ -1009,6 +1092,7 @@ pub fn init_attestation_api(
         dcap_service: Arc::new(RwLock::new(dcap_service)),
         enclave: Arc::new(RwLock::new(enclave)),
         config,
+        tee_capabilities,
         challenge_protocol: Arc::new(RwLock::new(challenge_protocol)),
         prover_protocol: Arc::new(RwLock::new(prover_protocol)),
         attestation_service: Arc::new(RwLock::new(attestation_service)),
@@ -1040,6 +1124,7 @@ impl std::error::Error for AttestationInitError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TeeRuntimeMode;
 
     #[test]
     fn test_generate_challenge() {
@@ -1063,7 +1148,7 @@ mod tests {
     #[test]
     fn test_attestation_api_config_default() {
         let config = AttestationApiConfig::default();
-        assert!(!config.simulation_mode);
+        assert_eq!(config.tee_runtime.mode, TeeRuntimeMode::Hardware);
         assert!(!config.require_api_key);
         assert_eq!(config.quote_max_age, 3600);
         assert!(config.enable_pcs_registration);
@@ -1073,6 +1158,10 @@ mod tests {
     fn test_health_response() {
         let response = HealthResponse {
             status: "healthy".to_string(),
+            requested_mode: "simulation".to_string(),
+            effective_mode: "simulation".to_string(),
+            root_key_source: "simulation".to_string(),
+            detected_type: "Software Simulation".to_string(),
             enclave_state: "running".to_string(),
             dcap_version: "1.0.0".to_string(),
             quote_valid: true,
@@ -1080,5 +1169,17 @@ mod tests {
 
         assert_eq!(response.status, "healthy");
         assert!(response.quote_valid);
+    }
+
+    #[test]
+    fn test_init_attestation_api_hardware_mode_fails_closed() {
+        let error = init_attestation_api(AttestationApiConfig::default()).unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("TEE_MODE=hardware")
+                || message.contains("real SGX DCAP quote generation"),
+            "unexpected error: {message}"
+        );
     }
 }

@@ -2,7 +2,11 @@
 #![allow(dead_code)]
 #![allow(clippy::uninlined_format_args)]
 
-//! 远程认证协议集成测试
+//! Simulation-safe 远程认证协议集成测试
+//!
+//! 本文件显式使用 `AttestationService::for_simulation()` 覆盖协议语义、
+//! 测量值白名单和重放防护；不要求真实 SGX/DCAP/AESM。
+//! 真正的 hardware-only 验证见 `tests/sgx_hardware_tests.rs`。
 //!
 //! 测试 SGX DCAP 远程认证协议的完整流程，包括：
 //! - Quote 生成和验证
@@ -11,6 +15,7 @@
 //! - 测量值白名单验证
 //! - 重放攻击防护
 
+use vault_service::config::TeeRuntimeMode;
 use vault_service::tee::attestation::{
     AttestationResult, AttestationService, AttestationSession, AttestationState, EcdsaSignature,
     Quote, ReportBody, ReportData, SGX_MEASUREMENT_LEN, SGX_REPORT_DATA_LEN,
@@ -34,8 +39,7 @@ fn test_quote_generation_and_verification() {
     enclave.initialize().expect("Enclave initialization failed");
 
     // 创建认证服务
-    let service = AttestationService::new()
-        .allow_simulation(true)
+    let service = AttestationService::for_simulation()
         .allow_mrenclave(enclave.mrenclave())
         .allow_mrsigner(enclave.mrsigner());
 
@@ -71,7 +75,7 @@ fn test_quote_with_wrong_challenge_fails() {
     let mut enclave = Enclave::new(config);
     enclave.initialize().unwrap();
 
-    let service = AttestationService::new().allow_simulation(true);
+    let service = AttestationService::for_simulation();
 
     let challenge = generate_test_challenge();
     let quote = service.generate_quote(&enclave, &challenge).unwrap();
@@ -90,7 +94,7 @@ fn test_quote_serialization_roundtrip() {
     let mut enclave = Enclave::new(config);
     enclave.initialize().unwrap();
 
-    let service = AttestationService::new().allow_simulation(true);
+    let service = AttestationService::for_simulation();
     let challenge = generate_test_challenge();
 
     let quote = service.generate_quote(&enclave, &challenge).unwrap();
@@ -110,6 +114,27 @@ fn test_quote_serialization_roundtrip() {
     );
 }
 
+/// 这是 simulation-safe 负向测试：显式请求 hardware，但当前实现必须拒绝模拟回退。
+#[test]
+fn test_hardware_mode_quote_generation_fails_closed_without_real_quote_backend() {
+    let config = EnclaveConfig::default();
+    let mut enclave = Enclave::new(config);
+    enclave.initialize().unwrap();
+
+    let service = AttestationService::new(TeeRuntimeMode::Hardware);
+    let challenge = generate_test_challenge();
+    let error = service
+        .generate_quote(&enclave, &challenge)
+        .expect_err("hardware mode must not fall back to simulated quotes");
+
+    assert!(
+        error
+            .to_string()
+            .contains("refusing simulated quote generation"),
+        "unexpected error: {error}"
+    );
+}
+
 // ============ 测量值白名单测试 ============
 
 #[test]
@@ -119,9 +144,7 @@ fn test_measurement_whitelist_accept() {
     enclave.initialize().unwrap();
 
     // 使用白名单模式（测试使用模拟签名，因此允许模拟模式）
-    let service = AttestationService::new()
-        .allow_simulation(true)
-        .allow_mrenclave(enclave.mrenclave());
+    let service = AttestationService::for_simulation().allow_mrenclave(enclave.mrenclave());
 
     let challenge = generate_test_challenge();
     let quote = service.generate_quote(&enclave, &challenge).unwrap();
@@ -143,9 +166,7 @@ fn test_measurement_whitelist_reject() {
 
     // 使用错误的白名单
     let wrong_mrenclave = [0x99u8; SGX_MEASUREMENT_LEN];
-    let service = AttestationService::new()
-        .allow_simulation(false)
-        .allow_mrenclave(wrong_mrenclave);
+    let service = AttestationService::for_simulation().allow_mrenclave(wrong_mrenclave);
 
     let challenge = generate_test_challenge();
     let quote = service.generate_quote(&enclave, &challenge).unwrap();
@@ -163,9 +184,7 @@ fn test_mrsigner_whitelist_accept() {
     enclave.initialize().unwrap();
 
     // 使用白名单模式（测试使用模拟签名，因此允许模拟模式）
-    let service = AttestationService::new()
-        .allow_simulation(true)
-        .allow_mrsigner(enclave.mrsigner());
+    let service = AttestationService::for_simulation().allow_mrsigner(enclave.mrsigner());
 
     let challenge = generate_test_challenge();
     let quote = service.generate_quote(&enclave, &challenge).unwrap();
@@ -186,9 +205,8 @@ fn test_challenge_response_full_flow() {
     enclave.initialize().unwrap();
 
     // 设置认证服务
-    let attestation_service = AttestationService::new()
-        .allow_simulation(true)
-        .allow_mrenclave(enclave.mrenclave());
+    let attestation_service =
+        AttestationService::for_simulation().allow_mrenclave(enclave.mrenclave());
 
     // 创建 Verifier 和 Prover
     let verifier = ChallengeProtocol::new(attestation_service.clone());
@@ -218,7 +236,7 @@ fn test_challenge_expiration() {
     let mut enclave = Enclave::new(config);
     enclave.initialize().unwrap();
 
-    let attestation_service = AttestationService::new().allow_simulation(true);
+    let attestation_service = AttestationService::for_simulation();
     let verifier = ChallengeProtocol::new(attestation_service.clone()).with_ttl(1); // 1秒过期
     let prover = ProverProtocol::new(attestation_service);
 
@@ -245,7 +263,7 @@ fn test_challenge_replay_protection() {
     let mut enclave = Enclave::new(config);
     enclave.initialize().unwrap();
 
-    let attestation_service = AttestationService::new().allow_simulation(true);
+    let attestation_service = AttestationService::for_simulation();
     let verifier = ChallengeProtocol::new(attestation_service.clone());
     let prover = ProverProtocol::new(attestation_service);
 
@@ -269,7 +287,7 @@ fn test_challenge_replay_protection() {
 
 #[test]
 fn test_concurrent_challenges() {
-    let attestation_service = AttestationService::new();
+    let attestation_service = AttestationService::for_simulation();
     let verifier = ChallengeProtocol::new(attestation_service).with_max_challenges(100);
 
     // 创建多个挑战
@@ -433,7 +451,7 @@ fn test_invalid_state_transitions() {
 
 #[test]
 fn test_challenge_cleanup() {
-    let attestation_service = AttestationService::new();
+    let attestation_service = AttestationService::for_simulation();
     let verifier = ChallengeProtocol::new(attestation_service);
 
     // 创建挑战
@@ -451,7 +469,7 @@ fn test_challenge_cleanup() {
 
 #[test]
 fn test_challenge_limit_enforcement() {
-    let attestation_service = AttestationService::new();
+    let attestation_service = AttestationService::for_simulation();
     let verifier = ChallengeProtocol::new(attestation_service).with_max_challenges(3);
 
     // 创建 3 个挑战

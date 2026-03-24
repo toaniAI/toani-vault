@@ -1499,7 +1499,24 @@ CredBridge 提供 DCAP (Data Center Attestation Primitives) 远程认证 API，�
 | GET | `/api/v1/attestation/report` | 获取认证报告 | `health:read` |
 | POST | `/api/v1/attestation/challenge` | 创建认证挑战 | `health:read` |
 | POST | `/api/v1/attestation/refresh` | 刷新 Quote | `health:read` |
+| GET | `/api/v1/attestation/status` | 获取认证状态与模式可观测性字段 | `health:read` |
 | GET | `/api/v1/attestation/health` | 健康检查 | `health:read` |
+
+### TEE 运行模式选择
+
+CredBridge 不再根据“开发环境/生产环境”隐式推断 TEE 运行模式；请始终通过 `TEE_MODE` 显式选择：
+
+```bash
+# 真实 SGX/DCAP 路径
+TEE_MODE=hardware cargo run
+
+# 显式模拟路径
+TEE_MODE=simulation cargo run
+```
+
+- 只有在显式设置 `TEE_MODE=simulation` 时，状态接口中的模拟标记才会出现，例如 `requested_mode="simulation"`、`effective_mode="simulation"`，以及健康检查中的 `components.enclave="simulation_mode"`。
+- 当 `TEE_MODE=hardware` 但 SGX/DCAP/AESM/PCCS(或 Intel PCS) 等真实能力未接通时，初始化会 fail-closed，不会静默回退到 simulation。
+- 默认 CI 只运行 simulation-safe 测试；hardware-only 测试在专用 SGX runner 或 staging 环境执行。
 
 ### 快速开始
 
@@ -1510,9 +1527,11 @@ use vault_service::tee::{
     dcap::{DcapConfig, DcapService, INTEL_PCS_BASE_URL_PROD},
     enclave::{Enclave, EnclaveConfig},
 };
+use vault_service::config::TeeRuntimeMode;
 
 // 创建 DCAP 配置
 let dcap_config = DcapConfig {
+    runtime_mode: TeeRuntimeMode::Hardware,
     pcs_base_url: INTEL_PCS_BASE_URL_PROD.to_string(),
     api_key: Some("your_intel_pcs_api_key".to_string()),
     quote_max_age_seconds: 3600,
@@ -1520,7 +1539,6 @@ let dcap_config = DcapConfig {
     allowed_mrenclaves: vec![
         hex::decode("expected_mrenclave_hex").unwrap().try_into().unwrap(),
     ],
-    simulation_mode: false,  // 生产环境设为 false
     ..Default::default()
 };
 
@@ -1659,23 +1677,38 @@ service.allow_mrsigner(expected_mrsigner);
 let result = service.verify_attestation(&quote_bytes, None);
 ```
 
-### 模拟模式（开发测试）
+### 显式 simulation 模式
 
 ```rust
+use vault_service::config::TeeRuntimeMode;
 use vault_service::tee::dcap::DcapConfig;
 
-// 创建模拟模式的 DCAP 服务
 let config = DcapConfig {
-    simulation_mode: true,
+    runtime_mode: TeeRuntimeMode::Simulation,
     ..Default::default()
 };
 let service = DcapService::new(config)?;
 ```
 
-在模拟模式下：
+在显式 `TEE_MODE=simulation` 下：
 - 跳过 Intel PCS 注册
 - 使用模拟的证书链
-- 适用于没有 SGX 硬件的开发环境
+- 状态接口会暴露 simulation 相关标记
+
+#### 状态接口示例
+
+```json
+{
+  "success": true,
+  "status": "authenticated",
+  "requested_mode": "simulation",
+  "effective_mode": "simulation",
+  "root_key_source": "simulation",
+  "detected_type": "simulation"
+}
+```
+
+显式 `TEE_MODE=hardware` 时，上述模拟标记不应出现；如果真实 SGX/DCAP 能力缺失，服务会直接初始化失败。
 
 ### DCAP 配置
 
@@ -1706,7 +1739,7 @@ Error: KeyInitializationFailed("Sealing key unavailable")
 **解决方案**:
 - 检查 SGX 驱动是否正确安装
 - 确认 `/dev/sgx_enclave` 存在且有访问权限
-- 使用模拟模式进行开发和测试
+- 显式设置 `TEE_MODE=simulation` 再进行本地开发/测试
 
 ### 解密失败
 

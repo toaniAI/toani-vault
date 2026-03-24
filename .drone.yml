@@ -8,8 +8,8 @@ trigger:
       - refs/heads/branch_dev
       - refs/heads/branch_test
   event:
-    # 临时禁用：使用 cron 事件触发，避免正常 push/PR 自动运行
-    # 需要恢复时把 event 改回 push/pull_request
+    # 当前该测试流水线仅接受 cron 触发，不会随普通 push/PR 自动运行
+    # 如需恢复普通提交触发，再把 event 改回 push/pull_request
     - cron
   paths:
     exclude:
@@ -49,7 +49,7 @@ steps:
       - rustup component add clippy
       - cargo clippy --tests -- -D warnings
 
-  - name: unit-tests
+  - name: simulation-safe-tests
     image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     depends_on:
@@ -57,9 +57,39 @@ steps:
       - rust-clippy
     environment:
       REDIS_URL: redis://redis:6379
+      TEE_MODE: simulation
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
       - cargo test
+
+---
+kind: pipeline
+type: docker
+name: backend-hardware-attestation
+
+trigger:
+  event:
+    - cron
+  cron:
+    - hardware-attestation
+  paths:
+    include:
+      - src/**
+      - tests/**
+      - .drone.yml
+
+node:
+  tee_runner: sgx
+
+steps:
+  - name: hardware-only-tests
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
+    environment:
+      TEE_MODE: hardware
+    commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
+      - cargo test --test sgx_hardware_tests -- --ignored --test-threads=1
 
 ---
 kind: pipeline

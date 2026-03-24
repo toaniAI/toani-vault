@@ -4,7 +4,7 @@
 
 use axum::{
     extract::State,
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
 use std::sync::Arc;
@@ -106,7 +106,11 @@ mod tests {
 
         // 当身份验证禁用时，任何请求都应该通过
         assert!(validate_metrics_access(None, "192.168.1.1", &config));
-        assert!(validate_metrics_access(Some("invalid"), "192.168.1.1", &config));
+        assert!(validate_metrics_access(
+            Some("invalid"),
+            "192.168.1.1",
+            &config
+        ));
     }
 
     #[test]
