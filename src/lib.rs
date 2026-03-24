@@ -61,6 +61,7 @@ pub use vault::{
         check_vault_health,
     },
     client::{VaultClientError, VaultConfig, VaultCredentialData, VaultKvClient},
+    postgres::{PostgresBackendError, PostgresStorageBackend},
 };
 
 // 重新导出审计模块

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Pre-Commit Requirements (Mandatory)
 
@@ -153,12 +153,12 @@ Tests in `tests/` are organized by domain and use `[[test]]` entries in `Cargo.t
 
 ## MetaBot Workspace
 
-This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs Claude Code with full tool access.
+This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs Codex with full tool access.
 
 ### /metaskill — AI Agent Team Generator
 
 ```
-/metaskill ios app          → generates full .claude/ agent team
+/metaskill ios app          → generates full .Codex/ agent team
 /metaskill a security agent → creates a single agent
 /metaskill a deploy skill   → creates a custom slash command
 ```
