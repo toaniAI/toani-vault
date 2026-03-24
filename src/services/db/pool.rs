@@ -225,10 +225,9 @@ impl DatabasePool {
             .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
-        // 在事务中设置 RLS 上下文
+        // 在事务中设置 RLS 上下文（每条 SET LOCAL 单独执行，避免多语句 prepared query）
         let sql = rls_context.to_sql_transaction_local();
-        sqlx::query(&sql)
-            .execute(&mut *tx)
+        execute_pg_script_tx(&mut tx, &sql)
             .await
             .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
 
@@ -251,8 +250,7 @@ impl DatabasePool {
         rls_context: &R,
     ) -> Result<(), DatabaseError> {
         let sql = rls_context.to_sql_transaction_local();
-        sqlx::query(&sql)
-            .execute(&mut **tx)
+        execute_pg_script_tx(tx, &sql)
             .await
             .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
         Ok(())
@@ -300,10 +298,12 @@ impl DatabasePool {
         &self,
         conn: &mut PoolConnection<Postgres>,
     ) -> Result<(), DatabaseError> {
-        sqlx::query("RESET app.current_tenant_id; RESET app.current_user_id; RESET app.current_scopes; RESET app.is_admin")
-            .execute(&mut **conn)
-            .await
-            .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
+        execute_pg_script_conn(
+            conn,
+            "RESET app.current_tenant_id; RESET app.current_user_id; RESET app.current_scopes; RESET app.is_admin",
+        )
+        .await
+        .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
         Ok(())
     }
 
@@ -339,6 +339,48 @@ pub struct RlsStatus {
     pub tables_with_rls: Vec<String>,
     /// 强制 RLS 的表（包括表所有者）
     pub forced_tables: Vec<String>,
+}
+
+/// 按分号拆分并逐条执行（PostgreSQL 扩展查询协议下，单个 prepared statement 不能包含多条命令）。
+pub(crate) async fn execute_pg_script_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+/// 在连接池上逐条执行分号分隔的脚本。
+pub(crate) async fn execute_pg_script_pool(pool: &PgPool, script: &str) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(pool).await?;
+    }
+    Ok(())
+}
+
+/// 在池化连接上逐条执行分号分隔的脚本。
+pub(crate) async fn execute_pg_script_conn(
+    conn: &mut PoolConnection<Postgres>,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(&mut **conn).await?;
+    }
+    Ok(())
 }
 
 impl RlsStatus {

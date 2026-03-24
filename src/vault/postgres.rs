@@ -6,7 +6,7 @@ use super::models::*;
 use super::storage::StorageBackend;
 use super::version::CredentialVersion;
 use crate::models::{CredentialMetadata, CredentialType};
-use crate::services::db::pool::DatabaseError;
+use crate::services::db::pool::{DatabaseError, execute_pg_script_pool};
 use crate::services::db::{DatabaseConfig, DatabasePool};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -122,13 +122,11 @@ impl PostgresStorageBackend {
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
-        sqlx::query(&credentials_sql)
-            .execute(self.db.pool())
+        execute_pg_script_pool(self.db.pool(), &credentials_sql)
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
-        sqlx::query(&versions_sql)
-            .execute(self.db.pool())
+        execute_pg_script_pool(self.db.pool(), &versions_sql)
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 

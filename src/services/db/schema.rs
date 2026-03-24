@@ -3,7 +3,7 @@
 //! 提供多租户 Schema 的创建、管理和删除功能。
 //! 使用 Schema-per-Tenant 模式实现数据隔离。
 
-use super::pool::{DatabaseError, DatabasePool};
+use super::pool::{DatabaseError, DatabasePool, execute_pg_script_tx};
 
 /// Schema 管理器
 pub struct SchemaManager {
@@ -168,9 +168,8 @@ impl SchemaManager {
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to set search_path: {e}")))?;
 
-        // 创建表结构
-        sqlx::query(TENANT_SCHEMA_SQL)
-            .execute(&mut *tx)
+        // 创建表结构（多语句必须逐条执行，不能塞进单个 prepared statement）
+        execute_pg_script_tx(&mut tx, TENANT_SCHEMA_SQL)
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {e}")))?;
 
@@ -204,8 +203,7 @@ impl SchemaManager {
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
         // 创建默认角色
-        sqlx::query(DEFAULT_ROLES_SQL)
-            .execute(&mut *tx)
+        execute_pg_script_tx(&mut tx, DEFAULT_ROLES_SQL)
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to create roles: {e}")))?;
 
