@@ -500,9 +500,9 @@ impl DcapService {
         if !self.config.simulation_mode {
             // 实际环境中向 Intel PCS 注册
             // 这里仅模拟
-            log::info!("DCAP service initialized in production mode");
+            tracing::info!("DCAP service initialized in production mode");
         } else {
-            log::info!("DCAP service initialized in simulation mode");
+            tracing::info!("DCAP service initialized in simulation mode");
         }
 
         Ok(quote)
@@ -622,7 +622,7 @@ impl DcapService {
     /// 在实际生产环境中，这将调用 Intel PCS API
     pub fn register_with_pcs(&self, _quote: &DcapQuote) -> Result<String, DcapError> {
         if self.config.simulation_mode {
-            log::info!("Skipping PCS registration in simulation mode");
+            tracing::info!("Skipping PCS registration in simulation mode");
             return Ok("simulated-pcs-id".to_string());
         }
 
@@ -632,7 +632,7 @@ impl DcapService {
         // 3. 获取 PCK 证书
         // 4. 存储证书用于后续验证
 
-        log::info!("Registering with Intel PCS...");
+        tracing::info!("Registering with Intel PCS...");
         Ok("pcs-registration-id".to_string())
     }
 

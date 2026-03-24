@@ -4140,7 +4140,6 @@ dependencies = [
  "http-body-util",
  "image",
  "libc",
- "log",
  "once_cell",
  "orion",
  "pasetors",

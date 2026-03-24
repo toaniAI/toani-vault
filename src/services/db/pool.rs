@@ -150,6 +150,13 @@ impl DatabasePool {
     pub async fn new(config: DatabaseConfig) -> Result<Self, DatabaseError> {
         config.validate()?;
 
+        tracing::info!(
+            max_connections = config.max_connections,
+            min_connections = config.min_connections,
+            connect_timeout_s = config.connect_timeout,
+            "creating database connection pool"
+        );
+
         let pool = PgPoolOptions::new()
             .max_connections(config.max_connections)
             .min_connections(config.min_connections)
@@ -157,8 +164,12 @@ impl DatabasePool {
             .idle_timeout(Some(Duration::from_secs(config.idle_timeout)))
             .connect(&config.url)
             .await
-            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "database connection pool creation failed");
+                DatabaseError::ConnectionFailed(e.to_string())
+            })?;
 
+        tracing::info!("database connection pool created successfully");
         Ok(Self { pool, config })
     }
 
@@ -183,7 +194,10 @@ impl DatabasePool {
         sqlx::query("SELECT 1")
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "database health check failed");
+                DatabaseError::ConnectionFailed(e.to_string())
+            })?;
         Ok(())
     }
 
@@ -218,18 +232,26 @@ impl DatabasePool {
         &self,
         rls_context: &R,
     ) -> Result<sqlx::Transaction<'_, Postgres>, DatabaseError> {
-        // 开启事务
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
+        tracing::debug!(
+            tenant_id = rls_context.tenant_id(),
+            user_id = rls_context.user_id(),
+            "acquiring connection with RLS context"
+        );
 
-        // 在事务中设置 RLS 上下文（每条 SET LOCAL 单独执行，避免多语句 prepared query）
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            tracing::error!(error = %e, "failed to begin transaction for RLS");
+            DatabaseError::TransactionError(e.to_string())
+        })?;
+
         let sql = rls_context.to_sql_transaction_local();
-        execute_pg_script_tx(&mut tx, &sql)
-            .await
-            .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
+        execute_pg_script_tx(&mut tx, &sql).await.map_err(|e| {
+            tracing::error!(
+                tenant_id = rls_context.tenant_id(),
+                error = %e,
+                "failed to set RLS context in transaction"
+            );
+            DatabaseError::RlsContextError(e.to_string())
+        })?;
 
         Ok(tx)
     }

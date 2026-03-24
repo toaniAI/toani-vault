@@ -170,7 +170,10 @@ impl RedisTokenStore {
         self.client
             .get_multiplexed_async_connection()
             .await
-            .map_err(|e| TokenStoreError::ConnectionError(e.to_string()))
+            .map_err(|e| {
+                tracing::error!(error = %e, "Redis connection failed");
+                TokenStoreError::ConnectionError(e.to_string())
+            })
     }
 
     /// 存储新 Token 到 Redis
@@ -191,6 +194,7 @@ impl RedisTokenStore {
     /// # 返回值
     /// - `Ok(())`: 存储成功
     /// - `Err(TokenStoreError)`: 存储失败
+    #[tracing::instrument(skip(self, scope), fields(operation = "store_token"))]
     pub async fn store_token(
         &self,
         tenant_id: &str,
@@ -268,6 +272,7 @@ impl RedisTokenStore {
     /// - `Ok(true)`: Token 已被撤销
     /// - `Ok(false)`: Token 未被撤销
     /// - `Err(TokenStoreError)`: 查询失败
+    #[tracing::instrument(skip(self), fields(operation = "is_revoked"))]
     pub async fn is_revoked(&self, tenant_id: &str, jti: &str) -> Result<bool, TokenStoreError> {
         let mut conn = self.get_connection().await?;
         let revoked_key = keys::revoked_tokens_key(tenant_id);
@@ -290,6 +295,7 @@ impl RedisTokenStore {
     /// # 返回值
     /// - `Ok(())`: 撤销成功
     /// - `Err(TokenStoreError)`: 撤销失败
+    #[tracing::instrument(skip(self), fields(operation = "revoke_token"))]
     pub async fn revoke_token(&self, tenant_id: &str, jti: &str) -> Result<(), TokenStoreError> {
         let mut conn = self.get_connection().await?;
 
@@ -361,6 +367,7 @@ impl RedisTokenStore {
     /// - `Ok(Some(TokenMetadata))`: 找到元数据
     /// - `Ok(None)`: 元数据不存在
     /// - `Err(TokenStoreError)`: 查询失败
+    #[tracing::instrument(skip(self), fields(operation = "get_metadata"))]
     pub async fn get_metadata(&self, jti: &str) -> Result<Option<TokenMetadata>, TokenStoreError> {
         let mut conn = self.get_connection().await?;
         let metadata_key = keys::token_metadata_key(jti);
@@ -381,6 +388,7 @@ impl RedisTokenStore {
     ///
     /// # 参数
     /// - `tenant_id`: 租户 ID
+    #[tracing::instrument(skip(self), fields(operation = "get_active_count"))]
     pub async fn get_active_count(&self, tenant_id: &str) -> Result<u64, TokenStoreError> {
         let mut conn = self.get_connection().await?;
         let active_key = keys::active_tokens_key(tenant_id);
@@ -393,6 +401,7 @@ impl RedisTokenStore {
     ///
     /// # 参数
     /// - `tenant_id`: 租户 ID
+    #[tracing::instrument(skip(self), fields(operation = "get_revoked_count"))]
     pub async fn get_revoked_count(&self, tenant_id: &str) -> Result<u64, TokenStoreError> {
         let mut conn = self.get_connection().await?;
         let revoked_key = keys::revoked_tokens_key(tenant_id);
@@ -407,6 +416,7 @@ impl RedisTokenStore {
     ///
     /// # 参数
     /// - `tenant_id`: 租户 ID
+    #[tracing::instrument(skip(self), fields(operation = "cleanup_expired"))]
     pub async fn cleanup_expired(&self, tenant_id: &str) -> Result<u64, TokenStoreError> {
         let mut conn = self.get_connection().await?;
         let active_key = keys::active_tokens_key(tenant_id);

@@ -117,7 +117,7 @@ impl AuditLogger for DefaultAuditLogger {
         jti: &str,
         mrenclave: &str,
     ) {
-        log::info!(
+        tracing::info!(
             "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
@@ -130,7 +130,7 @@ impl AuditLogger for DefaultAuditLogger {
         jti: &str,
         mrenclave: &str,
     ) {
-        log::info!(
+        tracing::info!(
             "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
@@ -143,7 +143,7 @@ impl AuditLogger for DefaultAuditLogger {
         jti: &str,
         mrenclave: &str,
     ) {
-        log::info!(
+        tracing::info!(
             "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
@@ -157,7 +157,7 @@ impl AuditLogger for DefaultAuditLogger {
         jti: &str,
         mrenclave: &str,
     ) {
-        log::info!(
+        tracing::info!(
             "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}, jti: {jti}, mrenclave: {mrenclave}"
         );
     }
@@ -211,11 +211,11 @@ impl StorageAuditLogger {
                 .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
 
                 if let Err(e) = storage.record(entry) {
-                    log::warn!("[AUDIT] 存储审计日志失败：{e:?}");
+                    tracing::warn!("[AUDIT] 存储审计日志失败：{e:?}");
                 }
             }
             Err(_) => {
-                log::warn!(
+                tracing::warn!(
                     "[AUDIT-DROP] Lock contention: credential={credential_id}, action={action:?}, user={user_id}"
                 );
             }
@@ -233,7 +233,7 @@ impl AuditLogger for StorageAuditLogger {
         mrenclave: &str,
     ) {
         // 打印到控制台
-        log::info!(
+        tracing::info!(
             "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
 
@@ -257,7 +257,7 @@ impl AuditLogger for StorageAuditLogger {
         mrenclave: &str,
     ) {
         // 打印到控制台
-        log::info!(
+        tracing::info!(
             "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
 
@@ -281,7 +281,7 @@ impl AuditLogger for StorageAuditLogger {
         mrenclave: &str,
     ) {
         // 打印到控制台
-        log::info!(
+        tracing::info!(
             "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
         );
 
@@ -306,7 +306,7 @@ impl AuditLogger for StorageAuditLogger {
         mrenclave: &str,
     ) {
         // 打印到控制台
-        log::info!(
+        tracing::info!(
             "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}"
         );
 
@@ -353,6 +353,12 @@ impl IntoResponse for ApiError {
             "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
+
+        if status.is_server_error() {
+            tracing::error!(error_code = %self.error, message = %self.message, status = status.as_u16(), "credential API server error");
+        } else if status.is_client_error() {
+            tracing::warn!(error_code = %self.error, message = %self.message, status = status.as_u16(), "credential API client error");
+        }
 
         (status, Json(json!(self))).into_response()
     }

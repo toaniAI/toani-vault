@@ -9,6 +9,7 @@ pub mod auth;
 pub mod context;
 pub mod credentials;
 pub mod i18n;
+pub mod logging_middleware;
 pub mod middleware;
 pub mod rate_limit;
 pub mod response;

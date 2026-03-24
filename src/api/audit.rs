@@ -665,7 +665,7 @@ pub async fn verify_audit_log(
     // 2. 验证签名（Ed25519，与 AuditRecorder::record 签名数据格式一致）
     // 首先检查公钥是否为空，如果为空则返回错误
     let signature_valid = if state.verifier_public_key.is_empty() {
-        log::warn!("[AUDIT-VERIFY] 公钥未配置，无法验证签名");
+        tracing::warn!("[AUDIT-VERIFY] 公钥未配置，无法验证签名");
         // 公钥未配置，签名验证跳过
         false
     } else {

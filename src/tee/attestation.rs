@@ -938,10 +938,10 @@ impl AttestationService {
         // - 模拟模式下允许（内部生成的模拟 Quote 使用 SHA-256 哈希填充签名）
         // - 非模拟模式下拒绝（fail-closed），生产部署必须通过 with_verifier_key() 配置公钥
         if self.allow_simulation {
-            log::warn!("[ATTESTATION] 未配置验证者公钥，模拟模式允许通过");
+            tracing::warn!("[ATTESTATION] 未配置验证者公钥，模拟模式允许通过");
             return Ok(());
         }
-        log::error!("[ATTESTATION] 未配置验证者公钥，拒绝非零签名（fail-closed）");
+        tracing::error!("[ATTESTATION] 未配置验证者公钥，拒绝非零签名（fail-closed）");
         Err(AttestationError::SignatureVerificationFailed)
     }
 }

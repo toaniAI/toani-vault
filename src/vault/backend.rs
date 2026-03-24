@@ -100,9 +100,10 @@ impl VaultStorageBackend {
         F: std::future::Future<Output = Result<T, VaultClientError>>,
     {
         tokio::task::block_in_place(|| {
-            self.runtime_handle
-                .block_on(future)
-                .map_err(VaultBackendError::ClientError)
+            self.runtime_handle.block_on(future).map_err(|e| {
+                tracing::error!(error = %e, "Vault backend async operation failed");
+                VaultBackendError::ClientError(e)
+            })
         })
     }
 

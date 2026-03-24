@@ -197,7 +197,7 @@ pub async fn cross_tenant_check_middleware(request: Request, next: Next) -> Resp
 /// 租户隔离错误响应
 impl IntoResponse for TenantIsolationError {
     fn into_response(self) -> Response {
-        let (status, _code, message) = match &self {
+        let (status, code, message) = match &self {
             TenantIsolationError::CrossTenantAccessDenied { requested, actual } => (
                 StatusCode::FORBIDDEN,
                 "CROSS_TENANT_ACCESS_DENIED",
@@ -219,6 +219,8 @@ impl IntoResponse for TenantIsolationError {
                 format!("租户未激活: {id}"),
             ),
         };
+
+        tracing::warn!(error_code = code, message = %message, status = status.as_u16(), "tenant isolation error");
 
         let response =
             CrossTenantErrorResponse::new(format!("req_{}", uuid::Uuid::now_v7()), message);

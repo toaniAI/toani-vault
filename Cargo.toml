@@ -42,9 +42,6 @@ zeroize = { version = "1.8", features = ["derive"] }
 # 密码哈希
 bcrypt = "0.15"
 
-# 日志
-log = "0.4"
-
 # 错误处理
 thiserror = "1.0"
 

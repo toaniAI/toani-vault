@@ -168,7 +168,7 @@ impl AuthApiState {
         );
 
         if let Err(error) = storage.lock().await.record(entry) {
-            log::warn!("[AUDIT] Token validation audit record failed: {error:?}");
+            tracing::warn!("[AUDIT] Token validation audit record failed: {error:?}");
         }
     }
 
@@ -200,7 +200,7 @@ impl AuthApiState {
         );
 
         if let Err(error) = storage.lock().await.record(entry) {
-            log::warn!("[AUDIT] Token issue audit record failed: {error:?}");
+            tracing::warn!("[AUDIT] Token issue audit record failed: {error:?}");
         }
     }
 

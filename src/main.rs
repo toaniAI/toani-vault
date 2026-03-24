@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::{self, TraceLayer};
-use tracing::{Level, info};
+use tracing::{Level, info, warn};
 
 // CredBridge 内部模块
 use vault_service::api::{
@@ -276,84 +276,134 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 初始化日志系统
 fn init_logging(config: &ServerConfig) {
-    let level = match config.log_level.to_lowercase().as_str() {
-        "trace" => Level::TRACE,
-        "debug" => Level::DEBUG,
-        "warn" => Level::WARN,
-        "error" => Level::ERROR,
-        _ => Level::INFO,
-    };
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&config.log_level));
 
-    // 使用简单的日志初始化
-    eprintln!("[INFO] 初始化日志系统，级别: {level:?}");
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
 }
 
 /// 初始化应用状态
 async fn initialize_app_state(
     config: &ServerConfig,
 ) -> Result<AppState, Box<dyn std::error::Error>> {
-    // 初始化 Enclave
+    // --- Enclave ---
+    info!(
+        module = "enclave",
+        status = "initializing",
+        "开始初始化 TEE Enclave"
+    );
     let enclave_config = EnclaveConfig {
         debug_mode: config.environment == Environment::Development,
         ..Default::default()
     };
     let mut enclave = Enclave::new(enclave_config);
     enclave.initialize()?;
+    let tee_boot_profile = if config.environment == Environment::Development {
+        "simulation"
+    } else {
+        "hardware_expected"
+    };
+    let tee_enclave_running = enclave.is_running();
+    let tee_mrenclave_hex = if tee_enclave_running {
+        hex::encode(enclave.mrenclave())
+    } else {
+        "unavailable".to_string()
+    };
     info!(
-        tee_initialized = enclave.is_running(),
-        tee_boot_mode = if config.environment == Environment::Development {
-            "simulation"
-        } else {
-            "hardware_expected"
-        },
-        "TEE enclave initialized during service startup"
-    );
-    info!(
-        tee_runtime_mode = "tee_enforced",
-        "Credential API core encryption/decryption flows are configured to use the enclave path"
+        module = "enclave",
+        status = "ready",
+        tee_initialized = tee_enclave_running,
+        tee_boot_mode = tee_boot_profile,
+        mrenclave = %tee_mrenclave_hex,
+        "TEE Enclave 初始化完成"
     );
     let shared_enclave = Arc::new(tokio::sync::Mutex::new(enclave));
 
-    // 初始化 L0 密钥（模拟模式）
+    // --- Key Hierarchy ---
+    info!(
+        module = "key_hierarchy",
+        status = "initializing",
+        "开始初始化密钥层次结构"
+    );
     let l0 = HardwareRootKey::for_simulation()?;
-
-    // 初始化密钥层次结构
     let mut hierarchy = KeyHierarchy::new();
     let _l1_handle = hierarchy.initialize_master_key(&l0)?;
+    info!(
+        module = "key_hierarchy",
+        status = "ready",
+        "密钥层次结构就绪 (L0 -> L1)"
+    );
 
-    // 初始化凭证存储后端
+    // --- Storage Backend ---
+    info!(
+        module = "storage",
+        status = "initializing",
+        backend = config.storage_backend.as_str(),
+        "开始初始化凭证存储后端"
+    );
     let vault = Arc::new(build_credential_vault(config).await?);
+    info!(
+        module = "storage",
+        status = "ready",
+        backend = config.storage_backend.as_str(),
+        "凭证存储后端就绪"
+    );
 
-    // 初始化审计日志存储（使用共享的 Arc，让凭证 API 和审计 API 共享同一个存储）
+    // --- Audit ---
+    info!(
+        module = "audit",
+        status = "initializing",
+        "开始初始化审计日志存储"
+    );
     let audit_storage = Arc::new(tokio::sync::Mutex::new(
         MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {e:?}"))?,
     ));
-
-    // 创建存储适配器用于审计 API 查询
     let audit_storage_adapter =
         MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
-
-    // 创建存储审计日志记录器用于凭证 API 写入
     let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage.clone()));
+    info!(module = "audit", status = "ready", "审计日志存储就绪");
 
-    // 创建凭证 API 状态
     let credential_state = CredentialAppState {
         vault,
         key_hierarchy: Arc::new(RwLock::new(hierarchy)),
         enclave: shared_enclave,
-        audit_logger, // 现在写入到共享存储
+        audit_logger,
     };
 
-    // 创建审计 API 状态
+    info!(
+        event = "CREDBRIDGE_TEE_OPS_READY",
+        tee_enclave_running = tee_enclave_running,
+        tee_boot_profile = tee_boot_profile,
+        mrenclave = %tee_mrenclave_hex,
+        storage_backend = config.storage_backend.as_str(),
+        "TEE 已就绪，凭证业务加密路径已绑定 Enclave"
+    );
+
+    // --- Auth ---
+    info!(
+        module = "auth",
+        status = "initializing",
+        "开始初始化认证模块"
+    );
     let audit_state = AuditApiState {
-        storage: Arc::new(audit_storage_adapter), // 从共享存储查询
-        verifier_public_key: vec![],              // 空向量：未配置公钥时签名验证 fail-closed
+        storage: Arc::new(audit_storage_adapter),
+        verifier_public_key: vec![],
     };
-
-    // 创建认证 API 状态
     let auth_state = AuthApiState::with_audit_storage(audit_storage.clone());
+    info!(module = "auth", status = "ready", "认证模块就绪");
 
-    // 初始化租户配置存储
+    // --- Tenant ---
+    info!(
+        module = "tenant",
+        status = "initializing",
+        "开始初始化租户配置"
+    );
     let tenant_store = MemoryTenantConfigStore::new();
     let mut default_tenant_config = vault_service::tenant::TenantConfig::default();
     default_tenant_config.settings.language = "zh-CN".to_string();
@@ -365,31 +415,55 @@ async fn initialize_app_state(
         )
         .await
         .map_err(|e| format!("初始化默认租户配置失败: {e}"))?;
+    info!(module = "tenant", status = "ready", "租户配置就绪");
 
-    // 初始化速率限制状态
+    // --- Rate Limit ---
+    info!(
+        module = "rate_limit",
+        status = "initializing",
+        "开始初始化速率限制"
+    );
     let rate_limit_config = RateLimitConfig::from_env();
     let rate_limit_state = RateLimitState::new(rate_limit_config);
+    info!(module = "rate_limit", status = "ready", "速率限制就绪");
 
-    // 初始化 Attestation API（在开发模式下使用模拟模式）
+    // --- Attestation ---
+    info!(
+        module = "attestation",
+        status = "initializing",
+        "开始初始化 Attestation API"
+    );
     let attestation_state = match init_attestation_api(AttestationApiConfig {
         simulation_mode: config.environment == Environment::Development,
         ..Default::default()
     }) {
-        Ok(state) => Some(state),
+        Ok(state) => {
+            info!(
+                module = "attestation",
+                status = "ready",
+                "Attestation API 就绪"
+            );
+            Some(state)
+        }
         Err(e) => {
-            eprintln!("[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {e}");
+            warn!(module = "attestation", status = "skipped", error = %e, "Attestation API 初始化失败，跳过");
             None
         }
     };
 
-    // 初始化沙箱 API（可选）
+    // --- Sandbox ---
+    info!(
+        module = "sandbox",
+        status = "initializing",
+        "开始初始化沙箱 API"
+    );
     let sandbox_state = match initialize_sandbox_state().await {
         Ok(state) => {
-            info!("✅ 沙箱 API 初始化成功");
+            info!(module = "sandbox", status = "ready", "沙箱 API 就绪");
             Some(state)
         }
         Err(e) => {
-            eprintln!("[WARN] 沙箱 API 初始化失败（将跳过沙箱路由）: {e}");
+            warn!(module = "sandbox", status = "skipped", error = %e, "沙箱 API 初始化失败，跳过");
             None
         }
     };
@@ -467,11 +541,15 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         .layer(rate_limit_layer)
         // 全局 CORS
         .layer(cors)
-        // 全局追踪
+        // 请求/响应日志拦截器（最外层，覆盖所有请求）
+        .layer(axum::middleware::from_fn(
+            vault_service::api::logging_middleware::request_logging_middleware,
+        ))
+        // 全局追踪（span 生命周期）
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::DEBUG))
+                .on_response(trace::DefaultOnResponse::new().level(Level::DEBUG)),
         )
         // 添加速率限制状态扩展
         .layer(Extension(app_state.rate_limit_state.clone()))

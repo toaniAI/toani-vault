@@ -78,6 +78,11 @@ impl RateLimitError {
 
 impl IntoResponse for RateLimitError {
     fn into_response(self) -> Response {
+        tracing::warn!(
+            retry_after = self.retry_after_seconds,
+            "rate limit exceeded"
+        );
+
         (
             StatusCode::TOO_MANY_REQUESTS,
             [(

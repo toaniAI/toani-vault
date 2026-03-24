@@ -159,6 +159,8 @@ impl IntoResponse for AuthError {
             _ => StatusCode::UNAUTHORIZED,
         };
 
+        tracing::warn!(error_code = %self.error, message = %self.message, status = status.as_u16(), "auth error");
+
         let locale = self.locale.clone();
         let mut response = (status, Json(json!(self))).into_response();
         set_content_language(response.headers_mut(), &locale);

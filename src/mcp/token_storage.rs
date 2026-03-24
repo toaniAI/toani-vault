@@ -298,7 +298,7 @@ impl TokenCleanupHandle {
         let metadata_cache = self.metadata_cache.read().await;
         self.stats.update_token_count(metadata_cache.len());
 
-        log::debug!("Token removed from cleanup task: {token_id}");
+        tracing::debug!("Token removed from cleanup task: {token_id}");
         Ok(())
     }
 }
@@ -350,10 +350,12 @@ impl McpTokenStorage {
             use security_framework::os::macos::keychain::SecKeychain;
             match SecKeychain::default() {
                 Ok(_) => {
-                    log::info!("Keychain initialized successfully");
+                    tracing::info!("Keychain initialized successfully");
                 }
                 Err(e) => {
-                    log::warn!("Failed to access keychain: {e}. Falling back to memory storage");
+                    tracing::warn!(
+                        "Failed to access keychain: {e}. Falling back to memory storage"
+                    );
                     return Err(TokenStorageError::EncryptionError(format!(
                         "Keychain access failed: {e}"
                     )));
@@ -363,7 +365,7 @@ impl McpTokenStorage {
 
         #[cfg(not(target_os = "macos"))]
         {
-            log::warn!("Keychain storage only supported on macOS. Using memory storage.");
+            tracing::warn!("Keychain storage only supported on macOS. Using memory storage.");
         }
 
         self.keychain_initialized.store(1, Ordering::SeqCst);
@@ -700,11 +702,13 @@ impl McpTokenStorage {
 
             match set_generic_password(service_name, account_name, &full_data) {
                 Ok(_) => {
-                    log::debug!("Token saved to keychain: {token_id}");
+                    tracing::debug!("Token saved to keychain: {token_id}");
                     Ok(())
                 }
                 Err(e) => {
-                    log::warn!("Failed to save to keychain: {e}. Falling back to memory storage");
+                    tracing::warn!(
+                        "Failed to save to keychain: {e}. Falling back to memory storage"
+                    );
                     Ok(())
                 }
             }
@@ -712,7 +716,9 @@ impl McpTokenStorage {
 
         #[cfg(not(target_os = "macos"))]
         {
-            log::debug!("Keychain storage not available on this platform. Using memory storage.");
+            tracing::debug!(
+                "Keychain storage not available on this platform. Using memory storage."
+            );
             Ok(())
         }
     }
@@ -729,11 +735,11 @@ impl McpTokenStorage {
 
             match delete_generic_password(service_name, account_name) {
                 Ok(_) => {
-                    log::debug!("Token deleted from keychain: {token_id}");
+                    tracing::debug!("Token deleted from keychain: {token_id}");
                     Ok(())
                 }
                 Err(e) => {
-                    log::warn!("Failed to delete from keychain: {e}");
+                    tracing::warn!("Failed to delete from keychain: {e}");
                     // 如果不存在，不视为错误
                     Ok(())
                 }

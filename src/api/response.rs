@@ -222,10 +222,15 @@ impl ApiErrorResponse {
 impl IntoResponse for ApiErrorResponse {
     fn into_response(self) -> Response {
         let locale = self.locale.clone();
-        // 根据错误代码获取状态码
         let status = ErrorCode::from_string(&self.error)
             .map(|c| c.http_status())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+        if status.is_server_error() {
+            tracing::error!(error_code = %self.error, message = %self.message, status = status.as_u16(), "API server error");
+        } else if status.is_client_error() {
+            tracing::warn!(error_code = %self.error, message = %self.message, status = status.as_u16(), "API client error");
+        }
 
         let mut response = (status, Json(json!(self))).into_response();
         set_content_language(response.headers_mut(), &locale);
