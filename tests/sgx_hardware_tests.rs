@@ -34,6 +34,7 @@ use vault_service::tee::{
     dcap::DcapService, enclave::Enclave, enclave::EnclaveConfig, enclave::EnclaveState,
     sealing::SealPolicy, sealing::SealingService,
 };
+use vault_service::vault::models::UserId;
 
 // ============================================================================
 // HW-001: SGX 硬件基础验证
@@ -466,15 +467,16 @@ fn test_key_hierarchy_hardware() {
 
     // 2. 使用 L2 密钥加密
     let plaintext = b"Secret credential data for hardware test";
+    let user_hash = UserId::new("user_1").hash().to_string();
     let blob = enclave
-        .encrypt_credential("tenant_1", "user_1", "cred_1", plaintext)
+        .encrypt_credential("tenant_1", &user_hash, "cred_1", plaintext)
         .expect("加密失败");
 
     println!("加密成功，密文大小：{} 字节", blob.ciphertext.len());
 
     // 3. 使用相同密钥解密
     let decrypted = enclave
-        .decrypt_credential("tenant_1", "user_1", "cred_1", &blob)
+        .decrypt_credential("tenant_1", &user_hash, "cred_1", &blob)
         .expect("解密失败");
 
     println!("解密成功");
@@ -482,7 +484,7 @@ fn test_key_hierarchy_hardware() {
 
     // 4. 验证不同租户产生不同密文
     let blob_tenant2 = enclave
-        .encrypt_credential("tenant_2", "user_1", "cred_1", plaintext)
+        .encrypt_credential("tenant_2", &user_hash, "cred_1", plaintext)
         .expect("加密失败");
 
     println!("租户 2 加密成功");

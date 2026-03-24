@@ -8,9 +8,8 @@
 //! - DELETE /api/v1/credentials/:id - 删除凭证
 
 use crate::api::middleware::{TokenScope, ValidatedToken, require_any_scope, require_scope};
-use crate::crypto::cipher::{EncryptedBlob, decrypt_credential, encrypt_credential};
 use crate::crypto::hkdf::KeyHierarchy;
-use crate::crypto::keys::KeyPurpose;
+use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
 use crate::models::{CredentialMetadata, CredentialType};
 use crate::tee::Enclave;
 use crate::vault::models::{
@@ -44,10 +43,11 @@ pub struct AppState {
     pub audit_logger: Arc<dyn AuditLogger>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct TeeRuntimeSnapshot {
     enclave_initialized: bool,
     execution_mode: &'static str,
+    mrenclave_label: String,
 }
 
 async fn tee_runtime_snapshot(state: &AppState) -> TeeRuntimeSnapshot {
@@ -55,7 +55,16 @@ async fn tee_runtime_snapshot(state: &AppState) -> TeeRuntimeSnapshot {
 
     TeeRuntimeSnapshot {
         enclave_initialized: enclave.is_running(),
-        execution_mode: "software_fallback",
+        execution_mode: if enclave.is_running() {
+            "tee_enforced"
+        } else {
+            "software_fallback"
+        },
+        mrenclave_label: if enclave.is_running() {
+            hex::encode(enclave.mrenclave())
+        } else {
+            "software_mode".to_string()
+        },
     }
 }
 
@@ -462,13 +471,13 @@ pub async fn create_credential(
         .create_credential_with_id(create_request, encrypted_payload, credential_id)
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
 
-    // 记录审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
+    let tee_snapshot = tee_runtime_snapshot(&state).await;
     state.audit_logger.log_credential_created(
         &token.tenant_id,
         &token.user_id,
         entry.credential_id.as_str(),
         &token.token_id,
-        "software_mode",
+        &tee_snapshot.mrenclave_label,
     );
 
     let response = CreateCredentialResponse {
@@ -496,41 +505,32 @@ async fn encrypt_credential_in_tee(
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
     let tee_snapshot = tee_runtime_snapshot(state).await;
-    warn!(
-        tenant_id,
-        credential_id = credential_id.as_str(),
-        enclave_initialized = tee_snapshot.enclave_initialized,
-        tee_runtime_mode = tee_snapshot.execution_mode,
-        "encrypt_credential_in_tee is still using software key hierarchy/cipher path; enclave is attached for later cutover"
-    );
-
-    // 序列化明文
     let plaintext_bytes =
         serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {e}"))?;
-
-    // 派生 L3 密钥
-    // 使用 user_id.hash() 保持与解密流程一致
-    let l3_key = {
-        let hierarchy = state.key_hierarchy.write().await;
-        let l2_key = hierarchy
-            .derive_user_vault_key(tenant_id, user_id.hash())
-            .map_err(|e| format!("L2 密钥派生失败: {e}"))?;
-
-        // 使用预生成的 credential_id 派生密钥，确保与存储的 ID 一致
-        hierarchy
-            .derive_credential_key(
-                &l2_key,
+    let context = CredentialCryptoContext::new(tenant_id, user_id.hash(), credential_id.as_str());
+    let blob = if tee_snapshot.enclave_initialized {
+        let mut enclave = state.enclave.lock().await;
+        enclave
+            .encrypt_credential(
+                tenant_id,
+                user_id.hash(),
                 credential_id.as_str(),
-                KeyPurpose::CredentialEncryption,
+                &plaintext_bytes,
             )
-            .map_err(|e| format!("L3 密钥派生失败: {e}"))?
-    };
+            .map_err(|e| format!("TEE 加密失败: {e}"))?
+    } else {
+        warn!(
+            tenant_id,
+            credential_id = credential_id.as_str(),
+            tee_runtime_mode = tee_snapshot.execution_mode,
+            "TEE 不可用，create credential 回退到软件密钥路径"
+        );
 
-    // 执行加密
-    // 使用 user_id.hash() 构建 AAD，与解密流程一致
-    let aad = format!("{}:{}", tenant_id, user_id.hash());
-    let blob = encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
-        .map_err(|e| format!("加密失败: {e}"))?;
+        let hierarchy = state.key_hierarchy.read().await;
+        context
+            .encrypt_with_hierarchy(&hierarchy, &plaintext_bytes)
+            .map_err(|e| format!("软件路径加密失败: {e}"))?
+    };
 
     Ok(EncryptedPayload::from_blob(&blob))
 }
@@ -701,7 +701,7 @@ pub async fn decrypt_credential_endpoint(
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
-    // 在 TEE 内解密密文，记录审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
+    let tee_snapshot = tee_runtime_snapshot(&state).await;
     let plaintext_bytes = match decrypt_credential_in_tee(&state, &entry).await {
         Ok(data) => {
             state.audit_logger.log_decryption_attempt(
@@ -710,7 +710,7 @@ pub async fn decrypt_credential_endpoint(
                 &id,
                 true,
                 &token.token_id,
-                "software_mode",
+                &tee_snapshot.mrenclave_label,
             );
             data
         }
@@ -721,7 +721,7 @@ pub async fn decrypt_credential_endpoint(
                 &id,
                 false,
                 &token.token_id,
-                "software_mode",
+                &tee_snapshot.mrenclave_label,
             );
             return Err(ApiError::new("internal_error", e));
         }
@@ -755,15 +755,6 @@ async fn decrypt_credential_in_tee(
     entry: &VaultEntry,
 ) -> Result<Vec<u8>, String> {
     let tee_snapshot = tee_runtime_snapshot(state).await;
-    warn!(
-        tenant_id = entry.tenant_id.as_str(),
-        credential_id = entry.credential_id.as_str(),
-        enclave_initialized = tee_snapshot.enclave_initialized,
-        tee_runtime_mode = tee_snapshot.execution_mode,
-        "decrypt_credential_in_tee is still using software key hierarchy/cipher path; enclave is attached for later cutover"
-    );
-
-    // 构建 EncryptedBlob
     let blob = EncryptedBlob {
         version: entry.encrypted_payload.version,
         algorithm: entry.encrypted_payload.algorithm.clone(),
@@ -773,30 +764,35 @@ async fn decrypt_credential_in_tee(
         ciphertext: entry.encrypted_payload.ciphertext.clone(),
         aad_hash: None,
     };
+    let context = CredentialCryptoContext::new(
+        entry.tenant_id.as_str(),
+        entry.user_id.hash(),
+        entry.credential_id.as_str(),
+    );
 
-    // 派生 L3 密钥
-    let l3_key = {
-        let hierarchy = state.key_hierarchy.write().await;
-        let l2_key = hierarchy
-            .derive_user_vault_key(entry.tenant_id.as_str(), entry.user_id.hash())
-            .map_err(|e| format!("L2 密钥派生失败: {e}"))?;
-
-        // 注意：AES-GCM 是对称加密，解密时使用与加密相同的 KeyPurpose
-        hierarchy
-            .derive_credential_key(
-                &l2_key,
+    if tee_snapshot.enclave_initialized {
+        let mut enclave = state.enclave.lock().await;
+        enclave
+            .decrypt_credential(
+                entry.tenant_id.as_str(),
+                entry.user_id.hash(),
                 entry.credential_id.as_str(),
-                KeyPurpose::CredentialEncryption,
+                &blob,
             )
-            .map_err(|e| format!("L3 密钥派生失败: {e}"))?
-    };
+            .map_err(|e| format!("TEE 解密失败: {e}"))
+    } else {
+        warn!(
+            tenant_id = entry.tenant_id.as_str(),
+            credential_id = entry.credential_id.as_str(),
+            tee_runtime_mode = tee_snapshot.execution_mode,
+            "TEE 不可用，decrypt credential 回退到软件密钥路径"
+        );
 
-    // 执行解密
-    let aad = format!("{}:{}", entry.tenant_id.as_str(), entry.user_id.hash());
-    let plaintext = decrypt_credential(&l3_key, &blob, Some(aad.as_bytes()))
-        .map_err(|e| format!("解密失败: {e:?}"))?;
-
-    Ok(plaintext)
+        let hierarchy = state.key_hierarchy.read().await;
+        context
+            .decrypt_with_hierarchy(&hierarchy, &blob)
+            .map_err(|e| format!("软件路径解密失败: {e}"))
+    }
 }
 
 /// 删除凭证响应
@@ -929,41 +925,32 @@ async fn encrypt_credential_update(
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
     let tee_snapshot = tee_runtime_snapshot(state).await;
-    warn!(
-        tenant_id,
-        credential_id = credential_id.as_str(),
-        enclave_initialized = tee_snapshot.enclave_initialized,
-        tee_runtime_mode = tee_snapshot.execution_mode,
-        "encrypt_credential_update is still using software key hierarchy/cipher path; enclave is attached for later cutover"
-    );
-
-    // 序列化明文
     let plaintext_bytes =
         serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {e}"))?;
-
-    // 派生 L3 密钥
-    // 使用 user_id.hash() 保持与解密流程一致
-    let l3_key = {
-        let hierarchy = state.key_hierarchy.write().await;
-        let l2_key = hierarchy
-            .derive_user_vault_key(tenant_id, user_id.hash())
-            .map_err(|e| format!("L2 密钥派生失败: {e}"))?;
-
-        hierarchy
-            .derive_credential_key(
-                &l2_key,
+    let context = CredentialCryptoContext::new(tenant_id, user_id.hash(), credential_id.as_str());
+    let blob = if tee_snapshot.enclave_initialized {
+        let mut enclave = state.enclave.lock().await;
+        enclave
+            .encrypt_credential(
+                tenant_id,
+                user_id.hash(),
                 credential_id.as_str(),
-                KeyPurpose::CredentialEncryption,
+                &plaintext_bytes,
             )
-            .map_err(|e| format!("L3 密钥派生失败: {e}"))?
-    };
+            .map_err(|e| format!("TEE 更新加密失败: {e}"))?
+    } else {
+        warn!(
+            tenant_id,
+            credential_id = credential_id.as_str(),
+            tee_runtime_mode = tee_snapshot.execution_mode,
+            "TEE 不可用，update credential 回退到软件密钥路径"
+        );
 
-    // 执行加密
-    // 使用 user_id.hash() 构建 AAD，与解密流程一致
-    let aad = format!("{}:{}", tenant_id, user_id.hash());
-    let blob =
-        crate::crypto::cipher::encrypt_credential(&l3_key, &plaintext_bytes, Some(aad.as_bytes()))
-            .map_err(|e| format!("加密失败: {e}"))?;
+        let hierarchy = state.key_hierarchy.read().await;
+        context
+            .encrypt_with_hierarchy(&hierarchy, &plaintext_bytes)
+            .map_err(|e| format!("软件路径更新加密失败: {e}"))?
+    };
 
     Ok(EncryptedPayload::from_blob(&blob))
 }
