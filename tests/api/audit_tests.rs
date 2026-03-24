@@ -189,12 +189,16 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
     let audit_json: Value = serde_json::from_slice(&audit_body).unwrap();
     let items = audit_json["data"]["items"].as_array().unwrap();
     assert_eq!(items.len(), 2);
-    assert!(items.iter().any(|item| {
-        item["action"] == "token_issue" && item["outcome"] == "success"
-    }));
-    assert!(items.iter().any(|item| {
-        item["action"] == "token_validate" && item["outcome"] == "success"
-    }));
+    assert!(
+        items
+            .iter()
+            .any(|item| { item["action"] == "token_issue" && item["outcome"] == "success" })
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| { item["action"] == "token_validate" && item["outcome"] == "success" })
+    );
 }
 
 #[tokio::test]

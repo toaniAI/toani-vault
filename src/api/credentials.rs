@@ -567,7 +567,6 @@ pub async fn list_credentials(
         credential_type,
         include_deleted: false,
         only_valid: query.only_valid.unwrap_or(false),
-        ..Default::default()
     };
 
     let result = state

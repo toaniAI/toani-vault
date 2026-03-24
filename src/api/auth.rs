@@ -808,11 +808,7 @@ pub async fn token_stats_handler(
     locale: ResolvedLocale,
 ) -> Response {
     let active_tokens = state.count_active_tokens_for_tenant(&token.tenant_id).await;
-    let mut response = (
-        StatusCode::OK,
-        Json(TokenStatsResponse { active_tokens }),
-    )
-        .into_response();
+    let mut response = (StatusCode::OK, Json(TokenStatsResponse { active_tokens })).into_response();
     super::i18n::set_content_language(response.headers_mut(), locale.as_str());
     response
 }
@@ -1117,39 +1113,27 @@ mod tests {
         let state = get_test_state();
         let now = now_timestamp();
 
-        state
-            .issued_tokens
-            .write()
-            .await
-            .insert(
-                "token-active".to_string(),
-                IssuedTokenRecord {
-                    tenant_id: "tenant-001".to_string(),
-                    expires_at: now + 300,
-                },
-            );
-        state
-            .issued_tokens
-            .write()
-            .await
-            .insert(
-                "token-expired".to_string(),
-                IssuedTokenRecord {
-                    tenant_id: "tenant-001".to_string(),
-                    expires_at: now.saturating_sub(1),
-                },
-            );
-        state
-            .issued_tokens
-            .write()
-            .await
-            .insert(
-                "token-other-tenant".to_string(),
-                IssuedTokenRecord {
-                    tenant_id: "tenant-002".to_string(),
-                    expires_at: now + 300,
-                },
-            );
+        state.issued_tokens.write().await.insert(
+            "token-active".to_string(),
+            IssuedTokenRecord {
+                tenant_id: "tenant-001".to_string(),
+                expires_at: now + 300,
+            },
+        );
+        state.issued_tokens.write().await.insert(
+            "token-expired".to_string(),
+            IssuedTokenRecord {
+                tenant_id: "tenant-001".to_string(),
+                expires_at: now.saturating_sub(1),
+            },
+        );
+        state.issued_tokens.write().await.insert(
+            "token-other-tenant".to_string(),
+            IssuedTokenRecord {
+                tenant_id: "tenant-002".to_string(),
+                expires_at: now + 300,
+            },
+        );
 
         let response = token_stats_handler(
             State(state.clone()),

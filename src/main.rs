@@ -394,8 +394,8 @@ async fn initialize_app_state(
 async fn build_credential_vault(
     config: &ServerConfig,
 ) -> Result<CredentialVault, Box<dyn std::error::Error>> {
-    let resolved_backend = resolve_storage_backend(config)
-        .map_err(|message| std::io::Error::other(message))?;
+    let resolved_backend =
+        resolve_storage_backend(config).map_err(std::io::Error::other)?;
 
     let backend = match resolved_backend {
         StorageBackendKind::Memory => CredentialVault::new_in_memory(),
