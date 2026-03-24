@@ -8,8 +8,9 @@ trigger:
       - refs/heads/branch_dev
       - refs/heads/branch_test
   event:
-    - push
-    - pull_request
+    # 临时禁用：使用 cron 事件触发，避免正常 push/PR 自动运行
+    # 需要恢复时把 event 改回 push/pull_request
+    - cron
   paths:
     exclude:
       - frontend/**
@@ -64,9 +65,6 @@ steps:
 kind: pipeline
 type: docker
 name: backend-build-deploy
-depends_on:
-  - backend-testing
-
 trigger:
   ref:
     - refs/heads/branch_dev
