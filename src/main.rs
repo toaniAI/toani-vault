@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::{self, TraceLayer};
-use tracing::{Level, info};
+use tracing::{Level, info, warn};
 
 // CredBridge 内部模块
 use vault_service::api::{
@@ -299,6 +299,20 @@ async fn initialize_app_state(
     };
     let mut enclave = Enclave::new(enclave_config);
     enclave.initialize()?;
+    info!(
+        tee_initialized = enclave.is_running(),
+        tee_boot_mode = if config.environment == Environment::Development {
+            "simulation"
+        } else {
+            "hardware_expected"
+        },
+        "TEE enclave initialized during service startup"
+    );
+    warn!(
+        tee_runtime_mode = "software_fallback",
+        "Credential API requests still use the software path; enclave instance is now retained in AppState for cutover"
+    );
+    let shared_enclave = Arc::new(tokio::sync::Mutex::new(enclave));
 
     // 初始化 L0 密钥（模拟模式）
     let l0 = HardwareRootKey::for_simulation()?;
@@ -326,6 +340,7 @@ async fn initialize_app_state(
     let credential_state = CredentialAppState {
         vault,
         key_hierarchy: Arc::new(RwLock::new(hierarchy)),
+        enclave: shared_enclave,
         audit_logger, // 现在写入到共享存储
     };
 

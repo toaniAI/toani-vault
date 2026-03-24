@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 
+use tokio::sync::Mutex;
 use vault_service::api::credentials::{
     AppState, AuditLogger, DefaultAuditLogger, create_credential, decrypt_credential_endpoint,
     delete_credential, get_credential, list_credentials,
@@ -19,6 +20,8 @@ use vault_service::api::credentials::{
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
+use vault_service::crypto::keys::HardwareRootKey;
+use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::vault::models::{
     CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId,
 };
@@ -27,12 +30,25 @@ use vault_service::vault::storage::CredentialVault;
 /// 设置测试状态
 async fn setup_test_state() -> AppState {
     let vault = CredentialVault::new_in_memory();
-    let key_hierarchy = Arc::new(RwLock::new(KeyHierarchy::new()));
+    let mut hierarchy = KeyHierarchy::new();
+    let l0 = HardwareRootKey::for_simulation().expect("failed to create simulation hardware root");
+    hierarchy
+        .initialize_master_key(&l0)
+        .expect("failed to initialize test key hierarchy");
+    let key_hierarchy = Arc::new(RwLock::new(hierarchy));
+    let mut enclave = Enclave::new(EnclaveConfig {
+        debug_mode: true,
+        ..Default::default()
+    });
+    enclave
+        .initialize()
+        .expect("failed to initialize test enclave");
     let audit_logger: Arc<dyn AuditLogger> = Arc::new(DefaultAuditLogger);
 
     AppState {
         vault: Arc::new(vault),
         key_hierarchy,
+        enclave: Arc::new(Mutex::new(enclave)),
         audit_logger,
     }
 }

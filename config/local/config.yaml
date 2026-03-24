@@ -1,0 +1,57 @@
+# CredBridge Local Environment Configuration
+# 本地开发环境配置
+# 此配置文件用于本地开发，连接本地数据库和 Redis
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+# =============================================================================
+# PostgreSQL 数据库配置 (本地访问)
+# 连接地址: 10.11.25.9:15432
+# User: dn
+# Password: dnXcdYxcv56H
+# 建表参考: https://help.aliyun.com/zh/rds/apsaradb-rds-for-postgresql/use-the-timescaledb-extension
+# =============================================================================
+database:
+  url: "postgres://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge"
+  pool_size: 10
+  timeout_seconds: 30
+
+# =============================================================================
+# Redis 缓存配置 (集群外访问)
+# 连接地址: dev-r-n9ehhd6lin7zi5x0jwpd.redis.rds.aliyuncs.com:6379
+# Database: 3
+# =============================================================================
+redis:
+  url: "redis://:devredis@4y93j3Usi@dev-r-n9ehhd6lin7zi5x0jwpd.redis.rds.aliyuncs.com:6379/3"
+  pool_size: 10
+
+# Vault 配置 (本地开发使用模拟或本地 Vault)
+vault:
+  addr: "http://localhost:8200"
+  token: "root"
+  kv_path: "secret/local"
+
+# 日志配置
+log:
+  level: "debug"
+  format: "json"
+
+# 安全配置 (本地开发使用固定值)
+security:
+  jwt_secret: "local-jwt-secret-for-development-only-change-in-production"
+  token_expiry: 3600
+  encryption_key: "local-encryption-key-32bytes-for-dev"
+
+# CORS 配置
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:5173"
+
+# API 限流
+rate_limit:
+  requests_per_minute: 1000
+  burst: 100

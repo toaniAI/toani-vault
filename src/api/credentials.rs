@@ -12,6 +12,7 @@ use crate::crypto::cipher::{EncryptedBlob, decrypt_credential, encrypt_credentia
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::keys::KeyPurpose;
 use crate::models::{CredentialMetadata, CredentialType};
+use crate::tee::Enclave;
 use crate::vault::models::{
     CreateCredentialRequest, CredentialFilter, CredentialId, EncryptedPayload, ServiceId, TenantId,
     UserId, VaultEntry,
@@ -27,7 +28,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
+use tracing::warn;
 
 /// 应用状态
 #[derive(Clone)]
@@ -36,8 +38,25 @@ pub struct AppState {
     pub vault: Arc<CredentialVault>,
     /// 密钥层次结构
     pub key_hierarchy: Arc<RwLock<KeyHierarchy>>,
+    /// 共享 TEE Enclave 实例（已接入状态，待切换实际加解密路径）
+    pub enclave: Arc<Mutex<Enclave>>,
     /// 审计日志记录器
     pub audit_logger: Arc<dyn AuditLogger>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TeeRuntimeSnapshot {
+    enclave_initialized: bool,
+    execution_mode: &'static str,
+}
+
+async fn tee_runtime_snapshot(state: &AppState) -> TeeRuntimeSnapshot {
+    let enclave = state.enclave.lock().await;
+
+    TeeRuntimeSnapshot {
+        enclave_initialized: enclave.is_running(),
+        execution_mode: "software_fallback",
+    }
 }
 
 /// 审计日志记录器 trait
@@ -476,6 +495,15 @@ async fn encrypt_credential_in_tee(
     credential_id: &CredentialId,
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
+    let tee_snapshot = tee_runtime_snapshot(state).await;
+    warn!(
+        tenant_id,
+        credential_id = credential_id.as_str(),
+        enclave_initialized = tee_snapshot.enclave_initialized,
+        tee_runtime_mode = tee_snapshot.execution_mode,
+        "encrypt_credential_in_tee is still using software key hierarchy/cipher path; enclave is attached for later cutover"
+    );
+
     // 序列化明文
     let plaintext_bytes =
         serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {e}"))?;
@@ -726,6 +754,15 @@ async fn decrypt_credential_in_tee(
     state: &AppState,
     entry: &VaultEntry,
 ) -> Result<Vec<u8>, String> {
+    let tee_snapshot = tee_runtime_snapshot(state).await;
+    warn!(
+        tenant_id = entry.tenant_id.as_str(),
+        credential_id = entry.credential_id.as_str(),
+        enclave_initialized = tee_snapshot.enclave_initialized,
+        tee_runtime_mode = tee_snapshot.execution_mode,
+        "decrypt_credential_in_tee is still using software key hierarchy/cipher path; enclave is attached for later cutover"
+    );
+
     // 构建 EncryptedBlob
     let blob = EncryptedBlob {
         version: entry.encrypted_payload.version,
@@ -891,6 +928,15 @@ async fn encrypt_credential_update(
     credential_id: &CredentialId,
     plaintext: &serde_json::Value,
 ) -> Result<EncryptedPayload, String> {
+    let tee_snapshot = tee_runtime_snapshot(state).await;
+    warn!(
+        tenant_id,
+        credential_id = credential_id.as_str(),
+        enclave_initialized = tee_snapshot.enclave_initialized,
+        tee_runtime_mode = tee_snapshot.execution_mode,
+        "encrypt_credential_update is still using software key hierarchy/cipher path; enclave is attached for later cutover"
+    );
+
     // 序列化明文
     let plaintext_bytes =
         serde_json::to_vec(plaintext).map_err(|e| format!("明文序列化失败: {e}"))?;
