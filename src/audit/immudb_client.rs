@@ -475,7 +475,7 @@ impl ImmuDbClient {
             .unwrap_or_else(Self::compute_genesis_state_hash);
         let entry_hash = hex::encode(signed_entry.content_hash);
 
-        let combined = format!("{}:{}", prev_hash, entry_hash);
+        let combined = format!("{prev_hash}:{entry_hash}");
         let digest = digest(&SHA256, combined.as_bytes());
         hex::encode(digest.as_ref())
     }

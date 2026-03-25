@@ -313,7 +313,7 @@ impl SandboxSession for ActiveNsjailSession {
                         }
                         *self.status.write().await = SessionStatus::Ready;
                         return Err(SessionError::OperationRejected {
-                            reason: format!("AI review failed: {}", e),
+                            reason: format!("AI review failed: {e}"),
                         }
                         .into());
                     }

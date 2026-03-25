@@ -219,7 +219,7 @@ impl FeatureFlags {
             "sso" => self.enable_sso = true,
             "custom_crypto" => self.enable_custom_crypto = true,
             "advanced_audit" => self.enable_advanced_audit = true,
-            _ => return Err(format!("Unknown feature: {}", feature)),
+            _ => return Err(format!("Unknown feature: {feature}")),
         }
         Ok(())
     }
@@ -239,7 +239,7 @@ impl FeatureFlags {
             "sso" => self.enable_sso = false,
             "custom_crypto" => self.enable_custom_crypto = false,
             "advanced_audit" => self.enable_advanced_audit = false,
-            _ => return Err(format!("Unknown feature: {}", feature)),
+            _ => return Err(format!("Unknown feature: {feature}")),
         }
         Ok(())
     }
@@ -847,7 +847,7 @@ impl TenantConfigCache for RedisTenantConfigCache {
         let mut conn = match self.client.get_multiplexed_async_connection().await {
             Ok(c) => c,
             Err(e) => {
-                log::error!("[TENANT-CONFIG] Failed to get Redis connection: {}", e);
+                tracing::error!("[TENANT-CONFIG] Failed to get Redis connection: {e}");
                 return;
             }
         };
@@ -856,7 +856,7 @@ impl TenantConfigCache for RedisTenantConfigCache {
             Ok(data) => {
                 // 确保 TTL 至少为 1 秒，避免 ttl_seconds=0 时 Redis 写入静默丢弃
                 let ttl = if self.ttl_seconds == 0 {
-                    log::warn!("[TENANT-CONFIG] Redis TTL 为 0，默认使用 1 秒");
+                    tracing::warn!("[TENANT-CONFIG] Redis TTL 为 0，默认使用 1 秒");
                     1u64
                 } else {
                     self.ttl_seconds
@@ -864,7 +864,7 @@ impl TenantConfigCache for RedisTenantConfigCache {
                 let _: Result<(), _> = conn.set_ex(&key, &data, ttl).await;
             }
             Err(e) => {
-                log::error!("[TENANT-CONFIG] Failed to serialize tenant config: {}", e);
+                tracing::error!("[TENANT-CONFIG] Failed to serialize tenant config: {e}");
             }
         }
     }
@@ -883,7 +883,7 @@ impl TenantConfigCache for RedisTenantConfigCache {
         let mut conn = match self.client.get_multiplexed_async_connection().await {
             Ok(c) => c,
             Err(e) => {
-                log::error!("[TENANT-CONFIG] Failed to get Redis connection for clear: {}", e);
+                tracing::error!("[TENANT-CONFIG] Failed to get Redis connection for clear: {e}");
                 return;
             }
         };
@@ -898,14 +898,13 @@ impl TenantConfigCache for RedisTenantConfigCache {
                 .arg(100)
                 .query_async(&mut conn)
                 .await;
-            
-            match scan_result
-            {
+
+            match scan_result {
                 Ok((next_cursor, keys)) => {
                     if !keys.is_empty() {
                         let deleted: Result<(), _> = conn.del(keys).await;
                         if let Err(e) = deleted {
-                            log::error!("[TENANT-CONFIG] Failed to delete keys: {}", e);
+                            tracing::error!("[TENANT-CONFIG] Failed to delete keys: {e}");
                         }
                     }
                     cursor = next_cursor;
@@ -914,7 +913,7 @@ impl TenantConfigCache for RedisTenantConfigCache {
                     }
                 }
                 Err(e) => {
-                    log::error!("[TENANT-CONFIG] SCAN command failed: {}", e);
+                    tracing::error!("[TENANT-CONFIG] SCAN command failed: {e}");
                     break;
                 }
             }

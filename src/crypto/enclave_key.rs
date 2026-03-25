@@ -597,21 +597,21 @@ impl EnclaveKeyManager {
 
     /// 根据ID加载密钥
     async fn load_key_by_id(&self, key_id: &str) -> Result<EnclaveKey, KeyError> {
-        let storage_key = format!("key_{}", key_id);
+        let storage_key = format!("key_{key_id}");
 
         let sealed_data = self
             .storage
             .load(&storage_key)
-            .map_err(|e| KeyError::StorageError(format!("加载密钥失败: {}", e)))?;
+            .map_err(|e| KeyError::StorageError(format!("加载密钥失败: {e}")))?;
 
         let key_data = self
             .storage
             .sealing()
             .unseal_data(&sealed_data)
-            .map_err(|e| KeyError::StorageError(format!("解封密钥失败: {}", e)))?;
+            .map_err(|e| KeyError::StorageError(format!("解封密钥失败: {e}")))?;
 
         let key: EnclaveKey = serde_json::from_slice(&key_data)
-            .map_err(|e| KeyError::StorageError(format!("解析密钥失败: {}", e)))?;
+            .map_err(|e| KeyError::StorageError(format!("解析密钥失败: {e}")))?;
 
         Ok(key)
     }
@@ -624,10 +624,10 @@ impl EnclaveKeyManager {
                     .storage
                     .sealing()
                     .unseal_data(&sealed_data)
-                    .map_err(|e| KeyError::StorageError(format!("解封密钥索引失败: {}", e)))?;
+                    .map_err(|e| KeyError::StorageError(format!("解封密钥索引失败: {e}")))?;
 
                 let index: KeyIndex = serde_json::from_slice(&data)
-                    .map_err(|e| KeyError::StorageError(format!("解析密钥索引失败: {}", e)))?;
+                    .map_err(|e| KeyError::StorageError(format!("解析密钥索引失败: {e}")))?;
 
                 Ok(index)
             }
@@ -641,17 +641,17 @@ impl EnclaveKeyManager {
     /// 保存密钥索引
     async fn save_key_index(&self, index: &KeyIndex) -> Result<(), KeyError> {
         let data = serde_json::to_vec(index)
-            .map_err(|e| KeyError::StorageError(format!("序列化密钥索引失败: {}", e)))?;
+            .map_err(|e| KeyError::StorageError(format!("序列化密钥索引失败: {e}")))?;
 
         let sealed = self
             .storage
             .sealing()
             .seal_data(&data, b"key_index", self.config.seal_policy)
-            .map_err(|e| KeyError::StorageError(format!("密封密钥索引失败: {}", e)))?;
+            .map_err(|e| KeyError::StorageError(format!("密封密钥索引失败: {e}")))?;
 
         self.storage
             .store("key_index", &sealed)
-            .map_err(|e| KeyError::StorageError(format!("存储密钥索引失败: {}", e)))?;
+            .map_err(|e| KeyError::StorageError(format!("存储密钥索引失败: {e}")))?;
 
         Ok(())
     }

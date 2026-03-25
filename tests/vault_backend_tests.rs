@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! Vault 后端集成测试
 //!
 //! 测试 HashiCorp Vault 存储后端实现

@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! 认证服务 API 集成测试
 //!
 //! 测试 EP8-Story8.2 实现的认证服务 API：

@@ -100,9 +100,10 @@ impl VaultStorageBackend {
         F: std::future::Future<Output = Result<T, VaultClientError>>,
     {
         tokio::task::block_in_place(|| {
-            self.runtime_handle
-                .block_on(future)
-                .map_err(VaultBackendError::ClientError)
+            self.runtime_handle.block_on(future).map_err(|e| {
+                tracing::error!(error = %e, "Vault backend async operation failed");
+                VaultBackendError::ClientError(e)
+            })
         })
     }
 
@@ -153,7 +154,9 @@ impl VaultStorageBackend {
             service_id: ServiceId::new(data.service_id.clone()),
             credential_type: match data.credential_type.as_str() {
                 "username_password" => crate::models::CredentialType::UsernamePassword,
-                "oauth_refresh" => crate::models::CredentialType::OAuthRefresh,
+                "oauth_refresh" | "oauth_token" | "o_auth_refresh" => {
+                    crate::models::CredentialType::OAuthRefresh
+                }
                 "api_key" => crate::models::CredentialType::ApiKey,
                 "session_cookie" => crate::models::CredentialType::SessionCookie,
                 "kyc_document" => crate::models::CredentialType::KycDocument,
@@ -217,7 +220,7 @@ impl StorageBackend for VaultStorageBackend {
         // 实际实现中应该使用索引或缓存来优化
         let tenant_ids = self
             .list_all_tenants()
-            .map_err(|e| VaultError::StorageError(format!("Failed to list tenants: {}", e)))?;
+            .map_err(|e| VaultError::StorageError(format!("Failed to list tenants: {e}")))?;
 
         for tenant_id in tenant_ids {
             match self.block_on(self.client.read_secret(&tenant_id, credential_id.as_str())) {
@@ -225,8 +228,7 @@ impl StorageBackend for VaultStorageBackend {
                     let data: VaultCredentialData = VaultCredentialData::from_json(json_data)
                         .map_err(|e| {
                             VaultError::SerializationError(format!(
-                                "Failed to parse credential data: {}",
-                                e
+                                "Failed to parse credential data: {e}"
                             ))
                         })?;
 
@@ -335,7 +337,7 @@ impl StorageBackend for VaultStorageBackend {
         // 物理删除：从 Vault 中永久移除
         let tenant_ids = self
             .list_all_tenants()
-            .map_err(|e| VaultError::StorageError(format!("Failed to list tenants: {}", e)))?;
+            .map_err(|e| VaultError::StorageError(format!("Failed to list tenants: {e}")))?;
 
         for tenant_id in tenant_ids {
             match self.block_on(

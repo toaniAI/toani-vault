@@ -90,10 +90,10 @@ impl std::fmt::Display for AttestationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AttestationError::QuoteGenerationFailed(msg) => {
-                write!(f, "Quote generation failed: {}", msg)
+                write!(f, "Quote generation failed: {msg}")
             }
             AttestationError::QuoteVerificationFailed(msg) => {
-                write!(f, "Quote verification failed: {}", msg)
+                write!(f, "Quote verification failed: {msg}")
             }
             AttestationError::SignatureVerificationFailed => {
                 write!(f, "Signature verification failed")
@@ -106,7 +106,7 @@ impl std::fmt::Display for AttestationError {
             AttestationError::InvalidQuoteFormat => write!(f, "Invalid quote format"),
             AttestationError::InvalidPublicKey => write!(f, "Invalid public key"),
             AttestationError::AttestationTimeout => write!(f, "Attestation timeout"),
-            AttestationError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            AttestationError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }
@@ -938,10 +938,10 @@ impl AttestationService {
         // - 模拟模式下允许（内部生成的模拟 Quote 使用 SHA-256 哈希填充签名）
         // - 非模拟模式下拒绝（fail-closed），生产部署必须通过 with_verifier_key() 配置公钥
         if self.allow_simulation {
-            log::warn!("[ATTESTATION] 未配置验证者公钥，模拟模式允许通过");
+            tracing::warn!("[ATTESTATION] 未配置验证者公钥，模拟模式允许通过");
             return Ok(());
         }
-        log::error!("[ATTESTATION] 未配置验证者公钥，拒绝非零签名（fail-closed）");
+        tracing::error!("[ATTESTATION] 未配置验证者公钥，拒绝非零签名（fail-closed）");
         Err(AttestationError::SignatureVerificationFailed)
     }
 }
@@ -1242,7 +1242,7 @@ mod tests {
         let header_size = 2 + 2 + 4 + 2 + 2 + 4 + 32; // 48 bytes
         let report_body_size = 384;
         let expected_min_size = header_size + report_body_size + 4 + quote.signature.len();
-        eprintln!("Expected min size: {}", expected_min_size);
+        eprintln!("Expected min size: {expected_min_size}");
         assert!(
             bytes.len() >= expected_min_size,
             "Serialized bytes too short: {} < {}",

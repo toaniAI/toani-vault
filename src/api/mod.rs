@@ -8,6 +8,8 @@ pub mod audit_models;
 pub mod auth;
 pub mod context;
 pub mod credentials;
+pub mod i18n;
+pub mod logging_middleware;
 pub mod middleware;
 pub mod rate_limit;
 pub mod response;
@@ -39,6 +41,7 @@ pub use context::{
     verify_tenant_access_from_param,
 };
 pub use credentials::{AppState, AuditLogger, DefaultAuditLogger};
+pub use i18n::{LocaleResolverState, ResolvedLocale, locale_middleware};
 pub use middleware::{TokenScope, ValidatedToken};
 pub use sandbox::{SandboxState, sandbox_routes};
 pub use tenant::{TenantApiState, tenant_routes};

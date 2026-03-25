@@ -204,7 +204,7 @@ impl LlmProvider for ClaudeClient {
     }
 
     async fn chat_completion(&self, request: ChatRequest) -> Result<ChatResponse, LlmError> {
-        let url = format!("{}/messages", CLAUDE_API_BASE_URL);
+        let url = format!("{CLAUDE_API_BASE_URL}/messages");
         let claude_request = self.convert_request(&request);
 
         debug!("Sending request to Claude API: {}", url);
@@ -276,7 +276,7 @@ impl LlmProvider for ClaudeClient {
         &self,
         request: ChatRequestWithImage,
     ) -> Result<ChatResponse, LlmError> {
-        let url = format!("{}/messages", CLAUDE_API_BASE_URL);
+        let url = format!("{CLAUDE_API_BASE_URL}/messages");
 
         // Claude 支持多模态输入，使用 content blocks 格式
         let messages = vec![ClaudeMessageWithContent {
@@ -368,7 +368,7 @@ impl LlmProvider for ClaudeClient {
 
     async fn health_check(&self) -> Result<(), LlmError> {
         // Claude API 没有专门的健康检查端点，使用一个简单的请求来验证
-        let url = format!("{}/models", CLAUDE_API_BASE_URL);
+        let url = format!("{CLAUDE_API_BASE_URL}/models");
 
         let response = self
             .client

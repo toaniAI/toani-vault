@@ -13,9 +13,7 @@
 //!   └── Remote Attestation (DCAP)
 //! ```
 
-use crate::crypto::{
-    CryptoError, EncryptedBlob, KeyHandle, KeyHierarchy, KeyPurpose, constants::NONCE_LENGTH,
-};
+use crate::crypto::{CredentialCryptoContext, CryptoError, EncryptedBlob, KeyHandle, KeyHierarchy};
 use crate::tee::sealing::{SealPolicy, SealedStorage, SealingKey, SealingService};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -363,7 +361,7 @@ impl Enclave {
             CachedUserKey {
                 handle: cache_key,
                 tenant_id: tenant_id.to_string(),
-                user_id_hash: format!("hash:{}", user_id),
+                user_id_hash: format!("hash:{user_id}"),
                 created_at: now,
                 last_accessed_at: now,
                 access_count: 0,
@@ -382,75 +380,18 @@ impl Enclave {
     pub fn encrypt_credential(
         &mut self,
         tenant_id: &str,
-        user_id: &str,
+        user_id_hash: &str,
         credential_id: &str,
         plaintext: &[u8],
     ) -> Result<EncryptedBlob, EnclaveError> {
-        use aes_gcm::{
-            Aes256Gcm,
-            aead::{Aead, KeyInit},
-        };
-        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
         self.ensure_running()?;
-
-        // 派生 L2 密钥
-        let l2_key = self
-            .key_hierarchy
-            .derive_user_vault_key(tenant_id, user_id)
-            .map_err(|e| EnclaveError::KeyDerivationFailed(e.to_string()))?;
-
-        // 派生 L3 密钥
-        let l3_key = self
-            .key_hierarchy
-            .derive_credential_key(&l2_key, credential_id, KeyPurpose::CredentialEncryption)
-            .map_err(|e| EnclaveError::KeyDerivationFailed(e.to_string()))?;
-
-        // 生成随机 nonce
-        let mut nonce_bytes = [0u8; NONCE_LENGTH];
-        let mut rng = rand::thread_rng();
-        rand::RngCore::fill_bytes(&mut rng, &mut nonce_bytes);
-
-        // 创建 AES-256-GCM cipher
-        let cipher = Aes256Gcm::new_from_slice(l3_key.as_bytes())
+        let context = CredentialCryptoContext::new(tenant_id, user_id_hash, credential_id);
+        let blob = context
+            .encrypt_with_hierarchy(&self.key_hierarchy, plaintext)
             .map_err(|e| EnclaveError::EncryptionFailed(e.to_string()))?;
-
-        let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
-
-        // 构建 AAD
-        let aad = format!("{}:{}", tenant_id, user_id);
-
-        // 执行加密（使用 AAD）
-        let ciphertext = cipher
-            .encrypt(
-                nonce,
-                aes_gcm::aead::Payload {
-                    msg: plaintext,
-                    aad: aad.as_bytes(),
-                },
-            )
-            .map_err(|e| EnclaveError::EncryptionFailed(e.to_string()))?;
-
-        // 分离密文和 auth tag
-        let auth_tag_start = ciphertext.len().saturating_sub(16);
-        let ciphertext_only = ciphertext[..auth_tag_start].to_vec();
-        let auth_tag = ciphertext[auth_tag_start..].to_vec();
-
-        // 计算 AAD 哈希
-        let aad = format!("{}:{}", tenant_id, user_id);
-        let aad_hash = ring::digest::digest(&ring::digest::SHA256, aad.as_bytes());
 
         self.stats.encryption_ops += 1;
-
-        Ok(EncryptedBlob {
-            version: crate::crypto::constants::PROTOCOL_VERSION,
-            algorithm: "AES-256-GCM".to_string(),
-            kdf: "HKDF-SHA-256".to_string(),
-            nonce: URL_SAFE_NO_PAD.encode(nonce_bytes),
-            auth_tag: URL_SAFE_NO_PAD.encode(&auth_tag),
-            ciphertext: URL_SAFE_NO_PAD.encode(&ciphertext_only),
-            aad_hash: Some(URL_SAFE_NO_PAD.encode(aad_hash.as_ref())),
-        })
+        Ok(blob)
     }
 
     /// 解密凭证
@@ -459,65 +400,20 @@ impl Enclave {
     pub fn decrypt_credential(
         &mut self,
         tenant_id: &str,
-        user_id: &str,
+        user_id_hash: &str,
         credential_id: &str,
         blob: &EncryptedBlob,
     ) -> Result<Vec<u8>, EnclaveError> {
-        use aes_gcm::{
-            Aes256Gcm,
-            aead::{Aead, KeyInit},
-        };
-        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-
         self.ensure_running()?;
-
-        // 派生 L2 密钥
-        let l2_key = self
-            .key_hierarchy
-            .derive_user_vault_key(tenant_id, user_id)
-            .map_err(|e| EnclaveError::KeyDerivationFailed(e.to_string()))?;
-
-        // 派生 L3 密钥（使用相同的 purpose 作为加密，因为 AES-GCM 是对称加密）
-        let l3_key = self
-            .key_hierarchy
-            .derive_credential_key(&l2_key, credential_id, KeyPurpose::CredentialEncryption)
-            .map_err(|e| EnclaveError::KeyDerivationFailed(e.to_string()))?;
-
-        // 解析 nonce
-        let nonce_bytes = URL_SAFE_NO_PAD
-            .decode(&blob.nonce)
-            .map_err(|_| EnclaveError::DecryptionFailed("Invalid nonce encoding".to_string()))?;
-
-        // 解析密文
-        let mut ciphertext = URL_SAFE_NO_PAD.decode(&blob.ciphertext).map_err(|_| {
-            EnclaveError::DecryptionFailed("Invalid ciphertext encoding".to_string())
-        })?;
-
-        // 解析 auth tag
-        let auth_tag = URL_SAFE_NO_PAD
-            .decode(&blob.auth_tag)
-            .map_err(|_| EnclaveError::DecryptionFailed("Invalid auth_tag encoding".to_string()))?;
-
-        // 合并密文和 auth tag
-        ciphertext.extend_from_slice(&auth_tag);
-
-        // 构建 AAD（必须与加密时相同）
-        let aad = format!("{}:{}", tenant_id, user_id);
-
-        // 创建 AES-256-GCM cipher
-        let cipher = Aes256Gcm::new_from_slice(l3_key.as_bytes())
-            .map_err(|e| EnclaveError::DecryptionFailed(e.to_string()))?;
-
-        let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
-        let plaintext = cipher
-            .decrypt(
-                nonce,
-                aes_gcm::aead::Payload {
-                    msg: ciphertext.as_ref(),
-                    aad: aad.as_bytes(),
-                },
-            )
-            .map_err(|_| EnclaveError::AuthenticationFailed)?;
+        let context = CredentialCryptoContext::new(tenant_id, user_id_hash, credential_id);
+        let plaintext = context
+            .decrypt_with_hierarchy(&self.key_hierarchy, blob)
+            .map_err(|e| match e {
+                crate::crypto::CryptoError::AuthenticationFailed => {
+                    EnclaveError::AuthenticationFailed
+                }
+                other => EnclaveError::DecryptionFailed(other.to_string()),
+            })?;
 
         self.stats.decryption_ops += 1;
 
@@ -691,18 +587,18 @@ impl std::fmt::Display for EnclaveError {
             EnclaveError::AlreadyInitialized => write!(f, "Enclave already initialized"),
             EnclaveError::NotRunning => write!(f, "Enclave not running"),
             EnclaveError::KeyInitializationFailed(msg) => {
-                write!(f, "Key initialization failed: {}", msg)
+                write!(f, "Key initialization failed: {msg}")
             }
-            EnclaveError::KeyDerivationFailed(msg) => write!(f, "Key derivation failed: {}", msg),
-            EnclaveError::EncryptionFailed(msg) => write!(f, "Encryption failed: {}", msg),
-            EnclaveError::DecryptionFailed(msg) => write!(f, "Decryption failed: {}", msg),
+            EnclaveError::KeyDerivationFailed(msg) => write!(f, "Key derivation failed: {msg}"),
+            EnclaveError::EncryptionFailed(msg) => write!(f, "Encryption failed: {msg}"),
+            EnclaveError::DecryptionFailed(msg) => write!(f, "Decryption failed: {msg}"),
             EnclaveError::AuthenticationFailed => write!(f, "Authentication failed"),
-            EnclaveError::SealingFailed(msg) => write!(f, "Sealing failed: {}", msg),
-            EnclaveError::StorageError(msg) => write!(f, "Storage error: {}", msg),
+            EnclaveError::SealingFailed(msg) => write!(f, "Sealing failed: {msg}"),
+            EnclaveError::StorageError(msg) => write!(f, "Storage error: {msg}"),
             EnclaveError::LockTimeout(msg) => {
-                write!(f, "Lock timeout (possible deadlock): {}", msg)
+                write!(f, "Lock timeout (possible deadlock): {msg}")
             }
-            EnclaveError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            EnclaveError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }
@@ -822,7 +718,7 @@ fn acquire_write_lock_sync<T>(
 fn derive_cache_key(tenant_id: &str, user_id: &str) -> KeyHandle {
     use ring::digest::{SHA256, digest};
 
-    let data = format!("{}:{}", tenant_id, user_id);
+    let data = format!("{tenant_id}:{user_id}");
     let hash = digest(&SHA256, data.as_bytes());
 
     let mut key = [0u8; 32];
@@ -833,6 +729,11 @@ fn derive_cache_key(tenant_id: &str, user_id: &str) -> KeyHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vault::models::UserId;
+
+    fn hashed_user_id(raw: &str) -> String {
+        UserId::new(raw).hash().to_string()
+    }
 
     #[test]
     fn test_enclave_lifecycle() {
@@ -870,10 +771,11 @@ mod tests {
         enclave.initialize().unwrap();
 
         let plaintext = b"My secret credential data";
+        let user_hash = hashed_user_id("user_1");
 
         // 加密
         let blob = enclave
-            .encrypt_credential("tenant_1", "user_1", "cred_1", plaintext)
+            .encrypt_credential("tenant_1", &user_hash, "cred_1", plaintext)
             .unwrap();
 
         // nonce 是 base64 编码的，12字节编码后是16个字符
@@ -882,7 +784,7 @@ mod tests {
 
         // 解密
         let decrypted = enclave
-            .decrypt_credential("tenant_1", "user_1", "cred_1", &blob)
+            .decrypt_credential("tenant_1", &user_hash, "cred_1", &blob)
             .unwrap();
 
         assert_eq!(decrypted, plaintext);
@@ -899,16 +801,18 @@ mod tests {
         enclave.initialize().unwrap();
 
         let plaintext = b"Test data";
+        let user_1_hash = hashed_user_id("user_1");
+        let user_2_hash = hashed_user_id("user_2");
 
         // 不同租户/用户应该产生不同的密文
         let blob1 = enclave
-            .encrypt_credential("tenant_1", "user_1", "cred_1", plaintext)
+            .encrypt_credential("tenant_1", &user_1_hash, "cred_1", plaintext)
             .unwrap();
         let blob2 = enclave
-            .encrypt_credential("tenant_2", "user_1", "cred_1", plaintext)
+            .encrypt_credential("tenant_2", &user_1_hash, "cred_1", plaintext)
             .unwrap();
         let blob3 = enclave
-            .encrypt_credential("tenant_1", "user_2", "cred_1", plaintext)
+            .encrypt_credential("tenant_1", &user_2_hash, "cred_1", plaintext)
             .unwrap();
 
         // 密文应该不同
@@ -918,19 +822,19 @@ mod tests {
         // 但都可以正确解密
         assert_eq!(
             enclave
-                .decrypt_credential("tenant_1", "user_1", "cred_1", &blob1)
+                .decrypt_credential("tenant_1", &user_1_hash, "cred_1", &blob1)
                 .unwrap(),
             plaintext
         );
         assert_eq!(
             enclave
-                .decrypt_credential("tenant_2", "user_1", "cred_1", &blob2)
+                .decrypt_credential("tenant_2", &user_1_hash, "cred_1", &blob2)
                 .unwrap(),
             plaintext
         );
         assert_eq!(
             enclave
-                .decrypt_credential("tenant_1", "user_2", "cred_1", &blob3)
+                .decrypt_credential("tenant_1", &user_2_hash, "cred_1", &blob3)
                 .unwrap(),
             plaintext
         );
@@ -949,8 +853,9 @@ mod tests {
         enclave.initialize().unwrap();
 
         let plaintext = b"Sensitive data";
+        let user_hash = hashed_user_id("user_1");
         let blob = enclave
-            .encrypt_credential("tenant_1", "user_1", "cred_1", plaintext)
+            .encrypt_credential("tenant_1", &user_hash, "cred_1", plaintext)
             .unwrap();
 
         // 篡改密文应该导致认证失败
@@ -965,7 +870,7 @@ mod tests {
 
         assert!(matches!(
             enclave
-                .decrypt_credential("tenant_1", "user_1", "cred_1", &tampered_blob)
+                .decrypt_credential("tenant_1", &user_hash, "cred_1", &tampered_blob)
                 .unwrap_err(),
             EnclaveError::AuthenticationFailed
         ));
@@ -1028,11 +933,12 @@ mod tests {
 
         // 执行一些操作
         let plaintext = b"test data";
+        let user_hash = hashed_user_id("user_1");
         let blob = enclave
-            .encrypt_credential("tenant_1", "user_1", "cred_1", plaintext)
+            .encrypt_credential("tenant_1", &user_hash, "cred_1", plaintext)
             .unwrap();
         enclave
-            .decrypt_credential("tenant_1", "user_1", "cred_1", &blob)
+            .decrypt_credential("tenant_1", &user_hash, "cred_1", &blob)
             .unwrap();
 
         assert_eq!(enclave.stats().encryption_ops, 1);

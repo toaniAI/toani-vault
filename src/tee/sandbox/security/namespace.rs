@@ -117,7 +117,7 @@ pub struct NamespaceUtil;
 impl NamespaceUtil {
     /// 检查进程是否在指定的命名空间中
     pub fn check_namespace(pid: u32, namespace: &str) -> Result<bool, SecurityError> {
-        let ns_path = format!("/proc/{}/ns/{}", pid, namespace);
+        let ns_path = format!("/proc/{pid}/ns/{namespace}");
         match std::fs::read_link(&ns_path) {
             Ok(link) => {
                 // 如果链接目标是 "net:[4026531992]" 这样的格式，说明在命名空间中
@@ -125,22 +125,21 @@ impl NamespaceUtil {
                 Ok(link_str.starts_with(namespace))
             }
             Err(e) => Err(SecurityError::Namespace(format!(
-                "Failed to read namespace link: {}",
-                e
+                "Failed to read namespace link: {e}"
             ))),
         }
     }
 
     /// 获取进程的命名空间信息
     pub fn get_namespaces(pid: u32) -> Result<NamespaceInfo, SecurityError> {
-        let ns_dir = format!("/proc/{}/ns", pid);
+        let ns_dir = format!("/proc/{pid}/ns");
         let mut info = NamespaceInfo::default();
 
         for entry in std::fs::read_dir(&ns_dir)
-            .map_err(|e| SecurityError::Namespace(format!("Failed to read ns dir: {}", e)))?
+            .map_err(|e| SecurityError::Namespace(format!("Failed to read ns dir: {e}")))?
         {
             let entry = entry
-                .map_err(|e| SecurityError::Namespace(format!("Failed to read entry: {}", e)))?;
+                .map_err(|e| SecurityError::Namespace(format!("Failed to read entry: {e}")))?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
 
@@ -165,13 +164,13 @@ impl NamespaceUtil {
 
     /// 检查两个进程是否在同一命名空间中
     pub fn in_same_namespace(pid1: u32, pid2: u32, namespace: &str) -> Result<bool, SecurityError> {
-        let ns1 = format!("/proc/{}/ns/{}", pid1, namespace);
-        let ns2 = format!("/proc/{}/ns/{}", pid2, namespace);
+        let ns1 = format!("/proc/{pid1}/ns/{namespace}");
+        let ns2 = format!("/proc/{pid2}/ns/{namespace}");
 
         let target1 = std::fs::read_link(&ns1)
-            .map_err(|e| SecurityError::Namespace(format!("Failed to read ns: {}", e)))?;
+            .map_err(|e| SecurityError::Namespace(format!("Failed to read ns: {e}")))?;
         let target2 = std::fs::read_link(&ns2)
-            .map_err(|e| SecurityError::Namespace(format!("Failed to read ns: {}", e)))?;
+            .map_err(|e| SecurityError::Namespace(format!("Failed to read ns: {e}")))?;
 
         Ok(target1 == target2)
     }
@@ -227,7 +226,7 @@ impl MountConfig {
     pub fn tmpfs(dst: impl Into<PathBuf>, size: Option<&str>) -> Self {
         let mut options = Vec::new();
         if let Some(s) = size {
-            options.push(format!("size={}", s));
+            options.push(format!("size={s}"));
         }
 
         Self {

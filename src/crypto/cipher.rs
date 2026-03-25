@@ -7,7 +7,8 @@
 
 use super::CryptoError;
 use super::constants::{NONCE_LENGTH, PROTOCOL_VERSION};
-use super::keys::CredentialKey;
+use super::hkdf::KeyHierarchy;
+use super::keys::{CredentialKey, KeyPurpose};
 use aes_gcm::{
     Aes256Gcm, Nonce as AesGcmNonce,
     aead::{Aead, KeyInit, Payload},
@@ -237,6 +238,65 @@ pub fn decrypt_credential(
     Ok(plaintext)
 }
 
+/// 凭证加解密上下文
+///
+/// 统一软件路径与 Enclave 路径的 L2/L3 派生输入和 AAD 规则。
+pub struct CredentialCryptoContext<'a> {
+    tenant_id: &'a str,
+    user_id_hash: &'a str,
+    credential_id: &'a str,
+}
+
+impl<'a> CredentialCryptoContext<'a> {
+    /// 创建统一的凭证加解密上下文
+    pub fn new(tenant_id: &'a str, user_id_hash: &'a str, credential_id: &'a str) -> Self {
+        Self {
+            tenant_id,
+            user_id_hash,
+            credential_id,
+        }
+    }
+
+    /// 返回统一的 AAD 字节串
+    pub fn aad_bytes(&self) -> Vec<u8> {
+        format!("{}:{}", self.tenant_id, self.user_id_hash).into_bytes()
+    }
+
+    fn derive_credential_key(
+        &self,
+        hierarchy: &KeyHierarchy,
+    ) -> Result<CredentialKey, CryptoError> {
+        let l2_key = hierarchy.derive_user_vault_key(self.tenant_id, self.user_id_hash)?;
+        hierarchy.derive_credential_key(
+            &l2_key,
+            self.credential_id,
+            KeyPurpose::CredentialEncryption,
+        )
+    }
+
+    /// 使用统一派生规则执行加密
+    pub fn encrypt_with_hierarchy(
+        &self,
+        hierarchy: &KeyHierarchy,
+        plaintext: &[u8],
+    ) -> Result<EncryptedBlob, CryptoError> {
+        let l3_key = self.derive_credential_key(hierarchy)?;
+        let aad = self.aad_bytes();
+        encrypt_credential(&l3_key, plaintext, Some(&aad))
+    }
+
+    /// 使用统一派生规则执行解密
+    pub fn decrypt_with_hierarchy(
+        &self,
+        hierarchy: &KeyHierarchy,
+        blob: &EncryptedBlob,
+    ) -> Result<Vec<u8>, CryptoError> {
+        let l3_key = self.derive_credential_key(hierarchy)?;
+        let aad = self.aad_bytes();
+        decrypt_credential(&l3_key, blob, Some(&aad))
+    }
+}
+
 /// 加密上下文（用于批量加密）
 pub struct EncryptionContext {
     aad_template: Vec<u8>,
@@ -245,7 +305,7 @@ pub struct EncryptionContext {
 impl EncryptionContext {
     /// 创建加密上下文
     pub fn new(tenant_id: &str, user_id: &str) -> Self {
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
         Self {
             aad_template: aad.into_bytes(),
         }
@@ -269,7 +329,7 @@ pub struct DecryptionContext {
 impl DecryptionContext {
     /// 创建解密上下文
     pub fn new(tenant_id: &str, user_id: &str) -> Self {
-        let aad = format!("{}:{}", tenant_id, user_id);
+        let aad = format!("{tenant_id}:{user_id}");
         Self {
             aad_template: aad.into_bytes(),
         }
@@ -442,5 +502,21 @@ mod tests {
         let wrong_ctx = DecryptionContext::new("wrong_tenant", "wrong_user");
         let result = wrong_ctx.decrypt(&l3_key, &blob);
         assert!(matches!(result, Err(CryptoError::AuthenticationFailed)));
+    }
+
+    #[test]
+    fn test_credential_crypto_context_matches_manual_inputs() {
+        let (hierarchy, l3_key) = setup_test_key();
+        let plaintext = b"context data";
+        let context = CredentialCryptoContext::new("tenant_123", "user_456", "cred_789");
+
+        let blob_from_context = context
+            .encrypt_with_hierarchy(&hierarchy, plaintext)
+            .unwrap();
+        let aad = context.aad_bytes();
+        let plaintext_from_manual =
+            decrypt_credential(&l3_key, &blob_from_context, Some(&aad)).unwrap();
+
+        assert_eq!(plaintext_from_manual, plaintext);
     }
 }

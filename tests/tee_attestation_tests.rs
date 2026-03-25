@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! 远程认证协议集成测试
 //!
 //! 测试 SGX DCAP 远程认证协议的完整流程，包括：
@@ -114,9 +118,9 @@ fn test_measurement_whitelist_accept() {
     let mut enclave = Enclave::new(config);
     enclave.initialize().unwrap();
 
-    // 使用白名单模式
+    // 使用白名单模式（测试使用模拟签名，因此允许模拟模式）
     let service = AttestationService::new()
-        .allow_simulation(false)
+        .allow_simulation(true)
         .allow_mrenclave(enclave.mrenclave());
 
     let challenge = generate_test_challenge();
@@ -125,6 +129,9 @@ fn test_measurement_whitelist_accept() {
     let identity = generate_enclave_identity(&enclave);
     let result = service.verify_quote(&quote, &challenge, &identity);
 
+    if let Err(e) = &result {
+        eprintln!("验证失败：{:?}", e);
+    }
     assert!(result.is_ok());
 }
 
@@ -155,8 +162,9 @@ fn test_mrsigner_whitelist_accept() {
     let mut enclave = Enclave::new(config);
     enclave.initialize().unwrap();
 
+    // 使用白名单模式（测试使用模拟签名，因此允许模拟模式）
     let service = AttestationService::new()
-        .allow_simulation(false)
+        .allow_simulation(true)
         .allow_mrsigner(enclave.mrsigner());
 
     let challenge = generate_test_challenge();

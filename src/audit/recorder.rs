@@ -337,10 +337,10 @@ impl SigningKeyPair {
         // 使用 ring 生成 Ed25519 密钥对
         let rng = ring::rand::SystemRandom::new();
         let pkcs8_bytes = Ed25519KeyPair::generate_pkcs8(&rng)
-            .map_err(|e| RecorderError::KeyError(format!("密钥生成失败: {:?}", e)))?;
+            .map_err(|e| RecorderError::KeyError(format!("密钥生成失败: {e:?}")))?;
 
         let key_pair = Ed25519KeyPair::from_pkcs8(pkcs8_bytes.as_ref())
-            .map_err(|e| RecorderError::KeyError(format!("密钥解析失败: {:?}", e)))?;
+            .map_err(|e| RecorderError::KeyError(format!("密钥解析失败: {e:?}")))?;
 
         let public_key = key_pair.public_key().as_ref().to_vec();
         let fingerprint = Self::compute_fingerprint(&public_key);
@@ -371,7 +371,7 @@ impl SigningKeyPair {
     /// 对数据进行签名
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, RecorderError> {
         let key_pair = Ed25519KeyPair::from_pkcs8(&self.private_key)
-            .map_err(|e| RecorderError::SigningError(format!("密钥加载失败: {:?}", e)))?;
+            .map_err(|e| RecorderError::SigningError(format!("密钥加载失败: {e:?}")))?;
 
         let signature = key_pair.sign(data);
         Ok(signature.as_ref().to_vec())
@@ -427,7 +427,7 @@ impl AuditRecorder {
         let mut chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
 
         let log_index = chain.current_index();
         let content_hash = entry.content_hash();
@@ -484,7 +484,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         Ok(chain.get(index).cloned())
     }
 
@@ -493,7 +493,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         Ok(chain.recent(n).into_iter().cloned().collect())
     }
 
@@ -502,7 +502,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         Ok(chain.merkle_root())
     }
 
@@ -511,7 +511,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         chain.verify_chain(&self.signing_key.public_key)
     }
 
@@ -534,7 +534,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         Ok(chain.generate_report(start_time, end_time))
     }
 
@@ -543,7 +543,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         Ok(chain.len())
     }
 
@@ -552,7 +552,7 @@ impl AuditRecorder {
         let chain = self
             .chain
             .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {}", e)))?;
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
 
         // 克隆条目以拥有所有权
         let entries: Vec<SignedAuditEntry> = chain.entries.iter().cloned().collect();
@@ -720,13 +720,13 @@ mod tests {
         // 记录多个条目
         for i in 0..5 {
             let entry = AuditEntry::new(
-                format!("user_hash_{}", i),
+                format!("user_hash_{i}"),
                 "session_123",
                 "vault-service",
                 AuditAction::TokenValidate,
                 Outcome::Success,
                 "mrenclave_abc",
-                format!("jti_{}", i),
+                format!("jti_{i}"),
             );
             recorder.record(entry).unwrap();
         }
@@ -743,13 +743,13 @@ mod tests {
 
         for i in 0..10 {
             let entry = AuditEntry::new(
-                format!("user_{}", i),
+                format!("user_{i}"),
                 "session",
                 "service",
                 AuditAction::TokenValidate,
                 Outcome::Success,
                 "mrenclave",
-                format!("jti_{}", i),
+                format!("jti_{i}"),
             );
             recorder.record(entry).unwrap();
         }
@@ -793,13 +793,13 @@ mod tests {
                 Outcome::Failure
             };
             let entry = AuditEntry::new(
-                format!("user_{}", i),
+                format!("user_{i}"),
                 "session",
                 "service",
                 AuditAction::TokenValidate,
                 outcome,
                 "mrenclave",
-                format!("jti_{}", i),
+                format!("jti_{i}"),
             );
             recorder.record(entry).unwrap();
         }
@@ -817,13 +817,13 @@ mod tests {
         // 记录超过限制的条目
         for i in 0..5 {
             let entry = AuditEntry::new(
-                format!("user_{}", i),
+                format!("user_{i}"),
                 "session",
                 "service",
                 AuditAction::TokenValidate,
                 Outcome::Success,
                 "mrenclave",
-                format!("jti_{}", i),
+                format!("jti_{i}"),
             );
             recorder.record(entry).unwrap();
         }

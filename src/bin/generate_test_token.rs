@@ -36,7 +36,7 @@ fn main() {
 
     claims.issuer("credbridge-vault").expect("设置 iss 失败");
     claims
-        .subject(&format!("{}:{}", tenant_id, user_id))
+        .subject(&format!("{tenant_id}:{user_id}"))
         .expect("设置 sub 失败");
     claims.audience(tenant_id).expect("设置 aud 失败");
     claims
@@ -51,17 +51,14 @@ fn main() {
 
     println!("=== CredBridge 测试 Token ===");
     println!();
-    println!("Token: {}", token);
+    println!("Token: {token}");
     println!();
     println!("参数:");
-    println!("  用户ID: {}", user_id);
-    println!("  租户ID: {}", tenant_id);
-    println!("  权限: {}", scopes);
+    println!("  用户ID: {user_id}");
+    println!("  租户ID: {tenant_id}");
+    println!("  权限: {scopes}");
     println!("  有效期: 1 小时");
     println!();
     println!("使用方法:");
-    println!(
-        "  curl -H \"Authorization: Bearer {}\" http://localhost:8082/health",
-        token
-    );
+    println!("  curl -H \"Authorization: Bearer {token}\" http://localhost:8082/health");
 }

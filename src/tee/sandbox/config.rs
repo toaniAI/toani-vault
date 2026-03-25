@@ -454,7 +454,7 @@ impl NsjailConfig {
         // Environment variables
         for (key, value) in &self.env {
             args.push("--env".to_string());
-            args.push(format!("{}={}", key, value));
+            args.push(format!("{key}={value}"));
         }
 
         // UID/GID mapping
@@ -489,11 +489,11 @@ impl NsjailConfig {
             SeccompPolicy::Custom => "POLICY custom {",
         };
 
-        let mut bpf = format!("{}\n", policy);
+        let mut bpf = format!("{policy}\n");
 
         // 添加拒绝的系统调用
         for syscall in denylist {
-            bpf.push_str(&format!("  DENY {}\n", syscall));
+            bpf.push_str(&format!("  DENY {syscall}\n"));
         }
 
         bpf.push_str("  ALLOW_ALL\n}");

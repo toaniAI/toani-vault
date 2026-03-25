@@ -150,6 +150,13 @@ impl DatabasePool {
     pub async fn new(config: DatabaseConfig) -> Result<Self, DatabaseError> {
         config.validate()?;
 
+        tracing::info!(
+            max_connections = config.max_connections,
+            min_connections = config.min_connections,
+            connect_timeout_s = config.connect_timeout,
+            "creating database connection pool"
+        );
+
         let pool = PgPoolOptions::new()
             .max_connections(config.max_connections)
             .min_connections(config.min_connections)
@@ -157,8 +164,12 @@ impl DatabasePool {
             .idle_timeout(Some(Duration::from_secs(config.idle_timeout)))
             .connect(&config.url)
             .await
-            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "database connection pool creation failed");
+                DatabaseError::ConnectionFailed(e.to_string())
+            })?;
 
+        tracing::info!("database connection pool created successfully");
         Ok(Self { pool, config })
     }
 
@@ -183,7 +194,10 @@ impl DatabasePool {
         sqlx::query("SELECT 1")
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "database health check failed");
+                DatabaseError::ConnectionFailed(e.to_string())
+            })?;
         Ok(())
     }
 
@@ -218,19 +232,26 @@ impl DatabasePool {
         &self,
         rls_context: &R,
     ) -> Result<sqlx::Transaction<'_, Postgres>, DatabaseError> {
-        // 开启事务
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
+        tracing::debug!(
+            tenant_id = rls_context.tenant_id(),
+            user_id = rls_context.user_id(),
+            "acquiring connection with RLS context"
+        );
 
-        // 在事务中设置 RLS 上下文
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            tracing::error!(error = %e, "failed to begin transaction for RLS");
+            DatabaseError::TransactionError(e.to_string())
+        })?;
+
         let sql = rls_context.to_sql_transaction_local();
-        sqlx::query(&sql)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
+        execute_pg_script_tx(&mut tx, &sql).await.map_err(|e| {
+            tracing::error!(
+                tenant_id = rls_context.tenant_id(),
+                error = %e,
+                "failed to set RLS context in transaction"
+            );
+            DatabaseError::RlsContextError(e.to_string())
+        })?;
 
         Ok(tx)
     }
@@ -251,8 +272,7 @@ impl DatabasePool {
         rls_context: &R,
     ) -> Result<(), DatabaseError> {
         let sql = rls_context.to_sql_transaction_local();
-        sqlx::query(&sql)
-            .execute(&mut **tx)
+        execute_pg_script_tx(tx, &sql)
             .await
             .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
         Ok(())
@@ -300,10 +320,12 @@ impl DatabasePool {
         &self,
         conn: &mut PoolConnection<Postgres>,
     ) -> Result<(), DatabaseError> {
-        sqlx::query("RESET app.current_tenant_id; RESET app.current_user_id; RESET app.current_scopes; RESET app.is_admin")
-            .execute(&mut **conn)
-            .await
-            .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
+        execute_pg_script_conn(
+            conn,
+            "RESET app.current_tenant_id; RESET app.current_user_id; RESET app.current_scopes; RESET app.is_admin",
+        )
+        .await
+        .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
         Ok(())
     }
 
@@ -339,6 +361,48 @@ pub struct RlsStatus {
     pub tables_with_rls: Vec<String>,
     /// 强制 RLS 的表（包括表所有者）
     pub forced_tables: Vec<String>,
+}
+
+/// 按分号拆分并逐条执行（PostgreSQL 扩展查询协议下，单个 prepared statement 不能包含多条命令）。
+pub(crate) async fn execute_pg_script_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+/// 在连接池上逐条执行分号分隔的脚本。
+pub(crate) async fn execute_pg_script_pool(pool: &PgPool, script: &str) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(pool).await?;
+    }
+    Ok(())
+}
+
+/// 在池化连接上逐条执行分号分隔的脚本。
+pub(crate) async fn execute_pg_script_conn(
+    conn: &mut PoolConnection<Postgres>,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(&mut **conn).await?;
+    }
+    Ok(())
 }
 
 impl RlsStatus {

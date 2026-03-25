@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! Token Scope 权限系统测试
 //!
 //! EP3-Story3.3: Token Scope 权限系统测试套件

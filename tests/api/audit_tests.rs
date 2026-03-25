@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! 审计日志 API 集成测试
 //!
 //! 测试审计查询 API 的所有端点
@@ -7,12 +10,15 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use http_body_util::BodyExt;
+use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
 
 use vault_service::api::{
     audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
     audit_models::*,
+    auth::{AuthApiState, auth_routes, protected_auth_routes},
     middleware::{TokenScope, ValidatedToken},
 };
 use vault_service::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RiskTier};
@@ -108,6 +114,156 @@ async fn test_list_audit_logs_success() {
 
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
+    let shared_storage = std::sync::Arc::new(tokio::sync::Mutex::new(
+        MemoryAuditStorage::new(1000).unwrap(),
+    ));
+    let auth_state = AuthApiState::with_audit_storage(shared_storage.clone());
+    let audit_state = AuditApiState {
+        storage: std::sync::Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
+            shared_storage,
+        )),
+        verifier_public_key: vec![],
+    };
+    let app = Router::new()
+        .merge(auth_routes().with_state(auth_state.clone()))
+        .merge(protected_auth_routes().with_state(auth_state))
+        .merge(audit_routes(audit_state));
+
+    // 使用 ValidatedToken 扩展来模拟已认证用户
+    let test_token = create_audit_token();
+
+    let create_request = Request::builder()
+        .uri("/tokens")
+        .method("POST")
+        .header("Content-Type", "application/json")
+        .extension(test_token.clone())
+        .body(Body::from(
+            json!({
+                "scopes": ["audit:read"],
+                "expires_in": 900
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = create_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let created: Value = serde_json::from_slice(&create_body).unwrap();
+    let token = created["access_token"].as_str().unwrap().to_string();
+
+    let verify_request = Request::builder()
+        .uri("/tokens/verify")
+        .method("POST")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "token": token
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let verify_response = app.clone().oneshot(verify_request).await.unwrap();
+    assert_eq!(verify_response.status(), StatusCode::OK);
+
+    let audit_request = Request::builder()
+        .uri("/audit/logs")
+        .method("GET")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+
+    let audit_response = app.oneshot(audit_request).await.unwrap();
+    assert_eq!(audit_response.status(), StatusCode::OK);
+    let audit_body = audit_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let audit_json: Value = serde_json::from_slice(&audit_body).unwrap();
+    let items = audit_json["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(
+        items
+            .iter()
+            .any(|item| { item["action"] == "token_issue" && item["outcome"] == "success" })
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| { item["action"] == "token_validate" && item["outcome"] == "success" })
+    );
+}
+
+#[tokio::test]
+async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
+    let shared_storage = std::sync::Arc::new(tokio::sync::Mutex::new(
+        MemoryAuditStorage::new(1000).unwrap(),
+    ));
+    let auth_state = AuthApiState::with_audit_storage(shared_storage);
+    let app = Router::new()
+        .merge(auth_routes().with_state(auth_state.clone()))
+        .merge(protected_auth_routes().with_state(auth_state));
+
+    // 使用统一的测试 token（与 stats 端点使用相同的 tenant）
+    let test_token = ValidatedToken {
+        token_id: Uuid::now_v7().to_string(),
+        subject: "default-tenant:user-001".to_string(),
+        tenant_id: "default-tenant".to_string(),
+        user_id: "user-001".to_string(),
+        expires_at: u64::MAX,
+        scopes: vec![TokenScope::Admin],
+        issued_at: 1000,
+    };
+
+    for expires_in in [900_u64, 1800_u64] {
+        let create_request = Request::builder()
+            .uri("/tokens")
+            .method("POST")
+            .header("Content-Type", "application/json")
+            .extension(test_token.clone())
+            .body(Body::from(
+                json!({
+                    "scopes": ["audit:read"],
+                    "expires_in": expires_in
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let create_response = app.clone().oneshot(create_request).await.unwrap();
+        assert_eq!(create_response.status(), StatusCode::OK);
+    }
+
+    let stats_request = Request::builder()
+        .uri("/tokens/stats")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(test_token)
+        .body(Body::empty())
+        .unwrap();
+
+    let stats_response = app.oneshot(stats_request).await.unwrap();
+    assert_eq!(stats_response.status(), StatusCode::OK);
+    let stats_body = stats_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let stats_json: Value = serde_json::from_slice(&stats_body).unwrap();
+    assert_eq!(stats_json["active_tokens"], 2);
 }
 
 #[tokio::test]

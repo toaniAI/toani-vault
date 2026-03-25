@@ -444,8 +444,7 @@ impl LlmProvider for AzureOpenAiClient {
                 "Invalid Azure API key".to_string(),
             )),
             status => Err(LlmError::ProviderUnavailable(format!(
-                "Health check failed: {}",
-                status
+                "Health check failed: {status}"
             ))),
         }
     }

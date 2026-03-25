@@ -359,7 +359,7 @@ mod tests {
         // 添加多个 Token，TTL = 1 秒
         for i in 0..5 {
             blacklist
-                .blacklist_token(&format!("token-{}", i), 1)
+                .blacklist_token(&format!("token-{i}"), 1)
                 .await
                 .unwrap();
         }

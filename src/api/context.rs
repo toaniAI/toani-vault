@@ -64,6 +64,8 @@ pub struct RequestContext {
     pub scopes: Vec<String>,
     /// 请求ID（用于追踪）
     pub request_id: String,
+    /// 当前请求解析后的 locale
+    pub resolved_locale: String,
 }
 
 impl RequestContext {
@@ -80,6 +82,7 @@ impl RequestContext {
             token_id: token_id.into(),
             scopes,
             request_id: generate_request_id(),
+            resolved_locale: crate::api::i18n::DEFAULT_LOCALE.to_string(),
         }
     }
 
@@ -95,6 +98,7 @@ impl RequestContext {
                 .map(|s| s.as_str().to_string())
                 .collect(),
             request_id: generate_request_id(),
+            resolved_locale: crate::api::i18n::DEFAULT_LOCALE.to_string(),
         }
     }
 
@@ -126,6 +130,12 @@ impl RequestContext {
     /// 设置请求ID
     pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
         self.request_id = request_id.into();
+        self
+    }
+
+    /// 设置已解析的 locale
+    pub fn with_resolved_locale(mut self, locale: impl Into<String>) -> Self {
+        self.resolved_locale = locale.into();
         self
     }
 }

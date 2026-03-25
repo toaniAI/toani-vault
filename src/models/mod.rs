@@ -3,18 +3,26 @@
 use serde::{Deserialize, Serialize};
 
 /// 凭证类型枚举
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CredentialType {
     /// 用户名密码
+    #[serde(rename = "username_password")]
     UsernamePassword,
     /// OAuth 刷新令牌
+    #[serde(
+        rename = "oauth_refresh",
+        alias = "oauth_token",
+        alias = "o_auth_refresh"
+    )]
     OAuthRefresh,
     /// API 密钥
+    #[serde(rename = "api_key")]
     ApiKey,
     /// 会话 Cookie
+    #[serde(rename = "session_cookie")]
     SessionCookie,
     /// KYC 文档
+    #[serde(rename = "kyc_document")]
     KycDocument,
 }
 
@@ -92,6 +100,27 @@ impl Default for TenantConfig {
             token_ttl_seconds: 900,            // 15分钟
             audit_retention_days: 7,
             is_active: true,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CredentialType;
+
+    #[test]
+    fn oauth_refresh_serializes_to_canonical_value() {
+        let json = serde_json::to_string(&CredentialType::OAuthRefresh).unwrap();
+        assert_eq!(json, "\"oauth_refresh\"");
+    }
+
+    #[test]
+    fn oauth_refresh_deserializes_legacy_aliases() {
+        let legacy_values = ["\"oauth_refresh\"", "\"oauth_token\"", "\"o_auth_refresh\""];
+
+        for value in legacy_values {
+            let parsed: CredentialType = serde_json::from_str(value).unwrap();
+            assert_eq!(parsed, CredentialType::OAuthRefresh);
         }
     }
 }

@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::{self, TraceLayer};
-use tracing::{Level, info};
+use tracing::{Level, info, warn};
 
 // CredBridge 内部模块
 use vault_service::api::{
@@ -30,10 +30,11 @@ use vault_service::api::{
         AttestationApiConfig, AttestationState, attestation_routes, init_attestation_api,
     },
     audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
-    auth::{AuthApiState, auth_routes},
+    auth::{AuthApiState, auth_routes, protected_auth_routes},
     credentials::{
         AppState as CredentialAppState, StorageAuditLogger, routes as credential_routes,
     },
+    i18n::{LocaleResolverState, locale_middleware},
     middleware::auth_middleware,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
@@ -47,6 +48,8 @@ use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::tenant::{
     MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
 };
+use vault_service::vault::backend::VaultStorageBackend;
+use vault_service::vault::postgres::PostgresStorageBackend;
 use vault_service::vault::storage::CredentialVault;
 
 /// API 根响应
@@ -95,12 +98,21 @@ struct ServerConfig {
     port: u16,
     environment: Environment,
     log_level: String,
+    storage_backend: StorageBackendKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Environment {
     Development,
     Production,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StorageBackendKind {
+    Auto,
+    Memory,
+    Postgres,
+    Vault,
 }
 
 impl Environment {
@@ -119,6 +131,62 @@ impl Environment {
     }
 }
 
+impl StorageBackendKind {
+    fn from_env() -> Self {
+        match env::var("CREDBRIDGE_STORAGE_BACKEND")
+            .unwrap_or_else(|_| "auto".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "memory" => StorageBackendKind::Memory,
+            "postgres" | "postgresql" | "db" => StorageBackendKind::Postgres,
+            "vault" => StorageBackendKind::Vault,
+            _ => StorageBackendKind::Auto,
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            StorageBackendKind::Auto => "auto",
+            StorageBackendKind::Memory => "memory",
+            StorageBackendKind::Postgres => "postgres",
+            StorageBackendKind::Vault => "vault",
+        }
+    }
+}
+
+fn env_var_present(name: &str) -> bool {
+    env::var_os(name).is_some_and(|value| !value.is_empty())
+}
+
+fn resolve_auto_storage_backend(
+    has_database_url: bool,
+    has_vault_addr: bool,
+    has_vault_token: bool,
+) -> Result<StorageBackendKind, String> {
+    if has_database_url {
+        Ok(StorageBackendKind::Postgres)
+    } else if has_vault_addr && has_vault_token {
+        Ok(StorageBackendKind::Vault)
+    } else {
+        Err(
+            "自动存储后端选择失败：未检测到 DATABASE_URL，且 VAULT_ADDR/VAULT_TOKEN 未同时配置。请显式配置 PostgreSQL/Vault 持久化后端，或仅在开发/测试场景下设置 CREDBRIDGE_STORAGE_BACKEND=memory。"
+                .to_string(),
+        )
+    }
+}
+
+fn resolve_storage_backend(config: &ServerConfig) -> Result<StorageBackendKind, String> {
+    match config.storage_backend {
+        StorageBackendKind::Auto => resolve_auto_storage_backend(
+            env_var_present("DATABASE_URL"),
+            env_var_present("VAULT_ADDR"),
+            env_var_present("VAULT_TOKEN"),
+        ),
+        backend => Ok(backend),
+    }
+}
+
 impl ServerConfig {
     /// 从环境变量加载配置
     fn from_env() -> Self {
@@ -132,6 +200,7 @@ impl ServerConfig {
                 &env::var("CREDBRIDGE_ENV").unwrap_or_else(|_| "development".to_string()),
             ),
             log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            storage_backend: StorageBackendKind::from_env(),
         }
     }
 
@@ -149,6 +218,7 @@ struct AppState {
     credential_state: CredentialAppState,
     audit_state: AuditApiState,
     auth_state: AuthApiState,
+    tenant_store: MemoryTenantConfigStore,
     rate_limit_state: RateLimitState,
     attestation_state: Option<Arc<AttestationState>>,
     sandbox_state: Option<SandboxState>,
@@ -171,6 +241,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 正在启动 HTTP 服务器...");
     info!("📍 环境: {}", config.environment.as_str());
     info!("🌐 地址: http://{}:{}", config.host, config.port);
+    info!("🗄️  存储后端: {}", config.storage_backend.as_str());
 
     // 显示速率限制配置
     let rate_limit_config = RateLimitConfig::from_env();
@@ -205,95 +276,194 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 初始化日志系统
 fn init_logging(config: &ServerConfig) {
-    let level = match config.log_level.to_lowercase().as_str() {
-        "trace" => Level::TRACE,
-        "debug" => Level::DEBUG,
-        "warn" => Level::WARN,
-        "error" => Level::ERROR,
-        _ => Level::INFO,
-    };
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&config.log_level));
 
-    // 使用简单的日志初始化
-    eprintln!("[INFO] 初始化日志系统，级别: {:?}", level);
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
 }
 
 /// 初始化应用状态
 async fn initialize_app_state(
     config: &ServerConfig,
 ) -> Result<AppState, Box<dyn std::error::Error>> {
-    // 初始化 Enclave
+    // --- Enclave ---
+    info!(
+        module = "enclave",
+        status = "initializing",
+        "开始初始化 TEE Enclave"
+    );
     let enclave_config = EnclaveConfig {
         debug_mode: config.environment == Environment::Development,
         ..Default::default()
     };
     let mut enclave = Enclave::new(enclave_config);
     enclave.initialize()?;
+    let tee_boot_profile = if config.environment == Environment::Development {
+        "simulation"
+    } else {
+        "hardware_expected"
+    };
+    let tee_enclave_running = enclave.is_running();
+    let tee_mrenclave_hex = if tee_enclave_running {
+        hex::encode(enclave.mrenclave())
+    } else {
+        "unavailable".to_string()
+    };
+    info!(
+        module = "enclave",
+        status = "ready",
+        tee_initialized = tee_enclave_running,
+        tee_boot_mode = tee_boot_profile,
+        mrenclave = %tee_mrenclave_hex,
+        "TEE Enclave 初始化完成"
+    );
+    let shared_enclave = Arc::new(tokio::sync::Mutex::new(enclave));
 
-    // 初始化 L0 密钥（模拟模式）
+    // --- Key Hierarchy ---
+    info!(
+        module = "key_hierarchy",
+        status = "initializing",
+        "开始初始化密钥层次结构"
+    );
     let l0 = HardwareRootKey::for_simulation()?;
-
-    // 初始化密钥层次结构
     let mut hierarchy = KeyHierarchy::new();
     let _l1_handle = hierarchy.initialize_master_key(&l0)?;
+    info!(
+        module = "key_hierarchy",
+        status = "ready",
+        "密钥层次结构就绪 (L0 -> L1)"
+    );
 
-    // 初始化 Vault（内存存储模式）
-    let vault = Arc::new(CredentialVault::new_in_memory());
+    // --- Storage Backend ---
+    info!(
+        module = "storage",
+        status = "initializing",
+        backend = config.storage_backend.as_str(),
+        "开始初始化凭证存储后端"
+    );
+    let vault = Arc::new(build_credential_vault(config).await?);
+    info!(
+        module = "storage",
+        status = "ready",
+        backend = config.storage_backend.as_str(),
+        "凭证存储后端就绪"
+    );
 
-    // 初始化审计日志存储（使用共享的 Arc，让凭证 API 和审计 API 共享同一个存储）
+    // --- Audit ---
+    info!(
+        module = "audit",
+        status = "initializing",
+        "开始初始化审计日志存储"
+    );
     let audit_storage = Arc::new(tokio::sync::Mutex::new(
-        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {:?}", e))?,
+        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {e:?}"))?,
     ));
-
-    // 创建存储适配器用于审计 API 查询
     let audit_storage_adapter =
         MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
+    let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage.clone()));
+    info!(module = "audit", status = "ready", "审计日志存储就绪");
 
-    // 创建存储审计日志记录器用于凭证 API 写入
-    let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage));
-
-    // 创建凭证 API 状态
     let credential_state = CredentialAppState {
         vault,
         key_hierarchy: Arc::new(RwLock::new(hierarchy)),
-        audit_logger, // 现在写入到共享存储
+        enclave: shared_enclave,
+        audit_logger,
     };
 
-    // 创建审计 API 状态
+    info!(
+        event = "CREDBRIDGE_TEE_OPS_READY",
+        tee_enclave_running = tee_enclave_running,
+        tee_boot_profile = tee_boot_profile,
+        mrenclave = %tee_mrenclave_hex,
+        storage_backend = config.storage_backend.as_str(),
+        "TEE 已就绪，凭证业务加密路径已绑定 Enclave"
+    );
+
+    // --- Auth ---
+    info!(
+        module = "auth",
+        status = "initializing",
+        "开始初始化认证模块"
+    );
     let audit_state = AuditApiState {
-        storage: Arc::new(audit_storage_adapter), // 从共享存储查询
-        verifier_public_key: vec![], // 空向量：未配置公钥时签名验证 fail-closed
+        storage: Arc::new(audit_storage_adapter),
+        verifier_public_key: vec![],
     };
+    let auth_state = AuthApiState::with_audit_storage(audit_storage.clone());
+    info!(module = "auth", status = "ready", "认证模块就绪");
 
-    // 创建认证 API 状态
-    let auth_state = AuthApiState::new();
+    // --- Tenant ---
+    info!(
+        module = "tenant",
+        status = "initializing",
+        "开始初始化租户配置"
+    );
+    let tenant_store = MemoryTenantConfigStore::new();
+    let mut default_tenant_config = vault_service::tenant::TenantConfig::default();
+    default_tenant_config.settings.language = "zh-CN".to_string();
+    use vault_service::tenant::TenantConfigStore;
+    tenant_store
+        .save_config(
+            &vault_service::tenant::TenantId::from_string("tenant-001"),
+            &default_tenant_config,
+        )
+        .await
+        .map_err(|e| format!("初始化默认租户配置失败: {e}"))?;
+    info!(module = "tenant", status = "ready", "租户配置就绪");
 
-    // 初始化速率限制状态
+    // --- Rate Limit ---
+    info!(
+        module = "rate_limit",
+        status = "initializing",
+        "开始初始化速率限制"
+    );
     let rate_limit_config = RateLimitConfig::from_env();
     let rate_limit_state = RateLimitState::new(rate_limit_config);
+    info!(module = "rate_limit", status = "ready", "速率限制就绪");
 
-    // 初始化 Attestation API（在开发模式下使用模拟模式）
+    // --- Attestation ---
+    info!(
+        module = "attestation",
+        status = "initializing",
+        "开始初始化 Attestation API"
+    );
     let attestation_state = match init_attestation_api(AttestationApiConfig {
         simulation_mode: config.environment == Environment::Development,
         ..Default::default()
     }) {
-        Ok(state) => Some(state),
-        Err(e) => {
-            eprintln!(
-                "[WARN] Attestation API 初始化失败（将跳过 attestation 路由）: {}",
-                e
+        Ok(state) => {
+            info!(
+                module = "attestation",
+                status = "ready",
+                "Attestation API 就绪"
             );
+            Some(state)
+        }
+        Err(e) => {
+            warn!(module = "attestation", status = "skipped", error = %e, "Attestation API 初始化失败，跳过");
             None
         }
     };
 
-    // 初始化沙箱 API（可选）
+    // --- Sandbox ---
+    info!(
+        module = "sandbox",
+        status = "initializing",
+        "开始初始化沙箱 API"
+    );
     let sandbox_state = match initialize_sandbox_state().await {
         Ok(state) => {
-            info!("✅ 沙箱 API 初始化成功");
+            info!(module = "sandbox", status = "ready", "沙箱 API 就绪");
             Some(state)
         }
         Err(e) => {
-            eprintln!("[WARN] 沙箱 API 初始化失败（将跳过沙箱路由）: {}", e);
+            warn!(module = "sandbox", status = "skipped", error = %e, "沙箱 API 初始化失败，跳过");
             None
         }
     };
@@ -303,10 +473,34 @@ async fn initialize_app_state(
         credential_state,
         audit_state,
         auth_state,
+        tenant_store,
         rate_limit_state,
         attestation_state,
         sandbox_state,
     })
+}
+
+async fn build_credential_vault(
+    config: &ServerConfig,
+) -> Result<CredentialVault, Box<dyn std::error::Error>> {
+    let resolved_backend = resolve_storage_backend(config).map_err(std::io::Error::other)?;
+
+    let backend = match resolved_backend {
+        StorageBackendKind::Memory => CredentialVault::new_in_memory(),
+        StorageBackendKind::Vault => {
+            let backend = VaultStorageBackend::from_env().await?;
+            info!("✅ 凭证存储已连接到 HashiCorp Vault");
+            CredentialVault::with_backend(Box::new(backend))
+        }
+        StorageBackendKind::Postgres => {
+            let backend = PostgresStorageBackend::from_env().await?;
+            info!("✅ 凭证存储已连接到 PostgreSQL schema={}", backend.schema());
+            CredentialVault::with_backend(Box::new(backend))
+        }
+        StorageBackendKind::Auto => unreachable!("auto backend should be resolved before init"),
+    };
+
+    Ok(backend)
 }
 
 /// 初始化沙箱状态
@@ -316,7 +510,7 @@ async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::
     let config = SandboxConfig::default();
     let state = SandboxState::new(config)
         .await
-        .map_err(|e| format!("沙箱初始化失败: {:?}", e))?;
+        .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 
     Ok(state)
 }
@@ -347,11 +541,15 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         .layer(rate_limit_layer)
         // 全局 CORS
         .layer(cors)
-        // 全局追踪
+        // 请求/响应日志拦截器（最外层，覆盖所有请求）
+        .layer(axum::middleware::from_fn(
+            vault_service::api::logging_middleware::request_logging_middleware,
+        ))
+        // 全局追踪（span 生命周期）
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-                .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::DEBUG))
+                .on_response(trace::DefaultOnResponse::new().level(Level::DEBUG)),
         )
         // 添加速率限制状态扩展
         .layer(Extension(app_state.rate_limit_state.clone()))
@@ -394,7 +592,19 @@ fn build_api_routes(app_state: AppState) -> Router {
     let secret_key = app_state.auth_state.secret_key.clone();
 
     // 认证路由（公开，不需要认证）
-    let auth_routes = auth_routes().with_state(app_state.auth_state.clone());
+    let locale_state = LocaleResolverState::new(
+        app_state.auth_state.user_store.clone(),
+        app_state.tenant_store.clone(),
+    );
+    let public_locale_layer =
+        axum::middleware::from_fn_with_state(locale_state.clone(), locale_middleware);
+    let protected_locale_layer =
+        axum::middleware::from_fn_with_state(locale_state, locale_middleware);
+
+    let auth_routes = auth_routes()
+        .with_state(app_state.auth_state.clone())
+        .layer(public_locale_layer);
+    let protected_auth_routes = protected_auth_routes().with_state(app_state.auth_state.clone());
 
     // ========== 受保护的路由（需要认证） ==========
 
@@ -405,7 +615,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     let audit_routes = audit_routes(app_state.audit_state.clone());
 
     // 租户管理路由（使用内存存储）
-    let tenant_store = MemoryTenantConfigStore::new();
+    let tenant_store = app_state.tenant_store.clone();
     let tenant_manager = TenantManager::new_simple(tenant_store);
     let tenant_service: Arc<dyn TenantService> = Arc::new(MemoryTenantStorage::new());
 
@@ -430,6 +640,10 @@ fn build_api_routes(app_state: AppState) -> Router {
         .merge(audit_routes)
         // 嵌套租户路由
         .merge(tenant_routes)
+        // 认证用户信息与偏好
+        .merge(protected_auth_routes)
+        // locale 解析
+        .layer(protected_locale_layer)
         // 应用认证中间件
         .layer(auth_layer);
 
@@ -494,15 +708,15 @@ async fn api_root_handler(Extension(state): Extension<AppState>) -> impl IntoRes
         environment: state.config.environment.as_str().to_string(),
         endpoints: vec![
             ApiEndpoint {
-                path: format!("{}/credentials", API_BASE_PATH),
+                path: format!("{API_BASE_PATH}/credentials"),
                 description: "凭证管理 API".to_string(),
             },
             ApiEndpoint {
-                path: format!("{}/audit/logs", API_BASE_PATH),
+                path: format!("{API_BASE_PATH}/audit/logs"),
                 description: "审计日志 API".to_string(),
             },
             ApiEndpoint {
-                path: format!("{}/tenants", API_BASE_PATH),
+                path: format!("{API_BASE_PATH}/tenants"),
                 description: "租户管理 API".to_string(),
             },
             ApiEndpoint {
@@ -668,7 +882,36 @@ fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        write!(&mut result, "{:02x}", byte).unwrap();
+        write!(&mut result, "{byte:02x}").unwrap();
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StorageBackendKind, resolve_auto_storage_backend};
+
+    #[test]
+    fn auto_backend_prefers_postgres_when_database_url_exists() {
+        let backend = resolve_auto_storage_backend(true, false, false).unwrap();
+        assert_eq!(backend, StorageBackendKind::Postgres);
+    }
+
+    #[test]
+    fn auto_backend_uses_vault_when_both_vault_vars_exist() {
+        let backend = resolve_auto_storage_backend(false, true, true).unwrap();
+        assert_eq!(backend, StorageBackendKind::Vault);
+    }
+
+    #[test]
+    fn auto_backend_rejects_missing_persistent_configuration() {
+        let error = resolve_auto_storage_backend(false, false, false).unwrap_err();
+        assert!(error.contains("CREDBRIDGE_STORAGE_BACKEND=memory"));
+    }
+
+    #[test]
+    fn auto_backend_rejects_partial_vault_configuration() {
+        let error = resolve_auto_storage_backend(false, true, false).unwrap_err();
+        assert!(error.contains("VAULT_ADDR/VAULT_TOKEN"));
+    }
 }

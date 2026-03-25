@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! Redis Token 存储集成测试
 //!
 //! 这些测试需要 Redis 服务器运行。

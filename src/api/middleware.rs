@@ -16,6 +16,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::context::RequestContext;
+use super::i18n::{
+    DEFAULT_LOCALE, I18nMetadata, I18nParams, resolve_accept_language, set_content_language,
+    translate,
+};
+use serde_json::Value;
+
 use super::token_blacklist::TokenStore;
 
 /// Token Scope 定义
@@ -124,13 +131,19 @@ impl ValidatedToken {
 pub struct AuthError {
     pub error: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub i18n: Option<I18nMetadata>,
+    pub locale: String,
 }
 
 impl AuthError {
-    pub fn new(error: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(error: impl Into<String>, locale: &str, key: &str, params: I18nParams) -> Self {
+        let error = error.into();
         Self {
-            error: error.into(),
-            message: message.into(),
+            message: translate(locale, key, &params),
+            i18n: Some(I18nMetadata::new(key).with_params(params)),
+            error,
+            locale: locale.to_string(),
         }
     }
 }
@@ -146,7 +159,12 @@ impl IntoResponse for AuthError {
             _ => StatusCode::UNAUTHORIZED,
         };
 
-        (status, Json(json!(self))).into_response()
+        tracing::warn!(error_code = %self.error, message = %self.message, status = status.as_u16(), "auth error");
+
+        let locale = self.locale.clone();
+        let mut response = (status, Json(json!(self))).into_response();
+        set_content_language(response.headers_mut(), &locale);
+        response
     }
 }
 
@@ -154,13 +172,27 @@ impl IntoResponse for AuthError {
 pub use super::token_blacklist::create_token_store;
 
 /// 从请求头提取 Token
-fn extract_token_from_header(request: &Request) -> Result<String, AuthError> {
+fn extract_token_from_header(request: &Request, locale: &str) -> Result<String, AuthError> {
     let auth_header = request
         .headers()
         .get(header::AUTHORIZATION)
-        .ok_or_else(|| AuthError::new("missing_token", "缺少 Authorization 请求头"))?
+        .ok_or_else(|| {
+            AuthError::new(
+                "missing_token",
+                locale,
+                "errors.auth.missing_token",
+                I18nParams::new(),
+            )
+        })?
         .to_str()
-        .map_err(|_| AuthError::new("invalid_token", "无效的 Authorization 请求头"))?
+        .map_err(|_| {
+            AuthError::new(
+                "invalid_token",
+                locale,
+                "errors.auth.invalid_authorization_header",
+                I18nParams::new(),
+            )
+        })?
         .to_string();
 
     // 支持 "Bearer <token>" 格式
@@ -183,10 +215,14 @@ async fn validate_token(
     token: &str,
     _token_store: &TokenStore,
     secret_key: &[u8],
+    locale: &str,
 ) -> Result<ValidatedToken, AuthError> {
     // 使用 pasetors 验证 v4.local Token
-    let validation_result = validate_paseto_token(token, secret_key)
-        .map_err(|e| AuthError::new("invalid_token", format!("Token 验证失败: {}", e)))?;
+    let validation_result = validate_paseto_token(token, secret_key, locale).map_err(|e| {
+        let mut params = I18nParams::new();
+        params.insert("reason".to_string(), Value::String(e));
+        AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+    })?;
 
     // 检查是否过期
     let now = SystemTime::now()
@@ -194,14 +230,23 @@ async fn validate_token(
         .unwrap()
         .as_secs();
     if now > validation_result.expires_at {
-        return Err(AuthError::new("expired_token", "Token 已过期"));
+        return Err(AuthError::new(
+            "expired_token",
+            locale,
+            "errors.auth.expired_token",
+            I18nParams::new(),
+        ));
     }
 
     Ok(validation_result)
 }
 
 /// 使用 pasetors 验证 Token
-fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToken, String> {
+fn validate_paseto_token(
+    token: &str,
+    secret_key: &[u8],
+    locale: &str,
+) -> Result<ValidatedToken, String> {
     use pasetors::claims::ClaimsValidationRules;
     use pasetors::keys::SymmetricKey;
     use pasetors::local;
@@ -214,12 +259,12 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
 
     // 解析未受信任的 Token
     let untrusted =
-        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {:?}", e))?;
+        UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {e:?}"))?;
 
     // 验证 Token
     let validation_rules = ClaimsValidationRules::new();
     let trusted_token = local::decrypt(&sk, &untrusted, &validation_rules, None, None)
-        .map_err(|e| format!("解密失败: {:?}", e))?;
+        .map_err(|e| format!("解密失败: {e:?}"))?;
 
     // 获取 Claims
     let claims = trusted_token
@@ -278,8 +323,8 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
     }
 
     // 解析租户 ID 和用户 ID
-    let (tenant_id, user_id) =
-        parse_subject(&subject).map_err(|e| format!("解析 subject 失败: {}", e.message))?;
+    let (tenant_id, user_id) = parse_subject(&subject, locale)
+        .map_err(|e| format!("parse subject failed: {}", e.message))?;
 
     Ok(ValidatedToken {
         token_id,
@@ -293,12 +338,14 @@ fn validate_paseto_token(token: &str, secret_key: &[u8]) -> Result<ValidatedToke
 }
 
 /// 解析 subject 格式 "tenant_id:user_id"
-fn parse_subject(subject: &str) -> Result<(String, String), AuthError> {
+fn parse_subject(subject: &str, locale: &str) -> Result<(String, String), AuthError> {
     let parts: Vec<&str> = subject.split(':').collect();
     if parts.len() != 2 {
         return Err(AuthError::new(
             "invalid_token",
-            "Token sub 声明格式无效，应为 tenant_id:user_id",
+            locale,
+            "errors.auth.invalid_subject",
+            I18nParams::new(),
         ));
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
@@ -310,20 +357,25 @@ pub async fn auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let request_locale = resolve_accept_language(request.headers()).to_string();
     // 提取 Token
-    let token = match extract_token_from_header(&request) {
+    let token = match extract_token_from_header(&request, &request_locale) {
         Ok(t) => t,
         Err(e) => return e.into_response(),
     };
 
     // 验证 Token
-    let validated_token = match validate_token(&token, &token_store, &secret_key).await {
-        Ok(t) => t,
-        Err(e) => return e.into_response(),
-    };
+    let validated_token =
+        match validate_token(&token, &token_store, &secret_key, &request_locale).await {
+            Ok(t) => t,
+            Err(e) => return e.into_response(),
+        };
 
     // 将验证后的 Token 添加到请求扩展
+    let context = RequestContext::from_validated_token(&validated_token)
+        .with_resolved_locale(DEFAULT_LOCALE.to_string());
     request.extensions_mut().insert(validated_token);
+    request.extensions_mut().insert(context);
 
     // 继续处理请求
     next.run(request).await
@@ -342,13 +394,27 @@ pub fn require_scope(
         if token.has_scope(&required_scope) {
             Ok(())
         } else {
+            let mut params = I18nParams::new();
+            params.insert(
+                "required_scope".to_string(),
+                Value::String(required_scope.as_str().to_string()),
+            );
+            params.insert(
+                "current_scopes".to_string(),
+                Value::String(
+                    token
+                        .scopes
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            );
             Err(AuthError::new(
                 "insufficient_scope",
-                format!(
-                    "缺少必需的 scope: {}，当前 scopes: {:?}",
-                    required_scope.as_str(),
-                    token.scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>()
-                ),
+                DEFAULT_LOCALE,
+                "errors.auth.insufficient_scope",
+                params,
             ))
         }
     }
@@ -362,16 +428,33 @@ pub fn require_any_scope(
         if token.has_any_scope(&required_scopes) {
             Ok(())
         } else {
-            Err(AuthError::new(
-                "insufficient_scope",
-                format!(
-                    "缺少必需的 scope，需要以下任一: {:?}，当前 scopes: {:?}",
+            let mut params = I18nParams::new();
+            params.insert(
+                "required_scope".to_string(),
+                Value::String(
                     required_scopes
                         .iter()
                         .map(|s| s.as_str())
-                        .collect::<Vec<_>>(),
-                    token.scopes.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                        .collect::<Vec<_>>()
+                        .join(", "),
                 ),
+            );
+            params.insert(
+                "current_scopes".to_string(),
+                Value::String(
+                    token
+                        .scopes
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            );
+            Err(AuthError::new(
+                "insufficient_scope",
+                DEFAULT_LOCALE,
+                "errors.auth.insufficient_scope",
+                params,
             ))
         }
     }
@@ -395,7 +478,7 @@ pub mod tests {
     ) -> ValidatedToken {
         ValidatedToken {
             token_id: uuid::Uuid::now_v7().to_string(),
-            subject: format!("{}:{}", tenant_id, user_id),
+            subject: format!("{tenant_id}:{user_id}"),
             tenant_id: tenant_id.to_string(),
             user_id: user_id.to_string(),
             expires_at: SystemTime::now()

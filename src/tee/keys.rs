@@ -325,7 +325,7 @@ impl UserKeyCache {
 
     /// 获取缓存条目
     pub fn get(&mut self, tenant_id: &str, user_id_hash: &str) -> Option<&CachedKeyEntry> {
-        let key = format!("{}:{}", tenant_id, user_id_hash);
+        let key = format!("{tenant_id}:{user_id_hash}");
 
         if let Some(entry) = self.entries.get(&key) {
             if entry.is_expired(self.ttl) {
@@ -348,7 +348,7 @@ impl UserKeyCache {
 
     /// 插入缓存条目
     pub fn insert(&mut self, tenant_id: &str, user_id_hash: &str, entry: CachedKeyEntry) {
-        let key = format!("{}:{}", tenant_id, user_id_hash);
+        let key = format!("{tenant_id}:{user_id_hash}");
 
         // 如果已存在，先清理旧的
         if self.entries.contains_key(&key) {
@@ -490,7 +490,7 @@ impl std::fmt::Display for KeyManagerError {
         match self {
             KeyManagerError::KeyNotFound => write!(f, "Key not found in cache"),
             KeyManagerError::CacheFull => write!(f, "Key cache is full"),
-            KeyManagerError::SealingFailed(msg) => write!(f, "Sealing failed: {}", msg),
+            KeyManagerError::SealingFailed(msg) => write!(f, "Sealing failed: {msg}"),
             KeyManagerError::MrsignerMismatch => {
                 write!(f, "MRSIGNER mismatch - incompatible enclave")
             }
@@ -498,8 +498,8 @@ impl std::fmt::Display for KeyManagerError {
                 write!(f, "MRENCLAVE mismatch - enclave identity changed")
             }
             KeyManagerError::InvalidMetadata => write!(f, "Invalid key metadata"),
-            KeyManagerError::StorageError(msg) => write!(f, "Storage error: {}", msg),
-            KeyManagerError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            KeyManagerError::StorageError(msg) => write!(f, "Storage error: {msg}"),
+            KeyManagerError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }
@@ -807,12 +807,12 @@ mod tests {
         for i in 0..3 {
             let entry = CachedKeyEntry::new(
                 [i as u8; 32],
-                format!("tenant_{}", i),
-                format!("user_{}", i),
+                format!("tenant_{i}"),
+                format!("user_{i}"),
                 [i as u8; KEY_LENGTH],
                 KeyType::UserVault,
             );
-            cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+            cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
         }
 
         assert_eq!(cache.len(), 3);
@@ -834,12 +834,12 @@ mod tests {
         for i in 0..3 {
             let entry = CachedKeyEntry::new(
                 [i as u8; 32],
-                format!("tenant_{}", i),
-                format!("user_{}", i),
+                format!("tenant_{i}"),
+                format!("user_{i}"),
                 [i as u8; KEY_LENGTH],
                 KeyType::UserVault,
             );
-            cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+            cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
         }
 
         assert_eq!(cache.len(), 3);

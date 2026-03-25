@@ -70,7 +70,7 @@ impl RateLimitError {
     pub fn new(retry_after: u64) -> Self {
         Self {
             error: "rate_limit_exceeded".to_string(),
-            message: format!("请求频率超过限制，请在 {} 秒后重试", retry_after),
+            message: format!("请求频率超过限制，请在 {retry_after} 秒后重试"),
             retry_after_seconds: retry_after,
         }
     }
@@ -78,6 +78,11 @@ impl RateLimitError {
 
 impl IntoResponse for RateLimitError {
     fn into_response(self) -> Response {
+        tracing::warn!(
+            retry_after = self.retry_after_seconds,
+            "rate limit exceeded"
+        );
+
         (
             StatusCode::TOO_MANY_REQUESTS,
             [(

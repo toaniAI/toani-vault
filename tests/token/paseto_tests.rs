@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! PASETO Token 集成测试
 //!
 //! 测试 Token 签发、验证、过期和 Scope 权限验证

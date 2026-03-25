@@ -282,7 +282,7 @@ impl EncryptedPayload {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.nonce)
-            .map_err(|e| VaultError::SerializationError(format!("nonce decode failed: {}", e)))
+            .map_err(|e| VaultError::SerializationError(format!("nonce decode failed: {e}")))
     }
 
     /// 获取 auth_tag 字节
@@ -290,7 +290,7 @@ impl EncryptedPayload {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.auth_tag)
-            .map_err(|e| VaultError::SerializationError(format!("auth_tag decode failed: {}", e)))
+            .map_err(|e| VaultError::SerializationError(format!("auth_tag decode failed: {e}")))
     }
 
     /// 获取密文字节
@@ -298,7 +298,7 @@ impl EncryptedPayload {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         URL_SAFE_NO_PAD
             .decode(&self.ciphertext)
-            .map_err(|e| VaultError::SerializationError(format!("ciphertext decode failed: {}", e)))
+            .map_err(|e| VaultError::SerializationError(format!("ciphertext decode failed: {e}")))
     }
 
     /// 验证格式是否符合规范

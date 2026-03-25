@@ -141,7 +141,7 @@ impl fmt::Display for AuditAction {
             AuditAction::AdminLogin => "admin_login",
             AuditAction::FailedAuth => "failed_auth",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -220,7 +220,7 @@ impl fmt::Display for RedactedParam {
             RedactedParam::PhoneRedacted => write!(f, "[PHONE_REDACTED]"),
             RedactedParam::AddressRedacted => write!(f, "[ADDRESS_REDACTED]"),
             RedactedParam::KeyRedacted => write!(f, "[KEY_REDACTED]"),
-            RedactedParam::Plain(v) => write!(f, "{}", v),
+            RedactedParam::Plain(v) => write!(f, "{v}"),
         }
     }
 }

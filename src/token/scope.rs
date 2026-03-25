@@ -302,10 +302,7 @@ impl ScopeSet {
             match Scope::parse(scope_str) {
                 Some(scope) => scopes.push(scope),
                 None => {
-                    return Err(ScopeError::ParseError(format!(
-                        "未知的 Scope: {}",
-                        scope_str
-                    )));
+                    return Err(ScopeError::ParseError(format!("未知的 Scope: {scope_str}")));
                 }
             }
         }

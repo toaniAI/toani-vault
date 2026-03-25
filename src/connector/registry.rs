@@ -190,7 +190,7 @@ impl ConnectorRegistry {
         // 调用清理方法
         if let Err(e) = connector.cleanup().await {
             // 记录错误，但继续注销
-            eprintln!("警告：清理连接器 '{}' 时出错：{}", name, e);
+            eprintln!("警告：清理连接器 '{name}' 时出错：{e}");
         }
 
         let mut connectors = self.connectors.write().await;
@@ -258,7 +258,7 @@ impl ConnectorRegistry {
         // 依次清理
         for (name, connector) in connectors.iter() {
             if let Err(e) = connector.cleanup().await {
-                eprintln!("警告：清理连接器 '{}' 时出错：{}", name, e);
+                eprintln!("警告：清理连接器 '{name}' 时出错：{e}");
             }
         }
 
@@ -352,7 +352,7 @@ impl ConnectorRegistryBuilder {
 
         for (name, connector) in self.connectors {
             if let Err(e) = registry.register(name, connector).await {
-                eprintln!("警告：注册连接器失败：{}", e);
+                eprintln!("警告：注册连接器失败：{e}");
             }
         }
 
@@ -475,7 +475,7 @@ mod tests {
         // 检查错误类型
         match result {
             Err(ConnectorError::NotFound { name }) => assert_eq!(name, "nonexistent"),
-            Err(e) => panic!("Expected NotFound error, got {}", e),
+            Err(e) => panic!("Expected NotFound error, got {e}"),
             Ok(_) => panic!("Expected error, got Ok"),
         }
     }

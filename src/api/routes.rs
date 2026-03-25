@@ -28,6 +28,8 @@ pub mod credentials {
 pub mod tokens {
     /// 创建 Token
     pub const CREATE: &str = "/tokens";
+    /// 获取 Token 统计
+    pub const STATS: &str = "/tokens/stats";
     /// 验证 Token
     pub const VERIFY: &str = "/tokens/verify";
     /// 撤销 Token

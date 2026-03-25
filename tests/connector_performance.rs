@@ -1,3 +1,8 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(unexpected_cfgs)]
+#![allow(clippy::uninlined_format_args)]
+
 //! Connector 框架性能测试
 //!
 //! 测试内容：

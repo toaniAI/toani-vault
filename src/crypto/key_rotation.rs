@@ -434,7 +434,7 @@ impl KeyRotationManager {
         }
 
         // 检查并发轮换
-        let rotation_key = format!("{}:{}", tenant_id, user_id);
+        let rotation_key = format!("{tenant_id}:{user_id}");
         if self
             .rotating_keys
             .write()
@@ -489,7 +489,7 @@ impl KeyRotationManager {
             }
 
             // 创建新密钥
-            let new_key_id = format!("l2_{}_{}_v{}", tenant_id, user_id, current_time);
+            let new_key_id = format!("l2_{tenant_id}_{user_id}_v{current_time}");
             let mut new_key = KeyMetadata::new(
                 new_key_id.clone(),
                 tenant_id.to_string(),
@@ -529,10 +529,7 @@ impl KeyRotationManager {
         let current_time = current_timestamp();
 
         // 创建新的 L3 密钥
-        let new_key_id = format!(
-            "l3_{}_{}_{}_{}",
-            tenant_id, user_id, credential_id, current_time
-        );
+        let new_key_id = format!("l3_{tenant_id}_{user_id}_{credential_id}_{current_time}");
 
         let new_key = KeyMetadata::new(
             new_key_id.clone(),

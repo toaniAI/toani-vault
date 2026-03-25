@@ -198,7 +198,7 @@ impl PasetoToken {
 
         // 创建对称密钥
         let symmetric_key = SymmetricKey::<V4>::from(key.as_bytes())
-            .map_err(|e| TokenError::KeyError(format!("密钥创建失败: {}", e)))?;
+            .map_err(|e| TokenError::KeyError(format!("密钥创建失败: {e}")))?;
 
         // 构建 Token
         let token = local::encrypt(&symmetric_key, &paseto_claims, None, None)
@@ -227,7 +227,7 @@ impl PasetoToken {
 
         // 创建对称密钥
         let symmetric_key = SymmetricKey::<V4>::from(key.as_bytes())
-            .map_err(|e| TokenError::KeyError(format!("密钥创建失败: {}", e)))?;
+            .map_err(|e| TokenError::KeyError(format!("密钥创建失败: {e}")))?;
 
         // 创建验证规则
         let mut validation_rules = ClaimsValidationRules::new();
@@ -270,7 +270,7 @@ impl PasetoToken {
                 .get_claim(key)
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
-                .ok_or_else(|| TokenError::VerificationError(format!("缺少 {}", key)))
+                .ok_or_else(|| TokenError::VerificationError(format!("缺少 {key}")))
         };
 
         // 提取标准声明
@@ -505,8 +505,7 @@ mod tests {
                     | Err(TokenError::ClaimsError(ClaimsError::InvalidAudience { .. }))
                     | Err(TokenError::Expired)
             ),
-            "Expected validation error, got {:?}",
-            result
+            "Expected validation error, got {result:?}"
         );
     }
 

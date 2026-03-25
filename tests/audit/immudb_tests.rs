@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! immudb 集成测试
 //!
 //! 测试 immudb 客户端和存储实现的功能

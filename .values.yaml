@@ -22,6 +22,8 @@ envs:
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: development
   RUST_LOG: debug
+  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge"
+  VAULT_ADDR: "http://vault:8200"
 
 o_envs: []
 
@@ -64,4 +66,5 @@ configs: {}
 configPath: /configs/
 configExist: "credbridge-go"
 
-nodeSelector: {}
+nodeSelector:
+  tee: tee

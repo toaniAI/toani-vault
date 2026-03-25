@@ -97,23 +97,23 @@ pub enum DcapError {
 impl std::fmt::Display for DcapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DcapError::QuoteGenerationFailed(msg) => write!(f, "Quote generation failed: {}", msg),
+            DcapError::QuoteGenerationFailed(msg) => write!(f, "Quote generation failed: {msg}"),
             DcapError::QuoteVerificationFailed(msg) => {
-                write!(f, "Quote verification failed: {}", msg)
+                write!(f, "Quote verification failed: {msg}")
             }
             DcapError::PcsCommunicationFailed(msg) => {
-                write!(f, "PCS communication failed: {}", msg)
+                write!(f, "PCS communication failed: {msg}")
             }
             DcapError::CertificateVerificationFailed(msg) => {
-                write!(f, "Certificate verification failed: {}", msg)
+                write!(f, "Certificate verification failed: {msg}")
             }
             DcapError::InvalidCertificateChain => write!(f, "Invalid certificate chain"),
             DcapError::SignatureVerificationFailed => write!(f, "Signature verification failed"),
             DcapError::MeasurementMismatch => write!(f, "Measurement mismatch"),
             DcapError::InvalidQuoteFormat => write!(f, "Invalid quote format"),
-            DcapError::ConfigurationError(msg) => write!(f, "Configuration error: {}", msg),
-            DcapError::EnclaveError(msg) => write!(f, "Enclave error: {}", msg),
-            DcapError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            DcapError::ConfigurationError(msg) => write!(f, "Configuration error: {msg}"),
+            DcapError::EnclaveError(msg) => write!(f, "Enclave error: {msg}"),
+            DcapError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }
@@ -500,9 +500,9 @@ impl DcapService {
         if !self.config.simulation_mode {
             // 实际环境中向 Intel PCS 注册
             // 这里仅模拟
-            log::info!("DCAP service initialized in production mode");
+            tracing::info!("DCAP service initialized in production mode");
         } else {
-            log::info!("DCAP service initialized in simulation mode");
+            tracing::info!("DCAP service initialized in simulation mode");
         }
 
         Ok(quote)
@@ -622,7 +622,7 @@ impl DcapService {
     /// 在实际生产环境中，这将调用 Intel PCS API
     pub fn register_with_pcs(&self, _quote: &DcapQuote) -> Result<String, DcapError> {
         if self.config.simulation_mode {
-            log::info!("Skipping PCS registration in simulation mode");
+            tracing::info!("Skipping PCS registration in simulation mode");
             return Ok("simulated-pcs-id".to_string());
         }
 
@@ -632,7 +632,7 @@ impl DcapService {
         // 3. 获取 PCK 证书
         // 4. 存储证书用于后续验证
 
-        log::info!("Registering with Intel PCS...");
+        tracing::info!("Registering with Intel PCS...");
         Ok("pcs-registration-id".to_string())
     }
 
@@ -1083,7 +1083,7 @@ impl DcapService {
     }
 
     /// 将 Quote 序列化为字节
-    fn quote_to_bytes(&self, quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
+    pub fn quote_to_bytes(&self, quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
         let mut bytes = Vec::new();
 
         bytes.extend_from_slice(&quote.version.to_le_bytes());
@@ -1195,7 +1195,7 @@ fn parse_pem_cert(pem: &str) -> Result<Vec<u8>, DcapError> {
     use base64::{Engine, engine::general_purpose::STANDARD};
     STANDARD
         .decode(&base64_content)
-        .map_err(|e| DcapError::ConfigurationError(format!("Invalid PEM: {}", e)))
+        .map_err(|e| DcapError::ConfigurationError(format!("Invalid PEM: {e}")))
 }
 
 /// 获取当前时间戳

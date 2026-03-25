@@ -93,7 +93,7 @@ impl PlaywrightClient {
         // 通过 Chrome 的 --remote-debugging-port 启动后，使用 ws://localhost:9222/json/version 获取 WebSocket URL
         let _config = BrowserConfig::builder().build().map_err(|e| {
             error!("浏览器配置构建失败: {}", e);
-            ExportError::ConfigurationError(format!("浏览器配置失败: {}", e))
+            ExportError::ConfigurationError(format!("浏览器配置失败: {e}"))
         })?;
 
         // 连接到浏览器
@@ -115,8 +115,7 @@ impl PlaywrightClient {
             Err(e) => {
                 error!("连接到 Chrome/CDP 失败: {}", e);
                 Err(ExportError::BrowserConnectionError(format!(
-                    "无法连接到浏览器: {}",
-                    e
+                    "无法连接到浏览器: {e}"
                 )))
             }
         }
@@ -194,7 +193,7 @@ impl PlaywrightClient {
         let page = browser
             .new_page(page_url)
             .await
-            .map_err(|e| ExportError::BrowserError(format!("创建页面失败: {}", e)))?;
+            .map_err(|e| ExportError::BrowserError(format!("创建页面失败: {e}")))?;
 
         // 等待页面加载完成
         tokio::time::sleep(Duration::from_millis(request.wait_time_ms.unwrap_or(1000))).await;
@@ -231,7 +230,7 @@ impl PlaywrightClient {
             let _ = page
                 .execute(viewport_cmd)
                 .await
-                .map_err(|e| ExportError::BrowserError(format!("设置视口失败: {}", e)))?;
+                .map_err(|e| ExportError::BrowserError(format!("设置视口失败: {e}")))?;
         }
 
         // 隐藏指定选择器的元素
@@ -260,7 +259,7 @@ impl PlaywrightClient {
         let data = page
             .screenshot(screenshot_params)
             .await
-            .map_err(|e| ExportError::BrowserError(format!("截图失败: {}", e)))?;
+            .map_err(|e| ExportError::BrowserError(format!("截图失败: {e}")))?;
 
         // 关闭页面
         let _ = page.close().await;
@@ -993,7 +992,7 @@ mod tests {
             };
 
             let result = service.capture(request).await;
-            assert!(result.is_ok(), "Failed for format: {:?}", format);
+            assert!(result.is_ok(), "Failed for format: {format:?}");
         }
     }
 

@@ -197,14 +197,11 @@ pub async fn cross_tenant_check_middleware(request: Request, next: Next) -> Resp
 /// 租户隔离错误响应
 impl IntoResponse for TenantIsolationError {
     fn into_response(self) -> Response {
-        let (status, _code, message) = match &self {
+        let (status, code, message) = match &self {
             TenantIsolationError::CrossTenantAccessDenied { requested, actual } => (
                 StatusCode::FORBIDDEN,
                 "CROSS_TENANT_ACCESS_DENIED",
-                format!(
-                    "跨租户访问被拒绝: 请求租户 '{}' 不匹配资源租户 '{}'",
-                    requested, actual
-                ),
+                format!("跨租户访问被拒绝: 请求租户 '{requested}' 不匹配资源租户 '{actual}'"),
             ),
             TenantIsolationError::MissingTenantContext => (
                 StatusCode::UNAUTHORIZED,
@@ -214,14 +211,16 @@ impl IntoResponse for TenantIsolationError {
             TenantIsolationError::InvalidTenantId(id) => (
                 StatusCode::BAD_REQUEST,
                 "INVALID_TENANT_ID",
-                format!("无效的租户ID: {}", id),
+                format!("无效的租户ID: {id}"),
             ),
             TenantIsolationError::TenantInactive(id) => (
                 StatusCode::FORBIDDEN,
                 "TENANT_INACTIVE",
-                format!("租户未激活: {}", id),
+                format!("租户未激活: {id}"),
             ),
         };
+
+        tracing::warn!(error_code = code, message = %message, status = status.as_u16(), "tenant isolation error");
 
         let response =
             CrossTenantErrorResponse::new(format!("req_{}", uuid::Uuid::now_v7()), message);
@@ -367,7 +366,7 @@ mod tests {
     fn create_test_token(tenant_id: &str, user_id: &str) -> ValidatedToken {
         ValidatedToken {
             token_id: "test_token".to_string(),
-            subject: format!("{}:{}", tenant_id, user_id),
+            subject: format!("{tenant_id}:{user_id}"),
             tenant_id: tenant_id.to_string(),
             user_id: user_id.to_string(),
             expires_at: u64::MAX,

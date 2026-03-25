@@ -1,0 +1,48 @@
+# SDK 与工具
+
+本目录包含 CredBridge 各语言 SDK 和工具的使用文档。
+
+## SDK 文档
+
+### 核心 SDK
+- [SDK 指南](SDK-GUIDE.md) - SDK 使用综合指南
+- [SDK 文档摘要](SDK-SUMMARY.md) - SDK 文档快速参考
+- [SDK Sandbox 指南](SDK-SANDBOX-GUIDE.md) - Sandbox 功能使用指南
+
+### 各语言 SDK
+
+#### TypeScript SDK
+位置：`/sdk-typescript/`
+- [安装和配置](../sdk-typescript/README.md)
+- [API 参考](../sdk-typescript/docs/API_REFERENCE.md)
+- [快速开始](../sdk-typescript/docs/QUICKSTART.md)
+- [示例](../sdk-typescript/docs/EXAMPLES.md)
+
+#### Rust SDK
+位置：`/sdk-rust/`
+- [安装和配置](../sdk-rust/README.md)
+- [API 参考](../sdk-rust/docs/API_REFERENCE.md)
+- [快速开始](../sdk-rust/docs/QUICKSTART.md)
+- [示例](../sdk-rust/docs/EXAMPLES.md)
+
+## 工具
+
+### CLI 命令行工具
+位置：`/cli/`
+- [CLI 使用指南](../cli/README.md)
+- 支持凭证管理、Token 管理、审计日志查询、沙箱操作等
+
+### MCP Server
+位置：`/mcp-server/`
+- [MCP 集成](MCP-INTEGRATION.md)
+- [MCP Server 文档](../mcp-server/README.md)
+- 支持 Model Context Protocol，可与 AI 助手集成
+
+## 示例代码
+
+- [TypeScript 示例](../examples/typescript/README.md)
+- [Rust 示例](../examples/rust/README.md)
+
+---
+
+**更新时间**: 2026-03-20

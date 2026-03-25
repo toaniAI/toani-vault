@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! TEE 沙箱安全导出功能集成测试
 //!
 //! 测试页面冻结、安全截图、内容审核和脱敏功能的集成
