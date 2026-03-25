@@ -386,6 +386,10 @@ async fn initialize_app_state(
     let audit_storage_adapter =
         MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
     let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage.clone()));
+    let audit_verifier_public_key = {
+        let storage = audit_storage.lock().await;
+        storage.recorder().public_key().to_vec()
+    };
     info!(module = "audit", status = "ready", "审计日志存储就绪");
 
     let credential_state = CredentialAppState {
@@ -414,7 +418,7 @@ async fn initialize_app_state(
     );
     let audit_state = AuditApiState {
         storage: Arc::new(audit_storage_adapter),
-        verifier_public_key: vec![],
+        verifier_public_key: audit_verifier_public_key,
     };
     let auth_state = AuthApiState::with_audit_storage(audit_storage.clone());
     info!(module = "auth", status = "ready", "认证模块就绪");

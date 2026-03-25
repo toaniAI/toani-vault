@@ -63,7 +63,7 @@ fn create_no_permission_token() -> ValidatedToken {
 }
 
 /// 创建带测试数据的存储
-fn create_test_storage() -> MemoryAuditStorageAdapter {
+fn create_test_storage() -> MemoryAuditStorage {
     let storage = MemoryAuditStorage::new(1000).unwrap();
 
     // 添加一些测试数据
@@ -88,14 +88,16 @@ fn create_test_storage() -> MemoryAuditStorageAdapter {
         storage.record(entry).unwrap();
     }
 
-    MemoryAuditStorageAdapter::new(storage)
+    storage
 }
 
 /// 创建测试应用
 fn create_test_app() -> Router {
+    let storage = create_test_storage();
+    let verifier_public_key = storage.recorder().public_key().to_vec();
     let state = AuditApiState {
-        storage: std::sync::Arc::new(create_test_storage()),
-        verifier_public_key: vec![],
+        storage: std::sync::Arc::new(MemoryAuditStorageAdapter::new(storage)),
+        verifier_public_key,
     };
     audit_routes(state)
 }
@@ -122,11 +124,15 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
         MemoryAuditStorage::new(1000).unwrap(),
     ));
     let auth_state = AuthApiState::with_audit_storage(shared_storage.clone());
+    let verifier_public_key = {
+        let storage = shared_storage.lock().await;
+        storage.recorder().public_key().to_vec()
+    };
     let audit_state = AuditApiState {
         storage: std::sync::Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
-            shared_storage,
+            shared_storage.clone(),
         )),
-        verifier_public_key: vec![],
+        verifier_public_key,
     };
     let app = Router::new()
         .merge(auth_routes().with_state(auth_state.clone()))
@@ -494,6 +500,46 @@ async fn test_verify_audit_log_by_index() {
 
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert!(data["success"].as_bool().unwrap());
+    assert!(data["data"]["verified"].as_bool().unwrap());
+    assert!(data["data"]["content_hash_match"].as_bool().unwrap());
+    assert!(data["data"]["signature_valid"].as_bool().unwrap());
+    assert!(data["data"]["merkle_proof_valid"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn test_verify_audit_log_fails_with_wrong_public_key() {
+    let storage = create_test_storage();
+    let mut wrong_public_key = storage.recorder().public_key().to_vec();
+    // Flip one byte to ensure signature verification fails while keeping key length valid.
+    wrong_public_key[0] ^= 0xFF;
+
+    let app = audit_routes(AuditApiState {
+        storage: std::sync::Arc::new(MemoryAuditStorageAdapter::new(storage)),
+        verifier_public_key: wrong_public_key,
+    });
+
+    let request_body = r#"{"log_index": 0}"#;
+    let request = Request::builder()
+        .uri("/audit/verify")
+        .method("POST")
+        .header("Authorization", "Bearer test_token")
+        .header("Content-Type", "application/json")
+        .extension(create_audit_token())
+        .body(Body::from(request_body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert!(data["success"].as_bool().unwrap());
+    assert_eq!(data["status"], "invalid");
+    assert!(data["data"]["content_hash_match"].as_bool().unwrap());
+    assert!(!data["data"]["signature_valid"].as_bool().unwrap());
+    assert!(!data["data"]["verified"].as_bool().unwrap());
 }
 
 #[tokio::test]
