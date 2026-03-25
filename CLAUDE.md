@@ -77,6 +77,8 @@ docker compose -f docker/docker-compose.yml up
 docker compose -f docker/docker-compose.prod.yml up
 ```
 
+---
+
 ## Architecture
 
 CredBridge is a zero-trust credential vault with hardware-level security via Intel SGX TEE.
@@ -98,32 +100,72 @@ L0: SGX Sealing Key (hardware root)
 
 **TEE modes:** `TEE_MODE=simulation` for dev, `TEE_MODE=hardware` for production SGX hardware. Hardware mode requires Intel SGX-capable CPU.
 
+**Storage backend selection** (via `CREDBRIDGE_STORAGE_BACKEND`):
+- `auto` (default) — prefers Postgres if `DATABASE_URL` is set, then Vault if `VAULT_ADDR`+`VAULT_TOKEN` are set, otherwise fails
+- `memory` — in-process only, for dev/test
+- `postgres` — PostgreSQL backend
+- `vault` — HashiCorp Vault backend
+
+**API base path:** All API routes are mounted at `/api/v1`.
+
+### Key Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CREDBRIDGE_PORT` | `8080` | HTTP server port |
+| `CREDBRIDGE_HOST` | `0.0.0.0` | HTTP server host |
+| `CREDBRIDGE_ENV` | `development` | `development` or `production` |
+| `TEE_MODE` | `hardware` | `simulation` or `hardware` |
+| `CREDBRIDGE_STORAGE_BACKEND` | `auto` | `auto`, `memory`, `postgres`, `vault` |
+| `DATABASE_URL` | — | PostgreSQL connection string |
+| `VAULT_ADDR` / `VAULT_TOKEN` | — | HashiCorp Vault connection |
+| `CREDBRIDGE_ALLOWED_ORIGINS` | — | Comma-separated CORS origins (production) |
+| `RUST_LOG` | `info` | Log level |
+
 ### Backend Structure (`src/`)
 
 | Module | Purpose |
 |--------|---------|
-| `api/` | Axum HTTP routes — credentials, attestation, audit, connector, sandbox, versioning |
-| `tee/` | TEE enclave lifecycle, keys, sealing, DCAP attestation, sandbox execution |
-| `crypto/` | HKDF key derivation, AES-GCM encryption, key structures |
-| `vault/` | Credential storage models and DB operations |
-| `token/` | PASETO token generation/validation, Redis session store |
-| `services/` | Business logic layer |
-| `audit/` | Immutable audit log via immudb |
+| `api/` | Axum HTTP routes and middleware — credentials, attestation, audit, auth, sandbox, tenant, i18n |
+| `tee/` | TEE enclave lifecycle, keys, sealing, DCAP attestation, sandbox execution (nsjail + seccomp + cgroups + namespaces) |
+| `crypto/` | HKDF key derivation, AES-GCM encryption, key structures, constant-time comparison |
+| `vault/` | Credential storage: `CredentialVault` abstraction over pluggable backends (memory, Postgres, HashiCorp Vault) |
+| `token/` | PASETO token generation/validation, Redis session store, token revocation |
+| `services/` | Business logic: `db/` (connection pool, schema), `llm/` (multi-provider AI: OpenAI, Azure, Claude) |
+| `audit/` | Immutable audit log via immudb + in-memory fallback |
 | `models/` | Shared data models |
-| `tenant/` | Multi-tenant isolation logic |
-| `connector/` | External system connectors |
+| `tenant/` | Multi-tenant isolation logic, tenant config store |
+| `connector/` | External system connectors, HTTP connector, registry |
 | `mcp/` | Model Context Protocol server integration |
-| `bin/` | Additional binary entry points |
+| `bin/` | Additional binary entry points (`generate_test_token`, `db-verify`) |
+
+The Rust crate is named `vault-service` (`vault_service` when used as a library import).
 
 ### Frontend Structure (`frontend/src/`)
 
 React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui.
 
-- `components/` — Reusable UI components (shadcn/ui based)
-- `pages/` — Route-level page components
+The frontend uses a **feature-based** folder structure:
+
+```
+features/
+├── auth/pages/       — LoginPage, ProfilePage
+├── audit/pages/      — AuditPage
+├── credentials/pages/ — CredentialsPage
+├── dashboard/pages/  — DashboardPage
+├── developer/pages/  — DeveloperCenter
+├── tenants/pages/    — SettingsPage, UsersPage
+└── tokens/pages/     — TokensPage
+```
+
+- `components/ui/` — Reusable shadcn/ui components
 - `hooks/` — Custom React hooks (data fetching via TanStack Query)
 - `stores/` — Zustand global state
 - `lib/` — Utilities (API client, `cn()`, etc.)
+- `shared/` — Cross-feature utilities (i18n, audit log presentation)
+- `app/` — Router, Layout, providers, App root
+
+All routes are protected via `ProtectedRoute`; public routes use `PublicRoute`. Pages are lazy-loaded via `React.lazy`.
 
 ### External Services (required for full operation)
 
@@ -136,11 +178,18 @@ See `docker/docker-compose.yml` for default connection settings and env vars.
 
 ### Integration Tests
 
-Tests in `tests/` are organized by domain and use `[[test]]` entries in `Cargo.toml`. Key test files:
-- `credentials_api_tests.rs` — Credential CRUD via HTTP
-- `rls_integration_test.rs` — Row-level security enforcement
-- `sgx_hardware_tests.rs` — SGX hardware attestation (requires SGX)
-- `vault_backend_tests.rs` — Vault storage backend
+Tests in `tests/` use `[[test]]` entries in `Cargo.toml`. Key test files:
+
+| Test | Path |
+|------|------|
+| `paseto_tests` | `tests/token/paseto_tests.rs` |
+| `redis_store_tests` | `tests/token/redis_store_tests.rs` |
+| `audit_api_tests` | `tests/api/audit_tests.rs` |
+| `tenant_middleware_tests` | `tests/api/tenant_middleware_tests.rs` |
+| `rls_integration` | `tests/rls_integration.rs` (requires `rls-tests` feature) |
+| `sandbox_export_tests` | `tests/tee/sandbox_export_tests.rs` |
+| `dcap_tests` | `tests/tee/dcap_tests.rs` |
+| `sgx_hardware_tests` | `tests/` (requires SGX hardware) |
 
 ### SDKs
 
