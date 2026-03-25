@@ -47,7 +47,7 @@ use vault_service::audit::MemoryAuditStorage;
 use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
 use vault_service::tee::{
     Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, StartupReadiness,
-    validate_runtime_requirements,
+    TEE_HARDWARE_BUILD_ENABLED, validate_runtime_requirements,
 };
 use vault_service::tenant::{
     MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
@@ -252,6 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 正在启动 HTTP 服务器...");
     info!("📍 环境: {}", config.environment.as_str());
     info!("🔐 TEE 模式: {}", config.tee_runtime.mode);
+    info!("🧱 TEE 硬件构建支持: {}", TEE_HARDWARE_BUILD_ENABLED);
     info!("🌐 地址: http://{}:{}", config.host, config.port);
     info!("🗄️  存储后端: {}", config.storage_backend.as_str());
 
@@ -333,6 +334,7 @@ async fn initialize_app_state(
     info!(
         module = "enclave",
         status = "ready",
+        tee_hardware_build_enabled = TEE_HARDWARE_BUILD_ENABLED,
         tee_initialized = tee_enclave_running,
         tee_requested_mode = tee_boot_profile,
         tee_effective_mode = tee_effective_mode,
@@ -473,6 +475,7 @@ async fn initialize_app_state(
             info!(
                 module = "attestation",
                 status = "ready",
+                tee_hardware_build_enabled = TEE_HARDWARE_BUILD_ENABLED,
                 requested_mode = tee_boot_profile,
                 effective_mode = tee_effective_mode,
                 root_key_source = root_key_source.as_str(),

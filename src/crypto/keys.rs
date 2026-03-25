@@ -76,6 +76,20 @@ impl HardwareRootKey {
         }
     }
 
+    /// 从 SGX Sealing Key 和测量值创建 L0 密钥。
+    pub fn from_sgx_sealing_key_with_identity(
+        sealing_key: [u8; KEY_LENGTH],
+        mrsigner: [u8; 32],
+        mrenclave: [u8; 32],
+    ) -> Self {
+        Self {
+            key_material: sealing_key,
+            source: RootKeySource::SgxSealingKey,
+            mrsigner,
+            mrenclave,
+        }
+    }
+
     /// 创建模拟模式的 L0 密钥（用于开发测试）
     ///
     /// # Warning
