@@ -1,10 +1,10 @@
 //! 数据库连接验证工具
 //!
 //! 使用方法:
-//!   cargo run --bin db-verify
+//!   DATABASE_URL=postgresql://user:password@host:port/dbname cargo run --bin db-verify
 //!
 //! 或:
-//!   DATABASE_URL=postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge cargo run --bin db-verify
+//!   DATABASE_URL=postgresql://credbridge:your_password@localhost:5432/credbridge cargo run --bin db-verify
 
 use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
@@ -15,9 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("CredBridge 数据库连接验证");
     println!("========================================\n");
 
-    // 从环境变量或默认配置获取数据库 URL
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge".to_string());
+    // 从环境变量获取数据库 URL（必须设置，不使用硬编码默认值）
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        eprintln!("Error: DATABASE_URL environment variable is not set.");
+        eprintln!("Usage: DATABASE_URL=postgresql://user:password@host:port/dbname cargo run --bin db-verify");
+        std::process::exit(1);
+    });
 
     println!("数据库 URL: {database_url}");
     println!();
@@ -75,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .rsplit_once('/')
                     .map(|(base, _)| format!("{base}/postgres"))
                     .unwrap_or_else(|| {
-                        "postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/postgres".to_string()
+                        "postgresql://credbridge:CHANGE_ME@localhost:5432/postgres".to_string()
                     });
 
                 let temp_pool = PgPoolOptions::new()

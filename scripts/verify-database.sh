@@ -2,6 +2,12 @@
 # =============================================================================
 # CredBridge 数据库验证脚本
 # 用于验证 PostgreSQL 数据库连接和初始化
+#
+# 使用方法:
+#   DATABASE_URL=postgresql://user:password@host:port/dbname ./scripts/verify-database.sh
+#
+# 或设置单独的环境变量:
+#   export DB_HOST=localhost DB_PORT=5432 DB_USER=credbridge DB_PASSWORD=your_password
 # =============================================================================
 
 set -e
@@ -12,12 +18,29 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 数据库配置
-DB_HOST="${DB_HOST:-10.11.25.9}"
-DB_PORT="${DB_PORT:-15432}"
-DB_USER="${DB_USER:-dn}"
-DB_PASSWORD="${DB_PASSWORD:-dnXcdYxcv56H}"
-DB_NAME="${DB_NAME:-credbridge}"
+# 优先从 DATABASE_URL 解析，否则使用单独环境变量（无硬编码默认值）
+if [ -n "$DATABASE_URL" ]; then
+    # 从 DATABASE_URL 解析各字段
+    # 格式: postgresql://user:password@host:port/dbname
+    _url="${DATABASE_URL#postgresql://}"
+    _url="${_url#postgres://}"
+    _userinfo="${_url%%@*}"
+    _hostinfo="${_url#*@}"
+    DB_USER="${_userinfo%%:*}"
+    DB_PASSWORD="${_userinfo#*:}"
+    _hostport="${_hostinfo%%/*}"
+    DB_NAME="${_hostinfo#*/}"
+    DB_HOST="${_hostport%%:*}"
+    DB_PORT="${_hostport#*:}"
+    DB_PORT="${DB_PORT:-5432}"
+else
+    # 从单独环境变量读取，无默认值；未设置时报错
+    DB_HOST="${DB_HOST:?Error: DB_HOST is not set. Please set DATABASE_URL or DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.}"
+    DB_PORT="${DB_PORT:-5432}"
+    DB_USER="${DB_USER:?Error: DB_USER is not set.}"
+    DB_PASSWORD="${DB_PASSWORD:?Error: DB_PASSWORD is not set.}"
+    DB_NAME="${DB_NAME:-credbridge}"
+fi
 
 echo "=========================================="
 echo "CredBridge 数据库验证"

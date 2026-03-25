@@ -80,8 +80,8 @@ steps:
     image: plugins/docker
     pull: if-not-exists
     settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/zkme/credbridge
+      registry: your-registry.example.com
+      repo: your-registry.example.com/credbridge/credbridge
       tags: alpha-${DRONE_BUILD_NUMBER}
       purge: true
       username:
@@ -105,10 +105,11 @@ steps:
         from_secret: docker-hub-password
     commands:
       - /run.sh
-      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-go -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-go dn/go -f .values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
-      - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
+      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.your-registry.example.com/
+      # NOTE: Replace 'your-namespace' with your actual Kubernetes namespace
+      - kubectl create --save-config configmap credbridge-go -n your-namespace --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - helm upgrade --install credbridge-go dn/go -f .values.yaml -n your-namespace --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl -n your-namespace rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
         - refs/heads/branch_dev
@@ -127,10 +128,11 @@ steps:
         from_secret: docker-hub-password
     commands:
       - /run.sh
-      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-go -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-go dn/go -f .test.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
-      - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
+      - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.your-registry.example.com/
+      # NOTE: Replace 'your-namespace' with your actual Kubernetes namespace
+      - kubectl create --save-config configmap credbridge-go -n your-namespace --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - helm upgrade --install credbridge-go dn/go -f .test.values.yaml -n your-namespace --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl -n your-namespace rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
         - refs/heads/branch_test
@@ -139,14 +141,16 @@ steps:
 kind: secret
 name: docker-hub-username
 get:
-  path: docker-secret-hub.bitkinetic.com
+  # NOTE: Replace with your Vault secret path for registry credentials
+  path: docker-secret-your-registry.example.com
   name: username
 
 ---
 kind: secret
 name: docker-hub-password
 get:
-  path: docker-secret-hub.bitkinetic.com
+  # NOTE: Replace with your Vault secret path for registry credentials
+  path: docker-secret-your-registry.example.com
   name: password
 
 ---

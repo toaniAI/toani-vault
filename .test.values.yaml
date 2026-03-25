@@ -7,7 +7,7 @@ strategy:
     maxUnavailable: 0
 
 image:
-  repository: hub.bitkinetic.com/zkme/credbridge
+  repository: your-registry.example.com/credbridge/credbridge
   tag: stable
   pullPolicy: IfNotPresent
 
@@ -22,7 +22,7 @@ envs:
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: production
   RUST_LOG: info
-  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge"
+  DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
   VAULT_ADDR: "http://vault:8200"
 
 o_envs: []
