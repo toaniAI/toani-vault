@@ -13,6 +13,7 @@
 - [DCAP 设置](DCAP-SETUP.md) - Intel SGX DCAP 环境配置
 - [ImmuDB 设置](IMMUDB_SETUP.md) - 审计日志数据库设置
 - [Intel SGX 部署要求](INTEL_SGX_DEPLOYMENT_REQUIREMENTS.md) - SGX 硬件部署要求
+- [Drone 部署后 TEE 硬件验收清单](DRONE_TEE_HARDWARE_ACCEPTANCE_CHECKLIST.md) - 在 TEE 节点完成 rollout 后的一次性验收步骤
 
 ## 监控与运维
 
