@@ -102,6 +102,15 @@ fn create_test_app() -> Router {
     audit_routes(state)
 }
 
+fn extract_log_indexes(list_response: &Value) -> Vec<u64> {
+    list_response["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["log_index"].as_u64().unwrap())
+        .collect()
+}
+
 #[tokio::test]
 async fn test_list_audit_logs_success() {
     let app = create_test_app();
@@ -286,6 +295,83 @@ async fn test_list_audit_logs_with_pagination() {
 
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_list_audit_logs_are_sorted_desc_by_operation_time() {
+    let app = create_test_app();
+
+    let request = Request::builder()
+        .uri("/audit/logs?page=1&page_size=10")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    let log_indexes = extract_log_indexes(&payload);
+
+    assert_eq!(log_indexes.len(), 10);
+    assert!(
+        log_indexes.windows(2).all(|w| w[0] >= w[1]),
+        "expected descending log_index order, got: {:?}",
+        log_indexes
+    );
+}
+
+#[tokio::test]
+async fn test_list_audit_logs_pagination_keeps_global_desc_order() {
+    let app = create_test_app();
+
+    let page1_request = Request::builder()
+        .uri("/audit/logs?page=1&page_size=3")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+    let page1_response = app.clone().oneshot(page1_request).await.unwrap();
+    assert_eq!(page1_response.status(), StatusCode::OK);
+    let page1_body = page1_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let page1_payload: Value = serde_json::from_slice(&page1_body).unwrap();
+    let page1_indexes = extract_log_indexes(&page1_payload);
+
+    let page2_request = Request::builder()
+        .uri("/audit/logs?page=2&page_size=3")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+    let page2_response = app.oneshot(page2_request).await.unwrap();
+    assert_eq!(page2_response.status(), StatusCode::OK);
+    let page2_body = page2_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    let page2_payload: Value = serde_json::from_slice(&page2_body).unwrap();
+    let page2_indexes = extract_log_indexes(&page2_payload);
+
+    assert_eq!(page1_indexes.len(), 3);
+    assert_eq!(page2_indexes.len(), 3);
+    assert!(
+        page1_indexes.last().unwrap() > page2_indexes.first().unwrap(),
+        "expected page1 to be newer than page2, got page1={:?}, page2={:?}",
+        page1_indexes,
+        page2_indexes
+    );
 }
 
 #[tokio::test]

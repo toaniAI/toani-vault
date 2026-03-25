@@ -124,7 +124,7 @@ impl AuditStorage for MemoryAuditStorageAdapter {
             .map_err(|e| format!("{e:?}"))?;
 
         // 过滤
-        let filtered: Vec<_> = all_entries
+        let mut filtered: Vec<_> = all_entries
             .into_iter()
             .filter(|e| {
                 if let Some(start) = filter.start_time
@@ -165,6 +165,15 @@ impl AuditStorage for MemoryAuditStorageAdapter {
                 true
             })
             .collect();
+
+        // 审计日志列表统一为“最新优先”：
+        // 先按操作时间倒序，再按日志索引倒序做稳定兜底，避免同毫秒时间戳导致顺序抖动。
+        filtered.sort_by(|a, b| {
+            b.entry
+                .timestamp
+                .cmp(&a.entry.timestamp)
+                .then_with(|| b.log_index.cmp(&a.log_index))
+        });
 
         let total = filtered.len() as u64;
 
