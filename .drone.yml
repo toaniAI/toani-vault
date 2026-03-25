@@ -7,9 +7,12 @@ trigger:
     include:
       - refs/heads/branch_dev
       - refs/heads/branch_test
+      - refs/pull/**
   event:
-    # 当前该测试流水线仅接受 cron 触发，不会随普通 push/PR 自动运行
-    # 如需恢复普通提交触发，再把 event 改回 push/pull_request
+    # PR 常规门禁：所有日常开发至少执行 fmt/clippy/test
+    - pull_request
+    - push
+    # 保留 cron，便于定时回归
     - cron
   paths:
     exclude:
@@ -37,7 +40,7 @@ steps:
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
       - rustup component add rustfmt
-      - cargo fmt --all -- --check
+      - cargo fmt --check
 
   - name: rust-clippy
     image: rust:1.88.0-slim-bookworm

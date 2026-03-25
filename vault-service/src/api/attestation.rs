@@ -49,6 +49,10 @@ pub struct AttestationState {
     pub mrenclave: Option<String>,
     /// MRSIGNER 值（SGX）
     pub mrsigner: Option<String>,
+    /// 当前实现是否对请求的硬件模式执行显式 fail-closed
+    pub fail_closed: bool,
+    /// fail-closed 的显式原因
+    pub fail_closed_reason: Option<String>,
 }
 
 /// TEE 类型枚举
@@ -82,10 +86,17 @@ impl std::fmt::Display for TeeType {
 impl AttestationState {
     /// 创建新的 Attestation 状态
     pub fn new(config: AttestationApiConfig) -> Self {
-        let tee_type = if config.tee_runtime.is_simulation() {
-            TeeType::Simulation
+        let (tee_type, fail_closed, fail_closed_reason) = if config.tee_runtime.is_simulation() {
+            (TeeType::Simulation, false, None)
         } else {
-            TeeType::Unknown
+            (
+                TeeType::Unknown,
+                true,
+                Some(
+                    "real hardware attestation initialization is not implemented in vault-service yet; refusing simulated fallback"
+                        .to_string(),
+                ),
+            )
         };
 
         Self {
@@ -95,6 +106,8 @@ impl AttestationState {
             last_attestation_time: None,
             mrenclave: None,
             mrsigner: None,
+            fail_closed,
+            fail_closed_reason,
         }
     }
 
@@ -178,6 +191,11 @@ pub struct AttestationStatusResponse {
     pub effective_mode: String,
     /// 服务版本
     pub version: String,
+    /// 当前实现是否显式 fail-closed
+    pub fail_closed: bool,
+    /// fail-closed 的原因
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fail_closed_reason: Option<String>,
 }
 
 /// 认证状态枚举
@@ -291,6 +309,8 @@ pub async fn get_status(State(state): State<Arc<AttestationState>>) -> impl Into
         requested_mode: state.config.tee_runtime.mode.to_string(),
         effective_mode: state.config.tee_runtime.mode.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
+        fail_closed: state.fail_closed,
+        fail_closed_reason: state.fail_closed_reason.clone(),
     };
 
     (StatusCode::OK, Json(response))

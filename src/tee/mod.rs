@@ -65,7 +65,10 @@
 //! ```
 
 use crate::config::{TeeRuntimeConfig, TeeRuntimeMode};
+use serde::Serialize;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 // 子模块定义
 pub mod attestation;
@@ -75,6 +78,7 @@ pub mod dcap;
 pub mod driver_verify;
 pub mod enclave;
 pub mod keys;
+pub mod provider;
 pub mod quote;
 pub mod sandbox;
 pub mod sealing;
@@ -82,6 +86,9 @@ pub mod upgrade;
 
 // 公开导出 - Enclave
 pub use enclave::{CacheStats, Enclave, EnclaveConfig, EnclaveError, EnclaveState, EnclaveStats};
+
+/// 共享的 Enclave 句柄，供主启动链和 API 复用同一个实例。
+pub type SharedEnclave = Arc<Mutex<Enclave>>;
 
 // 公开导出 - Sealing
 pub use sealing::{SealPolicy, SealedData, SealedStorage, SealingKey, SealingService};
@@ -121,6 +128,11 @@ pub use keys::{
     MASTER_KEY_STORAGE_ID, MasterKeyMetadata, ProtectedKeyMaterial, UserKeyCache,
 };
 
+pub use provider::{
+    ProviderBootstrap, ProviderIdentity, ProviderRequest, TeeProviderError, bootstrap_enclave,
+    root_key_source,
+};
+
 // 公开导出 - Cleanup (密钥清理策略)
 pub use cleanup::{
     CleanupConfig, CleanupScheduler, CleanupStats, KeyCleaner, KeyLifecycle, ProtectedMemory,
@@ -132,6 +144,98 @@ pub const TEE_VERSION: &str = "0.1.0";
 
 /// 默认用户密钥缓存 TTL（秒）
 pub const DEFAULT_USER_KEY_TTL: u64 = 300; // 5 分钟
+
+/// 自检项状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SelfCheckStatus {
+    Ready,
+    Degraded,
+    Failed,
+}
+
+impl SelfCheckStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SelfCheckStatus::Ready => "ready",
+            SelfCheckStatus::Degraded => "degraded",
+            SelfCheckStatus::Failed => "failed",
+        }
+    }
+
+    pub fn is_ready(self) -> bool {
+        matches!(self, SelfCheckStatus::Ready)
+    }
+
+    fn merge(self, other: SelfCheckStatus) -> SelfCheckStatus {
+        match (self, other) {
+            (SelfCheckStatus::Failed, _) | (_, SelfCheckStatus::Failed) => SelfCheckStatus::Failed,
+            (SelfCheckStatus::Degraded, _) | (_, SelfCheckStatus::Degraded) => {
+                SelfCheckStatus::Degraded
+            }
+            _ => SelfCheckStatus::Ready,
+        }
+    }
+}
+
+/// 单个启动自检项。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SelfCheckItem {
+    pub component: String,
+    pub status: SelfCheckStatus,
+    pub detail: Option<String>,
+}
+
+impl SelfCheckItem {
+    pub fn ready(component: impl Into<String>) -> Self {
+        Self {
+            component: component.into(),
+            status: SelfCheckStatus::Ready,
+            detail: None,
+        }
+    }
+
+    pub fn degraded(component: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            component: component.into(),
+            status: SelfCheckStatus::Degraded,
+            detail: Some(detail.into()),
+        }
+    }
+
+    pub fn failed(component: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            component: component.into(),
+            status: SelfCheckStatus::Failed,
+            detail: Some(detail.into()),
+        }
+    }
+}
+
+/// 启动链/就绪态汇总。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StartupReadiness {
+    pub live: bool,
+    pub ready: bool,
+    pub status: SelfCheckStatus,
+    pub checks: Vec<SelfCheckItem>,
+}
+
+impl StartupReadiness {
+    pub fn from_checks(checks: Vec<SelfCheckItem>) -> Self {
+        let status = checks
+            .iter()
+            .map(|check| check.status)
+            .fold(SelfCheckStatus::Ready, SelfCheckStatus::merge);
+
+        Self {
+            live: true,
+            ready: status.is_ready(),
+            status,
+            checks,
+        }
+    }
+}
 
 /// 检查 TEE 环境可用性
 ///
@@ -483,5 +587,30 @@ mod tests {
     #[test]
     fn test_default_user_key_ttl() {
         assert_eq!(DEFAULT_USER_KEY_TTL, 300);
+    }
+
+    #[test]
+    fn self_check_status_merge_prefers_failed() {
+        let report = StartupReadiness::from_checks(vec![
+            SelfCheckItem::ready("vault"),
+            SelfCheckItem::degraded("attestation", "quote expired"),
+            SelfCheckItem::failed("enclave", "not running"),
+        ]);
+
+        assert!(report.live);
+        assert!(!report.ready);
+        assert_eq!(report.status, SelfCheckStatus::Failed);
+    }
+
+    #[test]
+    fn readiness_report_is_ready_only_when_all_checks_are_ready() {
+        let report = StartupReadiness::from_checks(vec![
+            SelfCheckItem::ready("vault"),
+            SelfCheckItem::ready("audit"),
+        ]);
+
+        assert!(report.live);
+        assert!(report.ready);
+        assert_eq!(report.status, SelfCheckStatus::Ready);
     }
 }

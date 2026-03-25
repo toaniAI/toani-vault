@@ -19,6 +19,13 @@ use vault_service::tee::{
     },
 };
 
+fn temp_sealed_storage_path(test_name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "credbridge-dcap-tests-{test_name}-{}",
+        uuid::Uuid::new_v4()
+    ))
+}
+
 /// 创建 simulation-safe 的 DCAP 服务。
 fn create_simulation_safe_dcap_service() -> DcapService {
     let runtime = TeeRuntimeConfig::simulation();
@@ -34,6 +41,9 @@ fn create_simulation_safe_dcap_service() -> DcapService {
 fn create_simulation_safe_enclave() -> Enclave {
     let config = EnclaveConfig {
         debug_mode: true,
+        sealed_storage_path: temp_sealed_storage_path("simulation-enclave")
+            .to_string_lossy()
+            .to_string(),
         ..Default::default()
     };
     let mut enclave = Enclave::new(config);
@@ -132,6 +142,44 @@ mod dcap_service_tests {
     }
 
     #[test]
+    fn test_challenge_bound_quote_verifies_with_matching_nonce() {
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
+        let nonce = b"dcap-challenge-nonce";
+
+        let quote = service
+            .generate_quote_for_challenge(&enclave, nonce)
+            .expect("challenge-bound quote should be generated in simulation mode");
+        let quote_bytes = QuoteSerializer::serialize(&quote).expect("Failed to serialize quote");
+
+        let report = service
+            .verify_attestation(&quote_bytes, Some(nonce))
+            .expect("matching nonce should verify");
+
+        assert!(report.result.success);
+        assert_eq!(report.result.mrenclave, enclave.mrenclave());
+        assert_eq!(report.result.mrsigner, enclave.mrsigner());
+    }
+
+    #[test]
+    fn test_challenge_bound_quote_rejects_wrong_nonce() {
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
+
+        let quote = service
+            .generate_quote_for_challenge(&enclave, b"expected-nonce")
+            .expect("challenge-bound quote should be generated in simulation mode");
+        let quote_bytes = QuoteSerializer::serialize(&quote).expect("Failed to serialize quote");
+
+        let error = service
+            .verify_attestation(&quote_bytes, Some(b"wrong-nonce"))
+            .expect_err("mismatched nonce must fail verification");
+
+        assert!(matches!(error, DcapError::QuoteVerificationFailed(_)));
+        assert!(error.to_string().contains("Challenge binding mismatch"));
+    }
+
+    #[test]
     fn test_verify_attestation_invalid_quote() {
         let service = create_simulation_safe_dcap_service();
 
@@ -180,7 +228,31 @@ mod dcap_service_tests {
             "unexpected error: {error:?}"
         );
         assert!(
-            error.to_string().contains("real SGX DCAP quote generation"),
+            error
+                .to_string()
+                .contains("refusing to fall back to simulation"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_hardware_mode_challenge_quote_fails_closed() {
+        let enclave = create_simulation_safe_enclave();
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .expect("Failed to create hardware-mode service");
+
+        let error = service
+            .generate_quote_for_challenge(&enclave, b"challenge")
+            .expect_err("hardware mode must not silently mint simulated challenge quotes");
+
+        assert!(matches!(error, DcapError::QuoteGenerationFailed(_)));
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to fall back to simulation"),
             "unexpected error: {error}"
         );
     }

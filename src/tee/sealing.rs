@@ -659,8 +659,15 @@ impl SealedStorage {
     /// 删除密封数据
     pub fn delete(&self, key: &str) -> Result<(), CryptoError> {
         let file_path = format!("{}/{}.sealed", self.path, key);
-        std::fs::remove_file(&file_path)
-            .map_err(|e| CryptoError::EncryptionError(format!("删除密封数据失败: {e}")))?;
+        match std::fs::remove_file(&file_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(CryptoError::EncryptionError(format!(
+                    "删除密封数据失败: {error}"
+                )));
+            }
+        }
 
         Ok(())
     }

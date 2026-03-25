@@ -48,8 +48,9 @@ pub use config::{
 };
 
 pub use tee::{
-    Enclave, EnclaveState, TeeCapabilities, TeeRuntimeError, TeeType, detect_tee_capabilities,
-    driver_verify, upgrade, validate_runtime_requirements,
+    Enclave, EnclaveState, SelfCheckItem, SelfCheckStatus, SharedEnclave, StartupReadiness,
+    TeeCapabilities, TeeRuntimeError, TeeType, detect_tee_capabilities, driver_verify, upgrade,
+    validate_runtime_requirements,
 };
 
 // 重新导出 MCP 模块

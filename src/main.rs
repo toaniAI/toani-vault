@@ -45,9 +45,10 @@ use vault_service::api::{
 };
 use vault_service::audit::MemoryAuditStorage;
 use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
-use vault_service::crypto::KeyHierarchy;
-use vault_service::crypto::keys::HardwareRootKey;
-use vault_service::tee::{Enclave, EnclaveConfig, validate_runtime_requirements};
+use vault_service::tee::{
+    Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, StartupReadiness,
+    validate_runtime_requirements,
+};
 use vault_service::tenant::{
     MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
 };
@@ -74,6 +75,7 @@ struct ApiEndpoint {
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: String,
+    ready: bool,
     version: String,
     timestamp: u64,
 }
@@ -82,6 +84,8 @@ struct HealthResponse {
 #[derive(Debug, Serialize)]
 struct HealthDetailResponse {
     status: String,
+    live: bool,
+    ready: bool,
     version: String,
     timestamp: u64,
     components: ComponentHealth,
@@ -92,6 +96,7 @@ struct ComponentHealth {
     vault: String,
     enclave: String,
     audit_log: String,
+    attestation: String,
 }
 
 /// 服务器配置
@@ -227,6 +232,7 @@ struct AppState {
     rate_limit_state: RateLimitState,
     attestation_state: Option<Arc<AttestationState>>,
     sandbox_state: Option<SandboxState>,
+    startup_checks: Vec<SelfCheckItem>,
 }
 
 #[tokio::main]
@@ -307,11 +313,15 @@ async fn initialize_app_state(
     let tee_capabilities = validate_runtime_requirements(&config.tee_runtime)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     let enclave_config = EnclaveConfig {
+        runtime_mode: config.tee_runtime.mode,
         debug_mode: config.tee_runtime.debug_mode,
         ..Default::default()
     };
     let mut enclave = Enclave::new(enclave_config);
     enclave.initialize()?;
+    let root_key_source = enclave
+        .root_key_source()
+        .ok_or_else(|| std::io::Error::other("Enclave initialized without an L0 source"))?;
     let tee_boot_profile = config.tee_runtime.mode.as_str();
     let tee_effective_mode = config.tee_runtime.mode.as_str();
     let tee_enclave_running = enclave.is_running();
@@ -331,7 +341,6 @@ async fn initialize_app_state(
         mrenclave = %tee_mrenclave_hex,
         "TEE Enclave 初始化完成"
     );
-    let shared_enclave = Arc::new(tokio::sync::Mutex::new(enclave));
 
     // --- Key Hierarchy ---
     info!(
@@ -339,18 +348,16 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化密钥层次结构"
     );
-    let l0 = HardwareRootKey::for_runtime_mode(config.tee_runtime.mode)?;
-    let root_key_source = l0.source();
-    let mut hierarchy = KeyHierarchy::new();
-    let _l1_handle = hierarchy.initialize_master_key(&l0)?;
+    let hierarchy = enclave.bootstrap_key_hierarchy()?;
     info!(
         module = "key_hierarchy",
         status = "ready",
         requested_mode = tee_boot_profile,
         effective_mode = tee_effective_mode,
         root_key_source = root_key_source.as_str(),
-        "密钥层次结构就绪 (L0 -> L1)"
+        "密钥层次结构已从 Enclave 当前 L1 状态装载"
     );
+    let shared_enclave = Arc::new(tokio::sync::Mutex::new(enclave));
 
     // --- Storage Backend ---
     info!(
@@ -447,11 +454,17 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化 Attestation API"
     );
-    let attestation_state = match init_attestation_api(AttestationApiConfig {
-        tee_runtime: config.tee_runtime.clone(),
-        root_key_source: root_key_source.as_str().to_string(),
-        ..Default::default()
-    }) {
+    let attestation_state = match init_attestation_api(
+        AttestationApiConfig {
+            tee_runtime: config.tee_runtime.clone(),
+            root_key_source: root_key_source.as_str().to_string(),
+            ..Default::default()
+        },
+        credential_state.enclave.clone(),
+        Some(tee_capabilities.clone()),
+    )
+    .await
+    {
         Ok(state) => {
             info!(
                 module = "attestation",
@@ -494,6 +507,13 @@ async fn initialize_app_state(
         rate_limit_state,
         attestation_state,
         sandbox_state,
+        startup_checks: vec![
+            SelfCheckItem::ready("vault"),
+            SelfCheckItem::ready("audit_log"),
+            SelfCheckItem::ready("auth"),
+            SelfCheckItem::ready("tenant"),
+            SelfCheckItem::ready("rate_limit"),
+        ],
     })
 }
 
@@ -551,6 +571,7 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         .nest(API_BASE_PATH, api_routes)
         // 健康检查路由
         .route("/health", get(health_check))
+        .route("/ready", get(health_check_detail))
         .route("/health/detail", get(health_check_detail))
         // Prometheus 指标端点
         .route("/metrics", get(metrics_handler))
@@ -706,6 +727,120 @@ fn build_api_routes(app_state: AppState) -> Router {
     router.layer(Extension(app_state))
 }
 
+#[derive(Debug, Clone)]
+struct RuntimeOverview {
+    readiness: StartupReadiness,
+    vault_status: String,
+    enclave_status: String,
+    audit_status: String,
+    attestation_status: String,
+    enclave_running: bool,
+    attestation_quote_valid: bool,
+}
+
+async fn build_runtime_overview(state: &AppState) -> RuntimeOverview {
+    let enclave_check = {
+        let enclave = state.credential_state.enclave.lock().await;
+        if enclave.is_running() {
+            SelfCheckItem::ready("enclave")
+        } else {
+            SelfCheckItem::failed("enclave", format!("enclave state is {}", enclave.state()))
+        }
+    };
+
+    let (attestation_check, attestation_status, attestation_quote_valid) =
+        if let Some(attestation_state) = &state.attestation_state {
+            let snapshot = attestation_state.runtime_snapshot().await;
+            let quote_valid = snapshot.quote_valid;
+            (
+                snapshot.as_readiness_check(),
+                snapshot.health_label().to_string(),
+                quote_valid,
+            )
+        } else {
+            (
+                SelfCheckItem::failed("attestation", "attestation API unavailable"),
+                SelfCheckStatus::Failed.as_str().to_string(),
+                false,
+            )
+        };
+
+    let mut checks = state.startup_checks.clone();
+    checks.push(enclave_check.clone());
+    checks.push(attestation_check);
+
+    let readiness = StartupReadiness::from_checks(checks);
+
+    RuntimeOverview {
+        vault_status: component_status(&readiness, "vault"),
+        enclave_status: enclave_check.status.as_str().to_string(),
+        audit_status: component_status(&readiness, "audit_log"),
+        attestation_status,
+        enclave_running: enclave_check.status.is_ready(),
+        attestation_quote_valid,
+        readiness,
+    }
+}
+
+fn component_status(readiness: &StartupReadiness, component: &str) -> String {
+    readiness
+        .checks
+        .iter()
+        .find(|check| check.component == component)
+        .map(|check| check.status.as_str().to_string())
+        .unwrap_or_else(|| SelfCheckStatus::Failed.as_str().to_string())
+}
+
+fn current_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+fn render_metrics(
+    environment: &str,
+    timestamp: u64,
+    readiness: &StartupReadiness,
+    enclave_running: bool,
+    attestation_quote_valid: bool,
+) -> String {
+    format!(
+        r#"# HELP credbridge_up Service liveness status
+# TYPE credbridge_up gauge
+credbridge_up{{version="{}"}} 1
+
+# HELP credbridge_ready Service readiness status
+# TYPE credbridge_ready gauge
+credbridge_ready{{status="{}"}} {}
+
+# HELP credbridge_build_info Build information
+# TYPE credbridge_build_info gauge
+credbridge_build_info{{version="{}",env="{}"}} 1
+
+# HELP credbridge_timestamp Current timestamp
+# TYPE credbridge_timestamp gauge
+credbridge_timestamp {}
+
+# HELP credbridge_attestation_quote_valid Attestation quote validity
+# TYPE credbridge_attestation_quote_valid gauge
+credbridge_attestation_quote_valid{{}} {}
+
+# HELP credbridge_enclave_running Enclave running state
+# TYPE credbridge_enclave_running gauge
+credbridge_enclave_running{{}} {}
+"#,
+        env!("CARGO_PKG_VERSION"),
+        readiness.status.as_str(),
+        u8::from(readiness.ready),
+        env!("CARGO_PKG_VERSION"),
+        environment,
+        timestamp,
+        u8::from(attestation_quote_valid),
+        u8::from(enclave_running),
+    )
+}
+
 /// 根路径处理器
 async fn root_handler() -> impl IntoResponse {
     Json(json!({
@@ -714,6 +849,7 @@ async fn root_handler() -> impl IntoResponse {
         "version": env!("CARGO_PKG_VERSION"),
         "api_base": API_BASE_PATH,
         "health_check": "/health",
+        "readiness_check": "/ready",
     }))
 }
 
@@ -738,7 +874,11 @@ async fn api_root_handler(Extension(state): Extension<AppState>) -> impl IntoRes
             },
             ApiEndpoint {
                 path: "/health".to_string(),
-                description: "健康检查".to_string(),
+                description: "进程存活检查（liveness）".to_string(),
+            },
+            ApiEndpoint {
+                path: "/ready".to_string(),
+                description: "服务就绪检查（readiness）".to_string(),
             },
         ],
     };
@@ -747,14 +887,13 @@ async fn api_root_handler(Extension(state): Extension<AppState>) -> impl IntoRes
 }
 
 /// 健康检查处理器
-async fn health_check() -> impl IntoResponse {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+async fn health_check(Extension(state): Extension<AppState>) -> impl IntoResponse {
+    let timestamp = current_timestamp();
+    let overview = build_runtime_overview(&state).await;
 
     let response = HealthResponse {
-        status: "healthy".to_string(),
+        status: "alive".to_string(),
+        ready: overview.readiness.ready,
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp,
     };
@@ -764,51 +903,14 @@ async fn health_check() -> impl IntoResponse {
 
 /// Prometheus 指标端点
 async fn metrics_handler(Extension(state): Extension<AppState>) -> impl IntoResponse {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // 构建 Prometheus 格式的指标
-    let metrics = format!(
-        r#"# HELP credbridge_up Service up status
-# TYPE credbridge_up gauge
-credbridge_up{{version="{}"}} 1
-
-# HELP credbridge_health_status Service health status
-# TYPE credbridge_health_status gauge
-credbridge_health_status{{status="healthy"}} 1
-
-# HELP credbridge_build_info Build information
-# TYPE credbridge_build_info gauge
-credbridge_build_info{{version="{}",env="{}"}} 1
-
-# HELP credbridge_timestamp Current timestamp
-# TYPE credbridge_timestamp gauge
-credbridge_timestamp {}
-
-# HELP credbridge_attestation_valid Attestation quote validity
-# TYPE credbridge_attestation_valid gauge
-credbridge_attestation_valid{{}} {}
-
-# HELP credbridge_enclave_state Enclave state (1=running, 0=stopped)
-# TYPE credbridge_enclave_state gauge
-credbridge_enclave_state{{}} {}
-"#,
-        env!("CARGO_PKG_VERSION"),
-        env!("CARGO_PKG_VERSION"),
+    let timestamp = current_timestamp();
+    let overview = build_runtime_overview(&state).await;
+    let metrics = render_metrics(
         state.config.environment.as_str(),
         timestamp,
-        if state.attestation_state.is_some() {
-            1
-        } else {
-            0
-        },
-        if state.attestation_state.is_some() {
-            1
-        } else {
-            0
-        },
+        &overview.readiness,
+        overview.enclave_running,
+        overview.attestation_quote_valid,
     );
 
     (
@@ -823,38 +925,24 @@ credbridge_enclave_state{{}} {}
 
 /// 详细健康检查处理器
 async fn health_check_detail(Extension(state): Extension<AppState>) -> impl IntoResponse {
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    // 检查各个组件状态
-    let vault_status = "healthy";
-    let enclave_status = if state.config.tee_runtime.is_simulation() {
-        "simulation"
-    } else {
-        "healthy"
-    };
-    let audit_status = "healthy";
-
-    let overall_status = if vault_status == "healthy" && audit_status == "healthy" {
-        "healthy"
-    } else {
-        "degraded"
-    };
+    let timestamp = current_timestamp();
+    let overview = build_runtime_overview(&state).await;
 
     let response = HealthDetailResponse {
-        status: overall_status.to_string(),
+        status: overview.readiness.status.as_str().to_string(),
+        live: overview.readiness.live,
+        ready: overview.readiness.ready,
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp,
         components: ComponentHealth {
-            vault: vault_status.to_string(),
-            enclave: enclave_status.to_string(),
-            audit_log: audit_status.to_string(),
+            vault: overview.vault_status,
+            enclave: overview.enclave_status,
+            audit_log: overview.audit_status,
+            attestation: overview.attestation_status,
         },
     };
 
-    let status_code = if overall_status == "healthy" {
+    let status_code = if overview.readiness.ready {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE
@@ -870,22 +958,31 @@ fn demonstrate_key_hierarchy() -> Result<(), Box<dyn std::error::Error>> {
     println!("═══════════════════════════════════════════════════════");
     println!();
 
-    // 初始化 Enclave 和 L0 密钥
-    println!("[Step 1] 初始化 SGX Enclave 和 L0 硬件根密钥");
+    // 初始化 Enclave
+    println!("[Step 1] 初始化 SGX Enclave");
     let config = EnclaveConfig {
+        runtime_mode: TeeRuntimeMode::Simulation,
         debug_mode: true,
         ..Default::default()
     };
     let mut enclave = Enclave::new(config);
     enclave.initialize()?;
     println!("  ✓ Enclave 状态: {:?}", enclave.state());
+    println!(
+        "  ✓ L0 来源: {}",
+        enclave
+            .root_key_source()
+            .map(|source| source.as_str())
+            .unwrap_or("unknown")
+    );
     println!();
 
-    // 从 L0 派生 L1
-    println!("[Step 2] 从 L0 派生 L1 Enclave Master Key");
-    let l0 = HardwareRootKey::for_runtime_mode(TeeRuntimeMode::Simulation)?;
-    let mut hierarchy = KeyHierarchy::new();
-    let l1_handle = hierarchy.initialize_master_key(&l0)?;
+    // 从 Enclave 当前 L1 构造层次快照
+    println!("[Step 2] 从 Enclave 当前 L1 构造层次快照");
+    let hierarchy = enclave.bootstrap_key_hierarchy()?;
+    let l1_handle = hierarchy
+        .master_key_handle()
+        .ok_or_else(|| std::io::Error::other("missing master key handle"))?;
     println!("  ✓ L1 Master Key 句柄: {}", hex_encode(&l1_handle[..8]));
     println!();
 
@@ -906,7 +1003,8 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{StorageBackendKind, resolve_auto_storage_backend};
+    use super::{StorageBackendKind, render_metrics, resolve_auto_storage_backend};
+    use vault_service::tee::{SelfCheckItem, StartupReadiness};
 
     #[test]
     fn auto_backend_prefers_postgres_when_database_url_exists() {
@@ -930,5 +1028,20 @@ mod tests {
     fn auto_backend_rejects_partial_vault_configuration() {
         let error = resolve_auto_storage_backend(false, true, false).unwrap_err();
         assert!(error.contains("VAULT_ADDR/VAULT_TOKEN"));
+    }
+
+    #[test]
+    fn metrics_render_readiness_and_attestation_truthfully() {
+        let readiness = StartupReadiness::from_checks(vec![
+            SelfCheckItem::ready("vault"),
+            SelfCheckItem::failed("attestation", "no quote"),
+        ]);
+
+        let metrics = render_metrics("development", 123, &readiness, true, false);
+
+        assert!(metrics.contains("credbridge_up"));
+        assert!(metrics.contains("credbridge_ready{status=\"failed\"} 0"));
+        assert!(metrics.contains("credbridge_attestation_quote_valid{} 0"));
+        assert!(metrics.contains("credbridge_enclave_running{} 1"));
     }
 }

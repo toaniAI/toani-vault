@@ -923,7 +923,8 @@ tar czf credbridge_diagnosis_$(date +%Y%m%d).tar.gz ~/credbridge_diagnosis
 ### 12.4 验证检查
 
 - [ ] 服务启动成功（systemctl status credbridge）
-- [ ] 健康检查通过（/health 端点）
+- [ ] 存活检查通过（`/health` 端点）
+- [ ] 就绪检查通过（`/ready` 或 `/health/detail` 端点）
 - [ ] SGX 硬件测试通过
 - [ ] DCAP Quote 生成成功
 - [ ] 远程认证功能正常
@@ -966,7 +967,10 @@ cat /sys/devices/system/cpu/sgx/epc_size
 ls -la /dev/sgx_*
 
 # 运行测试
-cargo test --test sgx_hardware_tests --release
+cargo fmt --check
+cargo clippy --tests -- -D warnings
+cargo test
+TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1
 
 # 收集诊断信息
 tar czf diagnosis.tar.gz ~/credbridge_diagnosis

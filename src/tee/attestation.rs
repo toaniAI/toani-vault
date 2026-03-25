@@ -1185,6 +1185,14 @@ fn current_timestamp() -> u64 {
 mod tests {
     use super::*;
     use crate::tee::{Enclave, EnclaveConfig};
+    use std::path::PathBuf;
+
+    fn temp_sealed_storage_path(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "credbridge-attestation-{test_name}-{}",
+            uuid::Uuid::new_v4()
+        ))
+    }
 
     #[test]
     fn test_report_data_binding() {
@@ -1267,6 +1275,9 @@ mod tests {
     fn test_attestation_service_generate_quote() {
         let config = EnclaveConfig {
             debug_mode: true,
+            sealed_storage_path: temp_sealed_storage_path("generate-quote")
+                .to_string_lossy()
+                .to_string(),
             ..Default::default()
         };
 
@@ -1286,6 +1297,9 @@ mod tests {
     fn test_attestation_service_verify_quote() {
         let config = EnclaveConfig {
             debug_mode: true,
+            sealed_storage_path: temp_sealed_storage_path("verify-quote")
+                .to_string_lossy()
+                .to_string(),
             ..Default::default()
         };
 
@@ -1309,6 +1323,9 @@ mod tests {
     fn test_attestation_service_hardware_mode_fails_closed() {
         let config = EnclaveConfig {
             debug_mode: true,
+            sealed_storage_path: temp_sealed_storage_path("hardware-fail-closed")
+                .to_string_lossy()
+                .to_string(),
             ..Default::default()
         };
 

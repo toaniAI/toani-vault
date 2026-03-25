@@ -18,7 +18,7 @@
 
 ### 监控告警
 - [监控告警](MONITORING.md) - Prometheus + Grafana 监控配置
-- 健康检查端点：`/health`, `/ready`
+- 健康检查端点：`/health`（liveness）, `/ready` / `/health/detail`（readiness）
 - 指标端点：`/metrics`
 
 ### 日志与审计

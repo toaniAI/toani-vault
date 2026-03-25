@@ -491,6 +491,36 @@ cargo run
 - 默认 CI 只运行 simulation-safe 测试，并显式设置 `TEE_MODE=simulation`。
 - hardware-only 测试应在带 SGX/DCAP/AESM 的专用 runner 或 staging 主机执行，并显式设置 `TEE_MODE=hardware`。
 
+### 启动自检与探针约定
+
+- `GET /health` 只表示进程存活（liveness），不代表 SGX/DCAP 已就绪。
+- `GET /ready` 与 `GET /health/detail` 表示服务就绪（readiness）；当 SGX 设备、AESM、PCCS/PCS、Quote 初始化或关键启动自检失败时应返回 `503`。
+- 在 `TEE_MODE=hardware` 下，若 DCAP 依赖缺失，服务应 fail-closed，而不是静默降级到 simulation。
+
+### 建议验收矩阵
+
+| 类别 | 运行环境 | 目标 | 建议命令 |
+|------|----------|------|----------|
+| `simulation-safe` | 普通 CI / 开发机 | 验证默认构建、格式、lint、单测不依赖 SGX | `cargo fmt --check` / `cargo clippy --tests -- -D warnings` / `cargo test` |
+| `service-dependent` | 可访问数据库、Redis、immudb 的环境 | 验证服务集成行为，但不要求 SGX | `TEE_MODE=simulation cargo test --test attestation_api_tests` |
+| `hardware-only` | SGX 专用 runner / 预发机 | 验证真实 SGX/DCAP/AESM/PCCS 闭环 | `TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1` |
+
+### 无法执行硬件验证时的记录模板
+
+当当前环境没有 SGX runner、`aesmd`、PCCS 或 Intel PCS 凭证时，请在验收记录中明确写出：
+
+```text
+未执行验证：
+- hardware-only: `TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1`
+
+未执行原因：
+- 当前环境缺少 /dev/sgx_enclave 与 /dev/sgx_provision
+- aesmd / PCCS 未部署，无法完成真实 Quote 闭环
+
+影响范围：
+- 无法证明真实 SGX sealing、真实 Quote 生成、PCCS collateral 拉取在本次变更中可用
+```
+
 ### 联系支持
 
 如果遇到无法解决的问题：

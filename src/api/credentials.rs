@@ -11,7 +11,7 @@ use crate::api::middleware::{TokenScope, ValidatedToken, require_any_scope, requ
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
 use crate::models::{CredentialMetadata, CredentialType};
-use crate::tee::Enclave;
+use crate::tee::SharedEnclave;
 use crate::vault::models::{
     CreateCredentialRequest, CredentialFilter, CredentialId, EncryptedPayload, ServiceId, TenantId,
     UserId, VaultEntry,
@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tracing::warn;
 
 /// 应用状态
@@ -38,7 +38,7 @@ pub struct AppState {
     /// 密钥层次结构
     pub key_hierarchy: Arc<RwLock<KeyHierarchy>>,
     /// 共享 TEE Enclave 实例（已接入状态，待切换实际加解密路径）
-    pub enclave: Arc<Mutex<Enclave>>,
+    pub enclave: SharedEnclave,
     /// 审计日志记录器
     pub audit_logger: Arc<dyn AuditLogger>,
 }
