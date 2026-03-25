@@ -4,6 +4,7 @@
 
 use super::constants::KEY_LENGTH;
 use super::{CryptoError, KeyHandle};
+use crate::config::TeeRuntimeMode;
 use rand::RngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -28,7 +29,7 @@ pub struct HardwareRootKey {
 }
 
 /// 根密钥来源
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RootKeySource {
     /// Intel SGX Sealing Key
     SgxSealingKey,
@@ -42,6 +43,22 @@ impl Zeroize for RootKeySource {
     fn zeroize(&mut self) {
         // 枚举类型的 zeroize 只需要重置为默认值即可
         *self = RootKeySource::Simulation;
+    }
+}
+
+impl RootKeySource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RootKeySource::SgxSealingKey => "sgx_sealing_key",
+            RootKeySource::Simulation => "simulation",
+            RootKeySource::SevSnp => "sev_snp",
+        }
+    }
+}
+
+impl std::fmt::Display for RootKeySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -75,6 +92,18 @@ impl HardwareRootKey {
             mrsigner: [0u8; 32],
             mrenclave: [0u8; 32],
         })
+    }
+
+    /// 按运行模式选择 L0 根密钥来源。
+    ///
+    /// `hardware` 模式必须接入真实硬件根密钥，禁止静默退回 simulation。
+    pub fn for_runtime_mode(mode: TeeRuntimeMode) -> Result<Self, CryptoError> {
+        match mode {
+            TeeRuntimeMode::Simulation => Self::for_simulation(),
+            TeeRuntimeMode::Hardware => Err(CryptoError::TeeError(
+                "TEE_MODE=hardware requested, but simulation root key generation was attempted; wire a real hardware sealing key instead".to_string(),
+            )),
+        }
     }
 
     /// 获取密钥材料引用（用于派生）
@@ -362,6 +391,19 @@ mod tests {
         let key = HardwareRootKey::for_simulation().unwrap();
         assert_eq!(key.key_material.len(), KEY_LENGTH);
         assert_eq!(key.source, RootKeySource::Simulation);
+    }
+
+    #[test]
+    fn test_hardware_root_key_for_runtime_mode_rejects_hardware() {
+        let error = match HardwareRootKey::for_runtime_mode(TeeRuntimeMode::Hardware) {
+            Ok(_) => panic!("expected hardware root key generation to be rejected in this build"),
+            Err(e) => e,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("simulation root key generation was attempted")
+        );
     }
 
     #[test]

@@ -411,7 +411,7 @@ echo "✓ 所有检查通过，SGX 环境就绪"
 echo ""
 echo "下一步："
 echo "1. 部署 CredBridge 应用"
-echo "2. 配置 TEE_MODE=production"
+echo "2. 配置 TEE_MODE=hardware"
 echo "3. 运行功能验证测试"
 ```
 
@@ -513,7 +513,7 @@ RUST_LOG=info
 RUST_BACKTRACE=0
 
 # TEE 配置（关键）
-TEE_MODE=production
+TEE_MODE=hardware
 TEE_DEBUG=false
 TEE_INTEL_SGX_ENABLED=true
 SGX_MODE=hardware
@@ -914,7 +914,7 @@ tar czf credbridge_diagnosis_$(date +%Y%m%d).tar.gz ~/credbridge_diagnosis
 
 ### 12.3 配置检查
 
-- [ ] TEE_MODE=production
+- [ ] TEE_MODE=hardware
 - [ ] TEE_DEBUG=false
 - [ ] TEE_INTEL_SGX_ENABLED=true
 - [ ] 数据库连接配置正确

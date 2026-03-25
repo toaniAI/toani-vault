@@ -63,7 +63,7 @@ services:
       - IMMUDB_REPLICA_ADDRESS=immudb-replica:3322
 
       # TEE 生产模式
-      - TEE_MODE=production
+      - TEE_MODE=hardware
       - TEE_DEBUG=false
       - TEE_INTEL_SGX_ENABLED=true
 

@@ -25,8 +25,9 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
 
 | 端点 | 描述 | 状态码 |
 |------|------|--------|
-| `GET /health` | 基础健康检查 | 200 (健康/降级) / 503 (不健康) |
-| `GET /health/detail` | 详细健康检查（包含系统信息） | 同上 |
+| `GET /health` | 进程存活检查（liveness） | 200 |
+| `GET /ready` | 服务就绪检查（readiness） | 200 / 503 |
+| `GET /health/detail` | 详细就绪检查（包含启动自检与系统信息） | 200 / 503 |
 
 ### 响应格式
 
@@ -34,37 +35,14 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
 
 ```json
 {
-  "status": "healthy",
+  "status": "alive",
   "service": "credbridge-vault",
   "version": "0.1.0",
-  "timestamp": 1710123456,
-  "uptime_seconds": 3600,
-  "components": [
-    {
-      "name": "database",
-      "status": "healthy",
-      "latency_ms": 5
-    },
-    {
-      "name": "redis",
-      "status": "healthy",
-      "latency_ms": 2
-    },
-    {
-      "name": "tee",
-      "status": "healthy",
-      "latency_ms": 1,
-      "metadata": {
-        "tee_type": "SGX",
-        "enclave_state": "initialized",
-        "initialized": true
-      }
-    }
-  ]
+  "message": "CredBridge service is running"
 }
 ```
 
-#### 详细健康检查 (`/health/detail`)
+#### 服务就绪检查 (`/ready` 或 `/health/detail`)
 
 ```json
 {
@@ -94,9 +72,16 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
 
 | 状态 | 含义 | HTTP 状态码 |
 |------|------|------------|
-| `healthy` | 所有组件正常 | 200 |
-| `degraded` | 部分组件异常，但服务可用 | 200 |
-| `unhealthy` | 关键组件异常，服务不可用 | 503 |
+| `alive` | 仅表示进程仍在运行 | 200 |
+| `healthy` | 启动自检与关键依赖满足，对外可提供服务 | 200 |
+| `degraded` | 非关键项异常，但当前仍允许服务 | 200 |
+| `unhealthy` | 关键自检或依赖失败，服务未就绪 | 503 |
+
+### Probe 建议
+
+- Kubernetes `livenessProbe` 应指向 `/health`
+- Kubernetes `readinessProbe` 应指向 `/ready`
+- `/health/detail` 适合人工排障与运维系统采样，不建议替代 liveness probe
 
 ## Prometheus 指标
 

@@ -13,8 +13,14 @@
 //!   └── Remote Attestation (DCAP)
 //! ```
 
-use crate::crypto::{CredentialCryptoContext, CryptoError, EncryptedBlob, KeyHandle, KeyHierarchy};
-use crate::tee::sealing::{SealPolicy, SealedStorage, SealingKey, SealingService};
+use crate::config::TeeRuntimeMode;
+use crate::crypto::keys::RootKeySource;
+use crate::crypto::{
+    CredentialCryptoContext, CryptoError, EncryptedBlob, HardwareRootKey, KeyHandle, KeyHierarchy,
+};
+use crate::tee::keys::{KeyManager, KeyManagerError};
+use crate::tee::provider::{ProviderIdentity, ProviderRequest, bootstrap_enclave};
+use crate::tee::sealing::SealPolicy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,6 +30,9 @@ use zeroize::Zeroize;
 /// Enclave 配置
 #[derive(Debug, Clone)]
 pub struct EnclaveConfig {
+    /// 运行模式
+    pub runtime_mode: TeeRuntimeMode,
+
     /// 用户密钥缓存 TTL（秒）
     pub user_key_ttl: u64,
 
@@ -43,6 +52,7 @@ pub struct EnclaveConfig {
 impl Default for EnclaveConfig {
     fn default() -> Self {
         Self {
+            runtime_mode: TeeRuntimeMode::Simulation,
             user_key_ttl: 300, // 5 分钟
             seal_policy: SealPolicy::Mrsigner,
             sealed_storage_path: ".sealed".to_string(),
@@ -112,7 +122,10 @@ pub struct Enclave {
     state: EnclaveState,
 
     /// L0 硬件根密钥
-    l0_key: Option<SealingKey>,
+    l0_key: Option<HardwareRootKey>,
+
+    /// 实际使用的 L0 来源
+    root_key_source: Option<RootKeySource>,
 
     /// 密钥层次管理器
     key_hierarchy: KeyHierarchy,
@@ -120,11 +133,8 @@ pub struct Enclave {
     /// 用户密钥缓存（L2）
     user_key_cache: Arc<RwLock<UserKeyCache>>,
 
-    /// 密封服务
-    sealing_service: SealingService,
-
-    /// 密封存储
-    sealed_storage: Option<SealedStorage>,
+    /// L1 持久化管理器
+    key_manager: Option<KeyManager>,
 
     /// MRENCLAVE 测量值
     mrenclave: [u8; 32],
@@ -142,6 +152,7 @@ impl std::fmt::Debug for Enclave {
             .field("config", &self.config)
             .field("state", &self.state)
             .field("has_l0_key", &self.l0_key.is_some())
+            .field("root_key_source", &self.root_key_source)
             .field("mrenclave", &hex::encode(self.mrenclave))
             .field("mrsigner", &hex::encode(self.mrsigner))
             .field("stats", &self.stats)
@@ -189,19 +200,17 @@ impl Enclave {
             tracing::warn!("无法创建密封存储目录: {}", e);
         }
 
-        let sealed_storage = SealedStorage::new(config.sealed_storage_path.clone());
-
         Self {
             config: config.clone(),
             state: EnclaveState::Uninitialized,
             l0_key: None,
+            root_key_source: None,
             key_hierarchy: KeyHierarchy::new(),
             user_key_cache: Arc::new(RwLock::new(UserKeyCache {
                 entries: HashMap::new(),
                 default_ttl: config.user_key_ttl,
             })),
-            sealing_service: SealingService::new(),
-            sealed_storage: Some(sealed_storage),
+            key_manager: None,
             mrenclave: [0u8; 32],
             mrsigner: [0u8; 32],
             stats: EnclaveStats::default(),
@@ -229,35 +238,43 @@ impl Enclave {
         }
 
         self.state = EnclaveState::Initializing;
+        let init_result = (|| -> Result<(), EnclaveError> {
+            let provider_request = ProviderRequest {
+                runtime_mode: self.config.runtime_mode,
+                seal_policy: self.config.seal_policy,
+                enclave_name: self.config.name.clone(),
+            };
+            let bootstrap = bootstrap_enclave(&provider_request)
+                .map_err(|e| EnclaveError::ProviderBootstrapFailed(e.to_string()))?;
 
-        // 1. 获取 L0 Sealing Key
-        let l0_key = self
-            .sealing_service
-            .get_sealing_key(self.config.seal_policy)
-            .map_err(|e| EnclaveError::KeyInitializationFailed(e.to_string()))?;
+            self.apply_provider_identity(bootstrap.identity);
 
-        // 2. 派生 L1 Master Key
-        let _l1_handle = self
-            .key_hierarchy
-            .initialize_master_key(&crate::crypto::HardwareRootKey::from_sgx_sealing_key(
-                *l0_key.as_bytes(),
-            ))
-            .map_err(|e| EnclaveError::KeyInitializationFailed(e.to_string()))?;
+            let key_manager = KeyManager::new(
+                self.config.sealed_storage_path.clone(),
+                self.mrsigner,
+                self.mrenclave,
+            );
+            let restored = self.restore_from_sealed_storage(&key_manager)?;
 
-        // 3. 尝试从密封存储恢复状态
-        if let Err(e) = self.restore_from_sealed_storage() {
-            // 恢复失败不是致命错误，可能是首次启动
-            if self.config.debug_mode {
-                tracing::debug!("密封存储恢复跳过: {}", e);
+            if !restored {
+                self.key_hierarchy
+                    .initialize_master_key(&bootstrap.l0_key)
+                    .map_err(|e| EnclaveError::KeyInitializationFailed(e.to_string()))?;
             }
+
+            self.root_key_source = Some(bootstrap.l0_key.source());
+            self.l0_key = Some(bootstrap.l0_key);
+            self.key_manager = Some(key_manager);
+            self.state = EnclaveState::Running;
+            self.stats.initialized_at = Some(current_timestamp());
+
+            Ok(())
+        })();
+
+        if let Err(error) = init_result {
+            self.state = EnclaveState::Error;
+            return Err(error);
         }
-
-        // 4. 生成测量值（模拟）
-        self.generate_measurement();
-
-        self.l0_key = Some(l0_key);
-        self.state = EnclaveState::Running;
-        self.stats.initialized_at = Some(current_timestamp());
 
         Ok(())
     }
@@ -317,9 +334,31 @@ impl Enclave {
         &self.config
     }
 
+    /// 获取实际使用的 L0 来源。
+    pub fn root_key_source(&self) -> Option<RootKeySource> {
+        self.root_key_source
+    }
+
     /// 获取统计信息
     pub fn stats(&self) -> &EnclaveStats {
         &self.stats
+    }
+
+    /// 基于 Enclave 当前生效的 L1 构建一个软件侧层次快照。
+    ///
+    /// 用于现有 API 的软件回退路径，避免主启动链重复初始化一份 L0/L1。
+    pub fn bootstrap_key_hierarchy(&self) -> Result<KeyHierarchy, EnclaveError> {
+        let version = *self.key_hierarchy.key_version();
+        let mut hierarchy = KeyHierarchy::with_version(version.major, version.minor);
+        let mut master_key_material =
+            self.key_hierarchy
+                .export_master_key_material()
+                .ok_or_else(|| {
+                    EnclaveError::KeyInitializationFailed("L1 主密钥未初始化".to_string())
+                })?;
+        hierarchy.install_master_key(master_key_material);
+        master_key_material.zeroize();
+        Ok(hierarchy)
     }
 
     /// 派生用户保险库密钥（L2）
@@ -497,41 +536,71 @@ impl Enclave {
         Ok(())
     }
 
-    /// 生成测量值（模拟）
-    fn generate_measurement(&mut self) {
-        use ring::digest::{SHA256, digest};
-
-        // 计算模拟的 MRENCLAVE
-        let enclave_data = format!("{}-v{}", self.config.name, env!("CARGO_PKG_VERSION"));
-        let mrenclave_hash = digest(&SHA256, enclave_data.as_bytes());
-        self.mrenclave.copy_from_slice(mrenclave_hash.as_ref());
-
-        // 计算模拟的 MRSIGNER
-        let signer_data = "CredBridge-Signer-v1";
-        let mrsigner_hash = digest(&SHA256, signer_data.as_bytes());
-        self.mrsigner.copy_from_slice(mrsigner_hash.as_ref());
+    fn apply_provider_identity(&mut self, identity: ProviderIdentity) {
+        self.mrenclave = identity.mrenclave;
+        self.mrsigner = identity.mrsigner;
     }
 
     /// 从密封存储恢复
-    fn restore_from_sealed_storage(&mut self) -> Result<(), EnclaveError> {
-        if let Some(storage) = &self.sealed_storage
-            && storage.exists("master_key")
-        {
-            let sealed = storage.load("master_key")?;
-            let _plaintext = storage.sealing().unseal_data(&sealed)?;
-
-            if self.config.debug_mode {
-                tracing::debug!("从密封存储恢复主密钥成功");
-            }
+    fn restore_from_sealed_storage(
+        &mut self,
+        key_manager: &KeyManager,
+    ) -> Result<bool, EnclaveError> {
+        if !key_manager.has_sealed_master_key() {
+            return Ok(false);
         }
-        Ok(())
+
+        let (mut master_key_material, _metadata) = match key_manager.restore_master_key() {
+            Ok(restored) => restored,
+            Err(error) if self.should_reinitialize_after_restore_failure(&error) => {
+                tracing::warn!("检测到损坏的 simulation 密封主密钥，已忽略并重新生成: {error}");
+                key_manager
+                    .delete_sealed_master_key()
+                    .map_err(|delete_error| {
+                        EnclaveError::SealingFailed(delete_error.to_string())
+                    })?;
+                return Ok(false);
+            }
+            Err(error) => {
+                return Err(EnclaveError::SealingFailed(error.to_string()));
+            }
+        };
+        self.key_hierarchy.install_master_key(master_key_material);
+        master_key_material.zeroize();
+
+        if self.config.debug_mode {
+            tracing::debug!("从密封存储恢复主密钥成功");
+        }
+
+        Ok(true)
+    }
+
+    fn should_reinitialize_after_restore_failure(&self, error: &KeyManagerError) -> bool {
+        self.config.runtime_mode == TeeRuntimeMode::Simulation
+            && matches!(
+                error,
+                KeyManagerError::StorageError(_)
+                    | KeyManagerError::SealingFailed(_)
+                    | KeyManagerError::InvalidMetadata
+            )
     }
 
     /// 密封主密钥
     fn seal_master_key(&self) -> Result<(), EnclaveError> {
-        // 注意：实际实现需要序列化并密封主密钥
-        // 这里简化处理
-        Ok(())
+        let key_manager = self
+            .key_manager
+            .as_ref()
+            .ok_or_else(|| EnclaveError::SealingFailed("KeyManager 未初始化".to_string()))?;
+        let mut master_key_material = self
+            .key_hierarchy
+            .export_master_key_material()
+            .ok_or_else(|| EnclaveError::SealingFailed("L1 主密钥未初始化".to_string()))?;
+
+        let result = key_manager
+            .seal_master_key(&master_key_material, self.config.seal_policy)
+            .map_err(|e| EnclaveError::SealingFailed(e.to_string()));
+        master_key_material.zeroize();
+        result
     }
 }
 
@@ -555,6 +624,9 @@ pub enum EnclaveError {
 
     /// 密钥初始化失败
     KeyInitializationFailed(String),
+
+    /// Provider 启动失败
+    ProviderBootstrapFailed(String),
 
     /// 密钥派生失败
     KeyDerivationFailed(String),
@@ -588,6 +660,9 @@ impl std::fmt::Display for EnclaveError {
             EnclaveError::NotRunning => write!(f, "Enclave not running"),
             EnclaveError::KeyInitializationFailed(msg) => {
                 write!(f, "Key initialization failed: {msg}")
+            }
+            EnclaveError::ProviderBootstrapFailed(msg) => {
+                write!(f, "Provider bootstrap failed: {msg}")
             }
             EnclaveError::KeyDerivationFailed(msg) => write!(f, "Key derivation failed: {msg}"),
             EnclaveError::EncryptionFailed(msg) => write!(f, "Encryption failed: {msg}"),
@@ -730,9 +805,17 @@ fn derive_cache_key(tenant_id: &str, user_id: &str) -> KeyHandle {
 mod tests {
     use super::*;
     use crate::vault::models::UserId;
+    use std::path::PathBuf;
 
     fn hashed_user_id(raw: &str) -> String {
         UserId::new(raw).hash().to_string()
+    }
+
+    fn temp_sealed_storage_path(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "credbridge-enclave-{test_name}-{}",
+            uuid::Uuid::new_v4()
+        ))
     }
 
     #[test]
@@ -748,6 +831,7 @@ mod tests {
         // 初始化
         enclave.initialize().unwrap();
         assert_eq!(enclave.state(), EnclaveState::Running);
+        assert_eq!(enclave.root_key_source(), Some(RootKeySource::Simulation));
 
         // 重复初始化应该失败
         assert!(matches!(
@@ -903,6 +987,7 @@ mod tests {
     #[test]
     fn test_enclave_config() {
         let config = EnclaveConfig {
+            runtime_mode: TeeRuntimeMode::Simulation,
             user_key_ttl: 600,
             seal_policy: SealPolicy::Mrenclave,
             sealed_storage_path: "/tmp/test-sealed".to_string(),
@@ -915,6 +1000,118 @@ mod tests {
         assert_eq!(enclave.config().user_key_ttl, 600);
         assert_eq!(enclave.config().seal_policy, SealPolicy::Mrenclave);
         assert_eq!(enclave.config().name, "test-enclave");
+    }
+
+    #[test]
+    fn test_bootstrap_key_hierarchy_reuses_current_l1() {
+        let config = EnclaveConfig {
+            debug_mode: true,
+            ..Default::default()
+        };
+
+        let mut enclave = Enclave::new(config);
+        enclave.initialize().unwrap();
+
+        let hierarchy = enclave.bootstrap_key_hierarchy().unwrap();
+        let l2_key = hierarchy
+            .derive_user_vault_key("tenant_1", "user_1")
+            .unwrap();
+
+        assert_eq!(l2_key.tenant_id(), "tenant_1");
+        assert!(l2_key.user_id_hash().contains("user_1"));
+    }
+
+    #[test]
+    fn test_seal_and_restore_master_key_closed_loop() {
+        let storage_path = temp_sealed_storage_path("restore-loop");
+        let storage_path_str = storage_path.to_string_lossy().to_string();
+
+        let config = EnclaveConfig {
+            sealed_storage_path: storage_path_str.clone(),
+            debug_mode: true,
+            ..Default::default()
+        };
+
+        let user_hash = hashed_user_id("restored-user");
+        let plaintext = b"persistent secret";
+
+        let original_blob = {
+            let mut enclave = Enclave::new(config.clone());
+            enclave.initialize().unwrap();
+            let blob = enclave
+                .encrypt_credential("tenant_1", &user_hash, "cred_1", plaintext)
+                .unwrap();
+            enclave.shutdown().unwrap();
+            blob
+        };
+
+        let mut restored_enclave = Enclave::new(config);
+        restored_enclave.initialize().unwrap();
+        let decrypted = restored_enclave
+            .decrypt_credential("tenant_1", &user_hash, "cred_1", &original_blob)
+            .unwrap();
+
+        assert_eq!(
+            restored_enclave.root_key_source(),
+            Some(RootKeySource::Simulation)
+        );
+        assert_eq!(decrypted, plaintext);
+
+        let _ = restored_enclave.shutdown();
+        let _ = std::fs::remove_dir_all(storage_path);
+    }
+
+    #[test]
+    fn test_hardware_mode_fails_closed_without_provider() {
+        let storage_path = temp_sealed_storage_path("hardware-fail-closed");
+        let config = EnclaveConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            sealed_storage_path: storage_path.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let mut enclave = Enclave::new(config);
+        let error = enclave.initialize().unwrap_err();
+
+        assert!(matches!(error, EnclaveError::ProviderBootstrapFailed(_)));
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to fall back to simulation")
+        );
+
+        let _ = std::fs::remove_dir_all(storage_path);
+    }
+
+    #[test]
+    fn test_simulation_mode_recovers_from_corrupt_sealed_master_key() {
+        let storage_path = temp_sealed_storage_path("simulation-corrupt-sealed");
+        let storage_path_str = storage_path.to_string_lossy().to_string();
+
+        let config = EnclaveConfig {
+            sealed_storage_path: storage_path_str.clone(),
+            ..Default::default()
+        };
+
+        let key_manager = KeyManager::new(storage_path_str, [7u8; 32], [9u8; 32]);
+        std::fs::create_dir_all(&storage_path).unwrap();
+        std::fs::write(
+            storage_path.join("enclave_master_key.sealed"),
+            b"not-a-valid-sealed-payload",
+        )
+        .unwrap();
+
+        assert!(key_manager.has_sealed_master_key());
+
+        let mut enclave = Enclave::new(config);
+        enclave.initialize().unwrap();
+
+        assert!(enclave.is_running());
+        assert_eq!(enclave.root_key_source(), Some(RootKeySource::Simulation));
+        assert!(!key_manager.has_sealed_master_key());
+
+        let _ = enclave.shutdown();
+        let _ = std::fs::remove_dir_all(storage_path);
     }
 
     #[test]

@@ -118,7 +118,11 @@ impl AlertEvent {
         let id = format!(
             "ALERT-{}-{}",
             alert_type,
-            uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("unknown")
+            uuid::Uuid::new_v4()
+                .to_string()
+                .split('-')
+                .next()
+                .unwrap_or("unknown")
         );
 
         Self {
@@ -570,7 +574,9 @@ impl WebhookNotifier {
                         if attempt > webhook.retries {
                             error!(
                                 "Failed to send alert to webhook {} after {} attempts: {}",
-                                webhook.url, webhook.retries + 1, e
+                                webhook.url,
+                                webhook.retries + 1,
+                                e
                             );
                         } else {
                             tokio::time::sleep(Duration::from_millis(100 * attempt as u64)).await;
@@ -591,10 +597,7 @@ impl WebhookNotifier {
 
         let mut request = self
             .client
-            .request(
-                config.method.parse()?,
-                reqwest::Url::parse(&config.url)?,
-            )
+            .request(config.method.parse()?, reqwest::Url::parse(&config.url)?)
             .timeout(timeout)
             .json(alert);
 
@@ -645,7 +648,8 @@ mod tests {
 
     #[test]
     fn test_alert_event_builder() {
-        let metrics: HashMap<String, f64> = [("error_rate".to_string(), 10.5)].into_iter().collect();
+        let metrics: HashMap<String, f64> =
+            [("error_rate".to_string(), 10.5)].into_iter().collect();
 
         let alert = AlertEvent::new(
             AlertSeverity::Critical,
@@ -659,7 +663,10 @@ mod tests {
 
         assert_eq!(alert.metrics, Some(metrics));
         assert_eq!(alert.component, Some("tee-enclave".to_string()));
-        assert_eq!(alert.suggested_action, Some("Restart the service".to_string()));
+        assert_eq!(
+            alert.suggested_action,
+            Some("Restart the service".to_string())
+        );
     }
 
     #[test]

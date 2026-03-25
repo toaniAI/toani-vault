@@ -125,6 +125,8 @@ default = ["screenshot-cdp"]
 strict-production = []
 # 允许调试模式（即使在发布构建中）
 allow-debug = []
+# TEE 硬件 provider 边界（阶段 B 仅占位，默认不启用）
+tee-hardware = []
 # RLS 集成测试（需要数据库连接）
 rls-tests = []
 # RLS 性能基准测试

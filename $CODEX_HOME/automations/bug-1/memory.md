@@ -1,3 +1,0 @@
-- 2026-03-24 02:10:53 CST: Processed BUG-17271 from `zentao/my-bug-todo.md`.
-- Actions taken: normalized `/Users/yvan/AIWorkspace/credbridge/zentao/17271.md` into the required analysis template, fully filled `本地复现方式` and `本地验收标准`, kept `原因分析`/`修复计划`/`修复详情`/`测试报告` as placeholders, and advanced `/Users/yvan/AIWorkspace/credbridge/zentao/my-bug-todo.md` from `[ ]` to `[1]` while preserving the analysis doc reference.
-- Runtime: ~3m.

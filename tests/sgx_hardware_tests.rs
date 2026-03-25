@@ -3,31 +3,37 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-//! SGX 硬件环境真实系统测试
+//! SGX hardware-only 真实系统测试
 //!
-//! 本测试套件用于在真实 Intel SGX 硬件环境下验证 CredBridge TEE 功能
+//! 本测试套件只用于显式 `TEE_MODE=hardware` 的真实 Intel SGX/DCAP 环境。
+//! 它不属于 simulation-safe 测试层，也不会在默认 CI 中运行。
 //!
 //! # 运行测试
 //!
 //! ```bash
-//! # 运行所有硬件测试
-//! cargo test --test sgx_hardware_tests -- --test-threads=1
+//! # 在专用 SGX runner / staging 主机上运行全部硬件测试
+//! TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1
 //!
-//! # 运行特定测试
-//! cargo test test_sgx_hardware_availability -- --exact --nocapture
+//! # 运行特定硬件测试
+//! TEE_MODE=hardware cargo test --test sgx_hardware_tests test_sgx_hardware_availability -- --exact --ignored --nocapture
 //! ```
 //!
-//! # 环境要求
+//! # 前置条件
 //!
-//! - Intel SGX 硬件支持
-//! - Linux Kernel 5.11+ (或安装 SGX 驱动)
+//! - Intel SGX-capable CPU，且 BIOS 已启用 SGX/FLC
+//! - Linux 专用 runner，存在 `/dev/sgx_enclave` 与 `/dev/sgx_provision`
 //! - Intel SGX SDK 2.24+
-//! - DCAP Library 1.15+
-//! - AESM 服务运行中
+//! - Intel SGX DCAP/QPL 库
+//! - AESM 服务（`aesmd`）运行中
+//! - 可访问 Intel PCS 或已配置专用 PCCS
+//!
+//! 若以上任一真实能力未接通，`TEE_MODE=hardware` 路径必须 fail-closed，
+//! 而不是静默回退到 simulation。
 
 use ring::digest::{SHA256, digest};
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
+use vault_service::config::TeeRuntimeConfig;
 use vault_service::tee::{
     attestation::AttestationResult, challenge::CHANNEL_KEY_LENGTH, challenge::ChallengeProtocol,
     challenge::ProverProtocol, challenge::SecureChannel, dcap::DcapConfig, dcap::DcapError,
@@ -35,6 +41,10 @@ use vault_service::tee::{
     sealing::SealPolicy, sealing::SealingService,
 };
 use vault_service::vault::models::UserId;
+
+fn hardware_runtime_config() -> TeeRuntimeConfig {
+    TeeRuntimeConfig::hardware()
+}
 
 // ============================================================================
 // HW-001: SGX 硬件基础验证
@@ -52,7 +62,7 @@ use vault_service::vault::models::UserId;
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_sgx_hardware_availability() {
     println!("\n=== HW-001: SGX 硬件基础验证 ===");
 
@@ -103,7 +113,7 @@ fn test_sgx_hardware_availability() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_enclave_measurement_consistency() {
     println!("\n=== HW-002: Enclave 测量值一致性验证 ===");
 
@@ -142,6 +152,49 @@ fn test_enclave_measurement_consistency() {
 // HW-003: DCAP Quote 生成（硬件模式）
 // ============================================================================
 
+/// 验证硬件 attestation 路径在未实现完整功能前会显式 fail-closed
+#[test]
+#[cfg(target_os = "linux")]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
+fn test_hardware_attestation_paths_fail_closed_until_implemented() {
+    let runtime = hardware_runtime_config();
+    let mut enclave = Enclave::new(EnclaveConfig {
+        debug_mode: false,
+        ..Default::default()
+    });
+    enclave.initialize().expect("Enclave 初始化失败");
+
+    let dcap_service = DcapService::new(DcapConfig {
+        runtime_mode: runtime.mode,
+        ..Default::default()
+    })
+    .expect("DCAP 服务创建失败");
+
+    let dcap_error = dcap_service
+        .initialize(&enclave)
+        .expect_err("硬件模式不应静默降级到模拟 Quote");
+    assert!(
+        matches!(
+            dcap_error,
+            DcapError::QuoteGenerationFailed(_) | DcapError::PcsCommunicationFailed(_)
+        ),
+        "unexpected error: {dcap_error:?}"
+    );
+
+    let attestation_service =
+        vault_service::tee::attestation::AttestationService::new(runtime.mode);
+    let challenge = b"hardware_fail_closed_challenge";
+    let attestation_error = attestation_service
+        .generate_quote(&enclave, challenge)
+        .expect_err("硬件模式不应生成模拟 attestation Quote");
+    assert!(
+        attestation_error
+            .to_string()
+            .contains("refusing simulated quote generation"),
+        "unexpected error: {attestation_error}"
+    );
+}
+
 /// 验证在真实 SGX 硬件上生成 DCAP Quote
 ///
 /// **测试目标**: 确认硬件 DCAP Quote 正确生成
@@ -154,62 +207,29 @@ fn test_enclave_measurement_consistency() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_dcap_quote_generation_hardware() {
-    println!("\n=== HW-003: DCAP Quote 生成（硬件模式） ===");
+    println!("\n=== HW-003: 硬件模式下禁止关闭证书链验证 ===");
+    let runtime = hardware_runtime_config();
 
-    // 1. 创建硬件模式的 DCAP 服务
-    let dcap_config = DcapConfig {
-        simulation_mode: false, // 硬件模式
+    let error = DcapService::new(DcapConfig {
+        runtime_mode: runtime.mode,
         quote_max_age_seconds: 3600,
-        verify_certificate_chain: false, // 测试环境跳过证书链验证
+        verify_certificate_chain: false,
         ..Default::default()
-    };
+    })
+    .expect_err("硬件模式不允许通过 verify_certificate_chain=false 创建 DCAP 服务");
 
-    let dcap_service = DcapService::new(dcap_config).expect("DCAP 服务创建失败");
-
-    // 2. 创建并初始化 Enclave
-    let mut enclave = Enclave::new(EnclaveConfig {
-        debug_mode: false,
-        ..Default::default()
-    });
-    enclave.initialize().expect("Enclave 初始化失败");
-
-    println!("Enclave MRENCLAVE: {}", hex::encode(enclave.mrenclave()));
-
-    // 3. 生成 Quote（调用硬件 DCAP）
-    let quote = dcap_service.initialize(&enclave).expect("Quote 生成失败");
-
-    println!("Quote 生成成功");
-    println!("  - 版本：{}", quote.version);
-    println!("  - 签名类型：{}", quote.sign_type);
-    println!("  - 时间戳：{}", quote.timestamp);
-
-    // 4. 验证 Quote 结构
-    assert_eq!(quote.version, 3, "Quote 版本应为 3");
-    assert_eq!(quote.sign_type, 2, "签名类型应为 ECDSA P-256");
-
-    // 5. 验证 Quote 包含正确的测量值
-    assert_eq!(
-        quote.report_body.mrenclave,
-        enclave.mrenclave(),
-        "Quote MRENCLAVE 应与 Enclave 一致"
+    assert!(
+        matches!(error, DcapError::ConfigurationError(_)),
+        "unexpected error: {error:?}"
     );
-    assert_eq!(
-        quote.report_body.mrsigner,
-        enclave.mrsigner(),
-        "Quote MRSIGNER 应与 Enclave 一致"
+    assert!(
+        error.to_string().contains("verify_certificate_chain=true"),
+        "unexpected error: {error}"
     );
 
-    // 6. 验证签名非空（硬件生成）
-    let sig = &quote.signature.isv_enclave_report_signature;
-    println!("签名 R 值：{}", hex::encode(sig.r));
-    println!("签名 S 值：{}", hex::encode(sig.s));
-
-    assert_ne!(sig.r, [0u8; 32], "签名 R 值不应全零");
-    assert_ne!(sig.s, [0u8; 32], "签名 S 值不应全零");
-
-    println!("✓ HW-003 测试通过");
+    println!("✓ HW-003 测试通过：硬件模式对证书链验证配置采用 fail-closed");
 }
 
 // ============================================================================
@@ -227,95 +247,74 @@ fn test_dcap_quote_generation_hardware() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_dcap_quote_verification_hardware() {
-    println!("\n=== HW-004: DCAP Quote 验证（硬件模式） ===");
+    println!("\n=== HW-004: 硬件模式 Quote 验证能力未完成时必须失败关闭 ===");
+    let simulation_runtime = TeeRuntimeConfig::simulation();
+    let hardware_runtime = hardware_runtime_config();
 
-    // 1. 生成 Quote
-    let dcap_config = DcapConfig {
-        simulation_mode: false,
-        verify_certificate_chain: false,
-        ..Default::default()
-    };
-
-    let dcap_service = DcapService::new(dcap_config).unwrap();
     let mut enclave = Enclave::new(EnclaveConfig {
-        debug_mode: false,
+        debug_mode: true,
         ..Default::default()
     });
     enclave.initialize().unwrap();
 
-    let quote = dcap_service.initialize(&enclave).unwrap();
-    let quote_bytes = dcap_service.quote_to_bytes(&quote).unwrap();
+    let simulation_service = DcapService::new(DcapConfig {
+        runtime_mode: simulation_runtime.mode,
+        ..Default::default()
+    })
+    .unwrap();
+    let quote = simulation_service.initialize(&enclave).unwrap();
+    let quote_bytes = simulation_service.quote_to_bytes(&quote).unwrap();
 
-    println!("Quote 生成成功");
-    println!("Quote 大小：{} 字节", quote_bytes.len());
-
-    // 2. 配置白名单
-    let verifier_config = DcapConfig {
-        simulation_mode: false,
+    let verifier = DcapService::new(DcapConfig {
+        runtime_mode: hardware_runtime.mode,
         allowed_mrenclaves: vec![enclave.mrenclave()],
         allowed_mrsigners: vec![enclave.mrsigner()],
-        verify_certificate_chain: false,
         ..Default::default()
-    };
+    })
+    .unwrap();
 
-    let verifier = DcapService::new(verifier_config).unwrap();
+    let error = verifier
+        .verify_attestation(&quote_bytes, None)
+        .expect_err("硬件模式在缺少完整 DCAP 验证能力时必须拒绝验证");
 
-    // 3. 验证 Quote
-    println!("开始验证 Quote...");
-    let report = verifier.verify_attestation(&quote_bytes, None);
-
-    match &report {
-        Ok(r) => {
-            println!("✓ Quote 验证成功");
-            println!("  - MRENCLAVE: {}", r.mrenclave_hex);
-            println!("  - MRSIGNER: {}", r.mrsigner_hex);
-        }
-        Err(e) => {
-            println!("✗ Quote 验证失败：{:?}", e);
-        }
-    }
-
-    assert!(report.is_ok(), "Quote 验证失败：{:?}", report);
-    let report = report.unwrap();
-
-    // 4. 验证报告内容
-    assert!(report.result.success);
-    assert_eq!(
-        report.mrenclave_hex,
-        hex::encode(enclave.mrenclave()),
-        "报告中的 MRENCLAVE 应匹配"
+    assert!(
+        matches!(error, DcapError::QuoteVerificationFailed(_)),
+        "unexpected error: {error:?}"
+    );
+    assert!(
+        error.to_string().contains("fail-closed"),
+        "unexpected error: {error}"
     );
 
-    println!("✓ HW-004 测试通过");
+    println!("✓ HW-004 测试通过：硬件模式验证路径显式失败关闭");
 }
 
 // ============================================================================
-// HW-005: 挑战 - 响应协议完整流程
+// HW-005: 挑战 - 响应协议在硬件模式下显式失败关闭
 // ============================================================================
 
-/// 验证完整的远程认证挑战 - 响应协议
+/// 验证硬件模式下 challenge-response 在未接入真实 Quote backend 时显式失败
 ///
-/// **测试目标**: 确认挑战 - 响应协议在硬件环境下正常工作
+/// **测试目标**: 确认硬件模式不会在 challenge-response 流程中静默回退到模拟 Quote
 ///
 /// **通过标准**:
 /// - 挑战生成成功
-/// - Quote 生成成功（硬件）
-/// - 响应验证通过
+/// - Prover 在生成响应时显式失败
+/// - 错误原因指向拒绝模拟 Quote 生成
 ///
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
-fn test_challenge_response_protocol_hardware() {
-    println!("\n=== HW-005: 挑战 - 响应协议完整流程 ===");
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
+fn test_challenge_response_protocol_hardware_fails_closed_without_quote_backend() {
+    println!("\n=== HW-005: 挑战 - 响应协议在硬件模式下显式失败关闭 ===");
+    let runtime = hardware_runtime_config();
 
-    // 1. 设置硬件模式
     let attestation_service =
-        vault_service::tee::attestation::AttestationService::new().allow_simulation(false);
+        vault_service::tee::attestation::AttestationService::new(runtime.mode);
 
-    // 2. 创建 Enclave（Prover 侧）
     let mut enclave = Enclave::new(EnclaveConfig {
         debug_mode: false,
         ..Default::default()
@@ -324,7 +323,6 @@ fn test_challenge_response_protocol_hardware() {
 
     println!("Enclave 初始化成功");
 
-    // 3. Verifier 生成挑战
     let verifier = ChallengeProtocol::new(attestation_service.clone());
     let challenge = verifier
         .generate_challenge(None, None)
@@ -335,32 +333,21 @@ fn test_challenge_response_protocol_hardware() {
         hex::encode(&challenge.id.as_bytes()[..8])
     );
 
-    // 4. Prover 响应挑战（需要硬件 Quote 生成）
     let prover = ProverProtocol::new(attestation_service.clone());
-    println!("开始生成挑战响应...");
+    println!("开始生成挑战响应，预期因缺少真实 Quote backend 而 fail-closed...");
 
-    let response = prover
+    let error = prover
         .respond_to_challenge(&enclave, &challenge)
-        .expect("挑战响应失败");
+        .expect_err("硬件模式下 challenge-response 不应静默生成模拟 Quote");
 
-    println!("✓ 挑战响应生成成功");
-
-    // 5. Verifier 验证响应
-    let identity = generate_enclave_identity(&enclave);
-    println!("开始验证响应...");
-
-    let result = verifier
-        .verify_response(&response, &identity)
-        .expect("响应验证失败");
-
-    assert!(result.success, "验证结果应为成功");
-    assert_eq!(
-        result.mrenclave,
-        enclave.mrenclave(),
-        "验证结果中的 MRENCLAVE 应匹配"
+    assert!(
+        error
+            .to_string()
+            .contains("refusing simulated quote generation"),
+        "unexpected error: {error}"
     );
 
-    println!("✓ HW-005 测试通过");
+    println!("✓ HW-005 测试通过：challenge-response 在硬件模式下显式失败关闭");
 }
 
 // ============================================================================
@@ -379,7 +366,7 @@ fn test_challenge_response_protocol_hardware() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_sgx_sealing_key_derivation() {
     println!("\n=== HW-006: SGX Sealing 密钥派生 ===");
 
@@ -443,7 +430,7 @@ fn test_sgx_sealing_key_derivation() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_key_hierarchy_hardware() {
     println!("\n=== HW-007: 密钥层次结构验证 ===");
 
@@ -512,7 +499,7 @@ fn test_key_hierarchy_hardware() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_secure_channel_establishment_hardware() {
     println!("\n=== HW-008: 安全通道建立与加密通信 ===");
 
@@ -581,71 +568,30 @@ fn test_secure_channel_establishment_hardware() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_measurement_whitelist_hardware() {
-    println!("\n=== HW-009: 测量值白名单验证 ===");
+    println!("\n=== HW-009: 硬件模式白名单验证不能依赖证书链旁路 ===");
+    let runtime = hardware_runtime_config();
 
-    let mut enclave = Enclave::new(EnclaveConfig {
-        debug_mode: false,
-        ..Default::default()
-    });
-    enclave.initialize().unwrap();
-
-    let mrenclave = enclave.mrenclave();
-    println!("Enclave MRENCLAVE: {}", hex::encode(mrenclave));
-
-    // 1. 使用正确白名单
-    println!("测试 1: 正确白名单应接受");
-    let config_accept = DcapConfig {
-        simulation_mode: false,
-        allowed_mrenclaves: vec![mrenclave],
+    let error_accept = DcapService::new(DcapConfig {
+        runtime_mode: runtime.mode,
+        allowed_mrenclaves: vec![[0x42u8; 32]],
         verify_certificate_chain: false,
         ..Default::default()
-    };
+    })
+    .expect_err("硬件模式下不能用 verify_certificate_chain=false 测试白名单放行路径");
+    assert!(matches!(error_accept, DcapError::ConfigurationError(_)));
 
-    let service_accept = DcapService::new(config_accept).unwrap();
-    service_accept.initialize(&enclave).unwrap();
-
-    let quote = service_accept.get_current_quote().unwrap();
-    let quote_bytes = service_accept.quote_to_bytes(&quote).unwrap();
-
-    // 应该接受
-    let result = service_accept.verify_attestation(&quote_bytes, None);
-    match &result {
-        Ok(_) => println!("✓ 正确白名单接受"),
-        Err(e) => println!("✗ 验证失败：{:?}", e),
-    }
-    assert!(result.is_ok(), "正确白名单应接受 Quote");
-
-    // 2. 使用错误白名单
-    println!("测试 2: 错误白名单应拒绝");
-    let wrong_mrenclave = [0x99u8; 32];
-    let config_reject = DcapConfig {
-        simulation_mode: false,
-        allowed_mrenclaves: vec![wrong_mrenclave],
+    let error_reject = DcapService::new(DcapConfig {
+        runtime_mode: runtime.mode,
+        allowed_mrenclaves: vec![[0x99u8; 32]],
         verify_certificate_chain: false,
         ..Default::default()
-    };
+    })
+    .expect_err("硬件模式下不能用 verify_certificate_chain=false 构造拒绝路径");
+    assert!(matches!(error_reject, DcapError::ConfigurationError(_)));
 
-    let service_reject = DcapService::new(config_reject).unwrap();
-    service_reject.initialize(&enclave).unwrap();
-
-    let quote = service_reject.get_current_quote().unwrap();
-    let quote_bytes = service_reject.quote_to_bytes(&quote).unwrap();
-
-    // 应该拒绝
-    let result = service_reject.verify_attestation(&quote_bytes, None);
-    match &result {
-        Err(DcapError::MeasurementMismatch) => println!("✓ 错误白名单正确拒绝"),
-        Err(e) => println!("✗ 拒绝原因：{:?}", e),
-        Ok(_) => println!("✗ 错误：应该拒绝"),
-    }
-    assert!(
-        matches!(result.unwrap_err(), DcapError::MeasurementMismatch),
-        "错误白名单应拒绝 Quote"
-    );
-
-    println!("✓ HW-009 测试通过");
+    println!("✓ HW-009 测试通过：白名单测试不再依赖硬件模式旁路");
 }
 
 // ============================================================================
@@ -663,64 +609,29 @@ fn test_measurement_whitelist_hardware() {
 /// **注意**: 此测试需要 Intel SGX 硬件支持，默认忽略
 #[test]
 #[cfg(target_os = "linux")]
-#[ignore = "requires Intel SGX hardware support"]
+#[ignore = "hardware-only: requires TEE_MODE=hardware, SGX/DCAP/AESM, and a dedicated runner"]
 fn test_replay_attack_protection_hardware() {
-    println!("\n=== HW-010: 重放攻击防护验证 ===");
+    println!("\n=== HW-010: 重放攻击测试禁止通过关闭证书链验证进入硬件路径 ===");
+    let runtime = hardware_runtime_config();
 
-    let mut enclave = Enclave::new(EnclaveConfig {
-        debug_mode: false,
-        ..Default::default()
-    });
-    enclave.initialize().unwrap();
-
-    let dcap_service = DcapService::new(DcapConfig {
-        simulation_mode: false,
-        allowed_mrenclaves: vec![enclave.mrenclave()],
+    let error = DcapService::new(DcapConfig {
+        runtime_mode: runtime.mode,
+        allowed_mrenclaves: vec![[0x42u8; 32]],
         verify_certificate_chain: false,
         ..Default::default()
     })
-    .unwrap();
+    .expect_err("硬件模式不允许通过 verify_certificate_chain=false 进入 nonce/重放测试路径");
 
-    dcap_service.initialize(&enclave).unwrap();
-
-    // 1. 生成随机 nonce
-    let nonce = b"unique_challenge_nonce_for_hardware_test";
-    println!("Nonce: {}", std::str::from_utf8(nonce).unwrap());
-
-    // 2. 获取 Quote
-    let quote = dcap_service.get_current_quote().unwrap();
-    let _quote_bytes = dcap_service.quote_to_bytes(&quote).unwrap();
-
-    // 3. 验证 nonce 绑定
-    let report_data = quote.report_body.report_data;
-    let expected_hash = digest(&SHA256, nonce);
-
-    println!("Expected hash: {}", hex::encode(expected_hash.as_ref()));
-    println!(
-        "Report data[0..32]: {}",
-        hex::encode(&report_data.data[..32])
+    assert!(
+        matches!(error, DcapError::ConfigurationError(_)),
+        "unexpected error: {error:?}"
+    );
+    assert!(
+        error.to_string().contains("verify_certificate_chain=true"),
+        "unexpected error: {error}"
     );
 
-    // nonce 哈希应该绑定到 report_data 前 32 字节
-    assert_eq!(
-        &report_data.data[..32],
-        expected_hash.as_ref(),
-        "Nonce 哈希应绑定到 report_data"
-    );
-
-    println!("✓ Nonce 正确绑定到 Quote");
-
-    // 4. 验证错误 nonce 应该失败
-    let wrong_nonce = b"wrong_nonce_data";
-    let wrong_hash = digest(&SHA256, wrong_nonce);
-
-    assert_ne!(
-        &report_data.data[..32],
-        wrong_hash.as_ref(),
-        "错误 nonce 的哈希应不同"
-    );
-
-    println!("✓ HW-010 测试通过");
+    println!("✓ HW-010 测试通过：重放攻击测试不再依赖硬件模式证书链旁路");
 }
 
 // ============================================================================
@@ -752,14 +663,16 @@ fn test_suite_info() {
     println!("SGX 硬件测试套件");
     println!("========================================");
     println!("测试数量：10");
-    println!("测试类型：硬件集成测试");
+    println!("测试类型：hardware-only 集成测试");
+    println!("运行模式：TEE_MODE=hardware");
+    println!("前置条件：SGX/DCAP/AESM/专用 runner");
     println!("========================================");
     println!("\n测试列表:");
     println!("  HW-001: SGX 硬件基础验证");
     println!("  HW-002: Enclave 测量值一致性");
     println!("  HW-003: DCAP Quote 生成");
     println!("  HW-004: DCAP Quote 验证");
-    println!("  HW-005: 挑战 - 响应协议");
+    println!("  HW-005: 挑战 - 响应协议 fail-closed");
     println!("  HW-006: SGX Sealing 密钥");
     println!("  HW-007: 密钥层次结构");
     println!("  HW-008: 安全通道建立");

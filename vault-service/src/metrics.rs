@@ -52,7 +52,8 @@ impl MetricsCollector {
         status_code: u16,
         duration: Duration,
     ) {
-        self.http_requests.record(method, path, status_code, duration);
+        self.http_requests
+            .record(method, path, status_code, duration);
     }
 
     /// 记录 Token 签发
@@ -67,7 +68,8 @@ impl MetricsCollector {
 
     /// 记录 TEE 操作
     pub fn record_tee_operation(&self, operation: &str, duration: Duration, success: bool) {
-        self.tee_metrics.record_operation(operation, duration, success);
+        self.tee_metrics
+            .record_operation(operation, duration, success);
     }
 
     /// 记录告警触发
@@ -224,7 +226,8 @@ impl HttpRequestMetrics {
         ));
 
         // 按状态码的请求数
-        output.push_str("\n# HELP credbridge_http_requests_by_status HTTP requests by status code\n");
+        output
+            .push_str("\n# HELP credbridge_http_requests_by_status HTTP requests by status code\n");
         output.push_str("# TYPE credbridge_http_requests_by_status counter\n");
         if let Ok(statuses) = self.requests_by_status.lock() {
             for (code, count) in statuses.iter() {
@@ -236,7 +239,9 @@ impl HttpRequestMetrics {
         }
 
         // 延迟直方图
-        output.push_str("\n# HELP credbridge_http_request_duration_bucket Request duration buckets\n");
+        output.push_str(
+            "\n# HELP credbridge_http_request_duration_bucket Request duration buckets\n",
+        );
         output.push_str("# TYPE credbridge_http_request_duration_bucket histogram\n");
         if let Ok(buckets) = self.latency_buckets.lock() {
             let total: u64 = self.total_requests.load(Ordering::Relaxed);
@@ -282,7 +287,9 @@ impl HttpRequestMetrics {
         }
 
         // 错误率
-        output.push_str("\n# HELP credbridge_http_error_rate_percentage HTTP error rate percentage\n");
+        output.push_str(
+            "\n# HELP credbridge_http_error_rate_percentage HTTP error rate percentage\n",
+        );
         output.push_str("# TYPE credbridge_http_error_rate_percentage gauge\n");
         output.push_str(&format!(
             "credbridge_http_error_rate_percentage {:.2}\n",
@@ -386,7 +393,9 @@ impl TokenMetrics {
         ));
 
         // Token 验证成功
-        output.push_str("\n# HELP credbridge_token_validations_success_total Successful token validations\n");
+        output.push_str(
+            "\n# HELP credbridge_token_validations_success_total Successful token validations\n",
+        );
         output.push_str("# TYPE credbridge_token_validations_success_total counter\n");
         output.push_str(&format!(
             "credbridge_token_validations_success_total {}\n",
@@ -394,7 +403,9 @@ impl TokenMetrics {
         ));
 
         // Token 验证失败
-        output.push_str("\n# HELP credbridge_token_validations_failed_total Failed token validations\n");
+        output.push_str(
+            "\n# HELP credbridge_token_validations_failed_total Failed token validations\n",
+        );
         output.push_str("# TYPE credbridge_token_validations_failed_total counter\n");
         output.push_str(&format!(
             "credbridge_token_validations_failed_total {}\n",
@@ -402,7 +413,9 @@ impl TokenMetrics {
         ));
 
         // 验证失败率
-        output.push_str("\n# HELP credbridge_token_validation_failure_rate Token validation failure rate\n");
+        output.push_str(
+            "\n# HELP credbridge_token_validation_failure_rate Token validation failure rate\n",
+        );
         output.push_str("# TYPE credbridge_token_validation_failure_rate gauge\n");
         output.push_str(&format!(
             "credbridge_token_validation_failure_rate {:.2}\n",
@@ -464,10 +477,7 @@ impl TeeMetrics {
         }
 
         if let Ok(mut latencies) = self.operation_latencies.lock() {
-            latencies
-                .entry(operation.to_string())
-                .or_default()
-                .push(ms);
+            latencies.entry(operation.to_string()).or_default().push(ms);
         }
     }
 
@@ -512,7 +522,9 @@ impl TeeMetrics {
         ));
 
         // 密钥派生
-        output.push_str("\n# HELP credbridge_tee_key_derivation_ops_total TEE key derivation operations\n");
+        output.push_str(
+            "\n# HELP credbridge_tee_key_derivation_ops_total TEE key derivation operations\n",
+        );
         output.push_str("# TYPE credbridge_tee_key_derivation_ops_total counter\n");
         output.push_str(&format!(
             "credbridge_tee_key_derivation_ops_total {}\n",
@@ -520,7 +532,8 @@ impl TeeMetrics {
         ));
 
         // 远程认证
-        output.push_str("\n# HELP credbridge_tee_attestation_ops_total TEE attestation operations\n");
+        output
+            .push_str("\n# HELP credbridge_tee_attestation_ops_total TEE attestation operations\n");
         output.push_str("# TYPE credbridge_tee_attestation_ops_total counter\n");
         output.push_str(&format!(
             "credbridge_tee_attestation_ops_total {}\n",
@@ -528,7 +541,9 @@ impl TeeMetrics {
         ));
 
         // EPC 使用率
-        output.push_str("\n# HELP credbridge_tee_epc_usage_percent TEE EPC memory usage percentage\n");
+        output.push_str(
+            "\n# HELP credbridge_tee_epc_usage_percent TEE EPC memory usage percentage\n",
+        );
         output.push_str("# TYPE credbridge_tee_epc_usage_percent gauge\n");
         output.push_str(&format!(
             "credbridge_tee_epc_usage_percent {:.2}\n",
@@ -536,7 +551,9 @@ impl TeeMetrics {
         ));
 
         // 操作延迟
-        output.push_str("\n# HELP credbridge_tee_operation_latency_ms TEE operation latency in milliseconds\n");
+        output.push_str(
+            "\n# HELP credbridge_tee_operation_latency_ms TEE operation latency in milliseconds\n",
+        );
         output.push_str("# TYPE credbridge_tee_operation_latency_ms gauge\n");
         if let Ok(latencies) = self.operation_latencies.lock() {
             for op in ["encrypt", "decrypt", "derive", "attest"] {
@@ -613,10 +630,7 @@ impl SystemMetrics {
 
     /// 获取运行时间（秒）
     pub fn uptime_seconds(&self) -> u64 {
-        self.start_time
-            .elapsed()
-            .unwrap_or_default()
-            .as_secs()
+        self.start_time.elapsed().unwrap_or_default().as_secs()
     }
 
     /// 导出 Prometheus 格式
@@ -640,7 +654,8 @@ impl SystemMetrics {
         ));
 
         // 内存使用率
-        output.push_str("\n# HELP credbridge_system_memory_usage_percent Memory usage percentage\n");
+        output
+            .push_str("\n# HELP credbridge_system_memory_usage_percent Memory usage percentage\n");
         output.push_str("# TYPE credbridge_system_memory_usage_percent gauge\n");
         output.push_str(&format!(
             "credbridge_system_memory_usage_percent {:.2}\n",
@@ -648,7 +663,8 @@ impl SystemMetrics {
         ));
 
         // 数据库连接池使用率
-        output.push_str("\n# HELP credbridge_db_pool_usage_percent Database connection pool usage\n");
+        output
+            .push_str("\n# HELP credbridge_db_pool_usage_percent Database connection pool usage\n");
         output.push_str("# TYPE credbridge_db_pool_usage_percent gauge\n");
         output.push_str(&format!(
             "credbridge_db_pool_usage_percent {:.2}\n",
@@ -656,7 +672,8 @@ impl SystemMetrics {
         ));
 
         // Redis 连接池使用率
-        output.push_str("\n# HELP credbridge_redis_pool_usage_percent Redis connection pool usage\n");
+        output
+            .push_str("\n# HELP credbridge_redis_pool_usage_percent Redis connection pool usage\n");
         output.push_str("# TYPE credbridge_redis_pool_usage_percent gauge\n");
         output.push_str(&format!(
             "credbridge_redis_pool_usage_percent {:.2}\n",

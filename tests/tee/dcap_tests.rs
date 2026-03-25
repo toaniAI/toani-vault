@@ -3,10 +3,13 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(deprecated)]
 
-//! DCAP 集成测试
+//! Simulation-safe DCAP 集成测试
 //!
-//! 测试 DCAP Quote 生成、验证和远程认证 API 功能
+//! 本文件显式使用 simulation 运行时，覆盖 Quote 结构、白名单、序列化和
+//! fail-closed 语义，不要求真实 SGX/DCAP/AESM。真实硬件链路见
+//! `tests/sgx_hardware_tests.rs`。
 
+use vault_service::config::{TeeRuntimeConfig, TeeRuntimeMode};
 use vault_service::tee::{
     dcap::{DcapConfig, DcapError, DcapService, EcdsaSignatureDcap, INTEL_PCS_BASE_URL_PROD},
     enclave::{Enclave, EnclaveConfig},
@@ -16,20 +19,31 @@ use vault_service::tee::{
     },
 };
 
-/// 创建测试用的 DCAP 服务
-fn create_test_service() -> DcapService {
+fn temp_sealed_storage_path(test_name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "credbridge-dcap-tests-{test_name}-{}",
+        uuid::Uuid::new_v4()
+    ))
+}
+
+/// 创建 simulation-safe 的 DCAP 服务。
+fn create_simulation_safe_dcap_service() -> DcapService {
+    let runtime = TeeRuntimeConfig::simulation();
     let config = DcapConfig {
-        simulation_mode: true,
+        runtime_mode: runtime.mode,
         quote_max_age_seconds: 3600,
         ..Default::default()
     };
     DcapService::new(config).expect("Failed to create DCAP service")
 }
 
-/// 创建并初始化测试 Enclave
-fn create_initialized_enclave() -> Enclave {
+/// 创建用于 simulation-safe 测试的 Enclave。
+fn create_simulation_safe_enclave() -> Enclave {
     let config = EnclaveConfig {
         debug_mode: true,
+        sealed_storage_path: temp_sealed_storage_path("simulation-enclave")
+            .to_string_lossy()
+            .to_string(),
         ..Default::default()
     };
     let mut enclave = Enclave::new(config);
@@ -37,19 +51,29 @@ fn create_initialized_enclave() -> Enclave {
     enclave
 }
 
+/// 兼容旧测试调用点；新测试应优先使用更显式的 simulation-safe helper。
+fn create_test_service() -> DcapService {
+    create_simulation_safe_dcap_service()
+}
+
+/// 兼容旧测试调用点；新测试应优先使用更显式的 simulation-safe helper。
+fn create_initialized_enclave() -> Enclave {
+    create_simulation_safe_enclave()
+}
+
 mod dcap_service_tests {
     use super::*;
 
     #[test]
     fn test_dcap_service_creation() {
-        let service = create_test_service();
+        let service = create_simulation_safe_dcap_service();
         assert_eq!(service.verified_enclave_count(), 0);
     }
 
     #[test]
     fn test_dcap_service_initialize() {
-        let service = create_test_service();
-        let enclave = create_initialized_enclave();
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
 
         let result = service.initialize(&enclave);
         assert!(
@@ -67,8 +91,8 @@ mod dcap_service_tests {
 
     #[test]
     fn test_get_current_quote_after_initialize() {
-        let service = create_test_service();
-        let enclave = create_initialized_enclave();
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
 
         // Before initialization, getting quote should fail
         assert!(service.get_current_quote().is_err());
@@ -81,8 +105,8 @@ mod dcap_service_tests {
 
     #[test]
     fn test_get_attestation_report() {
-        let service = create_test_service();
-        let enclave = create_initialized_enclave();
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
 
         service.initialize(&enclave).expect("Initialize failed");
 
@@ -98,8 +122,8 @@ mod dcap_service_tests {
 
     #[test]
     fn test_verify_attestation_valid() {
-        let service = create_test_service();
-        let enclave = create_initialized_enclave();
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
 
         service.initialize(&enclave).expect("Initialize failed");
 
@@ -118,8 +142,46 @@ mod dcap_service_tests {
     }
 
     #[test]
+    fn test_challenge_bound_quote_verifies_with_matching_nonce() {
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
+        let nonce = b"dcap-challenge-nonce";
+
+        let quote = service
+            .generate_quote_for_challenge(&enclave, nonce)
+            .expect("challenge-bound quote should be generated in simulation mode");
+        let quote_bytes = QuoteSerializer::serialize(&quote).expect("Failed to serialize quote");
+
+        let report = service
+            .verify_attestation(&quote_bytes, Some(nonce))
+            .expect("matching nonce should verify");
+
+        assert!(report.result.success);
+        assert_eq!(report.result.mrenclave, enclave.mrenclave());
+        assert_eq!(report.result.mrsigner, enclave.mrsigner());
+    }
+
+    #[test]
+    fn test_challenge_bound_quote_rejects_wrong_nonce() {
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
+
+        let quote = service
+            .generate_quote_for_challenge(&enclave, b"expected-nonce")
+            .expect("challenge-bound quote should be generated in simulation mode");
+        let quote_bytes = QuoteSerializer::serialize(&quote).expect("Failed to serialize quote");
+
+        let error = service
+            .verify_attestation(&quote_bytes, Some(b"wrong-nonce"))
+            .expect_err("mismatched nonce must fail verification");
+
+        assert!(matches!(error, DcapError::QuoteVerificationFailed(_)));
+        assert!(error.to_string().contains("Challenge binding mismatch"));
+    }
+
+    #[test]
     fn test_verify_attestation_invalid_quote() {
-        let service = create_test_service();
+        let service = create_simulation_safe_dcap_service();
 
         let invalid_quote = vec![0u8; 100];
         let result = service.verify_attestation(&invalid_quote, None);
@@ -128,8 +190,8 @@ mod dcap_service_tests {
 
     #[test]
     fn test_refresh_quote() {
-        let service = create_test_service();
-        let enclave = create_initialized_enclave();
+        let service = create_simulation_safe_dcap_service();
+        let enclave = create_simulation_safe_enclave();
 
         service.initialize(&enclave).expect("Initialize failed");
         let quote1 = service.get_current_quote().expect("Failed to get quote 1");
@@ -149,12 +211,59 @@ mod dcap_service_tests {
     }
 
     #[test]
+    fn test_hardware_mode_quote_generation_fails_closed() {
+        let enclave = create_simulation_safe_enclave();
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .expect("Failed to create hardware-mode service");
+
+        let error = service
+            .initialize(&enclave)
+            .expect_err("hardware mode must not silently generate simulated DCAP quotes");
+
+        assert!(
+            matches!(error, DcapError::QuoteGenerationFailed(_)),
+            "unexpected error: {error:?}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to fall back to simulation"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_hardware_mode_challenge_quote_fails_closed() {
+        let enclave = create_simulation_safe_enclave();
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .expect("Failed to create hardware-mode service");
+
+        let error = service
+            .generate_quote_for_challenge(&enclave, b"challenge")
+            .expect_err("hardware mode must not silently mint simulated challenge quotes");
+
+        assert!(matches!(error, DcapError::QuoteGenerationFailed(_)));
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to fall back to simulation"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn test_measurement_whitelist_mrenclave() {
-        let enclave = create_initialized_enclave();
+        let enclave = create_simulation_safe_enclave();
         let mrenclave = enclave.mrenclave();
 
         let config = DcapConfig {
-            simulation_mode: true, // 使用模拟模式：测试侧重测量白名单逻辑而非签名验证
+            runtime_mode: TeeRuntimeMode::Simulation, // 使用模拟模式：测试侧重测量白名单逻辑而非签名验证
             allowed_mrenclaves: vec![mrenclave],
             ..Default::default()
         };
@@ -170,11 +279,11 @@ mod dcap_service_tests {
 
     #[test]
     fn test_measurement_whitelist_mrsigner() {
-        let enclave = create_initialized_enclave();
+        let enclave = create_simulation_safe_enclave();
         let mrsigner = enclave.mrsigner();
 
         let config = DcapConfig {
-            simulation_mode: true, // 使用模拟模式：测试侧重测量白名单逻辑而非签名验证
+            runtime_mode: TeeRuntimeMode::Simulation, // 使用模拟模式：测试侧重测量白名单逻辑而非签名验证
             allowed_mrsigners: vec![mrsigner],
             ..Default::default()
         };
@@ -190,11 +299,11 @@ mod dcap_service_tests {
 
     #[test]
     fn test_measurement_mismatch() {
-        let enclave = create_initialized_enclave();
+        let enclave = create_simulation_safe_enclave();
         let wrong_mrenclave = [0x99u8; 32];
 
         let config = DcapConfig {
-            simulation_mode: true, // 使用模拟模式：测试侧重测量不匹配逻辑而非签名验证
+            runtime_mode: TeeRuntimeMode::Simulation, // 使用模拟模式：测试侧重测量不匹配逻辑而非签名验证
             allowed_mrenclaves: vec![wrong_mrenclave],
             ..Default::default()
         };
@@ -214,7 +323,7 @@ mod dcap_service_tests {
     #[test]
     fn test_allow_mrenclave_mrsigner() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let mut service = DcapService::new(config).expect("Failed to create service");
@@ -255,7 +364,7 @@ mod dcap_service_tests {
         assert!(!config.use_test_environment);
         assert_eq!(config.quote_max_age_seconds, 3600);
         assert!(config.verify_certificate_chain);
-        assert!(!config.simulation_mode);
+        assert_eq!(config.runtime_mode, TeeRuntimeMode::Hardware);
         assert!(config.allowed_mrenclaves.is_empty());
         assert!(config.allowed_mrsigners.is_empty());
     }

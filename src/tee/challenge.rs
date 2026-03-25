@@ -828,7 +828,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_generate() {
-        let attestation_service = AttestationService::new().allow_simulation(true);
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service);
 
         let challenge = protocol.generate_challenge(None, None).unwrap();
@@ -849,9 +849,8 @@ mod tests {
         enclave.initialize().unwrap();
 
         // 设置 Verifier
-        let attestation_service = AttestationService::new()
-            .allow_simulation(true)
-            .allow_mrenclave(enclave.mrenclave());
+        let attestation_service =
+            AttestationService::for_simulation().allow_mrenclave(enclave.mrenclave());
         let verifier = ChallengeProtocol::new(attestation_service.clone());
 
         // 设置 Prover
@@ -873,7 +872,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_cancel() {
-        let attestation_service = AttestationService::new();
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service);
 
         let challenge = protocol.generate_challenge(None, None).unwrap();
@@ -889,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_limit() {
-        let attestation_service = AttestationService::new();
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service).with_max_challenges(3);
 
         // 创建 3 个挑战
@@ -908,7 +907,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_cleanup() {
-        let attestation_service = AttestationService::new();
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service);
 
         // 创建一个立即过期的挑战（通过内部修改）
@@ -966,7 +965,7 @@ mod tests {
 
     #[test]
     fn test_replay_protection() {
-        let attestation_service = AttestationService::new().allow_simulation(true);
+        let attestation_service = AttestationService::for_simulation();
         let verifier = ChallengeProtocol::new(attestation_service.clone());
         let prover = ProverProtocol::new(attestation_service);
 

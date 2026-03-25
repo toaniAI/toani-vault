@@ -36,21 +36,23 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `status` | string | 服务状态：`healthy` 或 `degraded` |
-| `version` | string | 服务版本号 |
+| `status` | string | 当前主服务实现恒为字面量 `healthy` |
+| `version` | string | 服务版本号（`CARGO_PKG_VERSION`） |
 | `timestamp` | u64 | Unix 时间戳（秒） |
 
 ---
 
 ### 详细健康检查
 
-检查服务及各组件详细状态。
+检查服务及各组件摘要状态（根目录主服务实现，非 `vault-service`）。
 
 **Endpoint**: `GET /health/detail`
 
 **认证**: 不需要
 
 **响应 (200 OK)**:
+
+`TEE_MODE=hardware` 时，`components.enclave` 为 `healthy`：
 
 ```json
 {
@@ -67,7 +69,7 @@
 
 **响应 (503 Service Unavailable)**:
 
-当服务状态为 `degraded` 时返回：
+当整体 `status` 为 `degraded` 时返回（实现上由 `vault` 与 `audit_log` 子状态是否均为 `healthy` 决定；与 `enclave` 取值无关）。当前源码中 `vault`、`audit_log` 占位为 `healthy`，因此常见部署下只会得到 200；若未来接入真实探测，失败时仍为此 JSON 形状，仅字符串取值变化。
 
 ```json
 {
@@ -75,8 +77,8 @@
   "version": "1.0.0",
   "timestamp": 1741702800,
   "components": {
-    "vault": "healthy",
-    "enclave": "simulation_mode",
+    "vault": "degraded",
+    "enclave": "healthy",
     "audit_log": "healthy"
   }
 }
@@ -87,12 +89,44 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `status` | string | 整体状态：`healthy` 或 `degraded` |
-| `version` | string | 服务版本号 |
+| `version` | string | 服务版本号（`CARGO_PKG_VERSION`） |
 | `timestamp` | u64 | Unix 时间戳（秒） |
-| `components` | object | 各组件状态详情 |
-| `components.vault` | string | 凭证保险库状态：`healthy` |
-| `components.enclave` | string | Enclave 状态：`healthy` 或 `simulation_mode` |
-| `components.audit_log` | string | 审计日志状态：`healthy` |
+| `components` | object | 各子系统状态摘要 |
+| `components.vault` | string | 保险库/存储相关摘要（当前占位为 `healthy`） |
+| `components.enclave` | string | `TEE_MODE=hardware` 时为 `healthy`；`TEE_MODE=simulation` 时为字面量 `simulation` |
+| `components.audit_log` | string | 审计日志子系统摘要（当前占位为 `healthy`） |
+
+---
+
+## TEE 运行模式
+
+CredBridge 通过 `TEE_MODE` 显式选择运行模式，不再根据环境隐式推断：
+
+```bash
+TEE_MODE=hardware cargo run
+TEE_MODE=simulation cargo run
+```
+
+- `TEE_MODE=hardware` 用于真实 SGX/DCAP 路径；当 SGX/DCAP/AESM/PCCS（或 Intel PCS）等前置条件缺失时，服务会 fail-closed，而不是自动回退到 simulation。
+- `TEE_MODE=simulation` 用于 simulation-safe 开发与测试；`GET /health/detail` 通过 `components.enclave` 的字面量 `simulation` 标明仿真运行时（无单独的 `simulation_mode` 顶层字段，也不返回 `tee_details` 等扩展块）。
+- 当前 Drone 配置将 simulation-safe 后端测试与 hardware-only 测试分层为不同的 cron 流水线；hardware-only 测试仍在专用 SGX runner 或 staging 环境执行，不会随普通 push/PR 自动触发。
+
+**`TEE_MODE=simulation` 示例 (`GET /health/detail`)**：
+
+整体仍为 `healthy`，`enclave` 为 `simulation`：
+
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": 1741702800,
+  "components": {
+    "vault": "healthy",
+    "enclave": "simulation",
+    "audit_log": "healthy"
+  }
+}
+```
 
 ---
 

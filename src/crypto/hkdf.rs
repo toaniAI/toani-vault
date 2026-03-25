@@ -161,6 +161,22 @@ impl KeyHierarchy {
         Ok(handle)
     }
 
+    /// 使用已恢复的 L1 密钥材料回灌当前层次。
+    ///
+    /// 用于 Enclave 从密封存储恢复主密钥后，重建内存中的密钥层次。
+    pub fn install_master_key(&mut self, master_key_material: [u8; KEY_LENGTH]) -> KeyHandle {
+        if let Some(mut old_key) = self.master_key.take() {
+            old_key.key_material.zeroize();
+        }
+
+        let key_handle = EnclaveMasterKey::generate_handle();
+        let master_key = EnclaveMasterKey::new(master_key_material, key_handle, self.now());
+        let handle = master_key.key_handle();
+
+        self.master_key = Some(master_key);
+        handle
+    }
+
     /// 派生 L2 用户保险库密钥
     ///
     /// # 流程
@@ -357,6 +373,11 @@ impl KeyHierarchy {
         self.master_key.as_ref().map(|k| k.key_handle())
     }
 
+    /// 导出当前 L1 主密钥材料的副本。
+    pub(crate) fn export_master_key_material(&self) -> Option<[u8; KEY_LENGTH]> {
+        self.master_key.as_ref().map(|key| *key.as_bytes())
+    }
+
     /// 重新生成主密钥（用于密钥轮换）
     ///
     /// # 密钥轮换流程
@@ -496,6 +517,20 @@ mod tests {
         // 验证句柄不为空
         assert_ne!(handle, [0u8; 32]);
         assert!(hierarchy.master_key_handle().is_some());
+    }
+
+    #[test]
+    fn test_install_master_key_rehydrates_hierarchy() {
+        let mut hierarchy = KeyHierarchy::new();
+        let restored_material = [0x5Au8; KEY_LENGTH];
+
+        let handle = hierarchy.install_master_key(restored_material);
+
+        assert_ne!(handle, [0u8; 32]);
+        assert_eq!(
+            hierarchy.export_master_key_material(),
+            Some(restored_material)
+        );
     }
 
     #[test]

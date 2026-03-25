@@ -16,6 +16,19 @@ TEE（可信执行环境）模块提供安全的代码执行环境，基于 Inte
 - **密封存储**: 安全数据密封和恢复
 - **沙箱执行**: 代码在隔离环境中运行
 
+### 运行模式选择
+
+CredBridge 通过 `TEE_MODE` 显式选择运行模式：
+
+```bash
+TEE_MODE=hardware cargo run
+TEE_MODE=simulation cargo run
+```
+
+- `TEE_MODE=simulation` 仅用于显式模拟路径；只有在该模式下，健康/状态接口里的模拟标记才会出现。
+- `TEE_MODE=hardware` 要求真实 SGX/DCAP/AESM/PCCS（或 Intel PCS）能力；如果能力未接通，初始化会 fail-closed，而不是回退到 simulation。
+- 默认 CI 只跑 simulation-safe 测试；hardware-only 验证在专用 SGX runner 或 staging 环境执行。
+
 ---
 
 ## 模块结构
@@ -270,7 +283,7 @@ POST /api/v1/sandbox/sessions/{id}/terminate
 | AMD SEV-SNP | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
 | AWS Nitro | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
 | ARM TrustZone | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
-| Simulation | ✅ 开发测试 | ❌ 不支持 | ⚠️ 模拟实现 |
+| Simulation (`TEE_MODE=simulation`) | ✅ 显式模拟测试 | ❌ 不支持 | ⚠️ 模拟实现 |
 
 ---
 
@@ -409,9 +422,11 @@ EnclaveConfig {
 ### 环境变量
 
 ```bash
+# TEE 运行模式（必须显式设置）
+TEE_MODE=hardware   # 或 simulation
+
 # SGX 环境
 SGX_SDK=/opt/intel/sgxsdk
-SGX_MODE=HW  # 或 SIM
 
 # DCAP 配置
 DCAP_PCS_URL=https://api.trustedservices.intel.com
@@ -434,6 +449,7 @@ KEY_TTL_SECONDS=300
 - 检查 SGX 驱动是否加载: `ls /dev/sgx*`
 - 检查 Enclave 文件路径是否正确
 - 检查文件权限
+- 若只需 simulation-safe 调试，请显式设置 `TEE_MODE=simulation`
 
 **远程认证失败**:
 - 检查网络连接 (Intel PCS)
