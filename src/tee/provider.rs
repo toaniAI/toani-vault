@@ -1,14 +1,29 @@
 use crate::config::TeeRuntimeMode;
 use crate::crypto::keys::RootKeySource;
 use crate::crypto::{CryptoError, HardwareRootKey};
+#[cfg(feature = "tee-hardware")]
+use crate::tee::hardware::{load_hardware_measurements, load_hardware_root_key_bytes};
+use crate::tee::host_runtime::SharedEnclaveRuntime;
 use crate::tee::sealing::SealPolicy;
 
 /// Provider 请求参数。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProviderRequest {
     pub runtime_mode: TeeRuntimeMode,
     pub seal_policy: SealPolicy,
     pub enclave_name: String,
+    pub runtime: Option<SharedEnclaveRuntime>,
+}
+
+impl std::fmt::Debug for ProviderRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderRequest")
+            .field("runtime_mode", &self.runtime_mode)
+            .field("seal_policy", &self.seal_policy)
+            .field("enclave_name", &self.enclave_name)
+            .field("runtime_loaded", &self.runtime.is_some())
+            .finish()
+    }
 }
 
 /// Provider 返回的 Enclave 身份材料。
@@ -103,12 +118,41 @@ struct FeatureGatedHardwareProvider;
 #[cfg(feature = "tee-hardware")]
 impl TeeProvider for FeatureGatedHardwareProvider {
     fn bootstrap(&self, request: &ProviderRequest) -> Result<ProviderBootstrap, TeeProviderError> {
-        let _seal_policy = request.seal_policy;
+        let (mrenclave, mrsigner, l0_key) = if let Some(runtime) = &request.runtime {
+            let identity = runtime
+                .get_identity()
+                .map_err(|error| TeeProviderError::BackendUnavailable(error.to_string()))?;
+            let sealing_key = runtime
+                .get_sealing_key(request.seal_policy)
+                .map_err(|error| TeeProviderError::BackendUnavailable(error.to_string()))?;
+            (
+                identity.mrenclave,
+                identity.mrsigner,
+                HardwareRootKey::from_sgx_sealing_key_with_identity(
+                    sealing_key,
+                    identity.mrsigner,
+                    identity.mrenclave,
+                ),
+            )
+        } else {
+            let (mrenclave, mrsigner) =
+                load_hardware_measurements().map_err(TeeProviderError::BackendUnavailable)?;
+            let l0_key = HardwareRootKey::from_sgx_sealing_key_with_identity(
+                load_hardware_root_key_bytes(request.seal_policy)
+                    .map_err(TeeProviderError::BackendUnavailable)?,
+                mrsigner,
+                mrenclave,
+            );
+            (mrenclave, mrsigner, l0_key)
+        };
 
-        Err(TeeProviderError::BackendUnavailable(format!(
-            "TEE_MODE={} requested and the `tee-hardware` feature is enabled, but no real SGX hardware provider has been wired yet; refusing to fall back to simulation",
-            request.runtime_mode
-        )))
+        Ok(ProviderBootstrap {
+            l0_key,
+            identity: ProviderIdentity {
+                mrenclave,
+                mrsigner,
+            },
+        })
     }
 }
 
@@ -160,6 +204,7 @@ mod tests {
             runtime_mode: mode,
             seal_policy: SealPolicy::Mrsigner,
             enclave_name: "credbridge-test".to_string(),
+            runtime: None,
         }
     }
 
@@ -197,6 +242,6 @@ mod tests {
         let error = bootstrap_enclave(&request(TeeRuntimeMode::Hardware)).unwrap_err();
 
         assert!(matches!(error, TeeProviderError::BackendUnavailable(_)));
-        assert!(error.to_string().contains("no real SGX hardware provider"));
+        assert!(error.to_string().contains("TEE_MODE=hardware"));
     }
 }

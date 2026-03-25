@@ -18,6 +18,7 @@ use crate::crypto::keys::RootKeySource;
 use crate::crypto::{
     CredentialCryptoContext, CryptoError, EncryptedBlob, HardwareRootKey, KeyHandle, KeyHierarchy,
 };
+use crate::tee::host_runtime::{SgxHostRuntime, SharedEnclaveRuntime};
 use crate::tee::keys::{KeyManager, KeyManagerError};
 use crate::tee::provider::{ProviderIdentity, ProviderRequest, bootstrap_enclave};
 use crate::tee::sealing::SealPolicy;
@@ -121,6 +122,9 @@ pub struct Enclave {
     /// 当前状态
     state: EnclaveState,
 
+    /// 共享 runtime 句柄（硬件模式）
+    runtime: Option<SharedEnclaveRuntime>,
+
     /// L0 硬件根密钥
     l0_key: Option<HardwareRootKey>,
 
@@ -151,6 +155,7 @@ impl std::fmt::Debug for Enclave {
         f.debug_struct("Enclave")
             .field("config", &self.config)
             .field("state", &self.state)
+            .field("runtime_loaded", &self.runtime.is_some())
             .field("has_l0_key", &self.l0_key.is_some())
             .field("root_key_source", &self.root_key_source)
             .field("mrenclave", &hex::encode(self.mrenclave))
@@ -203,6 +208,7 @@ impl Enclave {
         Self {
             config: config.clone(),
             state: EnclaveState::Uninitialized,
+            runtime: None,
             l0_key: None,
             root_key_source: None,
             key_hierarchy: KeyHierarchy::new(),
@@ -215,6 +221,13 @@ impl Enclave {
             mrsigner: [0u8; 32],
             stats: EnclaveStats::default(),
         }
+    }
+
+    /// 创建一个绑定到共享 runtime 的 Enclave。
+    pub fn with_runtime(config: EnclaveConfig, runtime: SharedEnclaveRuntime) -> Self {
+        let mut enclave = Self::new(config);
+        enclave.runtime = Some(runtime);
+        enclave
     }
 
     /// 使用默认配置创建 Enclave
@@ -239,21 +252,33 @@ impl Enclave {
 
         self.state = EnclaveState::Initializing;
         let init_result = (|| -> Result<(), EnclaveError> {
+            let runtime = self.runtime.clone();
+            let runtime = self.ensure_hardware_runtime(runtime)?;
             let provider_request = ProviderRequest {
                 runtime_mode: self.config.runtime_mode,
                 seal_policy: self.config.seal_policy,
                 enclave_name: self.config.name.clone(),
+                runtime: runtime.clone(),
             };
             let bootstrap = bootstrap_enclave(&provider_request)
                 .map_err(|e| EnclaveError::ProviderBootstrapFailed(e.to_string()))?;
 
             self.apply_provider_identity(bootstrap.identity);
 
-            let key_manager = KeyManager::new(
-                self.config.sealed_storage_path.clone(),
-                self.mrsigner,
-                self.mrenclave,
-            );
+            let key_manager = if let Some(runtime) = runtime.clone() {
+                KeyManager::new_with_runtime(
+                    self.config.sealed_storage_path.clone(),
+                    self.mrsigner,
+                    self.mrenclave,
+                    runtime,
+                )
+            } else {
+                KeyManager::new(
+                    self.config.sealed_storage_path.clone(),
+                    self.mrsigner,
+                    self.mrenclave,
+                )
+            };
             let restored = self.restore_from_sealed_storage(&key_manager)?;
 
             if !restored {
@@ -290,8 +315,10 @@ impl Enclave {
         self.state = EnclaveState::ShuttingDown;
 
         // 1. 密封 L1 Master Key
-        if let Err(e) = self.seal_master_key() {
-            tracing::error!("密封主密钥失败: {}", e);
+        if self.key_manager.is_some() && self.key_hierarchy.export_master_key_material().is_some() {
+            if let Err(e) = self.seal_master_key() {
+                tracing::error!("密封主密钥失败: {}", e);
+            }
         }
 
         // 2. 清理用户密钥缓存
@@ -304,6 +331,9 @@ impl Enclave {
         if let Some(mut key) = self.l0_key.take() {
             key.key_material.zeroize();
         }
+
+        self.key_manager.take();
+        self.runtime.take();
 
         self.state = EnclaveState::Shutdown;
         Ok(())
@@ -424,6 +454,16 @@ impl Enclave {
         plaintext: &[u8],
     ) -> Result<EncryptedBlob, EnclaveError> {
         self.ensure_running()?;
+        if self.config.runtime_mode.is_hardware() {
+            if let Some(runtime) = &self.runtime {
+                let blob = runtime
+                    .encrypt_credential(tenant_id, user_id_hash, credential_id, plaintext)
+                    .map_err(|error| EnclaveError::EncryptionFailed(error.to_string()))?;
+                self.stats.encryption_ops += 1;
+                return Ok(blob);
+            }
+        }
+
         let context = CredentialCryptoContext::new(tenant_id, user_id_hash, credential_id);
         let blob = context
             .encrypt_with_hierarchy(&self.key_hierarchy, plaintext)
@@ -444,6 +484,16 @@ impl Enclave {
         blob: &EncryptedBlob,
     ) -> Result<Vec<u8>, EnclaveError> {
         self.ensure_running()?;
+        if self.config.runtime_mode.is_hardware() {
+            if let Some(runtime) = &self.runtime {
+                let plaintext = runtime
+                    .decrypt_credential(tenant_id, user_id_hash, credential_id, blob)
+                    .map_err(|error| EnclaveError::DecryptionFailed(error.to_string()))?;
+                self.stats.decryption_ops += 1;
+                return Ok(plaintext);
+            }
+        }
+
         let context = CredentialCryptoContext::new(tenant_id, user_id_hash, credential_id);
         let plaintext = context
             .decrypt_with_hierarchy(&self.key_hierarchy, blob)
@@ -541,6 +591,29 @@ impl Enclave {
         self.mrsigner = identity.mrsigner;
     }
 
+    fn ensure_hardware_runtime(
+        &mut self,
+        runtime: Option<SharedEnclaveRuntime>,
+    ) -> Result<Option<SharedEnclaveRuntime>, EnclaveError> {
+        if !self.config.runtime_mode.is_hardware() {
+            return Ok(None);
+        }
+
+        if let Some(runtime) = runtime {
+            self.runtime = Some(runtime.clone());
+            return Ok(Some(runtime));
+        }
+
+        let loaded_runtime = SgxHostRuntime::load_from_env().map_err(|error| {
+            EnclaveError::ProviderBootstrapFailed(format!(
+                "{error}; refusing to fall back to simulation"
+            ))
+        })?;
+        let loaded_runtime: SharedEnclaveRuntime = Arc::new(loaded_runtime);
+        self.runtime = Some(loaded_runtime.clone());
+        Ok(Some(loaded_runtime))
+    }
+
     /// 从密封存储恢复
     fn restore_from_sealed_storage(
         &mut self,
@@ -579,7 +652,8 @@ impl Enclave {
         self.config.runtime_mode == TeeRuntimeMode::Simulation
             && matches!(
                 error,
-                KeyManagerError::StorageError(_)
+                KeyManagerError::KeyNotFound
+                    | KeyManagerError::StorageError(_)
                     | KeyManagerError::SealingFailed(_)
                     | KeyManagerError::InvalidMetadata
             )
@@ -804,8 +878,18 @@ fn derive_cache_key(tenant_id: &str, user_id: &str) -> KeyHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "tee-hardware")]
+    use crate::crypto::EncryptedBlob;
+    #[cfg(feature = "tee-hardware")]
+    use crate::tee::ffi_types::{EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN};
+    #[cfg(feature = "tee-hardware")]
+    use crate::tee::host_runtime::{EnclaveRuntime, HostRuntimeError, SharedEnclaveRuntime};
     use crate::vault::models::UserId;
+    #[cfg(feature = "tee-hardware")]
+    use base64::Engine as _;
     use std::path::PathBuf;
+    #[cfg(feature = "tee-hardware")]
+    use std::sync::Arc;
 
     fn hashed_user_id(raw: &str) -> String {
         UserId::new(raw).hash().to_string()
@@ -816,6 +900,65 @@ mod tests {
             "credbridge-enclave-{test_name}-{}",
             uuid::Uuid::new_v4()
         ))
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    struct RuntimeCryptoMock;
+
+    #[cfg(feature = "tee-hardware")]
+    impl EnclaveRuntime for RuntimeCryptoMock {
+        fn get_identity(&self) -> Result<EnclaveIdentity, HostRuntimeError> {
+            Ok(EnclaveIdentity::new([0x11; 32], [0x22; 32]))
+        }
+
+        fn get_report(
+            &self,
+            _report_data: [u8; SGX_REPORT_DATA_LEN],
+        ) -> Result<Vec<u8>, HostRuntimeError> {
+            Ok(vec![0u8; 432])
+        }
+
+        fn get_sealing_key(
+            &self,
+            _policy: SealPolicy,
+        ) -> Result<[u8; SGX_SEALING_KEY_LEN], HostRuntimeError> {
+            Ok([0x33; SGX_SEALING_KEY_LEN])
+        }
+
+        fn encrypt_credential(
+            &self,
+            _tenant_id: &str,
+            _user_id_hash: &str,
+            _credential_id: &str,
+            plaintext: &[u8],
+        ) -> Result<EncryptedBlob, HostRuntimeError> {
+            Ok(EncryptedBlob {
+                version: 1,
+                algorithm: "MOCK-RUNTIME".to_string(),
+                kdf: "MOCK".to_string(),
+                nonce: "mocknonce".to_string(),
+                auth_tag: "mocktag".to_string(),
+                ciphertext: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(plaintext),
+                aad_hash: None,
+            })
+        }
+
+        fn decrypt_credential(
+            &self,
+            _tenant_id: &str,
+            _user_id_hash: &str,
+            _credential_id: &str,
+            blob: &EncryptedBlob,
+        ) -> Result<Vec<u8>, HostRuntimeError> {
+            use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+            URL_SAFE_NO_PAD
+                .decode(&blob.ciphertext)
+                .map_err(|error| HostRuntimeError::LoadFailed {
+                    path: PathBuf::new(),
+                    detail: error.to_string(),
+                })
+        }
     }
 
     #[test]
@@ -1080,6 +1223,37 @@ mod tests {
                 .contains("refusing to fall back to simulation")
         );
 
+        let _ = std::fs::remove_dir_all(storage_path);
+    }
+
+    #[test]
+    #[cfg(feature = "tee-hardware")]
+    fn test_hardware_runtime_encrypt_decrypt_uses_runtime_proxy() {
+        let storage_path = temp_sealed_storage_path("runtime-crypto");
+        let runtime: SharedEnclaveRuntime = Arc::new(RuntimeCryptoMock);
+        let config = EnclaveConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            sealed_storage_path: storage_path.to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let mut enclave = Enclave::with_runtime(config, runtime);
+        enclave.initialize().unwrap();
+
+        let plaintext = b"runtime-only secret";
+        let user_hash = hashed_user_id("runtime-user");
+        let blob = enclave
+            .encrypt_credential("tenant_1", &user_hash, "cred_1", plaintext)
+            .unwrap();
+
+        assert_eq!(blob.algorithm, "MOCK-RUNTIME");
+
+        let decrypted = enclave
+            .decrypt_credential("tenant_1", &user_hash, "cred_1", &blob)
+            .unwrap();
+        assert_eq!(decrypted, plaintext);
+
+        let _ = enclave.shutdown();
         let _ = std::fs::remove_dir_all(storage_path);
     }
 

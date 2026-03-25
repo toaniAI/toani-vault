@@ -9,6 +9,8 @@
 //! tee/
 //! ├── mod.rs           - 模块导出
 //! ├── enclave.rs       - Enclave 核心实现
+//! ├── host_runtime.rs  - Host 侧 SGX enclave runtime bridge
+//! ├── ffi_types.rs     - Host/Enclave FFI 类型与缓冲区定义
 //! ├── keys.rs          - 密钥管理（TTL 缓存、Zeroize 安全清理）
 //! ├── cleanup.rs       - 密钥清理策略与调度器
 //! ├── sealing.rs       - SGX Sealing 密钥和密封存储
@@ -77,6 +79,9 @@ pub mod cleanup;
 pub mod dcap;
 pub mod driver_verify;
 pub mod enclave;
+pub mod ffi_types;
+pub(crate) mod hardware;
+pub mod host_runtime;
 pub mod keys;
 pub mod provider;
 pub mod quote;
@@ -86,6 +91,11 @@ pub mod upgrade;
 
 // 公开导出 - Enclave
 pub use enclave::{CacheStats, Enclave, EnclaveConfig, EnclaveError, EnclaveState, EnclaveStats};
+pub use ffi_types::{
+    EcallStatus, EnclaveIdentity, EnclaveReport, EnclaveSealingKey, SGX_REPORT_LEN,
+    SGX_SEALING_KEY_LEN,
+};
+pub use host_runtime::{HostRuntimeError, SgxHostRuntime};
 
 /// 共享的 Enclave 句柄，供主启动链和 API 复用同一个实例。
 pub type SharedEnclave = Arc<Mutex<Enclave>>;
@@ -141,6 +151,7 @@ pub use cleanup::{
 
 /// TEE 模块版本
 pub const TEE_VERSION: &str = "0.1.0";
+pub const TEE_HARDWARE_BUILD_ENABLED: bool = cfg!(feature = "tee-hardware");
 
 /// 默认用户密钥缓存 TTL（秒）
 pub const DEFAULT_USER_KEY_TTL: u64 = 300; // 5 分钟
@@ -302,12 +313,6 @@ pub fn detect_tee_capabilities(requested_mode: TeeRuntimeMode) -> TeeCapabilitie
     detect_tee_capabilities_with(requested_mode, path_exists)
 }
 
-pub fn validate_runtime_requirements(
-    runtime: &TeeRuntimeConfig,
-) -> Result<TeeCapabilities, TeeRuntimeError> {
-    validate_runtime_requirements_with(runtime.mode, path_exists)
-}
-
 fn validate_runtime_requirements_with<F>(
     requested_mode: TeeRuntimeMode,
     exists: F,
@@ -315,6 +320,10 @@ fn validate_runtime_requirements_with<F>(
 where
     F: Fn(&str) -> bool + Copy,
 {
+    if requested_mode.is_hardware() && !TEE_HARDWARE_BUILD_ENABLED {
+        return Err(TeeRuntimeError::HardwareFeatureDisabled { requested_mode });
+    }
+
     let capabilities = detect_tee_capabilities_with(requested_mode, exists);
 
     if requested_mode.is_hardware() && !capabilities.hardware_available {
@@ -334,9 +343,33 @@ where
     Ok(capabilities)
 }
 
+pub fn validate_runtime_requirements(
+    runtime: &TeeRuntimeConfig,
+) -> Result<TeeCapabilities, TeeRuntimeError> {
+    if runtime.mode.is_hardware() && !TEE_HARDWARE_BUILD_ENABLED {
+        return Err(TeeRuntimeError::HardwareFeatureDisabled {
+            requested_mode: runtime.mode,
+        });
+    }
+
+    if runtime.mode.is_hardware() && runtime.enclave_path.as_deref().is_none() {
+        return Err(TeeRuntimeError::MissingEnclaveArtifact {
+            requested_mode: runtime.mode,
+        });
+    }
+
+    validate_runtime_requirements_with(runtime.mode, path_exists)
+}
+
 /// TEE 运行时校验错误
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TeeRuntimeError {
+    HardwareFeatureDisabled {
+        requested_mode: TeeRuntimeMode,
+    },
+    MissingEnclaveArtifact {
+        requested_mode: TeeRuntimeMode,
+    },
     /// 请求硬件模式，但没有检测到受支持硬件
     HardwareUnavailable {
         requested_mode: TeeRuntimeMode,
@@ -352,6 +385,14 @@ pub enum TeeRuntimeError {
 impl std::fmt::Display for TeeRuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            TeeRuntimeError::HardwareFeatureDisabled { requested_mode } => write!(
+                f,
+                "TEE_MODE={requested_mode} requested, but this build was compiled without the `tee-hardware` feature"
+            ),
+            TeeRuntimeError::MissingEnclaveArtifact { requested_mode } => write!(
+                f,
+                "TEE_MODE={requested_mode} requested, but no SGX enclave artifact was configured; set `TEE_ENCLAVE_PATH`"
+            ),
             TeeRuntimeError::HardwareUnavailable {
                 requested_mode,
                 detected_type,
@@ -533,6 +574,63 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "tee-hardware"))]
+    fn rejects_hardware_mode_when_build_lacks_hardware_feature() {
+        let error = validate_runtime_requirements_with(TeeRuntimeMode::Hardware, |path| {
+            path == "/dev/sgx_enclave" || path == "/var/run/aesmd/aesm.socket"
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::HardwareFeatureDisabled {
+                requested_mode: TeeRuntimeMode::Hardware,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(not(feature = "tee-hardware"))]
+    fn rejects_hardware_mode_without_enclave_artifact() {
+        let runtime = TeeRuntimeConfig {
+            mode: TeeRuntimeMode::Hardware,
+            debug_mode: false,
+            pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
+            enclave_path: None,
+        };
+
+        let error = validate_runtime_requirements(&runtime).unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::HardwareFeatureDisabled {
+                requested_mode: TeeRuntimeMode::Hardware,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "tee-hardware")]
+    fn rejects_hardware_mode_without_enclave_artifact() {
+        let runtime = TeeRuntimeConfig {
+            mode: TeeRuntimeMode::Hardware,
+            debug_mode: false,
+            pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
+            enclave_path: None,
+        };
+
+        let error = validate_runtime_requirements(&runtime).unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::MissingEnclaveArtifact {
+                requested_mode: TeeRuntimeMode::Hardware,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "tee-hardware")]
     fn rejects_hardware_mode_without_detected_hardware() {
         let error =
             validate_runtime_requirements_with(TeeRuntimeMode::Hardware, |_| false).unwrap_err();
@@ -547,6 +645,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "tee-hardware")]
     fn rejects_hardware_mode_without_remote_attestation_prerequisites() {
         let error = validate_runtime_requirements_with(TeeRuntimeMode::Hardware, |path| {
             path == "/dev/sgx_enclave"

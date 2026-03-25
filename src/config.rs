@@ -5,6 +5,7 @@ use std::fmt;
 pub const TEE_MODE_ENV: &str = "TEE_MODE";
 pub const TEE_DEBUG_ENV: &str = "TEE_DEBUG";
 pub const TEE_PCS_BASE_URL_ENV: &str = "TEE_PCS_BASE_URL";
+pub const TEE_ENCLAVE_PATH_ENV: &str = "TEE_ENCLAVE_PATH";
 
 const INTEL_PCS_BASE_URL_PROD: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
 const INTEL_PCS_BASE_URL_TEST: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
@@ -89,6 +90,7 @@ pub struct TeeRuntimeConfig {
     pub mode: TeeRuntimeMode,
     pub debug_mode: bool,
     pub pcs_base_url: String,
+    pub enclave_path: Option<String>,
 }
 
 impl TeeRuntimeConfig {
@@ -97,6 +99,9 @@ impl TeeRuntimeConfig {
             mode: TeeRuntimeMode::Hardware,
             debug_mode: false,
             pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
+            enclave_path: std::env::var(TEE_ENCLAVE_PATH_ENV)
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
         }
     }
 
@@ -107,6 +112,7 @@ impl TeeRuntimeConfig {
             pcs_base_url: TeeRuntimeMode::Simulation
                 .default_pcs_base_url()
                 .to_string(),
+            enclave_path: None,
         }
     }
 
@@ -132,10 +138,13 @@ impl TeeRuntimeConfig {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| mode.default_pcs_base_url().to_string());
 
+        let enclave_path = get_var(TEE_ENCLAVE_PATH_ENV).filter(|value| !value.trim().is_empty());
+
         Ok(Self {
             mode,
             debug_mode,
             pcs_base_url,
+            enclave_path,
         })
     }
 
@@ -168,8 +177,8 @@ fn parse_bool(env_var: &'static str, value: &str) -> Result<bool, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigError, TEE_DEBUG_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig,
-        TeeRuntimeMode,
+        ConfigError, TEE_DEBUG_ENV, TEE_ENCLAVE_PATH_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV,
+        TeeRuntimeConfig, TeeRuntimeMode,
     };
     use std::collections::HashMap;
 
@@ -214,6 +223,23 @@ mod tests {
         assert_eq!(config.mode, TeeRuntimeMode::Hardware);
         assert!(config.debug_mode);
         assert_eq!(config.pcs_base_url, "https://pcs.example.test");
+    }
+
+    #[test]
+    fn captures_explicit_enclave_path() {
+        let env = HashMap::from([
+            (TEE_MODE_ENV, "hardware".to_string()),
+            (
+                TEE_ENCLAVE_PATH_ENV,
+                "/tmp/credbridge_enclave.signed.so".to_string(),
+            ),
+        ]);
+        let config = TeeRuntimeConfig::from_env_with(|name| env.get(name).cloned()).unwrap();
+
+        assert_eq!(
+            config.enclave_path.as_deref(),
+            Some("/tmp/credbridge_enclave.signed.so")
+        );
     }
 
     #[test]

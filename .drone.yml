@@ -85,14 +85,40 @@ node:
   tee_runner: sgx
 
 steps:
-  - name: hardware-only-tests
+  - name: sgx-enclave-build
     image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     environment:
       TEE_MODE: hardware
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
-      - cargo test --test sgx_hardware_tests -- --ignored --test-threads=1
+      - bash scripts/check_sgx_environment.sh
+      - bash scripts/build-sgx-enclave.sh
+      - bash scripts/sign-sgx-enclave.sh
+
+  - name: hardware-compile-check
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
+    depends_on:
+      - sgx-enclave-build
+    environment:
+      TEE_MODE: hardware
+      TEE_ENCLAVE_PATH: /drone/src/target/sgx-enclave/credbridge_enclave.signed.so
+    commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
+      - cargo test --features tee-hardware --lib --tests --no-run
+
+  - name: hardware-only-tests
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
+    depends_on:
+      - hardware-compile-check
+    environment:
+      TEE_MODE: hardware
+      TEE_ENCLAVE_PATH: /drone/src/target/sgx-enclave/credbridge_enclave.signed.so
+    commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
+      - cargo test --features tee-hardware --test sgx_hardware_tests -- --ignored --test-threads=1
 
 ---
 kind: pipeline
