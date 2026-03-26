@@ -25,7 +25,7 @@ envs:
   TEE_ENCLAVE_PATH: /app/credbridge_enclave.signed.so
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: debug
-  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@postgresql-hl:5432/platformid?sslmode=disable"
+  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@postgresql-hl.dev:5432/platformid?sslmode=disable"
   VAULT_ADDR: "http://vault:8200"
 
 o_envs: []
