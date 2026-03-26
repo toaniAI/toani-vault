@@ -24,7 +24,7 @@ envs:
   TEE_MODE: simulation
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: debug
-  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge"
+  DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
   VAULT_ADDR: "http://vault:8200"
 
 o_envs: []

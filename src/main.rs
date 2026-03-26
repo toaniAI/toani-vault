@@ -1,19 +1,19 @@
-//! CredBridge - 凭证保险库 HTTP 服务
+//! CredBridge - Credential Vault HTTP Service
 //!
-//! HTTP API 服务器入口点
-//! 支持环境变量配置端口和运行模式
+//! HTTP API server entry point.
+//! Supports port and runtime mode configuration via environment variables.
 //!
-//! # 环境变量
+//! # Environment Variables
 //!
-//! - `CREDBRIDGE_PORT` - 服务器端口 (默认: 8080)
-//! - `CREDBRIDGE_HOST` - 服务器主机 (默认: 0.0.0.0)
-//! - `CREDBRIDGE_ENV` - 运行环境 (development/production, 默认: development)
-//! - `TEE_MODE` - TEE 运行模式 (`hardware`/`simulation`, 默认: hardware)
-//! - `TEE_DEBUG` - 是否启用 TEE 调试模式
-//! - `SEALED_STORAGE_PATH` - Enclave 密封主密钥持久化目录 (默认: .sealed)
-//! - `RUST_LOG` - 日志级别 (默认: info)
-//! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - 速率限制请求数/窗口 (默认: 100)
-//! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - 速率限制窗口（秒）(默认: 60)
+//! - `CREDBRIDGE_PORT` - Server port (default: 8080)
+//! - `CREDBRIDGE_HOST` - Server host (default: 0.0.0.0)
+//! - `CREDBRIDGE_ENV` - Runtime environment (development/production, default: development)
+//! - `TEE_MODE` - TEE runtime mode (`hardware`/`simulation`)
+//! - `TEE_DEBUG` - Enable TEE debug mode
+//! - `SEALED_STORAGE_PATH` - Enclave sealed storage directory (default: `.sealed`)
+//! - `RUST_LOG` - Log level (default: info)
+//! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - Rate limit requests per window (default: 100)
+//! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - Rate limit window in seconds (default: 60)
 
 use axum::{Extension, Json, Router, http::StatusCode, response::IntoResponse, routing::get};
 use serde::Serialize;
@@ -26,7 +26,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::{self, TraceLayer};
 use tracing::{Level, info, warn};
 
-// CredBridge 内部模块
+// CredBridge internal modules
 use vault_service::api::{
     API_BASE_PATH,
     attestation::{
@@ -56,7 +56,7 @@ use vault_service::vault::backend::VaultStorageBackend;
 use vault_service::vault::postgres::PostgresStorageBackend;
 use vault_service::vault::storage::CredentialVault;
 
-/// API 根响应
+/// API root response
 #[derive(Debug, Serialize)]
 struct ApiRootResponse {
     name: String,
@@ -71,7 +71,7 @@ struct ApiEndpoint {
     description: String,
 }
 
-/// 健康检查响应
+/// Health check response
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: String,
@@ -80,7 +80,7 @@ struct HealthResponse {
     timestamp: u64,
 }
 
-/// 详细健康检查响应
+/// Detailed health check response
 #[derive(Debug, Serialize)]
 struct HealthDetailResponse {
     status: String,

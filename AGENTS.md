@@ -146,8 +146,7 @@ Tests in `tests/` are organized by domain and use `[[test]]` entries in `Cargo.t
 
 - `sdk-typescript/` — TypeScript client SDK + Sandbox WebSocket client
 - `sdk-rust/` — Rust client SDK
-- `mcp-server/` — MCP server for AI agent integration
-- `cli/` — CLI management tool
+- `cli/` — CLI management tool for operators and automation
 
 ---
 

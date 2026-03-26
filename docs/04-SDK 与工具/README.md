@@ -32,12 +32,6 @@
 - [CLI 使用指南](../cli/README.md)
 - 支持凭证管理、Token 管理、审计日志查询、沙箱操作等
 
-### MCP Server
-位置：`/mcp-server/`
-- [MCP 集成](MCP-INTEGRATION.md)
-- [MCP Server 文档](../mcp-server/README.md)
-- 支持 Model Context Protocol，可与 AI 助手集成
-
 ## 示例代码
 
 - [TypeScript 示例](../examples/typescript/README.md)
@@ -45,4 +39,4 @@
 
 ---
 
-**更新时间**: 2026-03-20
+**更新时间**: 2026-03-26

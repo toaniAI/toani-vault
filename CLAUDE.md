@@ -195,8 +195,7 @@ Tests in `tests/` use `[[test]]` entries in `Cargo.toml`. Key test files:
 
 - `sdk-typescript/` — TypeScript client SDK + Sandbox WebSocket client
 - `sdk-rust/` — Rust client SDK
-- `mcp-server/` — MCP server for AI agent integration
-- `cli/` — CLI management tool
+- `cli/` — CLI management tool for operators and automation
 
 ---
 
