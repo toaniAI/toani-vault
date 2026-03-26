@@ -254,6 +254,34 @@ impl NsjailSandboxPool {
         self.warm_instances.lock().await.len()
     }
 
+    /// 获取活跃会话快照
+    pub async fn list_active_sessions(&self) -> Vec<ActiveNsjailSession> {
+        self.active_sessions
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    /// 查询某个操作记录
+    pub async fn find_operation(
+        &self,
+        operation_id: uuid::Uuid,
+    ) -> Option<(SessionId, crate::tee::sandbox::session::OperationRecord)> {
+        let sessions = self.active_sessions.read().await;
+        for (session_id, session) in sessions.iter() {
+            let history = session.get_operation_history().await;
+            if let Some(record) = history
+                .into_iter()
+                .find(|item| item.operation_id == operation_id)
+            {
+                return Some((*session_id, record));
+            }
+        }
+        None
+    }
+
     /// 回收沙箱到热实例池
     ///
     /// 执行以下步骤：

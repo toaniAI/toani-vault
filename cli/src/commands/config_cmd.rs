@@ -30,7 +30,11 @@ async fn init_config(url: Option<String>, token: Option<String>) -> Result<()> {
 
     config.save()?;
 
-    println!("{}: {}", tr("cli.config.saved_to"), Config::config_path()?.display());
+    println!(
+        "{}: {}",
+        tr("cli.config.saved_to"),
+        Config::config_path()?.display()
+    );
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 use crate::cli::CredentialCommands;
 use crate::config::Config;
 use crate::i18n::tr;
-use crate::output::{confirm, input_secret, OutputFormatter};
+use crate::output::{OutputFormatter, confirm, input_secret};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use credbridge_sdk::types::CredentialType;
@@ -21,9 +21,10 @@ pub async fn execute(cmd: CredentialCommands, config: Config) -> Result<()> {
             limit,
             offset: _,
         } => list_credentials(&sdk, &formatter, credential_type, limit).await,
-        CredentialCommands::Get { id, include_value: _ } => {
-            get_credential(&sdk, &formatter, id).await
-        }
+        CredentialCommands::Get {
+            id,
+            include_value: _,
+        } => get_credential(&sdk, &formatter, id).await,
         CredentialCommands::Create {
             name,
             credential_type,
@@ -33,16 +34,18 @@ pub async fn execute(cmd: CredentialCommands, config: Config) -> Result<()> {
         } => create_credential(&sdk, &formatter, name, credential_type, value, metadata).await,
         CredentialCommands::Update {
             id,
-            name: _,
-            value: _,
-            description: _,
-        } => update_credential(&formatter, id).await,
+            name,
+            value,
+            description,
+        } => update_credential(&sdk, &formatter, id, name, value, description).await,
         CredentialCommands::Delete { id, force } => delete_credential(&sdk, id, force).await,
         CredentialCommands::Decrypt { id, version: _ } => {
             decrypt_credential(&sdk, &formatter, id).await
         }
-        CredentialCommands::Versions { id: _ } => list_versions().await,
-        CredentialCommands::Rollback { id: _, version: _ } => rollback_credential().await,
+        CredentialCommands::Versions { id } => list_versions(&sdk, &formatter, id).await,
+        CredentialCommands::Rollback { id, version } => {
+            rollback_credential(&sdk, &formatter, id, version).await
+        }
     }
 }
 
@@ -61,7 +64,7 @@ async fn list_credentials(
     credential_type: Option<String>,
     _limit: u32,
 ) -> Result<()> {
-    println!("{}\n", tr("cli.credentials.listing"));
+    formatter.print_diagnostic(&format!("{}\n", tr("cli.credentials.listing")));
 
     // 解析凭证类型
     let filter = if let Some(ct_str) = credential_type {
@@ -77,7 +80,7 @@ async fn list_credentials(
     let (credentials, total) = sdk.credentials().list(filter, None).await?;
 
     if credentials.is_empty() {
-        println!("{}", tr("cli.credentials.empty"));
+        formatter.print_diagnostic(tr("cli.credentials.empty"));
         return Ok(());
     }
 
@@ -97,12 +100,12 @@ async fn list_credentials(
 
     formatter.print_list(&view, &["ID", "Service", "Type", "Tenant", "Created At"])?;
 
-    println!(
+    formatter.print_diagnostic(&format!(
         "\n{} {} (total: {})",
         credentials.len().to_string().cyan(),
         tr("cli.credentials.total"),
         total
-    );
+    ));
     Ok(())
 }
 
@@ -161,13 +164,14 @@ async fn create_credential(
         None => input_secret(tr("cli.credentials.prompt_value"))?,
     };
 
-    println!("{}\n", tr("cli.credentials.creating"));
+    formatter.print_diagnostic(&format!("{}\n", tr("cli.credentials.creating")));
 
     // 解析凭证类型
     let cred_type = parse_credential_type(&credential_type)?;
 
     // 构建凭证数据
-    let mut plaintext_data: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+    let mut plaintext_data: std::collections::HashMap<String, Value> =
+        std::collections::HashMap::new();
     plaintext_data.insert("value".to_string(), Value::String(value));
 
     // 添加元数据
@@ -180,14 +184,59 @@ async fn create_credential(
         .create(name, cred_type, plaintext_data, None, None)
         .await?;
 
-    formatter.print_success(&format!("{}: {}", tr("cli.credentials.created"), credential.credential_id));
+    formatter.print_success(&format!(
+        "{}: {}",
+        tr("cli.credentials.created"),
+        credential.credential_id
+    ));
     Ok(())
 }
 
-async fn update_credential(formatter: &OutputFormatter, _id: String) -> Result<()> {
-    // SDK 暂不支持更新，这里提示用户
-    formatter.print_error(tr("cli.credentials.update_unavailable"));
-    println!("   {}", tr("cli.credentials.use_delete_create"));
+async fn update_credential(
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+    id: String,
+    name: Option<String>,
+    value: Option<String>,
+    description: Option<String>,
+) -> Result<()> {
+    let mut payload = serde_json::Map::new();
+    if let Some(name) = name {
+        payload.insert("name".to_string(), serde_json::Value::String(name));
+    }
+    if let Some(value) = value {
+        payload.insert("value".to_string(), serde_json::Value::String(value));
+    }
+    if let Some(description) = description {
+        payload.insert(
+            "description".to_string(),
+            serde_json::Value::String(description),
+        );
+    }
+    if payload.is_empty() {
+        anyhow::bail!("no fields provided to update");
+    }
+
+    formatter.print_diagnostic("Updating credential...");
+    let response = sdk
+        .credentials()
+        .update(
+            &id,
+            serde_json::Value::Object(payload),
+            Some("CLI update".to_string()),
+            None,
+            None,
+        )
+        .await?;
+
+    if formatter.is_table() {
+        formatter.print_diagnostic(&format!(
+            "Updated credential {} to version {}",
+            response.credential_id, response.version
+        ));
+    } else {
+        formatter.print_object(&response)?;
+    }
     Ok(())
 }
 
@@ -198,18 +247,22 @@ async fn delete_credential(
 ) -> Result<()> {
     // 确认删除
     if !force {
-        let confirm_msg = format!("{} {}? This action cannot be undone.", tr("cli.credentials.delete_confirm"), id.red());
+        let confirm_msg = format!(
+            "{} {}? This action cannot be undone.",
+            tr("cli.credentials.delete_confirm"),
+            id.red()
+        );
         if !confirm(&confirm_msg)? {
             println!("{}", tr("cli.credentials.cancelled"));
             return Ok(());
         }
     }
 
-    println!("{}\n", tr("cli.credentials.deleting"));
+    eprintln!("{}\n", tr("cli.credentials.deleting"));
 
     sdk.credentials().delete(&id, None).await?;
 
-    println!("✅ credential {} {}", id, tr("cli.credentials.deleted"));
+    eprintln!("✅ credential {} {}", id, tr("cli.credentials.deleted"));
     Ok(())
 }
 
@@ -218,7 +271,7 @@ async fn decrypt_credential(
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
-    println!("{}\n", tr("cli.credentials.decrypting"));
+    formatter.print_diagnostic(&format!("{}\n", tr("cli.credentials.decrypting")));
 
     let decrypted = sdk
         .credentials()
@@ -250,13 +303,53 @@ async fn decrypt_credential(
     Ok(())
 }
 
-async fn list_versions() -> Result<()> {
-    println!("{}", tr("cli.credentials.versions_unimplemented"));
+async fn list_versions(
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+    id: String,
+) -> Result<()> {
+    let response = sdk.credentials().list_versions(&id, None).await?;
+    if formatter.is_table() {
+        let view: Vec<_> = response
+            .versions
+            .iter()
+            .map(|item| {
+                serde_json::json!({
+                    "version": item.version,
+                    "created_at": item.created_at,
+                    "changed_by": item.changed_by,
+                    "change_reason": item.change_reason,
+                })
+            })
+            .collect();
+        formatter.print_list(
+            &view,
+            &["Version", "Created At", "Changed By", "Change Reason"],
+        )?;
+    } else {
+        formatter.print_object(&response)?;
+    }
     Ok(())
 }
 
-async fn rollback_credential() -> Result<()> {
-    println!("{}", tr("cli.credentials.rollback_unimplemented"));
+async fn rollback_credential(
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+    id: String,
+    version: i32,
+) -> Result<()> {
+    let response = sdk
+        .credentials()
+        .rollback(&id, version as u32, "CLI rollback", None)
+        .await?;
+    if formatter.is_table() {
+        formatter.print_diagnostic(&format!(
+            "Rolled back credential {} to source version {}",
+            response.credential_id, response.rollback_to_version
+        ));
+    } else {
+        formatter.print_object(&response)?;
+    }
     Ok(())
 }
 

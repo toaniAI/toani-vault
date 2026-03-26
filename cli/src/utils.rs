@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::io::{self, Read};
 
 /// 从 stdin 读取内容
+#[allow(dead_code)]
 pub fn read_stdin() -> Result<String> {
     let mut buffer = String::new();
     io::stdin().read_to_string(&mut buffer)?;
@@ -9,12 +10,14 @@ pub fn read_stdin() -> Result<String> {
 }
 
 /// 检查 stdin 是否有数据
+#[allow(dead_code)]
 pub fn has_stdin() -> bool {
     use std::io::IsTerminal;
     !io::stdin().is_terminal()
 }
 
 /// 格式化字节数为人类可读格式
+#[allow(dead_code)]
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;
@@ -29,6 +32,7 @@ pub fn format_bytes(bytes: u64) -> String {
 }
 
 /// 截断字符串
+#[allow(dead_code)]
 pub fn truncate(s: &str, max_len: usize) -> String {
     if s.len() > max_len {
         format!("{}...", &s[..max_len.saturating_sub(3)])

@@ -83,10 +83,7 @@ impl OutputFormatter {
     pub fn print_success(&self, message: &str) {
         match self.format {
             crate::config::OutputFormat::Json => {
-                println!(
-                    "{{\"status\":\"success\",\"message\":\"{}\"}}",
-                    message
-                );
+                println!("{{\"status\":\"success\",\"message\":\"{}\"}}", message);
             }
             crate::config::OutputFormat::Table => {
                 println!("✅ {}", message);
@@ -109,6 +106,11 @@ impl OutputFormatter {
     /// 检查是否为表格格式
     pub fn is_table(&self) -> bool {
         matches!(self.format, crate::config::OutputFormat::Table)
+    }
+
+    /// 向 stderr 输出诊断信息
+    pub fn print_diagnostic(&self, message: &str) {
+        eprintln!("{}", message);
     }
 }
 
@@ -175,6 +177,7 @@ pub fn input_text(prompt: &str) -> Result<String> {
 }
 
 /// 选择提示
+#[allow(dead_code)]
 pub fn select<T: ToString>(prompt: &str, items: &[T]) -> Result<usize> {
     use dialoguer::Select;
 

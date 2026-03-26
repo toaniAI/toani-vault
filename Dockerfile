@@ -16,15 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 先复制 manifest，尽量复用依赖缓存。
 COPY Cargo.toml Cargo.lock ./
 COPY cli/Cargo.toml ./cli/
-COPY mcp-server/Cargo.toml ./mcp-server/
 COPY sdk-rust/Cargo.toml ./sdk-rust/
 COPY vault-service/Cargo.toml ./vault-service/
 COPY examples/rust/Cargo.toml ./examples/rust/
 
-RUN mkdir -p src cli/src sdk-rust/src mcp-server/src vault-service/src examples/rust/src
+RUN mkdir -p src cli/src sdk-rust/src vault-service/src examples/rust/src
 RUN printf 'fn main() {}\n' > src/main.rs
 RUN printf 'fn main() {}\n' > cli/src/main.rs
-RUN printf 'fn main() {}\n' > mcp-server/src/main.rs
 RUN printf 'fn main() {}\n' > examples/rust/src/main.rs
 RUN printf 'pub fn placeholder() {}\n' > sdk-rust/src/lib.rs
 RUN printf 'pub fn placeholder() {}\n' > vault-service/src/lib.rs
@@ -32,13 +30,11 @@ RUN cargo build --release || true
 
 COPY src ./src
 COPY cli ./cli
-COPY mcp-server ./mcp-server
 COPY sdk-rust ./sdk-rust
 COPY vault-service ./vault-service
 COPY examples ./examples
 COPY migrations ./migrations
-
-RUN cargo build --release
+RUN cargo build --release && cargo build --manifest-path cli/Cargo.toml --release
 
 FROM debian:bookworm-slim
 

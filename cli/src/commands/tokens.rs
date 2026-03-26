@@ -15,18 +15,11 @@ pub async fn execute(cmd: TokenCommands, config: Config) -> Result<()> {
     match cmd {
         TokenCommands::Create {
             name: _,
-            expires_in: _,
-            scopes: _,
-        } => {
-            println!("{}", tr("cli.tokens.create_unimplemented"));
-            println!("   {}", tr("cli.tokens.use_web"));
-            Ok(())
-        }
-        TokenCommands::List => {
-            println!("{}", tr("cli.tokens.list_unimplemented"));
-            Ok(())
-        }
-        TokenCommands::Revoke { id: _ } => revoke_token(&sdk).await,
+            expires_in,
+            scopes,
+        } => create_token(&sdk, &formatter, expires_in, scopes).await,
+        TokenCommands::List => list_tokens(&sdk, &formatter).await,
+        TokenCommands::Revoke { id } => revoke_token(&sdk, &formatter, id).await,
         TokenCommands::Verify { token } => verify_token(&sdk, &formatter, token).await,
     }
 }
@@ -40,18 +33,72 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
     .context("failed to create SDK client")
 }
 
-async fn revoke_token(sdk: &credbridge_sdk::CredBridgeSDK) -> Result<()> {
-    println!("{}\n", tr("cli.tokens.revoking"));
-
-    match sdk.token().revoke(None).await {
-        Ok(true) => {
-            println!("{}", tr("cli.tokens.revoked"));
-            println!("   {}", tr("cli.auth.relogin"));
-            Ok(())
-        }
-        Ok(false) => anyhow::bail!("{}", tr("cli.tokens.revoke_failed")),
-        Err(e) => anyhow::bail!("{}: {}", tr("cli.tokens.revoke_failed"), e),
+async fn create_token(
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+    expires_in: u64,
+    scopes: Option<String>,
+) -> Result<()> {
+    let scopes = scopes
+        .unwrap_or_else(|| "credential:read".to_string())
+        .split(',')
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>();
+    let response = sdk
+        .token()
+        .create(None, scopes, Some(expires_in), None, None)
+        .await?;
+    if formatter.is_table() {
+        formatter.print_diagnostic(&format!("Created token {}", response.token_id));
+    } else {
+        formatter.print_object(&response)?;
     }
+    Ok(())
+}
+
+async fn list_tokens(
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+) -> Result<()> {
+    let response = sdk.token().list(None).await?;
+    if formatter.is_table() {
+        let view: Vec<_> = response
+            .tokens
+            .iter()
+            .map(|token| {
+                serde_json::json!({
+                    "token_id": token.token_id,
+                    "user_id": token.user_id,
+                    "tenant_id": token.tenant_id,
+                    "revoked": token.revoked,
+                    "expires_at": token.expires_at,
+                })
+            })
+            .collect();
+        formatter.print_list(
+            &view,
+            &["Token ID", "User ID", "Tenant ID", "Revoked", "Expires At"],
+        )?;
+    } else {
+        formatter.print_object(&response)?;
+    }
+    Ok(())
+}
+
+async fn revoke_token(
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+    id: String,
+) -> Result<()> {
+    formatter.print_diagnostic(&format!("{}\n", tr("cli.tokens.revoking")));
+    let response = sdk.token().revoke_by_id(&id, None).await?;
+    if formatter.is_table() {
+        formatter.print_diagnostic(tr("cli.tokens.revoked"));
+    } else {
+        formatter.print_object(&response)?;
+    }
+    Ok(())
 }
 
 async fn verify_token(
@@ -61,7 +108,11 @@ async fn verify_token(
 ) -> Result<()> {
     let token_to_verify = token.unwrap_or_else(|| tr("cli.tokens.current_token").to_string());
 
-    println!("{}: {}\n", tr("cli.tokens.verifying"), token_to_verify);
+    formatter.print_diagnostic(&format!(
+        "{}: {}\n",
+        tr("cli.tokens.verifying"),
+        token_to_verify
+    ));
 
     match sdk.token().verify(None).await {
         Ok(valid) => {

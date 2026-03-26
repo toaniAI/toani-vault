@@ -1,6 +1,5 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
 use tempfile::TempDir;
 
 #[test]
@@ -18,7 +17,7 @@ fn test_config_help() {
     cmd.args(["config", "--help"]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("配置管理"));
+        .stdout(predicate::str::contains("Configuration management"));
 }
 
 #[test]
@@ -27,7 +26,7 @@ fn test_auth_help() {
     cmd.args(["auth", "--help"]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("认证管理"));
+        .stdout(predicate::str::contains("Authentication management"));
 }
 
 #[test]
@@ -36,7 +35,7 @@ fn test_credentials_help() {
     cmd.args(["credentials", "--help"]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("凭证管理"));
+        .stdout(predicate::str::contains("Credential management"));
 }
 
 #[test]
@@ -84,7 +83,5 @@ fn test_config_show_without_config() {
 fn test_output_json_flag() {
     let mut cmd = Command::cargo_bin("credbridge").unwrap();
     cmd.args(["--output", "json", "config", "show"]);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("{"));
+    cmd.assert().success().stdout(predicate::str::contains("{"));
 }

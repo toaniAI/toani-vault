@@ -447,7 +447,14 @@ impl CredBridgeClient {
                 "credential:read" => Some(TokenScope::CredentialRead),
                 "credential:decrypt" => Some(TokenScope::CredentialDecrypt),
                 "credential:write" => Some(TokenScope::CredentialWrite),
+                "credential:delete" => Some(TokenScope::CredentialDelete),
+                "tokens:read" => Some(TokenScope::TokensRead),
+                "tokens:write" => Some(TokenScope::TokensWrite),
+                "tokens:revoke" => Some(TokenScope::TokensRevoke),
                 "audit:read" => Some(TokenScope::AuditRead),
+                "sandbox:read" => Some(TokenScope::SandboxRead),
+                "sandbox:write" => Some(TokenScope::SandboxWrite),
+                "sandbox:execute" => Some(TokenScope::SandboxExecute),
                 "admin" => Some(TokenScope::Admin),
                 _ => None,
             })
@@ -547,6 +554,22 @@ impl CredBridgeClient {
             )
         })?;
         self.request(Method::PUT, path, Some(body), None).await
+    }
+
+    /// PUT 请求（带选项）
+    pub async fn put_with_options<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: impl serde::Serialize,
+        options: Option<RequestOptions>,
+    ) -> Result<T> {
+        let body = serde_json::to_value(body).map_err(|e| {
+            CredBridgeError::new(
+                CredBridgeErrorCode::InvalidRequest,
+                format!("Failed to serialize request body: {}", e),
+            )
+        })?;
+        self.request(Method::PUT, path, Some(body), options).await
     }
 
     /// DELETE 请求

@@ -42,7 +42,6 @@ use vault_service::api::{
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
     tenant::{TenantApiState, tenant_routes},
-    token_blacklist::create_token_store,
 };
 use vault_service::audit::MemoryAuditStorage;
 use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
@@ -645,7 +644,7 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
 /// 构建 API 路由
 fn build_api_routes(app_state: AppState) -> Router {
     // 创建 Token 存储用于黑名单检查
-    let token_store = create_token_store();
+    let token_store = app_state.auth_state.token_store.clone();
     let secret_key = app_state.auth_state.secret_key.clone();
 
     // 认证路由（公开，不需要认证）

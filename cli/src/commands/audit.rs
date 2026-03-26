@@ -3,6 +3,10 @@ use crate::config::Config;
 use crate::i18n::tr;
 use crate::output::OutputFormatter;
 use anyhow::{Context, Result};
+use base64::Engine as _;
+use credbridge_sdk::types::{
+    AuditExportFormat, AuditExportRequest, AuditLogFilter, AuditVerifyRequest,
+};
 
 pub async fn execute(cmd: AuditCommands, config: Config) -> Result<()> {
     if !config.is_configured() {
@@ -40,31 +44,109 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
 }
 
 async fn query_logs(
-    _sdk: &credbridge_sdk::CredBridgeSDK,
-    _formatter: &OutputFormatter,
-    _from: Option<String>,
-    _to: Option<String>,
-    _action: Option<String>,
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    formatter: &OutputFormatter,
+    from: Option<String>,
+    to: Option<String>,
+    action: Option<String>,
     _resource_type: Option<String>,
-    _limit: u32,
+    limit: u32,
 ) -> Result<()> {
-    println!("{}", tr("cli.audit.logs_unimplemented"));
-    println!("   {}", tr("cli.audit.web_hint"));
+    let filter = AuditLogFilter {
+        start_time: parse_timestamp(from)?,
+        end_time: parse_timestamp(to)?,
+        action,
+        limit: Some(limit),
+        ..Default::default()
+    };
+    let response = sdk.audit().logs(filter, None).await?;
+    if formatter.is_table() {
+        let view: Vec<_> = response
+            .data
+            .items
+            .iter()
+            .map(|item| {
+                serde_json::json!({
+                    "id": item.id,
+                    "timestamp": item.timestamp,
+                    "service": item.service,
+                    "action": item.action,
+                    "outcome": item.outcome,
+                    "risk_tier": item.risk_tier,
+                })
+            })
+            .collect();
+        formatter.print_list(
+            &view,
+            &[
+                "ID",
+                "Timestamp",
+                "Service",
+                "Action",
+                "Outcome",
+                "Risk Tier",
+            ],
+        )?;
+    } else {
+        formatter.print_object(&response)?;
+    }
     Ok(())
 }
 
 async fn export_logs(
-    _sdk: &credbridge_sdk::CredBridgeSDK,
-    _output: String,
-    _format: String,
-    _from: Option<String>,
-    _to: Option<String>,
+    sdk: &credbridge_sdk::CredBridgeSDK,
+    output: String,
+    format: String,
+    from: Option<String>,
+    to: Option<String>,
 ) -> Result<()> {
-    println!("{}", tr("cli.audit.export_unimplemented"));
+    let request = AuditExportRequest {
+        start_time: parse_timestamp(from)?,
+        end_time: parse_timestamp(to)?,
+        format: match format.as_str() {
+            "csv" => AuditExportFormat::Csv,
+            _ => AuditExportFormat::Json,
+        },
+        user_id_hash: None,
+        action: None,
+    };
+    let response = sdk.audit().export(request, None).await?;
+    let data = response
+        .data
+        .ok_or_else(|| anyhow::anyhow!("missing export payload"))?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(&data.content)?;
+    std::fs::write(&output, bytes)?;
+    eprintln!("export written to {}", output);
     Ok(())
 }
 
-async fn verify_logs(_sdk: &credbridge_sdk::CredBridgeSDK) -> Result<()> {
-    println!("{}", tr("cli.audit.verify_unimplemented"));
+async fn verify_logs(sdk: &credbridge_sdk::CredBridgeSDK) -> Result<()> {
+    let logs = sdk.audit().logs(AuditLogFilter::default(), None).await?;
+    let first = logs
+        .data
+        .items
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no audit log entries available to verify"))?;
+    let response = sdk
+        .audit()
+        .verify(
+            AuditVerifyRequest {
+                id: Some(first.id.clone()),
+                log_index: None,
+            },
+            None,
+        )
+        .await?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
     Ok(())
+}
+
+fn parse_timestamp(value: Option<String>) -> Result<Option<u64>> {
+    value
+        .map(|item| {
+            chrono::DateTime::parse_from_rfc3339(&item)
+                .map(|dt| dt.timestamp_millis() as u64)
+                .map_err(|e| anyhow::anyhow!("invalid timestamp `{}`: {}", item, e))
+        })
+        .transpose()
 }

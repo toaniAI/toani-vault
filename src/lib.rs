@@ -26,7 +26,6 @@ pub mod audit;
 pub mod config;
 pub mod connector;
 pub mod crypto;
-pub mod mcp;
 pub mod models;
 pub mod services;
 pub mod tee;
@@ -52,9 +51,6 @@ pub use tee::{
     TeeCapabilities, TeeRuntimeError, TeeType, detect_tee_capabilities, driver_verify, upgrade,
     validate_runtime_requirements,
 };
-
-// 重新导出 MCP 模块
-pub use mcp::token_storage;
 
 // 重新导出 Token 模块
 pub use token::{

@@ -12,10 +12,12 @@ pub fn current_locale() -> &'static str {
     }
 }
 
-pub fn tr(key: &str) -> &'static str {
+pub fn tr(key: &str) -> &str {
     match (current_locale(), key) {
         ("zh-CN", "cli.not_configured") => "未配置，请先运行 'credbridge auth login'",
-        ("en-US", "cli.not_configured") => "CLI is not configured. Run 'credbridge auth login' first.",
+        ("en-US", "cli.not_configured") => {
+            "CLI is not configured. Run 'credbridge auth login' first."
+        }
         ("zh-CN", "cli.auth.connecting") => "🔌 正在连接到",
         ("en-US", "cli.auth.connecting") => "🔌 Connecting to",
         ("zh-CN", "cli.auth.login_success") => "✅ 登录成功!",
@@ -63,7 +65,9 @@ pub fn tr(key: &str) -> &'static str {
         ("zh-CN", "cli.credentials.update_unavailable") => "更新凭证功能暂不可用",
         ("en-US", "cli.credentials.update_unavailable") => "Credential update is not available yet",
         ("zh-CN", "cli.credentials.use_delete_create") => "请使用 delete + create 来更新凭证",
-        ("en-US", "cli.credentials.use_delete_create") => "Use delete + create to replace a credential.",
+        ("en-US", "cli.credentials.use_delete_create") => {
+            "Use delete + create to replace a credential."
+        }
         ("zh-CN", "cli.credentials.delete_confirm") => "确定要删除凭证",
         ("en-US", "cli.credentials.delete_confirm") => "Delete credential",
         ("zh-CN", "cli.credentials.cancelled") => "已取消",
@@ -77,11 +81,17 @@ pub fn tr(key: &str) -> &'static str {
         ("zh-CN", "cli.credentials.data") => "凭证数据:",
         ("en-US", "cli.credentials.data") => "Credential data:",
         ("zh-CN", "cli.credentials.versions_unimplemented") => "ℹ️  版本历史功能暂未实现",
-        ("en-US", "cli.credentials.versions_unimplemented") => "ℹ️  Version history is not implemented yet.",
+        ("en-US", "cli.credentials.versions_unimplemented") => {
+            "ℹ️  Version history is not implemented yet."
+        }
         ("zh-CN", "cli.credentials.rollback_unimplemented") => "ℹ️  回滚功能暂未实现",
-        ("en-US", "cli.credentials.rollback_unimplemented") => "ℹ️  Rollback is not implemented yet.",
+        ("en-US", "cli.credentials.rollback_unimplemented") => {
+            "ℹ️  Rollback is not implemented yet."
+        }
         ("zh-CN", "cli.tokens.create_unimplemented") => "ℹ️  Token 创建功能暂未实现",
-        ("en-US", "cli.tokens.create_unimplemented") => "ℹ️  Token creation is not implemented yet.",
+        ("en-US", "cli.tokens.create_unimplemented") => {
+            "ℹ️  Token creation is not implemented yet."
+        }
         ("zh-CN", "cli.tokens.use_web") => "请通过 CredBridge Web 界面创建 Token",
         ("en-US", "cli.tokens.use_web") => "Use the CredBridge web interface to create tokens.",
         ("zh-CN", "cli.tokens.list_unimplemented") => "ℹ️  Token 列表功能暂未实现",
@@ -103,13 +113,19 @@ pub fn tr(key: &str) -> &'static str {
         ("zh-CN", "cli.tokens.invalid") => "Token 无效或已被撤销",
         ("en-US", "cli.tokens.invalid") => "Token is invalid or revoked",
         ("zh-CN", "cli.audit.logs_unimplemented") => "📋 审计日志查询功能暂未实现",
-        ("en-US", "cli.audit.logs_unimplemented") => "📋 Audit log querying is not implemented yet.",
+        ("en-US", "cli.audit.logs_unimplemented") => {
+            "📋 Audit log querying is not implemented yet."
+        }
         ("zh-CN", "cli.audit.web_hint") => "请通过 CredBridge Web 界面查看审计日志",
         ("en-US", "cli.audit.web_hint") => "Use the CredBridge web interface to view audit logs.",
         ("zh-CN", "cli.audit.export_unimplemented") => "📤 审计日志导出功能暂未实现",
-        ("en-US", "cli.audit.export_unimplemented") => "📤 Audit log export is not implemented yet.",
+        ("en-US", "cli.audit.export_unimplemented") => {
+            "📤 Audit log export is not implemented yet."
+        }
         ("zh-CN", "cli.audit.verify_unimplemented") => "🔐 审计日志完整性验证功能暂未实现",
-        ("en-US", "cli.audit.verify_unimplemented") => "🔐 Audit log verification is not implemented yet.",
+        ("en-US", "cli.audit.verify_unimplemented") => {
+            "🔐 Audit log verification is not implemented yet."
+        }
         ("zh-CN", "cli.sandbox.sdk_failed") => "创建 SDK 客户端失败",
         ("en-US", "cli.sandbox.sdk_failed") => "Failed to create SDK client",
         ("zh-CN", "cli.sandbox.create") => "🏖️  正在创建沙箱会话...",

@@ -200,13 +200,13 @@ pub enum TokenCommands {
 pub enum SandboxCommands {
     /// 创建沙箱会话
     CreateSession {
-        /// 会话名称
-        #[arg(short, long)]
-        name: Option<String>,
+        /// 凭证 ID
+        #[arg(long)]
+        credential_id: String,
 
-        /// 超时时间 (秒)
-        #[arg(short, long, default_value = "300")]
-        timeout: u32,
+        /// 原始意图描述
+        #[arg(long)]
+        original_intent: String,
     },
     /// 列出沙箱会话
     ListSessions,

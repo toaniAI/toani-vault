@@ -213,7 +213,7 @@ const TOKEN_BLACKLIST_TTL_SECONDS: u64 = 900; // 15 分钟
 /// 如需单次使用 Token，请使用专门的 Action Token 机制。
 async fn validate_token(
     token: &str,
-    _token_store: &TokenStore,
+    token_store: &TokenStore,
     secret_key: &[u8],
     locale: &str,
 ) -> Result<ValidatedToken, AuthError> {
@@ -234,6 +234,23 @@ async fn validate_token(
             "expired_token",
             locale,
             "errors.auth.expired_token",
+            I18nParams::new(),
+        ));
+    }
+
+    if token_store
+        .is_blacklisted(&validation_result.token_id)
+        .await
+        .map_err(|e| {
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e.to_string()));
+            AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+        })?
+    {
+        return Err(AuthError::new(
+            "revoked_token",
+            locale,
+            "errors.auth.invalid_token",
             I18nParams::new(),
         ));
     }

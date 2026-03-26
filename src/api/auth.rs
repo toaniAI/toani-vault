@@ -21,11 +21,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::api::token_blacklist::{TokenStore, create_token_store};
 use crate::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RedactedParam};
 
 use super::i18n::{I18nParams, ResolvedLocale, invalid_locale_response, normalize_locale};
 use super::middleware::{TokenScope, ValidatedToken};
-use super::response::{ApiErrorResponse, ErrorCode};
+use super::response::{ApiErrorResponse, ErrorCode, error_response};
 
 /// 认证 API 状态
 #[derive(Clone)]
@@ -38,12 +39,17 @@ pub struct AuthApiState {
     pub audit_storage: Option<Arc<tokio::sync::Mutex<MemoryAuditStorage>>>,
     /// 已签发 Token 状态
     issued_tokens: Arc<RwLock<HashMap<String, IssuedTokenRecord>>>,
+    /// Token 黑名单存储
+    pub token_store: TokenStore,
 }
 
 #[derive(Debug, Clone)]
 struct IssuedTokenRecord {
+    user_id: String,
     tenant_id: String,
+    scopes: Vec<String>,
     expires_at: u64,
+    revoked: bool,
 }
 
 /// 内存用户存储
@@ -134,6 +140,7 @@ impl AuthApiState {
             user_store: Arc::new(MemoryUserStore::new()),
             audit_storage: None,
             issued_tokens: Arc::new(RwLock::new(HashMap::new())),
+            token_store: create_token_store(),
         }
     }
 
@@ -208,8 +215,15 @@ impl AuthApiState {
         self.issued_tokens.write().await.insert(
             validated.token_id.clone(),
             IssuedTokenRecord {
+                user_id: validated.user_id.clone(),
                 tenant_id: validated.tenant_id.clone(),
+                scopes: validated
+                    .scopes
+                    .iter()
+                    .map(|scope| scope.as_str().to_string())
+                    .collect(),
                 expires_at: validated.expires_at,
+                revoked: false,
             },
         );
     }
@@ -221,8 +235,48 @@ impl AuthApiState {
 
         issued_tokens
             .values()
-            .filter(|token| token.tenant_id == tenant_id)
+            .filter(|token| token.tenant_id == tenant_id && !token.revoked)
             .count() as u64
+    }
+
+    async fn list_tokens_for_tenant(&self, tenant_id: &str) -> Vec<TokenListItem> {
+        let now = now_timestamp();
+        let mut issued_tokens = self.issued_tokens.write().await;
+        issued_tokens.retain(|_, token| token.expires_at > now);
+
+        issued_tokens
+            .iter()
+            .filter(|(_, token)| token.tenant_id == tenant_id)
+            .map(|(token_id, token)| TokenListItem {
+                token_id: token_id.clone(),
+                user_id: token.user_id.clone(),
+                tenant_id: token.tenant_id.clone(),
+                scopes: token.scopes.clone(),
+                issued_at: 0,
+                expires_at: token.expires_at,
+                revoked: token.revoked,
+            })
+            .collect()
+    }
+
+    async fn revoke_token(&self, token_id: &str) -> Result<bool, String> {
+        let mut issued_tokens = self.issued_tokens.write().await;
+        let Some(record) = issued_tokens.get_mut(token_id) else {
+            return Ok(false);
+        };
+
+        if record.revoked {
+            return Ok(true);
+        }
+
+        let now = now_timestamp();
+        let ttl = record.expires_at.saturating_sub(now).max(1);
+        self.token_store
+            .blacklist_token(token_id, ttl)
+            .await
+            .map_err(|e| e.to_string())?;
+        record.revoked = true;
+        Ok(true)
     }
 }
 
@@ -382,6 +436,29 @@ pub struct TokenStatsResponse {
     pub active_tokens: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TokenListItem {
+    pub token_id: String,
+    pub user_id: String,
+    pub tenant_id: String,
+    pub scopes: Vec<String>,
+    pub issued_at: u64,
+    pub expires_at: u64,
+    pub revoked: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListTokensResponse {
+    pub tokens: Vec<TokenListItem>,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RevokeTokenResponse {
+    pub revoked: bool,
+    pub token_id: String,
+}
+
 /// 登录错误响应
 #[derive(Debug, Serialize)]
 pub struct AuthErrorResponse {
@@ -423,7 +500,9 @@ pub fn protected_auth_routes() -> Router<AuthApiState> {
     Router::new()
         .route("/auth/me", get(current_user_handler))
         // Token 创建（需要认证）
+        .route("/tokens", get(list_tokens_handler))
         .route("/tokens", post(create_token_handler))
+        .route("/tokens/:id/revoke", post(revoke_token_handler))
         .route("/tokens/stats", get(token_stats_handler))
         .route("/users/me/preferences", get(get_user_preferences_handler))
         .route(
@@ -810,6 +889,56 @@ pub async fn token_stats_handler(
     response
 }
 
+pub async fn list_tokens_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+) -> Response {
+    let tokens = state.list_tokens_for_tenant(&token.tenant_id).await;
+    let mut response = (
+        StatusCode::OK,
+        Json(ListTokensResponse {
+            total: tokens.len(),
+            tokens,
+        }),
+    )
+        .into_response();
+    super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+    response
+}
+
+pub async fn revoke_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(_token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    match state.revoke_token(&id).await {
+        Ok(true) => {
+            let mut response = (
+                StatusCode::OK,
+                Json(RevokeTokenResponse {
+                    revoked: true,
+                    token_id: id,
+                }),
+            )
+                .into_response();
+            super::i18n::set_content_language(response.headers_mut(), locale.as_str());
+            response
+        }
+        Ok(false) => error_response(
+            StatusCode::NOT_FOUND,
+            ErrorCode::NotFound,
+            "token not found",
+        ),
+        Err(error) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ErrorCode::InternalError,
+            error,
+        ),
+    }
+}
+
 /// 获取当前用户信息处理器
 pub async fn current_user_handler(
     State(state): State<AuthApiState>,
@@ -1102,6 +1231,7 @@ mod tests {
             user_store: Arc::new(MemoryUserStore::new()),
             audit_storage: None,
             issued_tokens: Arc::new(RwLock::new(HashMap::new())),
+            token_store: create_token_store(),
         }
     }
 
@@ -1113,22 +1243,31 @@ mod tests {
         state.issued_tokens.write().await.insert(
             "token-active".to_string(),
             IssuedTokenRecord {
+                user_id: "user-001".to_string(),
                 tenant_id: "tenant-001".to_string(),
+                scopes: vec!["admin".to_string()],
                 expires_at: now + 300,
+                revoked: false,
             },
         );
         state.issued_tokens.write().await.insert(
             "token-expired".to_string(),
             IssuedTokenRecord {
+                user_id: "user-001".to_string(),
                 tenant_id: "tenant-001".to_string(),
+                scopes: vec!["admin".to_string()],
                 expires_at: now.saturating_sub(1),
+                revoked: false,
             },
         );
         state.issued_tokens.write().await.insert(
             "token-other-tenant".to_string(),
             IssuedTokenRecord {
+                user_id: "user-002".to_string(),
                 tenant_id: "tenant-002".to_string(),
+                scopes: vec!["admin".to_string()],
                 expires_at: now + 300,
+                revoked: false,
             },
         );
 

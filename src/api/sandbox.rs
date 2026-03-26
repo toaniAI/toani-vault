@@ -19,6 +19,7 @@ use crate::tee::sandbox::{
     config::SandboxConfig,
     error::SandboxError,
     pool::{NsjailSandboxPool, SandboxPool},
+    session::SandboxSession,
     types::{OperationRequest, OperationType, SessionId, SessionRequest},
 };
 use axum::{
@@ -234,6 +235,28 @@ pub struct SessionActionResponse {
     pub message: String,
 }
 
+/// 操作详情响应
+#[derive(Debug, Serialize)]
+pub struct OperationDetailResponse {
+    pub operation_id: Uuid,
+    pub session_id: Uuid,
+    pub operation_type: String,
+    pub status: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub execution_time_ms: Option<u64>,
+}
+
+/// 沙箱统计响应
+#[derive(Debug, Serialize)]
+pub struct SandboxStatsApiResponse {
+    pub pool_status: String,
+    pub active_sessions: usize,
+    pub warm_instances: usize,
+    pub healthy: bool,
+    pub error: Option<String>,
+}
+
 // ==================== Handler 实现 ====================
 
 /// POST /api/v1/sandbox/sessions - 创建会话
@@ -294,16 +317,30 @@ pub async fn list_sessions(
         return e;
     }
 
-    // 获取健康状态（包含活跃会话数）
-    let health = state.pool.health().await;
-
-    // 构建会话摘要列表
-    // 注意：当前 pool 实现没有直接暴露会话列表，我们通过健康状态返回基本信息
-    let sessions: Vec<SessionSummary> = Vec::new();
+    let mut sessions = Vec::new();
+    if let Some(pool) = state.pool.as_any().downcast_ref::<NsjailSandboxPool>() {
+        for session in pool.list_active_sessions().await {
+            let context = session.context().clone();
+            if context.tenant_id.to_string() != token.tenant_id {
+                continue;
+            }
+            let is_expired = context.is_expired();
+            sessions.push(SessionSummary {
+                session_id: context.session_id.into(),
+                sandbox_id: context.sandbox_id.into(),
+                credential_id: context.credential_id,
+                status: session.status().await.to_string(),
+                original_intent: context.original_intent,
+                created_at: context.created_at.to_string(),
+                expires_at: context.expires_at.to_string(),
+                is_expired,
+            });
+        }
+    }
 
     let response = ListSessionsResponse {
+        total: sessions.len(),
         sessions,
-        total: health.active_sessions,
     };
 
     Json(ApiSuccessResponse::new(response)).into_response()
@@ -398,10 +435,10 @@ pub async fn execute_operation(
     );
 
     // 执行操作
-    match session.execute_operation(operation).await {
+    match session.execute_operation(operation.clone()).await {
         Ok(result) => {
             let response = ExecuteOperationResponse {
-                operation_id: Uuid::new_v4(), // 实际应该从 result 获取
+                operation_id: operation.operation_id,
                 success: result.success,
                 data: result.data,
                 error: result.error,
@@ -623,6 +660,61 @@ pub async fn export_data(
     }
 }
 
+/// GET /api/v1/sandbox/operations/:operation_id - 获取操作详情
+pub async fn get_operation(
+    State(state): State<SandboxState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(operation_id): Path<Uuid>,
+) -> Response {
+    if let Err(e) = check_scope(&token, TokenScope::SandboxRead).await {
+        return e;
+    }
+
+    let Some(pool) = state.pool.as_any().downcast_ref::<NsjailSandboxPool>() else {
+        return ApiErrorResponse::service_unavailable(
+            "Sandbox pool does not support operation lookup",
+        )
+        .into_response();
+    };
+
+    let Some((session_id, record)) = pool.find_operation(operation_id).await else {
+        return ApiErrorResponse::not_found("Operation not found").into_response();
+    };
+
+    let response = OperationDetailResponse {
+        operation_id: record.operation_id,
+        session_id: session_id.into(),
+        operation_type: record.operation_type,
+        status: record.status.to_string(),
+        started_at: record.started_at.to_string(),
+        completed_at: record.completed_at.map(|value| value.to_string()),
+        execution_time_ms: record.execution_time_ms,
+    };
+
+    Json(ApiSuccessResponse::new(response)).into_response()
+}
+
+/// GET /api/v1/sandbox/stats - 获取沙箱统计
+pub async fn get_stats(
+    State(state): State<SandboxState>,
+    Extension(token): Extension<ValidatedToken>,
+) -> Response {
+    if let Err(e) = check_scope(&token, TokenScope::SandboxRead).await {
+        return e;
+    }
+
+    let health = state.pool.health().await;
+    let response = SandboxStatsApiResponse {
+        pool_status: health.pool_status.to_string(),
+        active_sessions: health.active_sessions,
+        warm_instances: health.warm_instances,
+        healthy: health.healthy,
+        error: health.error,
+    };
+
+    Json(ApiSuccessResponse::new(response)).into_response()
+}
+
 // ==================== 辅助函数 ====================
 
 /// 检查 Scope
@@ -709,11 +801,13 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions", get(list_sessions))
         .route("/sandbox/sessions/:id", get(get_session))
         .route("/sandbox/sessions/:id/execute", post(execute_operation))
+        .route("/sandbox/operations/:operation_id", get(get_operation))
         .route("/sandbox/sessions/:id/pause", post(pause_session))
         .route("/sandbox/sessions/:id/resume", post(resume_session))
         .route("/sandbox/sessions/:id", delete(close_session))
         .route("/sandbox/sessions/:id/screenshot", post(take_screenshot))
         .route("/sandbox/sessions/:id/export", post(export_data))
+        .route("/sandbox/stats", get(get_stats))
         // WebSocket 实时连接
         .route(
             "/sandbox/sessions/:id/ws/:credential_id",

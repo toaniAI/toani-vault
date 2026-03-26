@@ -83,7 +83,7 @@
 //! ```
 
 #![doc(html_logo_url = "https://credbridge.io/logo.png")]
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 #![warn(rust_2018_idioms)]
 
 use std::sync::Arc;
@@ -91,20 +91,30 @@ use std::sync::Arc;
 // 导出子模块
 pub mod client;
 pub mod credentials;
+pub mod audit;
+pub mod sandbox;
 pub mod token;
 pub mod types;
 
 // 重新导出常用类型
+pub use audit::AuditService;
 pub use client::CredBridgeClient;
 pub use credentials::CredentialsService;
+pub use sandbox::SandboxService;
 pub use token::TokenManager;
 pub use types::{
-    AuditLogEntry, AuditLogFilter, CreateCredentialRequest, CreateCredentialResponse,
-    CredBridgeConfig, CredBridgeError, CredBridgeErrorCode, CredentialFilter,
-    CredentialMetadata, CredentialType, DecryptCredentialRequest,
-    DecryptCredentialResponse, DeleteCredentialResponse, GetCredentialResponse,
-    ListAuditLogsResponse, ListCredentialsResponse, RequestOptions, Result, TokenInfo,
-    TokenRefreshResult, TokenScope,
+    AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter, AuditLogsResponse,
+    AuditVerifyRequest, AuditVerifyResponse, CreateCredentialRequest,
+    CreateCredentialResponse, CreateSandboxSessionRequest, CreateSandboxSessionResponse,
+    CreateTokenResponse, CredBridgeConfig, CredBridgeError, CredBridgeErrorCode,
+    CredentialFilter, CredentialMetadata, CredentialType, DecryptCredentialRequest,
+    DecryptCredentialResponse, DeleteCredentialResponse, ExecuteSandboxOperationRequest,
+    ExecuteSandboxOperationResponse, GetCredentialResponse, ListCredentialsResponse,
+    ListTokensResponse, RequestOptions, Result, RollbackCredentialResponse,
+    SandboxOperationDetail, SandboxSessionActionResponse, SandboxSessionDetail,
+    SandboxSessionsResponse, SandboxStatsResponse, TokenInfo, TokenRefreshResult,
+    TokenScope, TokenStatsResponse, UpdateCredentialResponse, VersionDetail,
+    VersionHistory,
 };
 
 /// SDK 版本
@@ -231,6 +241,16 @@ impl CredBridgeSDK {
     /// ```
     pub fn token(&self) -> TokenManager {
         TokenManager::new(Arc::clone(&self.client))
+    }
+
+    /// 获取审计日志服务
+    pub fn audit(&self) -> AuditService {
+        AuditService::new(Arc::clone(&self.client))
+    }
+
+    /// 获取沙箱服务
+    pub fn sandbox(&self) -> SandboxService {
+        SandboxService::new(Arc::clone(&self.client))
     }
 
     /// 获取 SDK 版本

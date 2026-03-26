@@ -4,7 +4,11 @@
 
 use crate::{
     client::CredBridgeClient,
-    types::{CredBridgeError, CredBridgeErrorCode, RequestOptions, Result, TokenInfo, TokenScope},
+    types::{
+        CreateTokenRequest, CreateTokenResponse, CredBridgeError, CredBridgeErrorCode,
+        ListTokensResponse, RequestOptions, Result, RevokeTokenResponse, TokenInfo, TokenScope,
+        TokenStatsResponse,
+    },
 };
 use std::sync::Arc;
 
@@ -12,31 +16,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone, serde::Deserialize)]
 struct TokenVerifyResponse {
     valid: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    claims: Option<TokenVerifyClaims>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TokenVerifyClaims {
-    jti: String,
-    sub: String,
-    exp: i64,
-    iat: i64,
-    scope: String,
-    #[serde(rename = "tenant_id")]
-    tenant_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    aud: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    iss: Option<String>,
-}
-
-/// Token 撤销响应
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TokenRevokeResponse {
-    revoked: bool,
 }
 
 /// Token 管理器
@@ -241,7 +220,7 @@ impl TokenManager {
             }
         };
 
-        let response: TokenRevokeResponse = self
+        let response: RevokeTokenResponse = self
             .client
             .post_with_options(
                 &format!("/tokens/{}/revoke", token_info.token_id),
@@ -251,6 +230,49 @@ impl TokenManager {
             .await?;
 
         Ok(response.revoked)
+    }
+
+    /// 按 token id 撤销 token
+    pub async fn revoke_by_id(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<RevokeTokenResponse> {
+        self.client
+            .post_with_options(
+                &format!("/tokens/{}/revoke", token_id.as_ref()),
+                serde_json::json!({}),
+                options,
+            )
+            .await
+    }
+
+    /// 创建新 token
+    pub async fn create(
+        &self,
+        user_id: Option<String>,
+        scopes: Vec<String>,
+        expires_in: Option<u64>,
+        credential_ids: Option<Vec<String>>,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateTokenResponse> {
+        let request = CreateTokenRequest {
+            user_id,
+            scopes,
+            expires_in,
+            credential_ids,
+        };
+        self.client.post_with_options("/tokens", request, options).await
+    }
+
+    /// 列出 token
+    pub async fn list(&self, options: Option<RequestOptions>) -> Result<ListTokensResponse> {
+        self.client.get_with_options("/tokens", options).await
+    }
+
+    /// 获取 token 统计
+    pub async fn stats(&self, options: Option<RequestOptions>) -> Result<TokenStatsResponse> {
+        self.client.get_with_options("/tokens/stats", options).await
     }
 
     /// 检查 Token 是否具有指定的 Scope
