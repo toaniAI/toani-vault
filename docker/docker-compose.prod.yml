@@ -65,6 +65,7 @@ services:
       # TEE 生产模式
       - TEE_MODE=hardware
       - TEE_DEBUG=false
+      - SEALED_STORAGE_PATH=/app/data/sealed
       - TEE_INTEL_SGX_ENABLED=true
 
       # 安全头部

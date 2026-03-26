@@ -1,5 +1,6 @@
 use crate::cli::CredentialCommands;
 use crate::config::Config;
+use crate::i18n::tr;
 use crate::output::{confirm, input_secret, OutputFormatter};
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -8,7 +9,7 @@ use serde_json::Value;
 
 pub async fn execute(cmd: CredentialCommands, config: Config) -> Result<()> {
     if !config.is_configured() {
-        anyhow::bail!("未配置，请先运行 'credbridge auth login'");
+        anyhow::bail!("{}", tr("cli.not_configured"));
     }
 
     let sdk = create_sdk(&config)?;
@@ -51,7 +52,7 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
     )
-    .context("创建 SDK 客户端失败")
+    .context("failed to create SDK client")
 }
 
 async fn list_credentials(
@@ -60,7 +61,7 @@ async fn list_credentials(
     credential_type: Option<String>,
     _limit: u32,
 ) -> Result<()> {
-    println!("🔍 正在获取凭证列表...\n");
+    println!("{}\n", tr("cli.credentials.listing"));
 
     // 解析凭证类型
     let filter = if let Some(ct_str) = credential_type {
@@ -76,7 +77,7 @@ async fn list_credentials(
     let (credentials, total) = sdk.credentials().list(filter, None).await?;
 
     if credentials.is_empty() {
-        println!("ℹ️  暂无凭证");
+        println!("{}", tr("cli.credentials.empty"));
         return Ok(());
     }
 
@@ -97,8 +98,9 @@ async fn list_credentials(
     formatter.print_list(&view, &["ID", "Service", "Type", "Tenant", "Created At"])?;
 
     println!(
-        "\n共 {} 条记录 (总计: {})",
+        "\n{} {} (total: {})",
         credentials.len().to_string().cyan(),
+        tr("cli.credentials.total"),
         total
     );
     Ok(())
@@ -113,11 +115,11 @@ async fn get_credential(
         .credentials()
         .get(&id, None)
         .await
-        .with_context(|| format!("获取凭证 {} 失败", id))?;
+        .with_context(|| format!("{} {}", tr("cli.credentials.fetch_failed"), id))?;
 
     // 手动格式化输出
     if formatter.is_table() {
-        println!("凭证详情:\n");
+        println!("{}\n", tr("cli.credentials.details"));
         println!("  ID:           {}", credential.credential_id);
         println!("  Service:      {}", credential.service_id);
         println!("  Type:         {}", credential.credential_type);
@@ -156,10 +158,10 @@ async fn create_credential(
     // 如果没有提供 value，交互式输入
     let value = match value {
         Some(v) => v,
-        None => input_secret("请输入凭证值")?,
+        None => input_secret(tr("cli.credentials.prompt_value"))?,
     };
 
-    println!("📝 正在创建凭证...\n");
+    println!("{}\n", tr("cli.credentials.creating"));
 
     // 解析凭证类型
     let cred_type = parse_credential_type(&credential_type)?;
@@ -178,14 +180,14 @@ async fn create_credential(
         .create(name, cred_type, plaintext_data, None, None)
         .await?;
 
-    formatter.print_success(&format!("凭证创建成功: {}", credential.credential_id));
+    formatter.print_success(&format!("{}: {}", tr("cli.credentials.created"), credential.credential_id));
     Ok(())
 }
 
 async fn update_credential(formatter: &OutputFormatter, _id: String) -> Result<()> {
     // SDK 暂不支持更新，这里提示用户
-    formatter.print_error("更新凭证功能暂不可用");
-    println!("   请使用 delete + create 来更新凭证");
+    formatter.print_error(tr("cli.credentials.update_unavailable"));
+    println!("   {}", tr("cli.credentials.use_delete_create"));
     Ok(())
 }
 
@@ -196,18 +198,18 @@ async fn delete_credential(
 ) -> Result<()> {
     // 确认删除
     if !force {
-        let confirm_msg = format!("确定要删除凭证 {} 吗? 此操作不可撤销。", id.red());
+        let confirm_msg = format!("{} {}? This action cannot be undone.", tr("cli.credentials.delete_confirm"), id.red());
         if !confirm(&confirm_msg)? {
-            println!("已取消");
+            println!("{}", tr("cli.credentials.cancelled"));
             return Ok(());
         }
     }
 
-    println!("🗑️  正在删除凭证...\n");
+    println!("{}\n", tr("cli.credentials.deleting"));
 
     sdk.credentials().delete(&id, None).await?;
 
-    println!("✅ 凭证 {} 已删除", id);
+    println!("✅ credential {} {}", id, tr("cli.credentials.deleted"));
     Ok(())
 }
 
@@ -216,7 +218,7 @@ async fn decrypt_credential(
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
-    println!("🔓 正在解密凭证...\n");
+    println!("{}\n", tr("cli.credentials.decrypting"));
 
     let decrypted = sdk
         .credentials()
@@ -224,7 +226,7 @@ async fn decrypt_credential(
         .await?;
 
     if formatter.is_table() {
-        println!("凭证数据:\n");
+        println!("{}\n", tr("cli.credentials.data"));
         println!("  ID:       {}", decrypted.credential_id);
         println!("  Service:  {}", decrypted.service_id);
         println!("  Type:     {}", decrypted.credential_type);
@@ -249,12 +251,12 @@ async fn decrypt_credential(
 }
 
 async fn list_versions() -> Result<()> {
-    println!("ℹ️  版本历史功能暂未实现");
+    println!("{}", tr("cli.credentials.versions_unimplemented"));
     Ok(())
 }
 
 async fn rollback_credential() -> Result<()> {
-    println!("ℹ️  回滚功能暂未实现");
+    println!("{}", tr("cli.credentials.rollback_unimplemented"));
     Ok(())
 }
 
@@ -269,7 +271,7 @@ fn parse_credential_type(s: &str) -> Result<CredentialType> {
         "ssh_key" | "sshkey" => Ok(CredentialType::SshKey),
         "database_connection" | "databaseconnection" => Ok(CredentialType::DatabaseConnection),
         _ => anyhow::bail!(
-            "无效的凭证类型: {}。可选类型: username_password, api_key, oauth_refresh, session_cookie, kyc_document, certificate, ssh_key, database_connection",
+            "Invalid credential type: {}. Supported values: username_password, api_key, oauth_refresh, session_cookie, kyc_document, certificate, ssh_key, database_connection",
             s
         ),
     }

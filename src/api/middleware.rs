@@ -261,8 +261,9 @@ fn validate_paseto_token(
     let untrusted =
         UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {e:?}"))?;
 
-    // 验证 Token
-    let validation_rules = ClaimsValidationRules::new();
+    // 验证 Token（禁用自动 exp 验证，我们自己检查过期时间以提供更清晰的错误消息）
+    let mut validation_rules = ClaimsValidationRules::new();
+    validation_rules.allow_non_expiring();
     let trusted_token = local::decrypt(&sk, &untrusted, &validation_rules, None, None)
         .map_err(|e| format!("解密失败: {e:?}"))?;
 

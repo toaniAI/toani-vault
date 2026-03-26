@@ -597,6 +597,7 @@ mod tests {
             debug_mode: false,
             pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
             enclave_path: None,
+            sealed_storage_path: crate::config::DEFAULT_SEALED_STORAGE_PATH.to_string(),
         };
 
         let error = validate_runtime_requirements(&runtime).unwrap_err();
@@ -617,6 +618,7 @@ mod tests {
             debug_mode: false,
             pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
             enclave_path: None,
+            sealed_storage_path: crate::config::DEFAULT_SEALED_STORAGE_PATH.to_string(),
         };
 
         let error = validate_runtime_requirements(&runtime).unwrap_err();

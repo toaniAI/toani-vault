@@ -1,11 +1,12 @@
 use crate::cli::SandboxCommands;
 use crate::config::Config;
+use crate::i18n::tr;
 use crate::output::OutputFormatter;
 use anyhow::{Context, Result};
 
 pub async fn execute(cmd: SandboxCommands, config: Config) -> Result<()> {
     if !config.is_configured() {
-        anyhow::bail!("未配置，请先运行 'credbridge auth login'");
+        anyhow::bail!("{}", tr("cli.not_configured"));
     }
 
     let _sdk = create_sdk(&config)?;
@@ -34,44 +35,44 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
     )
-    .context("创建 SDK 客户端失败")
+    .context(tr("cli.sandbox.sdk_failed"))
 }
 
 async fn create_session(name: Option<String>, timeout: u32) -> Result<()> {
-    println!("🏖️  正在创建沙箱会话...\n");
+    println!("{}\n", tr("cli.sandbox.create"));
 
     let name = name.unwrap_or_else(|| format!("cli-session-{}"
 , chrono::Utc::now().timestamp()));
 
-    println!("ℹ️  沙箱功能暂未实现");
-    println!("   会话名称: {}", name);
-    println!("   超时时间: {} 秒", timeout);
+    println!("{}", tr("cli.sandbox.unimplemented"));
+    println!("   Name: {}", name);
+    println!("   Timeout: {}s", timeout);
 
     Ok(())
 }
 
 async fn list_sessions() -> Result<()> {
-    println!("🔍 正在获取沙箱会话列表...\n");
+    println!("{}\n", tr("cli.sandbox.list"));
 
-    println!("ℹ️  沙箱功能暂未实现");
+    println!("{}", tr("cli.sandbox.unimplemented"));
 
     Ok(())
 }
 
 async fn get_session(id: String) -> Result<()> {
-    println!("🔍 正在获取会话详情...\n");
+    println!("{}\n", tr("cli.sandbox.get"));
 
-    println!("ℹ️  沙箱功能暂未实现");
-    println!("   会话 ID: {}", id);
+    println!("{}", tr("cli.sandbox.unimplemented"));
+    println!("   Session ID: {}", id);
 
     Ok(())
 }
 
 async fn terminate_session(id: String, _force: bool) -> Result<()> {
-    println!("🛑 正在终止会话...\n");
+    println!("{}\n", tr("cli.sandbox.terminate"));
 
-    println!("ℹ️  沙箱功能暂未实现");
-    println!("   会话 ID: {}", id);
+    println!("{}", tr("cli.sandbox.unimplemented"));
+    println!("   Session ID: {}", id);
 
     Ok(())
 }
@@ -81,28 +82,28 @@ async fn execute_operation(
     operation_type: String,
     _params: Option<String>,
 ) -> Result<()> {
-    println!("⚡ 正在执行操作...\n");
+    println!("{}\n", tr("cli.sandbox.execute"));
 
-    println!("ℹ️  沙箱功能暂未实现");
-    println!("   会话 ID: {}", session_id);
-    println!("   操作类型: {}", operation_type);
+    println!("{}", tr("cli.sandbox.unimplemented"));
+    println!("   Session ID: {}", session_id);
+    println!("   Operation type: {}", operation_type);
 
     Ok(())
 }
 
 async fn get_operation(operation_id: String) -> Result<()> {
-    println!("🔍 正在获取操作结果...\n");
+    println!("{}\n", tr("cli.sandbox.operation_result"));
 
-    println!("ℹ️  沙箱功能暂未实现");
-    println!("   操作 ID: {}", operation_id);
+    println!("{}", tr("cli.sandbox.unimplemented"));
+    println!("   Operation ID: {}", operation_id);
 
     Ok(())
 }
 
 async fn get_stats() -> Result<()> {
-    println!("📊 正在获取沙箱统计...\n");
+    println!("{}\n", tr("cli.sandbox.stats"));
 
-    println!("ℹ️  沙箱功能暂未实现");
+    println!("{}", tr("cli.sandbox.unimplemented"));
 
     Ok(())
 }

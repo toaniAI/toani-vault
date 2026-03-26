@@ -10,6 +10,7 @@
 //! - `CREDBRIDGE_ENV` - 运行环境 (development/production, 默认: development)
 //! - `TEE_MODE` - TEE 运行模式 (`hardware`/`simulation`, 默认: hardware)
 //! - `TEE_DEBUG` - 是否启用 TEE 调试模式
+//! - `SEALED_STORAGE_PATH` - Enclave 密封主密钥持久化目录 (默认: .sealed)
 //! - `RUST_LOG` - 日志级别 (默认: info)
 //! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - 速率限制请求数/窗口 (默认: 100)
 //! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - 速率限制窗口（秒）(默认: 60)
@@ -252,6 +253,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 正在启动 HTTP 服务器...");
     info!("📍 环境: {}", config.environment.as_str());
     info!("🔐 TEE 模式: {}", config.tee_runtime.mode);
+    info!(
+        "🗃️  密封存储路径: {}",
+        config.tee_runtime.sealed_storage_path
+    );
+    if !config.tee_runtime.sealed_storage_path.starts_with('/') {
+        warn!(
+            sealed_storage_path = %config.tee_runtime.sealed_storage_path,
+            "SEALED_STORAGE_PATH 使用相对路径；若部署环境未持久化当前工作目录，凭证在重启后可能无法解密"
+        );
+    }
     info!("🧱 TEE 硬件构建支持: {}", TEE_HARDWARE_BUILD_ENABLED);
     info!("🌐 地址: http://{}:{}", config.host, config.port);
     info!("🗄️  存储后端: {}", config.storage_backend.as_str());
@@ -316,6 +327,7 @@ async fn initialize_app_state(
     let enclave_config = EnclaveConfig {
         runtime_mode: config.tee_runtime.mode,
         debug_mode: config.tee_runtime.debug_mode,
+        sealed_storage_path: config.tee_runtime.sealed_storage_path.clone(),
         ..Default::default()
     };
     let mut enclave = Enclave::new(enclave_config);

@@ -1,6 +1,7 @@
 use crate::cli::ConfigCommands;
 use crate::config::Config;
-use crate::output::{print_raw_json, input_secret, input_text};
+use crate::i18n::tr;
+use crate::output::{input_secret, input_text, print_raw_json};
 use anyhow::{Context, Result};
 
 pub async fn execute(cmd: ConfigCommands) -> Result<()> {
@@ -15,31 +16,27 @@ pub async fn execute(cmd: ConfigCommands) -> Result<()> {
 async fn init_config(url: Option<String>, token: Option<String>) -> Result<()> {
     let mut config = Config::default();
 
-    // 交互式获取 URL
     let url = match url {
         Some(u) => u,
-        None => input_text("请输入 CredBridge 服务 URL")?,
+        None => input_text(tr("cli.config.enter_url"))?,
     };
     config.url = Some(url);
 
-    // 交互式获取 Token
     let token = match token {
         Some(t) => t,
-        None => input_secret("请输入 API Token")?,
+        None => input_secret(tr("cli.config.enter_token"))?,
     };
     config.token = Some(token);
 
-    // 保存配置
     config.save()?;
 
-    println!("✅ 配置已保存到: {}", Config::config_path()?.display());
+    println!("{}: {}", tr("cli.config.saved_to"), Config::config_path()?.display());
     Ok(())
 }
 
 async fn show_config() -> Result<()> {
     let config = Config::load()?;
 
-    // 安全显示 Token (部分隐藏)
     let display_config = serde_json::json!({
         "url": config.url,
         "token": config.token.as_ref().map(|t| {
@@ -67,17 +64,17 @@ async fn set_config(key: String, value: String) -> Result<()> {
             config.output_format = match value.as_str() {
                 "json" => crate::config::OutputFormat::Json,
                 "table" => crate::config::OutputFormat::Table,
-                _ => anyhow::bail!("无效的格式，可选: json, table"),
+                _ => anyhow::bail!("{}", tr("cli.config.invalid_format")),
             };
         }
         "timeout" => {
-            config.timeout = value.parse().context("timeout 必须是数字")?;
+            config.timeout = value.parse().context(tr("cli.config.timeout_number"))?;
         }
-        _ => anyhow::bail!("未知配置项: {}", key),
+        _ => anyhow::bail!("{}: {}", tr("cli.config.unknown_key"), key),
     }
 
     config.save()?;
-    println!("✅ 配置 '{}' 已更新", key);
+    println!("{}: {}", tr("cli.config.updated"), key);
     Ok(())
 }
 
@@ -86,19 +83,22 @@ async fn get_config(key: String) -> Result<()> {
 
     let value = match key.as_str() {
         "url" => config.url.unwrap_or_default(),
-        "token" => config.token.map(|t| {
-            if t.len() > 8 {
-                format!("{}...{}", &t[..4], &t[t.len()-4..])
-            } else {
-                "***".to_string()
-            }
-        }).unwrap_or_default(),
+        "token" => config
+            .token
+            .map(|t| {
+                if t.len() > 8 {
+                    format!("{}...{}", &t[..4], &t[t.len() - 4..])
+                } else {
+                    "***".to_string()
+                }
+            })
+            .unwrap_or_default(),
         "output_format" => match config.output_format {
             crate::config::OutputFormat::Json => "json".to_string(),
             crate::config::OutputFormat::Table => "table".to_string(),
         },
         "timeout" => config.timeout.to_string(),
-        _ => anyhow::bail!("未知配置项: {}", key),
+        _ => anyhow::bail!("{}: {}", tr("cli.config.unknown_key"), key),
     };
 
     println!("{}", value);

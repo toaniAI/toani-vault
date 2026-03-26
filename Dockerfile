@@ -44,6 +44,8 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
+ENV SEALED_STORAGE_PATH=/app/data/sealed
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -53,7 +55,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/migrations /app/migrations
 
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN mkdir -p /app/data/sealed \
+    && useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8080

@@ -6,6 +6,8 @@ pub const TEE_MODE_ENV: &str = "TEE_MODE";
 pub const TEE_DEBUG_ENV: &str = "TEE_DEBUG";
 pub const TEE_PCS_BASE_URL_ENV: &str = "TEE_PCS_BASE_URL";
 pub const TEE_ENCLAVE_PATH_ENV: &str = "TEE_ENCLAVE_PATH";
+pub const SEALED_STORAGE_PATH_ENV: &str = "SEALED_STORAGE_PATH";
+pub const DEFAULT_SEALED_STORAGE_PATH: &str = ".sealed";
 
 const INTEL_PCS_BASE_URL_PROD: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
 const INTEL_PCS_BASE_URL_TEST: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
@@ -91,6 +93,7 @@ pub struct TeeRuntimeConfig {
     pub debug_mode: bool,
     pub pcs_base_url: String,
     pub enclave_path: Option<String>,
+    pub sealed_storage_path: String,
 }
 
 impl TeeRuntimeConfig {
@@ -102,6 +105,10 @@ impl TeeRuntimeConfig {
             enclave_path: std::env::var(TEE_ENCLAVE_PATH_ENV)
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
+            sealed_storage_path: std::env::var(SEALED_STORAGE_PATH_ENV)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| DEFAULT_SEALED_STORAGE_PATH.to_string()),
         }
     }
 
@@ -113,6 +120,10 @@ impl TeeRuntimeConfig {
                 .default_pcs_base_url()
                 .to_string(),
             enclave_path: None,
+            sealed_storage_path: std::env::var(SEALED_STORAGE_PATH_ENV)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| DEFAULT_SEALED_STORAGE_PATH.to_string()),
         }
     }
 
@@ -139,12 +150,16 @@ impl TeeRuntimeConfig {
             .unwrap_or_else(|| mode.default_pcs_base_url().to_string());
 
         let enclave_path = get_var(TEE_ENCLAVE_PATH_ENV).filter(|value| !value.trim().is_empty());
+        let sealed_storage_path = get_var(SEALED_STORAGE_PATH_ENV)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_SEALED_STORAGE_PATH.to_string());
 
         Ok(Self {
             mode,
             debug_mode,
             pcs_base_url,
             enclave_path,
+            sealed_storage_path,
         })
     }
 
@@ -177,8 +192,8 @@ fn parse_bool(env_var: &'static str, value: &str) -> Result<bool, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigError, TEE_DEBUG_ENV, TEE_ENCLAVE_PATH_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV,
-        TeeRuntimeConfig, TeeRuntimeMode,
+        ConfigError, DEFAULT_SEALED_STORAGE_PATH, SEALED_STORAGE_PATH_ENV, TEE_DEBUG_ENV,
+        TEE_ENCLAVE_PATH_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig, TeeRuntimeMode,
     };
     use std::collections::HashMap;
 
@@ -188,6 +203,7 @@ mod tests {
 
         assert_eq!(config.mode, TeeRuntimeMode::Hardware);
         assert!(!config.debug_mode);
+        assert_eq!(config.sealed_storage_path, DEFAULT_SEALED_STORAGE_PATH);
     }
 
     #[test]
@@ -240,6 +256,17 @@ mod tests {
             config.enclave_path.as_deref(),
             Some("/tmp/credbridge_enclave.signed.so")
         );
+    }
+
+    #[test]
+    fn captures_explicit_sealed_storage_path() {
+        let env = HashMap::from([(
+            SEALED_STORAGE_PATH_ENV,
+            "/var/lib/credbridge/sealed".to_string(),
+        )]);
+        let config = TeeRuntimeConfig::from_env_with(|name| env.get(name).cloned()).unwrap();
+
+        assert_eq!(config.sealed_storage_path, "/var/lib/credbridge/sealed");
     }
 
     #[test]

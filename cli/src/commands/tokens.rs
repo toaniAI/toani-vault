@@ -1,11 +1,12 @@
 use crate::cli::TokenCommands;
 use crate::config::Config;
+use crate::i18n::tr;
 use crate::output::OutputFormatter;
 use anyhow::{Context, Result};
 
 pub async fn execute(cmd: TokenCommands, config: Config) -> Result<()> {
     if !config.is_configured() {
-        anyhow::bail!("未配置，请先运行 'credbridge auth login'");
+        anyhow::bail!("{}", tr("cli.not_configured"));
     }
 
     let sdk = create_sdk(&config)?;
@@ -17,20 +18,16 @@ pub async fn execute(cmd: TokenCommands, config: Config) -> Result<()> {
             expires_in: _,
             scopes: _,
         } => {
-            println!("ℹ️  Token 创建功能暂未实现");
-            println!("   请通过 CredBridge Web 界面创建 Token");
+            println!("{}", tr("cli.tokens.create_unimplemented"));
+            println!("   {}", tr("cli.tokens.use_web"));
             Ok(())
         }
         TokenCommands::List => {
-            println!("ℹ️  Token 列表功能暂未实现");
+            println!("{}", tr("cli.tokens.list_unimplemented"));
             Ok(())
         }
-        TokenCommands::Revoke { id: _ } => {
-            revoke_token(&sdk).await
-        }
-        TokenCommands::Verify { token } => {
-            verify_token(&sdk, &formatter, token).await
-        }
+        TokenCommands::Revoke { id: _ } => revoke_token(&sdk).await,
+        TokenCommands::Verify { token } => verify_token(&sdk, &formatter, token).await,
     }
 }
 
@@ -40,24 +37,20 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
     )
-    .context("创建 SDK 客户端失败")
+    .context("failed to create SDK client")
 }
 
 async fn revoke_token(sdk: &credbridge_sdk::CredBridgeSDK) -> Result<()> {
-    println!("🚫 正在撤销当前 Token...\n");
+    println!("{}\n", tr("cli.tokens.revoking"));
 
     match sdk.token().revoke(None).await {
         Ok(true) => {
-            println!("✅ Token 已撤销");
-            println!("   请重新登录: credbridge auth login");
+            println!("{}", tr("cli.tokens.revoked"));
+            println!("   {}", tr("cli.auth.relogin"));
             Ok(())
         }
-        Ok(false) => {
-            anyhow::bail!("撤销 Token 失败")
-        }
-        Err(e) => {
-            anyhow::bail!("撤销失败: {}", e)
-        }
+        Ok(false) => anyhow::bail!("{}", tr("cli.tokens.revoke_failed")),
+        Err(e) => anyhow::bail!("{}: {}", tr("cli.tokens.revoke_failed"), e),
     }
 }
 
@@ -66,19 +59,15 @@ async fn verify_token(
     formatter: &OutputFormatter,
     token: Option<String>,
 ) -> Result<()> {
-    let token_to_verify = match token {
-        Some(t) => t,
-        None => "当前配置的 Token".to_string(),
-    };
+    let token_to_verify = token.unwrap_or_else(|| tr("cli.tokens.current_token").to_string());
 
-    println!("🔍 正在验证 Token: {}\n", token_to_verify);
+    println!("{}: {}\n", tr("cli.tokens.verifying"), token_to_verify);
 
     match sdk.token().verify(None).await {
         Ok(valid) => {
             if valid {
-                formatter.print_success("Token 有效");
+                formatter.print_success(tr("cli.tokens.valid"));
 
-                // 显示 Token 信息
                 if let Some(info) = sdk.token().get_token_info() {
                     let view = serde_json::json!({
                         "token_id": info.token_id,
@@ -89,12 +78,10 @@ async fn verify_token(
                     formatter.print_object(&view)?;
                 }
             } else {
-                formatter.print_error("Token 无效或已被撤销");
+                formatter.print_error(tr("cli.tokens.invalid"));
             }
             Ok(())
         }
-        Err(e) => {
-            anyhow::bail!("验证失败: {}", e)
-        }
+        Err(e) => anyhow::bail!("{}: {}", tr("cli.tokens.verify_failed"), e),
     }
 }

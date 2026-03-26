@@ -42,6 +42,7 @@ services:
       # TEE 配置 (开发模式)
       - TEE_MODE=simulation
       - TEE_DEBUG=true
+      - SEALED_STORAGE_PATH=/app/data/sealed
 
       # 加密配置
       - ENCRYPTION_KEY_PATH=/app/config/keys

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "credbridge",
-    about = "CredBridge CLI - 凭证管理命令行工具",
+    about = "CredBridge CLI - credential management command line tool",
     version,
     author,
     arg_required_else_help = true
@@ -12,42 +12,42 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    /// 输出格式 (table, json)
+    /// Output format (table, json)
     #[arg(short, long, global = true, default_value = "table")]
     pub output: String,
 
-    /// 配置文件路径
+    /// Config file path
     #[arg(short, long, global = true)]
     pub config: Option<String>,
 
-    /// 详细日志输出
+    /// Verbose logging
     #[arg(short, long, global = true)]
     pub verbose: bool,
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// 认证管理 (登录、状态)
+    /// Authentication management (login, status)
     #[command(subcommand)]
     Auth(AuthCommands),
 
-    /// 凭证管理 (创建、读取、更新、删除)
+    /// Credential management (create, read, update, delete)
     #[command(subcommand)]
     Credentials(CredentialCommands),
 
-    /// Token 操作
+    /// Token operations
     #[command(subcommand)]
     Tokens(TokenCommands),
 
-    /// 沙箱会话控制
+    /// Sandbox session control
     #[command(subcommand)]
     Sandbox(SandboxCommands),
 
-    /// 审计日志
+    /// Audit logs
     #[command(subcommand)]
     Audit(AuditCommands),
 
-    /// 配置管理
+    /// Configuration management
     #[command(subcommand)]
     Config(ConfigCommands),
 }
