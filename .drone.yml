@@ -165,8 +165,8 @@ steps:
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-go -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-go dn/go -f .values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - helm upgrade --install credbridge dn/go -f .values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -187,8 +187,8 @@ steps:
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-go -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-go dn/go -f .test.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - helm upgrade --install credbridge dn/go -f .test.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:

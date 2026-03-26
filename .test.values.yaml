@@ -65,7 +65,7 @@ resources:
 
 configs: {}
 configPath: /configs/
-configExist: "credbridge-go"
+configExist: "credbridge"
 
 nodeSelector:
   tee: tee

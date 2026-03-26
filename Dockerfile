@@ -34,6 +34,9 @@ COPY sdk-rust ./sdk-rust
 COPY vault-service ./vault-service
 COPY examples ./examples
 COPY migrations ./migrations
+COPY sgx-enclave ./sgx-enclave
+COPY scripts ./scripts
+RUN bash scripts/build-sgx-enclave.sh && bash scripts/sign-sgx-enclave.sh
 RUN cargo build --release --features tee-hardware && cargo build --manifest-path cli/Cargo.toml --release
 
 FROM debian:bookworm-slim
@@ -49,6 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/vault-service /app/vault-service
+COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
 COPY --from=builder /app/migrations /app/migrations
 
 RUN mkdir -p /app/data/sealed \
