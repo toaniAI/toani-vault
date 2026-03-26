@@ -17,7 +17,7 @@ if [[ -f /opt/intel/sgxsdk/environment ]]; then
   source /opt/intel/sgxsdk/environment
 fi
 
-if [[ -x "${ROOT_DIR}/scripts/check_sgx_environment.sh" ]]; then
+if [[ "${SKIP_SGX_CHECK:-}" != "1" ]] && [[ -x "${ROOT_DIR}/scripts/check_sgx_environment.sh" ]]; then
   "${ROOT_DIR}/scripts/check_sgx_environment.sh"
 fi
 

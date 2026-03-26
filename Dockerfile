@@ -36,7 +36,7 @@ COPY examples ./examples
 COPY migrations ./migrations
 COPY sgx-enclave ./sgx-enclave
 COPY scripts ./scripts
-RUN bash scripts/build-sgx-enclave.sh && bash scripts/sign-sgx-enclave.sh
+RUN SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh && bash scripts/sign-sgx-enclave.sh
 RUN cargo build --release --features tee-hardware && cargo build --manifest-path cli/Cargo.toml --release
 
 FROM debian:bookworm-slim
