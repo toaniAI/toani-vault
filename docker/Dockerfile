@@ -90,7 +90,9 @@ RUN apt-get update && apt-get install -y \
 
 # 复制 nsjail 二进制文件
 COPY --from=nsjail-builder /nsjail/nsjail /usr/local/bin/nsjail
-RUN chmod +x /usr/local/bin/nsjail && nsjail -V || true
+RUN chmod +x /usr/local/bin/nsjail \
+    && ln -sf /usr/local/bin/nsjail /usr/bin/nsjail \
+    && /usr/local/bin/nsjail -V || true
 
 # 创建非特权用户
 RUN groupadd -r credbridge --gid=1000 && \

@@ -231,7 +231,7 @@ struct AppState {
     tenant_store: MemoryTenantConfigStore,
     rate_limit_state: RateLimitState,
     attestation_state: Option<Arc<AttestationState>>,
-    sandbox_state: Option<SandboxState>,
+    sandbox_state: SandboxState,
     startup_checks: Vec<SelfCheckItem>,
 }
 
@@ -505,16 +505,10 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化沙箱 API"
     );
-    let sandbox_state = match initialize_sandbox_state().await {
-        Ok(state) => {
-            info!(module = "sandbox", status = "ready", "沙箱 API 就绪");
-            Some(state)
-        }
-        Err(e) => {
-            warn!(module = "sandbox", status = "skipped", error = %e, "沙箱 API 初始化失败，跳过");
-            None
-        }
-    };
+    let sandbox_state = initialize_sandbox_state()
+        .await
+        .map_err(|e| std::io::Error::other(format!("Sandbox API 初始化失败，服务启动终止: {e}")))?;
+    info!(module = "sandbox", status = "ready", "沙箱 API 就绪");
 
     Ok(AppState {
         config: config.clone(),
@@ -531,6 +525,7 @@ async fn initialize_app_state(
             SelfCheckItem::ready("auth"),
             SelfCheckItem::ready("tenant"),
             SelfCheckItem::ready("rate_limit"),
+            SelfCheckItem::ready("sandbox"),
         ],
     })
 }
@@ -562,7 +557,7 @@ async fn build_credential_vault(
 async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::Error>> {
     use vault_service::tee::sandbox::config::SandboxConfig;
 
-    let config = SandboxConfig::default();
+    let config = SandboxConfig::from_env();
     let state = SandboxState::new(config)
         .await
         .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
@@ -712,17 +707,12 @@ fn build_api_routes(app_state: AppState) -> Router {
         None
     };
 
-    // 沙箱路由（需要认证）- 创建新的 auth_layer
-    let sandbox_routes = if let Some(ref sandbox_state) = app_state.sandbox_state {
-        let sandbox_auth_layer =
-            axum::middleware::from_fn_with_state((token_store, secret_key), auth_middleware);
-        let routes = sandbox_routes()
-            .with_state(sandbox_state.clone())
-            .layer(sandbox_auth_layer);
-        Some(routes)
-    } else {
-        None
-    };
+    // 沙箱路由（需要认证）
+    let sandbox_auth_layer =
+        axum::middleware::from_fn_with_state((token_store, secret_key), auth_middleware);
+    let sandbox_routes = sandbox_routes()
+        .with_state(app_state.sandbox_state.clone())
+        .layer(sandbox_auth_layer);
 
     // 合并所有路由
     let mut router = Router::new()
@@ -737,10 +727,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         router = router.merge(att_routes);
     }
 
-    // 添加沙箱路由（如果已初始化）
-    if let Some(sb_routes) = sandbox_routes {
-        router = router.merge(sb_routes);
-    }
+    router = router.merge(sandbox_routes);
 
     router.layer(Extension(app_state))
 }

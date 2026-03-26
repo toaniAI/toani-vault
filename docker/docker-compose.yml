@@ -49,6 +49,7 @@ services:
       - TEE_MODE=${TEE_MODE:-simulation}
       - TEE_DEBUG=true
       - SEALED_STORAGE_PATH=/app/data/sealed
+      - NSJAIL_PATH=${NSJAIL_PATH:-/usr/local/bin/nsjail}
 
       # 加密配置
       - ENCRYPTION_KEY_PATH=/app/config/keys

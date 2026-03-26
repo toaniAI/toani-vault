@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::env;
+use std::path::{Path, PathBuf};
 
 /// 沙箱配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,10 +32,44 @@ impl Default for SandboxConfig {
             security: SecurityConfig::default(),
             timeout_secs: 300,
             working_dir: PathBuf::from("/tmp/sandbox"),
-            nsjail_path: PathBuf::from("/usr/bin/nsjail"),
+            nsjail_path: resolve_nsjail_path(),
             env_vars: HashMap::new(),
         }
     }
+}
+
+impl SandboxConfig {
+    /// 从环境变量加载沙箱配置。
+    ///
+    /// 当前仅覆盖开发环境里最容易漂移的 nsjail 路径，其余字段保持默认值。
+    pub fn from_env() -> Self {
+        Self {
+            nsjail_path: resolve_nsjail_path(),
+            ..Self::default()
+        }
+    }
+}
+
+fn resolve_nsjail_path() -> PathBuf {
+    for env_name in ["CREDBRIDGE_SANDBOX_NSJAIL_PATH", "NSJAIL_PATH"] {
+        if let Ok(path) = env::var(env_name) {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed);
+            }
+        }
+    }
+
+    for candidate in [
+        Path::new("/usr/bin/nsjail"),
+        Path::new("/usr/local/bin/nsjail"),
+    ] {
+        if candidate.exists() {
+            return candidate.to_path_buf();
+        }
+    }
+
+    PathBuf::from("/usr/bin/nsjail")
 }
 
 /// 沙箱池配置
@@ -511,6 +546,7 @@ mod tests {
         assert_eq!(config.timeout_secs, 300);
         assert_eq!(config.pool.max_warm_instances, 10);
         assert_eq!(config.resource_limits.memory_limit_mb, 512);
+        assert!(!config.nsjail_path.as_os_str().is_empty());
     }
 
     #[test]
@@ -531,5 +567,19 @@ mod tests {
             serde_json::to_string(&SeccompMode::Denylist).unwrap(),
             "\"denylist\""
         );
+    }
+
+    #[test]
+    fn test_from_env_prefers_nsjail_path_override() {
+        unsafe {
+            std::env::set_var("NSJAIL_PATH", "/custom/nsjail");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert_eq!(config.nsjail_path, PathBuf::from("/custom/nsjail"));
+
+        unsafe {
+            std::env::remove_var("NSJAIL_PATH");
+        }
     }
 }
