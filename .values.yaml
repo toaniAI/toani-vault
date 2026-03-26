@@ -21,7 +21,7 @@ envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: development
-  TEE_MODE: simulation
+  TEE_MODE: hardware
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: debug
   DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
@@ -63,6 +63,18 @@ resources:
   requests:
     cpu: 100m
     memory: 128Mi
+
+securityContext:
+  privileged: true
+
+volumes:
+  - name: aesmd-socket
+    hostPath:
+      path: /var/run/aesmd
+      type: Directory
+volumeMounts:
+  - name: aesmd-socket
+    mountPath: /var/run/aesmd
 
 configs: {}
 configPath: /configs/

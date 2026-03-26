@@ -34,7 +34,7 @@ COPY sdk-rust ./sdk-rust
 COPY vault-service ./vault-service
 COPY examples ./examples
 COPY migrations ./migrations
-RUN cargo build --release && cargo build --manifest-path cli/Cargo.toml --release
+RUN cargo build --release --features tee-hardware && cargo build --manifest-path cli/Cargo.toml --release
 
 FROM debian:bookworm-slim
 
