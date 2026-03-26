@@ -14,6 +14,22 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
       "env": {}
+    },
+    "logmcp-backend": {
+      "command": "logmcp",
+      "env": {
+        "LOKI_GATEWAY_URL": "https://dev-hk-loki.bitkinetic.com",
+        "DEFAULT_SERVICE": "credbridge-go",
+        "MCP_SERVER_NAME": "LogMCP Backend"
+      }
+    },
+    "logmcp-frontend": {
+      "command": "logmcp",
+      "env": {
+        "LOKI_GATEWAY_URL": "https://dev-hk-loki.bitkinetic.com",
+        "DEFAULT_SERVICE": "credbridge-frontend",
+        "MCP_SERVER_NAME": "LogMCP Frontend"
+      }
     }
   }
 }
