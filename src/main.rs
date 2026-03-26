@@ -39,6 +39,7 @@ use vault_service::api::{
     },
     i18n::{LocaleResolverState, locale_middleware},
     middleware::auth_middleware,
+    notifications::notifications_routes,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
     tenant::{TenantApiState, tenant_routes},
@@ -676,6 +677,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         tenant_service,
     };
     let tenant_routes = tenant_routes::<MemoryTenantConfigStore>().with_state(tenant_api_state);
+    let notifications_routes = notifications_routes();
 
     // 认证中间件层
     let auth_layer = axum::middleware::from_fn_with_state(
@@ -691,6 +693,8 @@ fn build_api_routes(app_state: AppState) -> Router {
         .merge(audit_routes)
         // 嵌套租户路由
         .merge(tenant_routes)
+        // 通知列表路由
+        .merge(notifications_routes)
         // 认证用户信息与偏好
         .merge(protected_auth_routes)
         // locale 解析

@@ -11,6 +11,7 @@ pub mod credentials;
 pub mod i18n;
 pub mod logging_middleware;
 pub mod middleware;
+pub mod notifications;
 pub mod rate_limit;
 pub mod response;
 pub mod routes;
@@ -43,6 +44,7 @@ pub use context::{
 pub use credentials::{AppState, AuditLogger, DefaultAuditLogger};
 pub use i18n::{LocaleResolverState, ResolvedLocale, locale_middleware};
 pub use middleware::{TokenScope, ValidatedToken};
+pub use notifications::notifications_routes;
 pub use sandbox::{SandboxState, sandbox_routes};
 pub use tenant::{TenantApiState, tenant_routes};
 pub use tenant_middleware::{
