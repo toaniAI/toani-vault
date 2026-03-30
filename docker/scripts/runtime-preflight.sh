@@ -21,6 +21,22 @@ find_existing_path() {
     return 1
 }
 
+normalize_json_bool() {
+    value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+
+    case "$value" in
+        1|true|yes|on)
+            echo "true"
+            ;;
+        0|false|no|off)
+            echo "false"
+            ;;
+        *)
+            fail "invalid boolean value for SGX/DCAP config: $1"
+            ;;
+    esac
+}
+
 library_exists() {
     env_path="$1"
     shift
@@ -49,6 +65,33 @@ library_exists() {
     fi
 
     return 1
+}
+
+write_qcnl_config() {
+    config_path="${SGX_QCNL_CONFIG_PATH:-/etc/sgx_default_qcnl.conf}"
+    pccs_url="${DCAP_PCCS_URL:-}"
+    use_secure_cert="${DCAP_USE_SECURE_CERT:-true}"
+    collateral_service="${DCAP_COLLATERAL_SERVICE:-}"
+    pccs_api_version="${DCAP_PCCS_API_VERSION:-}"
+
+    if [ -z "$pccs_url" ]; then
+        if [ -f "$config_path" ]; then
+            log "DCAP_PCCS_URL not set, keeping existing QCNL config at $config_path"
+            return 0
+        fi
+        fail "DCAP_PCCS_URL is required when no QCNL config exists at $config_path"
+    fi
+
+    use_secure_cert="$(normalize_json_bool "$use_secure_cert")"
+
+    cat > "$config_path" <<EOF
+{
+  "pccs_url": "$pccs_url",
+  "use_secure_cert": $use_secure_cert$(if [ -n "$collateral_service" ]; then printf ',\n  "collateral_service": "%s"' "$collateral_service"; fi)$(if [ -n "$pccs_api_version" ]; then printf ',\n  "pccs_api_version": "%s"' "$pccs_api_version"; fi)
+}
+EOF
+
+    log "wrote SGX QCNL config to $config_path"
 }
 
 TEE_MODE_VALUE="${TEE_MODE:-simulation}"
@@ -113,13 +156,21 @@ log "Intel DCAP quote verification library is available"
 
 library_exists \
     "" \
-    /usr/lib/x86_64-linux-gnu/libsgx_dcap_default_qpl.so.1 \
-    /usr/lib/x86_64-linux-gnu/libsgx_dcap_default_qpl.so \
-    /usr/lib/libsgx_dcap_default_qpl.so.1 \
-    /usr/lib/libsgx_dcap_default_qpl.so \
-    /lib/x86_64-linux-gnu/libsgx_dcap_default_qpl.so.1 \
-    /lib/x86_64-linux-gnu/libsgx_dcap_default_qpl.so \
+    /usr/lib/x86_64-linux-gnu/libdcap_quoteprov.so.1 \
+    /usr/lib/x86_64-linux-gnu/libdcap_quoteprov.so \
+    /usr/lib/x86_64-linux-gnu/libsgx_default_qcnl_wrapper.so.1 \
+    /usr/lib/x86_64-linux-gnu/libsgx_default_qcnl_wrapper.so \
+    /usr/lib/libdcap_quoteprov.so.1 \
+    /usr/lib/libdcap_quoteprov.so \
+    /usr/lib/libsgx_default_qcnl_wrapper.so.1 \
+    /usr/lib/libsgx_default_qcnl_wrapper.so \
+    /lib/x86_64-linux-gnu/libdcap_quoteprov.so.1 \
+    /lib/x86_64-linux-gnu/libdcap_quoteprov.so \
+    /lib/x86_64-linux-gnu/libsgx_default_qcnl_wrapper.so.1 \
+    /lib/x86_64-linux-gnu/libsgx_default_qcnl_wrapper.so \
     || fail "Intel DCAP default QPL library is missing; install libsgx-dcap-default-qpl"
 log "Intel DCAP default QPL library is available"
+
+write_qcnl_config
 
 exec "$@"
