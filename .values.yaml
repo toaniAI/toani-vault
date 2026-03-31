@@ -14,19 +14,24 @@ image:
 imagePullSecrets: []
 
 command:
+  - /app/runtime-preflight.sh
+args:
   - /app/vault-service
-args: []
 
 envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: development
-  TEE_MODE: hardware
+  TEE_MODE: simulation
   TEE_ENCLAVE_PATH: /app/credbridge_enclave.signed.so
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: debug
   DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@postgresql-hl.dev:5432/platformid?sslmode=disable"
   VAULT_ADDR: "http://vault:8200"
+  DCAP_PCCS_URL: "https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/"
+  DCAP_USE_SECURE_CERT: "true"
+  DCAP_COLLATERAL_SERVICE: "https://api.trustedservices.intel.com/sgx/certification/v4/"
+  DCAP_PCCS_API_VERSION: "3.1"
 
 o_envs: []
 

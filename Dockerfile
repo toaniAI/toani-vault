@@ -78,8 +78,10 @@ COPY --from=builder /app/migrations /app/migrations
 COPY docker/scripts/healthcheck.sh /app/healthcheck.sh
 COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 
-RUN mkdir -p /app/data/sealed \
+RUN mkdir -p /app/data/sealed /app/config \
     && useradd -m -u 1000 appuser \
+    && cp /etc/sgx_default_qcnl.conf /app/config/sgx_default_qcnl.conf \
+    && ln -sf /app/config/sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf \
     && chmod +x /app/healthcheck.sh /app/runtime-preflight.sh \
     && chown -R appuser:appuser /app
 USER appuser

@@ -14,8 +14,9 @@ image:
 imagePullSecrets: []
 
 command:
+  - /app/runtime-preflight.sh
+args:
   - /app/vault-service
-args: []
 
 envs:
   CREDBRIDGE_HOST: 0.0.0.0
