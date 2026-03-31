@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "credbridge",
-    about = "CredBridge CLI - credential management command line tool",
+    name = "toani",
+    about = "Toani Vault CLI - credential management command line tool",
     version,
     author,
     arg_required_else_help = true
@@ -54,7 +54,7 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum AuthCommands {
-    /// 登录到 CredBridge 服务
+    /// 登录到 Toani Vault 服务
     Login {
         /// 服务 URL
         #[arg(short, long, env = "CREDBRIDGE_URL")]

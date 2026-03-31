@@ -2,13 +2,13 @@
 name = "credbridge-cli"
 version = "0.1.0"
 edition = "2024"
-authors = ["CredBridge Team"]
-description = "Command line interface for CredBridge credential vault"
+authors = ["Toani.ai Team"]
+description = "Command line interface for Toani Vault credential vault"
 license = "MIT"
 repository = "https://github.com/credbridge/credbridge"
 
 [[bin]]
-name = "credbridge"
+name = "toani"
 path = "src/main.rs"
 
 [dependencies]

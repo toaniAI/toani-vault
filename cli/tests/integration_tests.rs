@@ -4,16 +4,16 @@ use tempfile::TempDir;
 
 #[test]
 fn test_cli_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.arg("--help");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("CredBridge CLI"));
+        .stdout(predicate::str::contains("Toani Vault CLI"));
 }
 
 #[test]
 fn test_config_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["config", "--help"]);
     cmd.assert()
         .success()
@@ -22,7 +22,7 @@ fn test_config_help() {
 
 #[test]
 fn test_auth_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["auth", "--help"]);
     cmd.assert()
         .success()
@@ -31,7 +31,7 @@ fn test_auth_help() {
 
 #[test]
 fn test_credentials_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["credentials", "--help"]);
     cmd.assert()
         .success()
@@ -40,7 +40,7 @@ fn test_credentials_help() {
 
 #[test]
 fn test_tokens_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["tokens", "--help"]);
     cmd.assert()
         .success()
@@ -49,7 +49,7 @@ fn test_tokens_help() {
 
 #[test]
 fn test_audit_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["audit", "--help"]);
     cmd.assert()
         .success()
@@ -58,7 +58,7 @@ fn test_audit_help() {
 
 #[test]
 fn test_sandbox_help() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["sandbox", "--help"]);
     cmd.assert()
         .success()
@@ -71,7 +71,7 @@ fn test_config_show_without_config() {
     let temp_dir = TempDir::new().unwrap();
     let home = temp_dir.path();
 
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["config", "show"]);
     cmd.env("HOME", home);
 
@@ -81,7 +81,7 @@ fn test_config_show_without_config() {
 
 #[test]
 fn test_output_json_flag() {
-    let mut cmd = Command::cargo_bin("credbridge").unwrap();
+    let mut cmd = Command::cargo_bin("toani").unwrap();
     cmd.args(["--output", "json", "config", "show"]);
     cmd.assert().success().stdout(predicate::str::contains("{"));
 }

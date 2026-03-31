@@ -14,9 +14,9 @@ pub fn current_locale() -> &'static str {
 
 pub fn tr(key: &str) -> &str {
     match (current_locale(), key) {
-        ("zh-CN", "cli.not_configured") => "未配置，请先运行 'credbridge auth login'",
+        ("zh-CN", "cli.not_configured") => "未配置，请先运行 'toani auth login'",
         ("en-US", "cli.not_configured") => {
-            "CLI is not configured. Run 'credbridge auth login' first."
+            "CLI is not configured. Run 'toani auth login' first."
         }
         ("zh-CN", "cli.auth.connecting") => "🔌 正在连接到",
         ("en-US", "cli.auth.connecting") => "🔌 Connecting to",
@@ -28,8 +28,8 @@ pub fn tr(key: &str) -> &str {
         ("en-US", "cli.auth.config_saved") => "Configuration saved.",
         ("zh-CN", "cli.auth.not_logged_in") => "⚠️  未登录",
         ("en-US", "cli.auth.not_logged_in") => "⚠️  Not logged in.",
-        ("zh-CN", "cli.auth.run_login") => "请运行: credbridge auth login",
-        ("en-US", "cli.auth.run_login") => "Run: credbridge auth login",
+        ("zh-CN", "cli.auth.run_login") => "请运行: toani auth login",
+        ("en-US", "cli.auth.run_login") => "Run: toani auth login",
         ("zh-CN", "cli.auth.checking_status") => "🔍 检查登录状态...",
         ("en-US", "cli.auth.checking_status") => "🔍 Checking login status...",
         ("zh-CN", "cli.auth.logged_in") => "已登录",
@@ -40,8 +40,8 @@ pub fn tr(key: &str) -> &str {
         ("en-US", "cli.auth.login_invalid") => "Login invalid",
         ("zh-CN", "cli.auth.error") => "错误",
         ("en-US", "cli.auth.error") => "Error",
-        ("zh-CN", "cli.auth.relogin") => "请重新登录: credbridge auth login",
-        ("en-US", "cli.auth.relogin") => "Please log in again: credbridge auth login",
+        ("zh-CN", "cli.auth.relogin") => "请重新登录: toani auth login",
+        ("en-US", "cli.auth.relogin") => "Please log in again: toani auth login",
         ("zh-CN", "cli.auth.logged_out") => "✅ 已登出，配置已删除",
         ("en-US", "cli.auth.logged_out") => "✅ Logged out and removed saved configuration.",
         ("zh-CN", "cli.auth.service") => "服务",
@@ -92,8 +92,8 @@ pub fn tr(key: &str) -> &str {
         ("en-US", "cli.tokens.create_unimplemented") => {
             "ℹ️  Token creation is not implemented yet."
         }
-        ("zh-CN", "cli.tokens.use_web") => "请通过 CredBridge Web 界面创建 Token",
-        ("en-US", "cli.tokens.use_web") => "Use the CredBridge web interface to create tokens.",
+        ("zh-CN", "cli.tokens.use_web") => "请通过 Toani Vault Web 界面创建 Token",
+        ("en-US", "cli.tokens.use_web") => "Use the Toani Vault web interface to create tokens.",
         ("zh-CN", "cli.tokens.list_unimplemented") => "ℹ️  Token 列表功能暂未实现",
         ("en-US", "cli.tokens.list_unimplemented") => "ℹ️  Token listing is not implemented yet.",
         ("zh-CN", "cli.tokens.revoking") => "🚫 正在撤销当前 Token...",
@@ -116,8 +116,8 @@ pub fn tr(key: &str) -> &str {
         ("en-US", "cli.audit.logs_unimplemented") => {
             "📋 Audit log querying is not implemented yet."
         }
-        ("zh-CN", "cli.audit.web_hint") => "请通过 CredBridge Web 界面查看审计日志",
-        ("en-US", "cli.audit.web_hint") => "Use the CredBridge web interface to view audit logs.",
+        ("zh-CN", "cli.audit.web_hint") => "请通过 Toani Vault Web 界面查看审计日志",
+        ("en-US", "cli.audit.web_hint") => "Use the Toani Vault web interface to view audit logs.",
         ("zh-CN", "cli.audit.export_unimplemented") => "📤 审计日志导出功能暂未实现",
         ("en-US", "cli.audit.export_unimplemented") => {
             "📤 Audit log export is not implemented yet."
@@ -144,8 +144,8 @@ pub fn tr(key: &str) -> &str {
         ("en-US", "cli.sandbox.stats") => "📊 Fetching sandbox stats...",
         ("zh-CN", "cli.sandbox.unimplemented") => "ℹ️  沙箱功能暂未实现",
         ("en-US", "cli.sandbox.unimplemented") => "ℹ️  Sandbox support is not implemented yet.",
-        ("zh-CN", "cli.config.enter_url") => "请输入 CredBridge 服务 URL",
-        ("en-US", "cli.config.enter_url") => "Enter CredBridge service URL",
+        ("zh-CN", "cli.config.enter_url") => "请输入 Toani Vault 服务 URL",
+        ("en-US", "cli.config.enter_url") => "Enter Toani Vault service URL",
         ("zh-CN", "cli.config.enter_token") => "请输入 API Token",
         ("en-US", "cli.config.enter_token") => "Enter API token",
         ("zh-CN", "cli.config.saved_to") => "✅ 配置已保存到",
