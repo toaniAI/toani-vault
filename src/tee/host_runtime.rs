@@ -1,8 +1,8 @@
 //! Host-side SGX enclave runtime bridge.
 //!
-//! Phase A keeps this bridge intentionally small: validate that a signed enclave artifact
-//! exists, load it on Linux SGX runners, and provide typed ECALL wrappers for identity,
-//! report generation, and sealing-key retrieval.
+//! Hardware mode now loads a normal URTS host bridge shared library, then asks that bridge to
+//! create and manage the signed enclave via `sgx_create_enclave`/ECALLs. The signed enclave is
+//! never `dlopen`'d directly because that bypasses SGX execution entirely.
 
 use crate::config::TEE_ENCLAVE_PATH_ENV;
 use crate::crypto::EncryptedBlob;
@@ -24,9 +24,10 @@ use std::sync::Arc;
 #[cfg(target_os = "linux")]
 use libc::{RTLD_LAZY, dlclose, dlerror, dlopen, dlsym};
 
+const TEE_SGX_HOST_BRIDGE_LIB_PATH_ENV: &str = "TEE_SGX_HOST_BRIDGE_LIB_PATH";
+const DEFAULT_HOST_BRIDGE_LIB_NAME: &str = "libcredbridge_sgx_urts_bridge.so";
+
 /// Host/enclave runtime bridge abstraction.
-///
-/// The concrete SGX loader implements this trait, and tests can inject a mock runtime.
 pub trait EnclaveRuntime: Send + Sync {
     fn get_identity(&self) -> Result<EnclaveIdentity, HostRuntimeError>;
 
@@ -65,10 +66,8 @@ pub trait EnclaveRuntime: Send + Sync {
     ) -> Result<Vec<u8>, HostRuntimeError>;
 }
 
-/// Shared runtime handle used by enclave/provisioning/sealing code.
 pub type SharedEnclaveRuntime = Arc<dyn EnclaveRuntime>;
 
-/// Load-time and call-time failures from the host runtime bridge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostRuntimeError {
     MissingEnclavePath,
@@ -76,6 +75,9 @@ pub enum HostRuntimeError {
         path: PathBuf,
     },
     ArtifactNotAFile {
+        path: PathBuf,
+    },
+    BridgeLibraryMissing {
         path: PathBuf,
     },
     LoadFailed {
@@ -89,9 +91,9 @@ pub enum HostRuntimeError {
         symbol: String,
         detail: String,
     },
-    EcallReturned {
+    BridgeCallFailed {
         operation: &'static str,
-        status: EcallStatus,
+        detail: String,
     },
     InvalidBufferSize {
         operation: &'static str,
@@ -118,25 +120,34 @@ impl std::fmt::Display for HostRuntimeError {
                 "no real SGX hardware provider configured; enclave artifact not found at `{}`",
                 path.display()
             ),
-            HostRuntimeError::ArtifactNotAFile { path } => write!(
+            HostRuntimeError::ArtifactNotAFile { path } => {
+                write!(
+                    f,
+                    "enclave artifact path `{}` is not a file",
+                    path.display()
+                )
+            }
+            HostRuntimeError::BridgeLibraryMissing { path } => write!(
                 f,
-                "enclave artifact path `{}` is not a file",
+                "URTS host bridge library not found at `{}`; build `target/sgx-enclave/{DEFAULT_HOST_BRIDGE_LIB_NAME}` or set `{TEE_SGX_HOST_BRIDGE_LIB_PATH_ENV}`",
                 path.display()
             ),
-            HostRuntimeError::LoadFailed { path, detail } => write!(
-                f,
-                "failed to load enclave artifact `{}`: {detail}",
-                path.display()
-            ),
+            HostRuntimeError::LoadFailed { path, detail } => {
+                write!(
+                    f,
+                    "failed to load SGX runtime asset `{}`: {detail}",
+                    path.display()
+                )
+            }
             HostRuntimeError::UnsupportedPlatform { operation } => write!(
                 f,
                 "host runtime operation `{operation}` is only available on Linux SGX runners"
             ),
             HostRuntimeError::SymbolMissing { symbol, detail } => {
-                write!(f, "missing enclave symbol `{symbol}`: {detail}")
+                write!(f, "missing SGX runtime symbol `{symbol}`: {detail}")
             }
-            HostRuntimeError::EcallReturned { operation, status } => {
-                write!(f, "enclave ECALL `{operation}` returned `{status}`")
+            HostRuntimeError::BridgeCallFailed { operation, detail } => {
+                write!(f, "SGX runtime operation `{operation}` failed: {detail}")
             }
             HostRuntimeError::InvalidBufferSize {
                 operation,
@@ -144,7 +155,7 @@ impl std::fmt::Display for HostRuntimeError {
                 actual,
             } => write!(
                 f,
-                "enclave ECALL `{operation}` returned {actual} bytes, expected {expected}"
+                "SGX runtime operation `{operation}` returned {actual} bytes, expected {expected}"
             ),
         }
     }
@@ -152,12 +163,14 @@ impl std::fmt::Display for HostRuntimeError {
 
 impl std::error::Error for HostRuntimeError {}
 
-/// Runtime handle for a loaded SGX enclave artifact.
 pub struct SgxHostRuntime {
     enclave_path: PathBuf,
+    bridge_path: PathBuf,
     debug_mode: bool,
     #[cfg(target_os = "linux")]
     handle: *mut c_void,
+    #[cfg(target_os = "linux")]
+    runtime_handle: *mut c_void,
 }
 
 unsafe impl Send for SgxHostRuntime {}
@@ -167,6 +180,7 @@ impl std::fmt::Debug for SgxHostRuntime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SgxHostRuntime")
             .field("enclave_path", &self.enclave_path)
+            .field("bridge_path", &self.bridge_path)
             .field("debug_mode", &self.debug_mode)
             .finish_non_exhaustive()
     }
@@ -175,9 +189,17 @@ impl std::fmt::Debug for SgxHostRuntime {
 impl Drop for SgxHostRuntime {
     fn drop(&mut self) {
         #[cfg(target_os = "linux")]
-        if !self.handle.is_null() {
-            // SAFETY: handle was returned by dlopen in load().
-            unsafe {
+        unsafe {
+            if !self.runtime_handle.is_null() {
+                let close: Result<unsafe extern "C" fn(*mut c_void) -> i32, _> =
+                    load_symbol_from(self.handle, "credbridge_sgx_runtime_close");
+                if let Ok(close) = close {
+                    let _ = close(self.runtime_handle);
+                }
+                self.runtime_handle = std::ptr::null_mut();
+            }
+
+            if !self.handle.is_null() {
                 dlclose(self.handle);
             }
         }
@@ -221,30 +243,78 @@ impl SgxHostRuntime {
         {
             use std::os::unix::ffi::OsStrExt;
 
-            let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+            let bridge_path = resolve_bridge_path(path)?;
+            if !bridge_path.exists() {
+                return Err(HostRuntimeError::BridgeLibraryMissing {
+                    path: bridge_path.clone(),
+                });
+            }
+            if !bridge_path.is_file() {
+                return Err(HostRuntimeError::LoadFailed {
+                    path: bridge_path.clone(),
+                    detail: "URTS host bridge path is not a file".to_string(),
+                });
+            }
+
+            let c_bridge_path = CString::new(bridge_path.as_os_str().as_bytes()).map_err(|_| {
+                HostRuntimeError::LoadFailed {
+                    path: bridge_path.clone(),
+                    detail: "bridge library path contains an interior NUL byte".to_string(),
+                }
+            })?;
+            let handle = unsafe { dlopen(c_bridge_path.as_ptr(), RTLD_LAZY) };
+            if handle.is_null() {
+                return Err(HostRuntimeError::LoadFailed {
+                    path: bridge_path.clone(),
+                    detail: last_dlerror(),
+                });
+            }
+
+            type OpenFn = unsafe extern "C" fn(*const c_char, i32, *mut *mut c_void) -> i32;
+            let open: OpenFn = unsafe { load_symbol_from(handle, "credbridge_sgx_runtime_open")? };
+
+            let c_enclave_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
                 HostRuntimeError::LoadFailed {
                     path: path.to_path_buf(),
                     detail: "enclave artifact path contains an interior NUL byte".to_string(),
                 }
             })?;
-            // SAFETY: dlopen/dlerror are used with a validated path and the returned handle
-            // is owned by the runtime until Drop.
-            let handle = unsafe { dlopen(c_path.as_ptr(), RTLD_LAZY) };
-            if handle.is_null() {
+            let mut runtime_handle = std::ptr::null_mut();
+            let status = unsafe {
+                open(
+                    c_enclave_path.as_ptr(),
+                    if debug_mode { 1 } else { 0 },
+                    &mut runtime_handle,
+                )
+            };
+            let decoded = EcallStatus::from_raw(status).unwrap_or(EcallStatus::InternalError);
+            if !decoded.is_success() || runtime_handle.is_null() {
+                let detail = unsafe { bridge_last_error_from(handle) };
+                unsafe { dlclose(handle) };
                 return Err(HostRuntimeError::LoadFailed {
                     path: path.to_path_buf(),
-                    detail: last_dlerror(),
+                    detail: if detail.is_empty() {
+                        format!("runtime open returned status {}", decoded)
+                    } else {
+                        detail
+                    },
                 });
             }
 
             if debug_mode {
-                tracing::debug!(enclave_path = %path.display(), "loaded SGX enclave runtime");
+                tracing::debug!(
+                    enclave_path = %path.display(),
+                    bridge_path = %bridge_path.display(),
+                    "loaded SGX enclave runtime via URTS bridge"
+                );
             }
 
             Ok(Self {
                 enclave_path: path.to_path_buf(),
+                bridge_path,
                 debug_mode,
                 handle,
+                runtime_handle,
             })
         }
     }
@@ -268,22 +338,22 @@ impl SgxHostRuntime {
         #[cfg(target_os = "linux")]
         {
             type GetIdentityFn =
-                unsafe extern "C" fn(*mut u8, usize, *mut u8, usize) -> EcallStatus;
+                unsafe extern "C" fn(*mut c_void, *mut u8, usize, *mut u8, usize) -> i32;
 
             let mut mrenclave = [0u8; SGX_MEASUREMENT_LEN];
             let mut mrsigner = [0u8; SGX_MEASUREMENT_LEN];
+            let func: GetIdentityFn =
+                unsafe { self.symbol("credbridge_sgx_runtime_get_identity")? };
             let status = unsafe {
-                let func: GetIdentityFn = self.symbol("credbridge_enclave_get_identity")?;
                 func(
+                    self.runtime_handle,
                     mrenclave.as_mut_ptr(),
                     mrenclave.len(),
                     mrsigner.as_mut_ptr(),
                     mrsigner.len(),
                 )
             };
-
-            self.ensure_success("get_identity", status)?;
-
+            self.ensure_bridge_success("get_identity", status)?;
             Ok(EnclaveIdentity::new(mrenclave, mrsigner))
         }
     }
@@ -311,6 +381,7 @@ impl SgxHostRuntime {
         #[cfg(target_os = "linux")]
         {
             type GetTargetedReportFn = unsafe extern "C" fn(
+                *mut c_void,
                 *const u8,
                 usize,
                 *const u8,
@@ -318,13 +389,14 @@ impl SgxHostRuntime {
                 *mut u8,
                 usize,
                 *mut usize,
-            ) -> EcallStatus;
+            ) -> i32;
 
             let mut report = EnclaveReport::new([0u8; SGX_REPORT_LEN], 0);
+            let func: GetTargetedReportFn =
+                unsafe { self.symbol("credbridge_sgx_runtime_get_targeted_report")? };
             let status = unsafe {
-                let func: GetTargetedReportFn =
-                    self.symbol("credbridge_enclave_get_targeted_report")?;
                 func(
+                    self.runtime_handle,
                     target_info.as_ptr(),
                     target_info.len(),
                     report_data.as_ptr(),
@@ -335,7 +407,7 @@ impl SgxHostRuntime {
                 )
             };
 
-            self.ensure_success("get_targeted_report", status)?;
+            self.ensure_bridge_success("get_targeted_report", status)?;
             if report.written_len != SGX_REPORT_LEN {
                 return Err(HostRuntimeError::InvalidBufferSize {
                     operation: "get_targeted_report",
@@ -343,7 +415,6 @@ impl SgxHostRuntime {
                     actual: report.written_len,
                 });
             }
-
             Ok(report.as_slice().to_vec())
         }
     }
@@ -363,12 +434,14 @@ impl SgxHostRuntime {
         #[cfg(target_os = "linux")]
         {
             type GetSealingKeyFn =
-                unsafe extern "C" fn(u32, *mut u8, usize, *mut usize) -> EcallStatus;
+                unsafe extern "C" fn(*mut c_void, u32, *mut u8, usize, *mut usize) -> i32;
 
             let mut key = EnclaveSealingKey::new([0u8; SGX_SEALING_KEY_LEN], 0);
+            let func: GetSealingKeyFn =
+                unsafe { self.symbol("credbridge_sgx_runtime_get_sealing_key")? };
             let status = unsafe {
-                let func: GetSealingKeyFn = self.symbol("credbridge_enclave_get_sealing_key")?;
                 func(
+                    self.runtime_handle,
                     seal_policy_to_raw(policy),
                     key.bytes.as_mut_ptr(),
                     key.bytes.len(),
@@ -376,7 +449,7 @@ impl SgxHostRuntime {
                 )
             };
 
-            self.ensure_success("get_sealing_key", status)?;
+            self.ensure_bridge_success("get_sealing_key", status)?;
             if key.written_len != SGX_SEALING_KEY_LEN {
                 return Err(HostRuntimeError::InvalidBufferSize {
                     operation: "get_sealing_key",
@@ -384,7 +457,6 @@ impl SgxHostRuntime {
                     actual: key.written_len,
                 });
             }
-
             Ok(key.bytes)
         }
     }
@@ -407,6 +479,7 @@ impl SgxHostRuntime {
         #[cfg(target_os = "linux")]
         {
             type EncryptCredentialFn = unsafe extern "C" fn(
+                *mut c_void,
                 *const c_char,
                 *const c_char,
                 *const c_char,
@@ -415,18 +488,18 @@ impl SgxHostRuntime {
                 *mut u8,
                 usize,
                 *mut usize,
-            ) -> EcallStatus;
+            ) -> i32;
 
             let tenant_id = c_string(tenant_id, "tenant_id", "encrypt_credential")?;
             let user_id_hash = c_string(user_id_hash, "user_id_hash", "encrypt_credential")?;
             let credential_id = c_string(credential_id, "credential_id", "encrypt_credential")?;
             let mut blob_json = vec![0u8; ENCLAVE_BLOB_BUFFER_LEN];
             let mut written_len = 0usize;
-
+            let func: EncryptCredentialFn =
+                unsafe { self.symbol("credbridge_sgx_runtime_encrypt_credential")? };
             let status = unsafe {
-                let func: EncryptCredentialFn =
-                    self.symbol("credbridge_enclave_encrypt_credential")?;
                 func(
+                    self.runtime_handle,
                     tenant_id.as_ptr(),
                     user_id_hash.as_ptr(),
                     credential_id.as_ptr(),
@@ -437,17 +510,18 @@ impl SgxHostRuntime {
                     &mut written_len,
                 )
             };
-
-            self.ensure_success("encrypt_credential", status)?;
+            self.ensure_bridge_success("encrypt_credential", status)?;
             let blob_json = utf8_output(
                 "encrypt_credential",
                 &blob_json,
                 written_len,
                 ENCLAVE_BLOB_BUFFER_LEN,
             )?;
-            EncryptedBlob::from_json(blob_json).map_err(|error| HostRuntimeError::LoadFailed {
-                path: self.enclave_path.clone(),
-                detail: format!("invalid encrypted blob payload from enclave: {error}"),
+            EncryptedBlob::from_json(blob_json).map_err(|error| {
+                HostRuntimeError::BridgeCallFailed {
+                    operation: "encrypt_credential",
+                    detail: format!("invalid encrypted blob payload from runtime: {error}"),
+                }
             })
         }
     }
@@ -470,6 +544,7 @@ impl SgxHostRuntime {
         #[cfg(target_os = "linux")]
         {
             type DecryptCredentialFn = unsafe extern "C" fn(
+                *mut c_void,
                 *const c_char,
                 *const c_char,
                 *const c_char,
@@ -477,25 +552,25 @@ impl SgxHostRuntime {
                 *mut u8,
                 usize,
                 *mut usize,
-            ) -> EcallStatus;
+            ) -> i32;
 
             let tenant_id = c_string(tenant_id, "tenant_id", "decrypt_credential")?;
             let user_id_hash = c_string(user_id_hash, "user_id_hash", "decrypt_credential")?;
             let credential_id = c_string(credential_id, "credential_id", "decrypt_credential")?;
             let blob_json = blob
                 .to_json()
-                .map_err(|error| HostRuntimeError::LoadFailed {
-                    path: self.enclave_path.clone(),
-                    detail: format!("failed to serialize encrypted blob for enclave: {error}"),
+                .map_err(|error| HostRuntimeError::BridgeCallFailed {
+                    operation: "decrypt_credential",
+                    detail: format!("failed to serialize encrypted blob for runtime: {error}"),
                 })?;
             let blob_json = c_string(&blob_json, "blob_json", "decrypt_credential")?;
             let mut plaintext = vec![0u8; ENCLAVE_PLAINTEXT_BUFFER_LEN];
             let mut written_len = 0usize;
-
+            let func: DecryptCredentialFn =
+                unsafe { self.symbol("credbridge_sgx_runtime_decrypt_credential")? };
             let status = unsafe {
-                let func: DecryptCredentialFn =
-                    self.symbol("credbridge_enclave_decrypt_credential")?;
                 func(
+                    self.runtime_handle,
                     tenant_id.as_ptr(),
                     user_id_hash.as_ptr(),
                     credential_id.as_ptr(),
@@ -505,8 +580,7 @@ impl SgxHostRuntime {
                     &mut written_len,
                 )
             };
-
-            self.ensure_success("decrypt_credential", status)?;
+            self.ensure_bridge_success("decrypt_credential", status)?;
             byte_output(
                 "decrypt_credential",
                 &plaintext,
@@ -518,32 +592,34 @@ impl SgxHostRuntime {
 
     #[cfg(target_os = "linux")]
     unsafe fn symbol<T: Copy>(&self, name: &str) -> Result<T, HostRuntimeError> {
-        let c_name = CString::new(name).map_err(|_| HostRuntimeError::SymbolMissing {
-            symbol: name.to_string(),
-            detail: "symbol name contains an interior NUL byte".to_string(),
-        })?;
-        let symbol = unsafe { dlsym(self.handle, c_name.as_ptr()) };
-        if symbol.is_null() {
-            return Err(HostRuntimeError::SymbolMissing {
-                symbol: name.to_string(),
-                detail: last_dlerror(),
-            });
-        }
-
-        Ok(unsafe { std::mem::transmute_copy(&symbol) })
+        unsafe { load_symbol_from(self.handle, name) }
     }
 
     #[cfg(target_os = "linux")]
-    fn ensure_success(
+    fn ensure_bridge_success(
         &self,
         operation: &'static str,
-        status: EcallStatus,
+        status: i32,
     ) -> Result<(), HostRuntimeError> {
-        if status.is_success() {
+        let decoded = EcallStatus::from_raw(status).unwrap_or(EcallStatus::InternalError);
+        if decoded.is_success() {
             return Ok(());
         }
 
-        Err(HostRuntimeError::EcallReturned { operation, status })
+        let detail = self.bridge_last_error();
+        Err(HostRuntimeError::BridgeCallFailed {
+            operation,
+            detail: if detail.is_empty() {
+                format!("runtime returned status {decoded}")
+            } else {
+                detail
+            },
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn bridge_last_error(&self) -> String {
+        unsafe { bridge_last_error_from(self.handle) }
     }
 }
 
@@ -596,14 +672,74 @@ impl EnclaveRuntime for SgxHostRuntime {
 }
 
 #[cfg(target_os = "linux")]
+fn resolve_bridge_path(enclave_path: &Path) -> Result<PathBuf, HostRuntimeError> {
+    if let Ok(path) = env::var(TEE_SGX_HOST_BRIDGE_LIB_PATH_ENV) {
+        let path = PathBuf::from(path);
+        if path.as_os_str().is_empty() {
+            return Err(HostRuntimeError::LoadFailed {
+                path,
+                detail: "bridge library path is empty".to_string(),
+            });
+        }
+        return Ok(path);
+    }
+
+    let parent = enclave_path
+        .parent()
+        .ok_or_else(|| HostRuntimeError::LoadFailed {
+            path: enclave_path.to_path_buf(),
+            detail: "enclave path has no parent directory".to_string(),
+        })?;
+    Ok(parent.join(DEFAULT_HOST_BRIDGE_LIB_NAME))
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn load_symbol_from<T: Copy>(
+    handle: *mut c_void,
+    name: &str,
+) -> Result<T, HostRuntimeError> {
+    let c_name = CString::new(name).map_err(|_| HostRuntimeError::SymbolMissing {
+        symbol: name.to_string(),
+        detail: "symbol name contains an interior NUL byte".to_string(),
+    })?;
+    let symbol = unsafe { dlsym(handle, c_name.as_ptr()) };
+    if symbol.is_null() {
+        return Err(HostRuntimeError::SymbolMissing {
+            symbol: name.to_string(),
+            detail: last_dlerror(),
+        });
+    }
+
+    Ok(unsafe { std::mem::transmute_copy(&symbol) })
+}
+
+#[cfg(target_os = "linux")]
+unsafe fn bridge_last_error_from(handle: *mut c_void) -> String {
+    type LastErrorFn = unsafe extern "C" fn() -> *const c_char;
+    let func: Result<LastErrorFn, _> =
+        unsafe { load_symbol_from(handle, "credbridge_sgx_runtime_last_error") };
+    let Ok(func) = func else {
+        return String::new();
+    };
+    let ptr = unsafe { func() };
+    if ptr.is_null() {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .trim()
+        .to_string()
+}
+
+#[cfg(target_os = "linux")]
 fn c_string(
     value: &str,
     label: &str,
     operation: &'static str,
 ) -> Result<CString, HostRuntimeError> {
-    CString::new(value).map_err(|_| HostRuntimeError::LoadFailed {
-        path: PathBuf::new(),
-        detail: format!("`{label}` for `{operation}` contains an interior NUL byte"),
+    CString::new(value).map_err(|_| HostRuntimeError::BridgeCallFailed {
+        operation,
+        detail: format!("`{label}` contains an interior NUL byte"),
     })
 }
 
@@ -622,9 +758,9 @@ fn utf8_output<'a>(
         });
     }
 
-    std::str::from_utf8(&bytes[..written_len]).map_err(|_| HostRuntimeError::LoadFailed {
-        path: PathBuf::new(),
-        detail: format!("`{operation}` returned invalid UTF-8"),
+    std::str::from_utf8(&bytes[..written_len]).map_err(|_| HostRuntimeError::BridgeCallFailed {
+        operation,
+        detail: "runtime returned invalid UTF-8".to_string(),
     })
 }
 
@@ -665,13 +801,11 @@ fn seal_policy_to_raw(policy: SealPolicy) -> u32 {
 
 #[cfg(target_os = "linux")]
 fn last_dlerror() -> String {
-    // SAFETY: dlerror returns a thread-local error string when dlopen/dlsym fails.
     let ptr = unsafe { dlerror() };
     if ptr.is_null() {
         return "unknown dlopen/dlsym error".to_string();
     }
 
-    // SAFETY: the pointer is a valid NUL-terminated C string managed by libc.
     unsafe { CStr::from_ptr(ptr.cast::<c_char>()) }
         .to_string_lossy()
         .into_owned()

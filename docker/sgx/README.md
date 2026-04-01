@@ -23,6 +23,7 @@ The host-side runtime uses:
 
 - `TEE_MODE=hardware`
 - `TEE_ENCLAVE_PATH=/workspace/target/sgx-enclave/credbridge_enclave.signed.so`
+- `TEE_SGX_HOST_BRIDGE_LIB_PATH=/workspace/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so`
 
 If `sgx_sign` is available, set `SGX_SIGNING_KEY` to the signing key path. If it is not set,
 `scripts/sign-sgx-enclave.sh` copies the unsigned artifact as a placeholder so compile checks can

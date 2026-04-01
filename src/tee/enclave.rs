@@ -454,15 +454,9 @@ impl Enclave {
         plaintext: &[u8],
     ) -> Result<EncryptedBlob, EnclaveError> {
         self.ensure_running()?;
-        if self.config.runtime_mode.is_hardware() {
-            if let Some(runtime) = &self.runtime {
-                let blob = runtime
-                    .encrypt_credential(tenant_id, user_id_hash, credential_id, plaintext)
-                    .map_err(|error| EnclaveError::EncryptionFailed(error.to_string()))?;
-                self.stats.encryption_ops += 1;
-                return Ok(blob);
-            }
-        }
+        // Phase A keeps credential crypto in the host process. Hardware mode still gains a
+        // hardware-rooted L0 sealing key and real attestation, but credential encrypt/decrypt do
+        // not traverse enclave ECALLs until the later migration phase.
 
         let context = CredentialCryptoContext::new(tenant_id, user_id_hash, credential_id);
         let blob = context
@@ -484,15 +478,9 @@ impl Enclave {
         blob: &EncryptedBlob,
     ) -> Result<Vec<u8>, EnclaveError> {
         self.ensure_running()?;
-        if self.config.runtime_mode.is_hardware() {
-            if let Some(runtime) = &self.runtime {
-                let plaintext = runtime
-                    .decrypt_credential(tenant_id, user_id_hash, credential_id, blob)
-                    .map_err(|error| EnclaveError::DecryptionFailed(error.to_string()))?;
-                self.stats.decryption_ops += 1;
-                return Ok(plaintext);
-            }
-        }
+        // Phase A keeps credential crypto in the host process. Hardware mode still gains a
+        // hardware-rooted L0 sealing key and real attestation, but credential encrypt/decrypt do
+        // not traverse enclave ECALLs until the later migration phase.
 
         let context = CredentialCryptoContext::new(tenant_id, user_id_hash, credential_id);
         let plaintext = context

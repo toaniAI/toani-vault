@@ -1,39 +1,52 @@
 # CredBridge SGX Enclave
 
-This directory contains the Phase A skeleton for the real SGX enclave integration.
+This directory now contains the real Intel SGX SDK build inputs for hardware attestation:
 
-## Scope
+- `Enclave.edl` - the enclave ECALL contract
+- `trusted/Enclave.c` - trusted SGX code that generates reports and sealing keys inside the enclave
+- `untrusted/host_runtime_bridge.c` - URTS bridge that creates the enclave and performs ECALLs
+- `Enclave.config.xml` - enclave signing configuration
 
-Phase A keeps the enclave surface intentionally small:
+## Build outputs
 
-- `credbridge_enclave_get_identity`
-- `credbridge_enclave_get_report`
-- `credbridge_enclave_get_targeted_report`
-- `credbridge_enclave_get_sealing_key`
+The Linux SGX build/sign flow produces three runtime artifacts under `target/sgx-enclave/`:
 
-The implementation in this repository is a compile-safe host integration skeleton. The real SGX SDK build, EDL code generation, signing, and trusted execution verification must run on a Linux SGX builder or SGX-enabled Drone runner.
+- `libcredbridge_enclave.so` - unsigned enclave image
+- `credbridge_enclave.signed.so` - signed enclave image used by `TEE_ENCLAVE_PATH`
+- `libcredbridge_sgx_urts_bridge.so` - host-side URTS bridge loaded by the Rust runtime
 
-## Expected artifacts
+## Build requirements
 
-The Linux SGX build pipeline should produce:
+This flow requires a Linux SGX build environment with:
 
-- `target/sgx-enclave/libcredbridge_enclave.so`
-- `target/sgx-enclave/credbridge_enclave.signed.so`
+- Intel SGX SDK (`sgx_edger8r`, `sgx_sign`, headers, trusted/untrusted libraries)
+- Intel SGX DCAP runtime libraries on the execution host
+- a signing key via `SGX_SIGNING_KEY`, or the Intel sample key under `/opt/intel/sgxsdk/SampleCode/SampleEnclave/Enclave_private.pem`
 
-The host runtime expects `TEE_ENCLAVE_PATH` to point at the signed shared object.
-
-## Linux SGX build flow
-
-Use the repository scripts:
+## Commands
 
 ```bash
-scripts/build-sgx-enclave.sh
-scripts/sign-sgx-enclave.sh
+bash scripts/build-sgx-enclave.sh
+bash scripts/sign-sgx-enclave.sh
 ```
 
-These scripts validate the Linux SGX prerequisites and then build/sign the enclave skeleton. On macOS they fail fast by design.
+Then run the hardware path with:
 
-## Notes
+```bash
+export TEE_MODE=hardware
+export TEE_ENCLAVE_PATH=$PWD/target/sgx-enclave/credbridge_enclave.signed.so
+# optional if the bridge is not adjacent to the enclave artifact
+export TEE_SGX_HOST_BRIDGE_LIB_PATH=$PWD/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so
+```
 
-- The enclave code here is intentionally minimal and deterministic so the host-side bridge can be developed on macOS.
-- In later phases, sealing, key derivation, and credential crypto should move behind additional ECALLs.
+## Scope note
+
+Phase A is now real for:
+
+- enclave load via URTS
+- identity retrieval
+- targeted report generation for DCAP quote generation
+- hardware-rooted sealing-key retrieval
+
+Credential encrypt/decrypt remains host-side in this phase; later phases can move those operations
+behind enclave ECALLs.

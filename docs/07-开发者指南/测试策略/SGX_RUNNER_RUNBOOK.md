@@ -83,6 +83,7 @@ Expected artifacts:
 
 - `target/sgx-enclave/libcredbridge_enclave.so`
 - `target/sgx-enclave/credbridge_enclave.signed.so`
+- `target/sgx-enclave/libcredbridge_sgx_urts_bridge.so`
 
 ### Step 2: hardware compile check
 

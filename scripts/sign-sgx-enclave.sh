@@ -5,10 +5,16 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/target/sgx-enclave"
 UNSIGNED_SO="${BUILD_DIR}/libcredbridge_enclave.so"
 SIGNED_SO="${BUILD_DIR}/credbridge_enclave.signed.so"
+ENCLAVE_CONFIG="${ROOT_DIR}/sgx-enclave/Enclave.config.xml"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "SGX enclave signing must run on Linux" >&2
   exit 1
+fi
+
+if [[ -f /opt/intel/sgxsdk/environment ]]; then
+  # shellcheck disable=SC1091
+  source /opt/intel/sgxsdk/environment
 fi
 
 if [[ ! -f "${UNSIGNED_SO}" ]]; then
@@ -16,18 +22,31 @@ if [[ ! -f "${UNSIGNED_SO}" ]]; then
   exit 1
 fi
 
-if command -v sgx_sign >/dev/null 2>&1; then
-  if [[ -n "${SGX_SIGNING_KEY:-}" && -f "${SGX_SIGNING_KEY}" ]]; then
-    sgx_sign sign \
-      -enclave "${UNSIGNED_SO}" \
-      -key "${SGX_SIGNING_KEY}" \
-      -out "${SIGNED_SO}" \
-      >/dev/null
-    echo "Signed enclave written to ${SIGNED_SO}"
-    exit 0
-  fi
-  echo "sgx_sign is available but SGX_SIGNING_KEY is missing; copying unsigned artifact as a placeholder" >&2
+if ! command -v sgx_sign >/dev/null 2>&1; then
+  echo "sgx_sign is required; install Intel SGX SDK and ensure it is on PATH" >&2
+  exit 1
 fi
 
-cp "${UNSIGNED_SO}" "${SIGNED_SO}"
-echo "Generated placeholder signed artifact at ${SIGNED_SO}"
+SIGNING_KEY="${SGX_SIGNING_KEY:-}"
+if [[ -z "${SIGNING_KEY}" && -f /opt/intel/sgxsdk/SampleCode/SampleEnclave/Enclave_private.pem ]]; then
+  SIGNING_KEY="/opt/intel/sgxsdk/SampleCode/SampleEnclave/Enclave_private.pem"
+fi
+
+if [[ -z "${SIGNING_KEY}" ]]; then
+  echo "SGX_SIGNING_KEY is required (or the Intel sample key must exist under /opt/intel/sgxsdk/SampleCode/SampleEnclave/Enclave_private.pem)" >&2
+  exit 1
+fi
+
+if [[ ! -f "${SIGNING_KEY}" ]]; then
+  echo "Signing key not found at ${SIGNING_KEY}" >&2
+  exit 1
+fi
+
+sgx_sign sign \
+  -enclave "${UNSIGNED_SO}" \
+  -key "${SIGNING_KEY}" \
+  -config "${ENCLAVE_CONFIG}" \
+  -out "${SIGNED_SO}" \
+  >/dev/null
+
+echo "Signed enclave written to ${SIGNED_SO}"
