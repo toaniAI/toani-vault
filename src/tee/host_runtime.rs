@@ -8,11 +8,11 @@ use crate::config::TEE_ENCLAVE_PATH_ENV;
 use crate::crypto::EncryptedBlob;
 #[cfg(target_os = "linux")]
 use crate::tee::ffi_types::{
-    ENCLAVE_BLOB_BUFFER_LEN, ENCLAVE_PLAINTEXT_BUFFER_LEN, EnclaveReport, EnclaveSealingKey,
-    SGX_MEASUREMENT_LEN, SGX_REPORT_LEN,
+    ENCLAVE_BLOB_BUFFER_LEN, ENCLAVE_PLAINTEXT_BUFFER_LEN, EcallStatus, EnclaveReport,
+    EnclaveSealingKey, SGX_MEASUREMENT_LEN, SGX_REPORT_LEN,
 };
 use crate::tee::ffi_types::{
-    EcallStatus, EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN, SGX_TARGET_INFO_LEN,
+    EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN, SGX_TARGET_INFO_LEN,
 };
 use crate::tee::sealing::SealPolicy;
 use std::env;
