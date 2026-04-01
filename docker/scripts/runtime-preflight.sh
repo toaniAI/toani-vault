@@ -110,6 +110,8 @@ else
     fail "TEE_ENCLAVE_PATH is not set and /app/credbridge_enclave.signed.so is missing"
 fi
 
+log "effective TEE_ENCLAVE_PATH=$TEE_ENCLAVE_PATH"
+
 SGX_DEVICE_PATH="$(find_existing_path \
     /dev/sgx_enclave \
     /dev/sgx/enclave \

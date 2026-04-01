@@ -394,6 +394,12 @@ impl DcapProvider for FeatureGatedHardwareDcapProvider {
                 .map(|report_data| &report_data.data),
         )
         .map_err(DcapProviderError::BackendUnavailable)?;
+        let quote_prefix_len = raw_quote.len().min(64);
+        tracing::info!(
+            raw_quote_len = raw_quote.len(),
+            raw_quote_prefix_hex = %hex::encode(&raw_quote[..quote_prefix_len]),
+            "loaded hardware quote bytes before DCAP parsing"
+        );
         let mut quote = DcapService::parse_quote_bytes(&raw_quote)
             .map_err(|error| DcapProviderError::BackendUnavailable(error.to_string()))?;
 
