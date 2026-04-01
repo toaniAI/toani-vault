@@ -244,8 +244,10 @@ echo "deb https://download.01.org/intel-sgx/sgx_repo/ubuntu jammy main" | \
 
 sudo apt update
 
-# 安装 SDK
-sudo apt install -y libsgx-sdk libsgx-sdk-dev
+# Ubuntu 22.04 上 SDK 通过 Intel 官方安装器提供，不在 jammy APT 仓库中
+wget https://download.01.org/intel-sgx/sgx-linux/2.28/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.28.100.1.bin
+chmod +x sgx_linux_x64_sdk_2.28.100.1.bin
+sudo ./sgx_linux_x64_sdk_2.28.100.1.bin --prefix=/opt/intel
 ```
 
 ### 5.5 安装 PCCS（可选，用于企业环境缓存证书）

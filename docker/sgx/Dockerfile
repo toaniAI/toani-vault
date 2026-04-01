@@ -1,5 +1,8 @@
 FROM ubuntu:22.04 AS sgxsdk
 
+ARG SGX_SDK_VERSION=2.28.100.1
+ARG SGX_SDK_URL=https://download.01.org/intel-sgx/sgx-linux/2.28/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.28.100.1.bin
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -7,16 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    mkdir -p /usr/share/keyrings /etc/apt/sources.list.d; \
-    curl -fsSL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key \
-      | gpg --dearmor -o /usr/share/keyrings/intel-sgx-keyring.gpg; \
-    echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-keyring.gpg] https://download.01.org/intel-sgx/sgx_repo/ubuntu jammy main' \
-      > /etc/apt/sources.list.d/intel-sgx.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-      libsgx-sdk \
-      libsgx-sdk-dev; \
-    rm -rf /var/lib/apt/lists/*
+    curl -fsSL "${SGX_SDK_URL}" -o /tmp/sgx_linux_x64_sdk.bin; \
+    chmod +x /tmp/sgx_linux_x64_sdk.bin; \
+    /tmp/sgx_linux_x64_sdk.bin --prefix=/opt/intel; \
+    rm -f /tmp/sgx_linux_x64_sdk.bin
 
 FROM rust:1.88.0-slim-bookworm
 
