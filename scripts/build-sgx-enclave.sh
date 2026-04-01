@@ -84,12 +84,12 @@ gcc "${SGX_TRUSTED_CFLAGS[@]}" "${SGX_TRUSTED_INCLUDES[@]}" \
 echo "Linking unsigned enclave image..."
 g++ -m64 \
   -Wl,--no-undefined -nostdlib -nodefaultlibs -nostartfiles \
-  -L"${SGX_SDK}/lib64" \
-  -Wl,--whole-archive -lsgx_trts -Wl,--no-whole-archive \
-  -Wl,--start-group -lsgx_tstdc -lsgx_tcxx -lsgx_tcrypto -Wl,--end-group \
   -Wl,-Bstatic -Wl,-Bsymbolic -Wl,--export-dynamic \
   -Wl,--defsym,__ImageBase=0 -Wl,-pie,-eenclave_entry \
   "${TRUSTED_OBJ_DIR}/Enclave.o" "${TRUSTED_OBJ_DIR}/Enclave_t.o" \
+  -L"${SGX_SDK}/lib64" \
+  -Wl,--whole-archive -lsgx_trts -Wl,--no-whole-archive \
+  -Wl,--start-group -lsgx_tservice -lsgx_tcrypto -lsgx_tstdc -lsgx_tcxx -Wl,--end-group \
   -o "${UNSIGNED_ENCLAVE_SO}"
 
 echo "Compiling untrusted host bridge objects..."
