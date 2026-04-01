@@ -294,7 +294,7 @@ impl SgxHostRuntime {
                 return Err(HostRuntimeError::LoadFailed {
                     path: path.to_path_buf(),
                     detail: if detail.is_empty() {
-                        format!("runtime open returned status {}", decoded)
+                        format!("runtime open returned status {decoded}")
                     } else {
                         detail
                     },
