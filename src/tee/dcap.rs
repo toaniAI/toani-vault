@@ -326,6 +326,7 @@ impl DcapProvider for SimulationDcapProvider {
             signature_len: signature.len() as u32,
             signature,
             timestamp,
+            raw_quote_bytes: None,
         })
     }
 
@@ -579,6 +580,9 @@ pub struct DcapQuote {
 
     /// 生成时间戳
     pub timestamp: u64,
+
+    /// 原始 quote 字节；硬件路径保留标准 Intel 格式，避免重编码损坏布局
+    raw_quote_bytes: Option<Vec<u8>>,
 }
 
 /// DCAP Report Body
@@ -963,6 +967,14 @@ impl DcapService {
     }
 
     pub(crate) fn parse_quote_bytes(bytes: &[u8]) -> Result<DcapQuote, DcapError> {
+        match Self::parse_legacy_quote_bytes(bytes) {
+            Ok(quote) => Ok(quote),
+            Err(DcapError::InvalidQuoteFormat) => Self::parse_standard_quote_bytes(bytes),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn parse_legacy_quote_bytes(bytes: &[u8]) -> Result<DcapQuote, DcapError> {
         if bytes.len() < 48 {
             return Err(DcapError::InvalidQuoteFormat);
         }
@@ -1039,6 +1051,151 @@ impl DcapService {
             signature_len,
             signature,
             timestamp: current_timestamp(),
+            raw_quote_bytes: None,
+        })
+    }
+
+    fn parse_standard_quote_bytes(bytes: &[u8]) -> Result<DcapQuote, DcapError> {
+        const HEADER_SIZE: usize = 48;
+        const REPORT_BODY_SIZE: usize = 384;
+        const SIGNATURE_SIZE: usize = 64;
+        const ATTESTATION_KEY_SIZE: usize = 64;
+        const QE_REPORT_SIZE: usize = 384;
+        const AUTH_DATA_LEN_SIZE: usize = 2;
+        const CERT_TYPE_SIZE: usize = 2;
+        const CERT_SIZE_SIZE: usize = 4;
+
+        if bytes.len() < HEADER_SIZE + REPORT_BODY_SIZE + 4 {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+
+        let mut offset = 0;
+
+        let version = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        let sign_type = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        let epid_group_id = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]);
+        offset += 4;
+
+        let qe_svn = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        let pce_svn = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        offset += 16; // Skip QE vendor ID; raw bytes are preserved separately.
+
+        let mut basename = [0u8; 32];
+        basename[..20].copy_from_slice(&bytes[offset..offset + 20]);
+        offset += 20;
+
+        if bytes.len() < offset + REPORT_BODY_SIZE + 4 {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+        let report_body = Self::parse_report_body_bytes(&bytes[offset..offset + REPORT_BODY_SIZE])?;
+        offset += REPORT_BODY_SIZE;
+
+        let signature_len = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]);
+        offset += 4;
+
+        if bytes.len() < offset + signature_len as usize {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+
+        let signature_bytes = &bytes[offset..offset + signature_len as usize];
+        let mut sig_offset = 0;
+
+        if signature_bytes.len()
+            < SIGNATURE_SIZE
+                + ATTESTATION_KEY_SIZE
+                + QE_REPORT_SIZE
+                + SIGNATURE_SIZE
+                + AUTH_DATA_LEN_SIZE
+                + CERT_TYPE_SIZE
+                + CERT_SIZE_SIZE
+        {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+
+        let isv_enclave_report_signature = EcdsaSignatureDcap::from_bytes(
+            &signature_bytes[sig_offset..sig_offset + SIGNATURE_SIZE],
+        )?;
+        sig_offset += SIGNATURE_SIZE;
+
+        sig_offset += ATTESTATION_KEY_SIZE;
+
+        let qe_report = signature_bytes[sig_offset..sig_offset + QE_REPORT_SIZE].to_vec();
+        sig_offset += QE_REPORT_SIZE;
+
+        let qe_report_signature = EcdsaSignatureDcap::from_bytes(
+            &signature_bytes[sig_offset..sig_offset + SIGNATURE_SIZE],
+        )?;
+        sig_offset += SIGNATURE_SIZE;
+
+        let qe_authentication_data_len =
+            u16::from_le_bytes([signature_bytes[sig_offset], signature_bytes[sig_offset + 1]])
+                as usize;
+        sig_offset += AUTH_DATA_LEN_SIZE;
+
+        if signature_bytes.len()
+            < sig_offset + qe_authentication_data_len + CERT_TYPE_SIZE + CERT_SIZE_SIZE
+        {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+        let qe_authentication_data =
+            signature_bytes[sig_offset..sig_offset + qe_authentication_data_len].to_vec();
+        sig_offset += qe_authentication_data_len;
+
+        let _qe_certification_data_type =
+            u16::from_le_bytes([signature_bytes[sig_offset], signature_bytes[sig_offset + 1]]);
+        sig_offset += CERT_TYPE_SIZE;
+
+        let qe_certification_data_len = u32::from_le_bytes([
+            signature_bytes[sig_offset],
+            signature_bytes[sig_offset + 1],
+            signature_bytes[sig_offset + 2],
+            signature_bytes[sig_offset + 3],
+        ]) as usize;
+        sig_offset += CERT_SIZE_SIZE;
+
+        if signature_bytes.len() < sig_offset + qe_certification_data_len {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+        let qe_certification_data =
+            signature_bytes[sig_offset..sig_offset + qe_certification_data_len].to_vec();
+
+        Ok(DcapQuote {
+            version,
+            sign_type,
+            epid_group_id,
+            qe_svn,
+            pce_svn,
+            xeid: 0,
+            basename,
+            report_body,
+            signature_len,
+            signature: DcapQuoteSignature {
+                isv_enclave_report_signature,
+                qe_report,
+                qe_report_signature,
+                qe_authentication_data,
+                qe_certification_data,
+            },
+            timestamp: current_timestamp(),
+            raw_quote_bytes: Some(bytes.to_vec()),
         })
     }
 
@@ -1361,6 +1518,10 @@ impl DcapService {
     }
 
     pub(crate) fn quote_to_bytes_static(quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
+        if let Some(raw) = &quote.raw_quote_bytes {
+            return Ok(raw.clone());
+        }
+
         let mut bytes = Vec::new();
 
         bytes.extend_from_slice(&quote.version.to_le_bytes());
@@ -1817,6 +1978,86 @@ mod tests {
         assert!(quote2.timestamp >= quote1.timestamp);
     }
 
+    fn build_standard_intel_quote_bytes() -> Vec<u8> {
+        let report_body = DcapReportBody {
+            cpusvn: [0x11u8; 16],
+            miscselect: 0x1234_5678,
+            reserved1: [0u8; 12],
+            isvextprodid: [0u8; 16],
+            attributes: [0x05u8; 16],
+            mrenclave: [0x42u8; 32],
+            reserved2: [0u8; 32],
+            mrsigner: [0x24u8; 32],
+            reserved3: [0u8; 96],
+            isvprodid: 1,
+            isvsvn: 2,
+            reserved4: [0u8; 60],
+            report_data: ReportData::empty(),
+        };
+
+        let report_body_bytes = DcapService::report_body_to_bytes_static(&report_body).unwrap();
+
+        let mut signature_bytes = Vec::new();
+        signature_bytes.extend_from_slice(&[0xA1u8; 64]); // ISV enclave report signature
+        signature_bytes.extend_from_slice(&[0xB2u8; 64]); // Attestation public key
+        signature_bytes.extend_from_slice(&[0xC3u8; 384]); // QE report
+        signature_bytes.extend_from_slice(&[0xD4u8; 64]); // QE report signature
+        signature_bytes.extend_from_slice(&0u16.to_le_bytes()); // QE auth data size
+        signature_bytes.extend_from_slice(&5u16.to_le_bytes()); // QE certification data type
+        signature_bytes.extend_from_slice(&0u32.to_le_bytes()); // QE certification data size
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&11u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(&[
+            0x93, 0x9a, 0x72, 0x33, 0xf7, 0x9c, 0x4c, 0xa9, 0x94, 0x0a, 0x0d, 0xb3, 0x95, 0x7f,
+            0x06, 0x07,
+        ]);
+        bytes.extend_from_slice(&[0x11u8; 20]);
+        bytes.extend_from_slice(&report_body_bytes);
+        bytes.extend_from_slice(&(signature_bytes.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&signature_bytes);
+
+        bytes
+    }
+
+    #[test]
+    fn test_parse_standard_intel_quote_v3_layout() {
+        let bytes = build_standard_intel_quote_bytes();
+        let parsed = DcapService::parse_quote_bytes(&bytes).expect("standard quote should parse");
+
+        assert_eq!(parsed.version, 3);
+        assert_eq!(parsed.sign_type, 2);
+        assert_eq!(parsed.qe_svn, 11);
+        assert_eq!(parsed.pce_svn, 16);
+        assert_eq!(parsed.report_body.mrenclave, [0x42u8; 32]);
+        assert_eq!(parsed.report_body.mrsigner, [0x24u8; 32]);
+        assert_eq!(
+            parsed.signature.isv_enclave_report_signature.r,
+            [0xA1u8; 32]
+        );
+        assert_eq!(
+            parsed.signature.isv_enclave_report_signature.s,
+            [0xA1u8; 32]
+        );
+        assert_eq!(parsed.signature.qe_report.len(), 384);
+        assert_eq!(parsed.signature.qe_report_signature.r, [0xD4u8; 32]);
+        assert!(parsed.signature.qe_authentication_data.is_empty());
+        assert!(parsed.signature.qe_certification_data.is_empty());
+    }
+
+    #[test]
+    fn test_standard_quote_roundtrip_preserves_raw_bytes() {
+        let bytes = build_standard_intel_quote_bytes();
+        let parsed = DcapService::parse_quote_bytes(&bytes).expect("standard quote should parse");
+        let serialized = DcapService::quote_to_bytes_static(&parsed).expect("should serialize");
+
+        assert_eq!(serialized, bytes);
+    }
+
     #[test]
     fn test_register_with_pcs_hardware_mode_fails_closed() {
         let service = DcapService::new(DcapConfig {
@@ -1857,6 +2098,7 @@ mod tests {
                 qe_certification_data: Vec::new(),
             },
             timestamp: current_timestamp(),
+            raw_quote_bytes: None,
         };
 
         let error = service.register_with_pcs(&quote).unwrap_err();
