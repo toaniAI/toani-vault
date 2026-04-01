@@ -22,6 +22,8 @@ fi
 
 SGX_SDK="${SGX_SDK:-/opt/intel/sgxsdk}"
 SGX_ARCH="${SGX_ARCH:-x64}"
+SGX_BIN_DIR="${SGX_SDK}/bin/${SGX_ARCH}"
+SGX_EDGER8R="${SGX_EDGER8R:-}"
 SGX_COMMON_CFLAGS=(-m64 -O2 -fPIC -Wall -Wextra)
 SGX_TRUSTED_CFLAGS=("${SGX_COMMON_CFLAGS[@]}" -Wno-implicit-function-declaration -nostdinc -fvisibility=hidden -fpie -fstack-protector)
 SGX_UNTRUSTED_CFLAGS=("${SGX_COMMON_CFLAGS[@]}")
@@ -41,7 +43,13 @@ if [[ "${SGX_ARCH}" != "x64" ]]; then
   exit 1
 fi
 
-if ! command -v sgx_edger8r >/dev/null 2>&1; then
+if [[ -z "${SGX_EDGER8R}" ]] && command -v sgx_edger8r >/dev/null 2>&1; then
+  SGX_EDGER8R="$(command -v sgx_edger8r)"
+elif [[ -z "${SGX_EDGER8R}" ]] && [[ -x "${SGX_BIN_DIR}/sgx_edger8r" ]]; then
+  SGX_EDGER8R="${SGX_BIN_DIR}/sgx_edger8r"
+fi
+
+if [[ -z "${SGX_EDGER8R}" ]]; then
   echo "sgx_edger8r is required; install Intel SGX SDK and ensure it is on PATH" >&2
   exit 1
 fi
@@ -59,7 +67,7 @@ if [[ "${SKIP_SGX_CHECK:-}" != "1" ]] && [[ -x "${ROOT_DIR}/scripts/check_sgx_en
 fi
 
 echo "Generating SGX edge code..."
-sgx_edger8r "${ENCLAVE_DIR}/Enclave.edl" \
+"${SGX_EDGER8R}" "${ENCLAVE_DIR}/Enclave.edl" \
   --trusted-dir "${GENERATED_DIR}" \
   --untrusted-dir "${GENERATED_DIR}" \
   --search-path "${SGX_SDK}/include" \

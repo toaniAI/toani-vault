@@ -17,12 +17,23 @@ if [[ -f /opt/intel/sgxsdk/environment ]]; then
   source /opt/intel/sgxsdk/environment
 fi
 
+SGX_SDK="${SGX_SDK:-/opt/intel/sgxsdk}"
+SGX_ARCH="${SGX_ARCH:-x64}"
+SGX_BIN_DIR="${SGX_SDK}/bin/${SGX_ARCH}"
+SGX_SIGN_BIN="${SGX_SIGN_BIN:-}"
+
 if [[ ! -f "${UNSIGNED_SO}" ]]; then
   echo "Unsigned enclave artifact not found at ${UNSIGNED_SO}" >&2
   exit 1
 fi
 
-if ! command -v sgx_sign >/dev/null 2>&1; then
+if [[ -z "${SGX_SIGN_BIN}" ]] && command -v sgx_sign >/dev/null 2>&1; then
+  SGX_SIGN_BIN="$(command -v sgx_sign)"
+elif [[ -z "${SGX_SIGN_BIN}" ]] && [[ -x "${SGX_BIN_DIR}/sgx_sign" ]]; then
+  SGX_SIGN_BIN="${SGX_BIN_DIR}/sgx_sign"
+fi
+
+if [[ -z "${SGX_SIGN_BIN}" ]]; then
   echo "sgx_sign is required; install Intel SGX SDK and ensure it is on PATH" >&2
   exit 1
 fi
@@ -42,7 +53,7 @@ if [[ ! -f "${SIGNING_KEY}" ]]; then
   exit 1
 fi
 
-sgx_sign sign \
+"${SGX_SIGN_BIN}" sign \
   -enclave "${UNSIGNED_SO}" \
   -key "${SIGNING_KEY}" \
   -config "${ENCLAVE_CONFIG}" \
