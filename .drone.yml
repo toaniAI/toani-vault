@@ -91,6 +91,8 @@ steps:
     environment:
       TEE_MODE: hardware
       DCAP_PCCS_URL: https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/
+      SGX_SIGNING_KEY:
+        from_secret: sgx-signing-key
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
       - bash scripts/check_sgx_environment.sh
@@ -141,6 +143,9 @@ steps:
   - name: docker-build
     image: plugins/docker
     pull: if-not-exists
+    environment:
+      SGX_SIGNING_KEY:
+        from_secret: sgx-signing-key
     settings:
       registry: hub.bitkinetic.com
       repo: hub.bitkinetic.com/zkme/credbridge
@@ -152,6 +157,8 @@ steps:
         from_secret: docker-hub-password
       context: ./
       dockerfile: Dockerfile
+      build_args_from_env:
+        - SGX_SIGNING_KEY
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6
@@ -196,6 +203,13 @@ steps:
     when:
       ref:
         - refs/heads/branch_test
+
+---
+kind: secret
+name: sgx-signing-key
+get:
+  path: sgx-signing-key
+  name: key
 
 ---
 kind: secret

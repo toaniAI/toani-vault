@@ -23,6 +23,8 @@ FROM rust:1.88.0-slim-bookworm AS builder
 
 WORKDIR /app
 
+ARG SGX_SIGNING_KEY
+
 COPY --from=sgxsdk /opt/intel/sgxsdk /opt/intel/sgxsdk
 
 ENV SGX_SDK=/opt/intel/sgxsdk
@@ -60,7 +62,15 @@ COPY examples ./examples
 COPY migrations ./migrations
 COPY sgx-enclave ./sgx-enclave
 COPY scripts ./scripts
-RUN SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh && bash scripts/sign-sgx-enclave.sh
+RUN set -eu; \
+    if [ -n "${SGX_SIGNING_KEY:-}" ]; then \
+      umask 077; \
+      printf '%s\n' "${SGX_SIGNING_KEY}" > /tmp/sgx-signing-key.pem; \
+      export SGX_SIGNING_KEY=/tmp/sgx-signing-key.pem; \
+    fi; \
+    SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
+    bash scripts/sign-sgx-enclave.sh; \
+    rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware && cargo build --manifest-path cli/Cargo.toml --release
 
 FROM ubuntu:22.04
