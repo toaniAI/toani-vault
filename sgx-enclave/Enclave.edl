@@ -1,5 +1,7 @@
 enclave {
-    from "sgx_tstd.edl" import *;
+    include "sgx_report.h"
+    include "stddef.h"
+    include "stdint.h"
 
     trusted {
         public int32_t credbridge_enclave_get_identity(

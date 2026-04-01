@@ -71,6 +71,8 @@ echo "Generating SGX edge code..."
   --trusted-dir "${GENERATED_DIR}" \
   --untrusted-dir "${GENERATED_DIR}" \
   --search-path "${SGX_SDK}/include" \
+  --search-path "${SGX_SDK}/include/tlibc" \
+  --search-path "${SGX_SDK}/include/libcxx" \
   --search-path "${ENCLAVE_DIR}"
 
 echo "Compiling trusted enclave objects..."
