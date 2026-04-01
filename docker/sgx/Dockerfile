@@ -4,6 +4,7 @@ ARG SGX_SDK_VERSION=2.28.100.1
 ARG SGX_SDK_URL=https://download.01.org/intel-sgx/sgx-linux/2.28/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.28.100.1.bin
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    binutils \
     ca-certificates \
     curl \
     gnupg \
