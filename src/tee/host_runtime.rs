@@ -12,7 +12,7 @@ use crate::tee::ffi_types::{
     SGX_MEASUREMENT_LEN, SGX_REPORT_LEN,
 };
 use crate::tee::ffi_types::{
-    EcallStatus, EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN,
+    EcallStatus, EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN, SGX_TARGET_INFO_LEN,
 };
 use crate::tee::sealing::SealPolicy;
 use std::env;
@@ -30,10 +30,18 @@ use libc::{RTLD_LAZY, dlclose, dlerror, dlopen, dlsym};
 pub trait EnclaveRuntime: Send + Sync {
     fn get_identity(&self) -> Result<EnclaveIdentity, HostRuntimeError>;
 
+    fn get_targeted_report(
+        &self,
+        target_info: [u8; SGX_TARGET_INFO_LEN],
+        report_data: [u8; SGX_REPORT_DATA_LEN],
+    ) -> Result<Vec<u8>, HostRuntimeError>;
+
     fn get_report(
         &self,
         report_data: [u8; SGX_REPORT_DATA_LEN],
-    ) -> Result<Vec<u8>, HostRuntimeError>;
+    ) -> Result<Vec<u8>, HostRuntimeError> {
+        self.get_targeted_report([0u8; SGX_TARGET_INFO_LEN], report_data)
+    }
 
     fn get_sealing_key(
         &self,
@@ -284,23 +292,41 @@ impl SgxHostRuntime {
         &self,
         report_data: [u8; SGX_REPORT_DATA_LEN],
     ) -> Result<Vec<u8>, HostRuntimeError> {
+        self.get_targeted_report([0u8; SGX_TARGET_INFO_LEN], report_data)
+    }
+
+    pub fn get_targeted_report(
+        &self,
+        target_info: [u8; SGX_TARGET_INFO_LEN],
+        report_data: [u8; SGX_REPORT_DATA_LEN],
+    ) -> Result<Vec<u8>, HostRuntimeError> {
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = report_data;
+            let _ = (target_info, report_data);
             Err(HostRuntimeError::UnsupportedPlatform {
-                operation: "get_report",
+                operation: "get_targeted_report",
             })
         }
 
         #[cfg(target_os = "linux")]
         {
-            type GetReportFn =
-                unsafe extern "C" fn(*const u8, usize, *mut u8, usize, *mut usize) -> EcallStatus;
+            type GetTargetedReportFn = unsafe extern "C" fn(
+                *const u8,
+                usize,
+                *const u8,
+                usize,
+                *mut u8,
+                usize,
+                *mut usize,
+            ) -> EcallStatus;
 
             let mut report = EnclaveReport::new([0u8; SGX_REPORT_LEN], 0);
             let status = unsafe {
-                let func: GetReportFn = self.symbol("credbridge_enclave_get_report")?;
+                let func: GetTargetedReportFn =
+                    self.symbol("credbridge_enclave_get_targeted_report")?;
                 func(
+                    target_info.as_ptr(),
+                    target_info.len(),
                     report_data.as_ptr(),
                     report_data.len(),
                     report.bytes.as_mut_ptr(),
@@ -309,10 +335,10 @@ impl SgxHostRuntime {
                 )
             };
 
-            self.ensure_success("get_report", status)?;
+            self.ensure_success("get_targeted_report", status)?;
             if report.written_len != SGX_REPORT_LEN {
                 return Err(HostRuntimeError::InvalidBufferSize {
-                    operation: "get_report",
+                    operation: "get_targeted_report",
                     expected: SGX_REPORT_LEN,
                     actual: report.written_len,
                 });
@@ -524,6 +550,14 @@ impl SgxHostRuntime {
 impl EnclaveRuntime for SgxHostRuntime {
     fn get_identity(&self) -> Result<EnclaveIdentity, HostRuntimeError> {
         SgxHostRuntime::get_identity(self)
+    }
+
+    fn get_targeted_report(
+        &self,
+        target_info: [u8; SGX_TARGET_INFO_LEN],
+        report_data: [u8; SGX_REPORT_DATA_LEN],
+    ) -> Result<Vec<u8>, HostRuntimeError> {
+        SgxHostRuntime::get_targeted_report(self, target_info, report_data)
     }
 
     fn get_report(

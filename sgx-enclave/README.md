@@ -8,6 +8,7 @@ Phase A keeps the enclave surface intentionally small:
 
 - `credbridge_enclave_get_identity`
 - `credbridge_enclave_get_report`
+- `credbridge_enclave_get_targeted_report`
 - `credbridge_enclave_get_sealing_key`
 
 The implementation in this repository is a compile-safe host integration skeleton. The real SGX SDK build, EDL code generation, signing, and trusted execution verification must run on a Linux SGX builder or SGX-enabled Drone runner.

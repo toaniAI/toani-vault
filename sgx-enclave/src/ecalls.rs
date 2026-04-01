@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 pub const SGX_MEASUREMENT_LEN: usize = 32;
 pub const SGX_REPORT_DATA_LEN: usize = 64;
 pub const SGX_REPORT_LEN: usize = 432;
+pub const SGX_TARGET_INFO_LEN: usize = 512;
 pub const SGX_SEALING_KEY_LEN: usize = 32;
 pub const ENCLAVE_BLOB_BUFFER_LEN: usize = 16 * 1024;
 
@@ -36,14 +37,22 @@ pub fn get_identity() -> ([u8; SGX_MEASUREMENT_LEN], [u8; SGX_MEASUREMENT_LEN]) 
 }
 
 pub fn get_report(report_data: &[u8]) -> Result<[u8; SGX_REPORT_LEN], i32> {
-    if report_data.len() != SGX_REPORT_DATA_LEN {
+    get_targeted_report(&[0u8; SGX_TARGET_INFO_LEN], report_data)
+}
+
+pub fn get_targeted_report(
+    target_info: &[u8],
+    report_data: &[u8],
+) -> Result<[u8; SGX_REPORT_LEN], i32> {
+    if target_info.len() != SGX_TARGET_INFO_LEN || report_data.len() != SGX_REPORT_DATA_LEN {
         return Err(ECALL_INVALID_INPUT);
     }
 
     let mut report = [0u8; SGX_REPORT_LEN];
     report[..SGX_REPORT_DATA_LEN].copy_from_slice(report_data);
-    let digest = Sha256::digest(report_data);
+    let digest = Sha256::digest([target_info, report_data].concat());
     report[SGX_REPORT_DATA_LEN..SGX_REPORT_DATA_LEN + digest.len()].copy_from_slice(&digest);
+    report[128..160].copy_from_slice(&target_info[..32]);
     Ok(report)
 }
 

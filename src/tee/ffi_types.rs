@@ -8,6 +8,7 @@ use core::fmt;
 pub const SGX_MEASUREMENT_LEN: usize = 32;
 pub const SGX_REPORT_DATA_LEN: usize = 64;
 pub const SGX_REPORT_LEN: usize = 432;
+pub const SGX_TARGET_INFO_LEN: usize = 512;
 pub const SGX_SEALING_KEY_LEN: usize = 32;
 pub const ENCLAVE_BLOB_BUFFER_LEN: usize = 16 * 1024;
 pub const ENCLAVE_PLAINTEXT_BUFFER_LEN: usize = 64 * 1024;
@@ -89,6 +90,23 @@ impl EnclaveReport {
 
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes[..self.written_len.min(SGX_REPORT_LEN)]
+    }
+}
+
+/// Raw QE target info bytes passed from the host into enclave report generation.
+#[repr(C)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnclaveTargetInfo {
+    pub bytes: [u8; SGX_TARGET_INFO_LEN],
+}
+
+impl EnclaveTargetInfo {
+    pub fn new(bytes: [u8; SGX_TARGET_INFO_LEN]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn as_bytes(&self) -> &[u8; SGX_TARGET_INFO_LEN] {
+        &self.bytes
     }
 }
 

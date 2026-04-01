@@ -3,6 +3,7 @@ mod ecalls;
 use ecalls::{
     ECALL_INVALID_INPUT, ECALL_SUCCESS, ECALL_UNSUPPORTED, ENCLAVE_BLOB_BUFFER_LEN,
     SGX_MEASUREMENT_LEN, SGX_REPORT_DATA_LEN, SGX_REPORT_LEN, SGX_SEALING_KEY_LEN,
+    SGX_TARGET_INFO_LEN,
 };
 use std::ptr;
 
@@ -48,6 +49,40 @@ pub extern "C" fn credbridge_enclave_get_report(
 
     let report_data = unsafe { std::slice::from_raw_parts(report_data, report_data_len) };
     let Ok(report) = ecalls::get_report(report_data) else {
+        return ECALL_UNSUPPORTED;
+    };
+
+    unsafe {
+        ptr::copy_nonoverlapping(report.as_ptr(), report_bytes, SGX_REPORT_LEN);
+        *written_len = SGX_REPORT_LEN;
+    }
+    ECALL_SUCCESS
+}
+
+#[no_mangle]
+pub extern "C" fn credbridge_enclave_get_targeted_report(
+    target_info: *const u8,
+    target_info_len: usize,
+    report_data: *const u8,
+    report_data_len: usize,
+    report_bytes: *mut u8,
+    report_bytes_len: usize,
+    written_len: *mut usize,
+) -> i32 {
+    if target_info.is_null()
+        || report_data.is_null()
+        || report_bytes.is_null()
+        || written_len.is_null()
+        || target_info_len != SGX_TARGET_INFO_LEN
+        || report_data_len != SGX_REPORT_DATA_LEN
+        || report_bytes_len != SGX_REPORT_LEN
+    {
+        return ECALL_INVALID_INPUT;
+    }
+
+    let target_info = unsafe { std::slice::from_raw_parts(target_info, target_info_len) };
+    let report_data = unsafe { std::slice::from_raw_parts(report_data, report_data_len) };
+    let Ok(report) = ecalls::get_targeted_report(target_info, report_data) else {
         return ECALL_UNSUPPORTED;
     };
 

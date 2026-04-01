@@ -9,6 +9,7 @@
 - [安装 DCAP 驱动和库](#安装-dcap-驱动和库)
 - [配置 Intel PCS](#配置-intel-pcs)
 - [CredBridge DCAP 配置](#credbridge-dcap-配置)
+- [调试 Demo](#调试-demo)
 - [API 使用](#api-使用)
 - [故障排查](#故障排查)
 
@@ -258,6 +259,22 @@ let dcap_config = DcapConfig {
 };
 
 let dcap_service = DcapService::new(dcap_config)?;
+
+## 调试 Demo
+
+仓库提供两个可独立运行的 demo，用于区分“旧错误复现”与“标准流程验证”：
+
+```bash
+# 反例：故意跳过 sgx_qe_get_target_info()
+cargo run --features tee-hardware --bin sgx_dcap_quote_legacy_demo
+
+# 正例：按 Intel 推荐顺序执行
+TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so \
+cargo run --features tee-hardware --bin sgx_dcap_quote_standard_demo
+```
+
+- `sgx_dcap_quote_legacy_demo` 用于稳定复现旧链路，输出已加载 `.so` 路径、`get_quote_size` 返回码和失败阶段。
+- `sgx_dcap_quote_standard_demo` 用于验证修复后的执行顺序，输出 `.so` 路径、`get_target_info rc`、`get_quote_size rc`、`quote_size` 和最终失败阶段。
 ```
 
 ## API 使用

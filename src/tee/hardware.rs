@@ -1,5 +1,7 @@
 #[cfg(feature = "tee-hardware")]
-use crate::tee::host_runtime::SgxHostRuntime;
+use crate::tee::ffi_types::{SGX_REPORT_DATA_LEN, SGX_TARGET_INFO_LEN};
+#[cfg(feature = "tee-hardware")]
+use crate::tee::host_runtime::{EnclaveRuntime, SgxHostRuntime};
 #[cfg(feature = "tee-hardware")]
 use crate::tee::quote::QuoteParser;
 #[cfg(feature = "tee-hardware")]
@@ -95,8 +97,7 @@ pub(crate) fn load_hardware_root_key_bytes(policy: SealPolicy) -> Result<[u8; 32
         load_binary_or_text_file(TEE_SGX_ROOT_KEY_PATH_ENV, &path)?
     } else {
         return Err(format!(
-            "TEE_MODE=hardware requested, but no hardware root key material was configured; set `{}` or `{}`",
-            TEE_SGX_ROOT_KEY_HEX_ENV, TEE_SGX_ROOT_KEY_PATH_ENV
+            "TEE_MODE=hardware requested, but no hardware root key material was configured; set `{TEE_SGX_ROOT_KEY_HEX_ENV}` or `{TEE_SGX_ROOT_KEY_PATH_ENV}`"
         ));
     };
 
@@ -127,8 +128,7 @@ pub(crate) fn load_hardware_quote_bytes() -> Result<Vec<u8>, String> {
     }
 
     Err(format!(
-        "TEE_MODE=hardware requested, but no SGX quote was configured; set `{}`, `{}`, or `{}`",
-        TEE_SGX_QUOTE_B64_ENV, TEE_SGX_QUOTE_HEX_ENV, TEE_SGX_QUOTE_PATH_ENV
+        "TEE_MODE=hardware requested, but no SGX quote was configured; set `{TEE_SGX_QUOTE_B64_ENV}`, `{TEE_SGX_QUOTE_HEX_ENV}`, or `{TEE_SGX_QUOTE_PATH_ENV}`"
     ))
 }
 
@@ -136,30 +136,25 @@ pub(crate) fn load_hardware_quote_bytes() -> Result<Vec<u8>, String> {
 pub(crate) fn load_or_generate_hardware_quote(
     report_data: Option<&[u8; 64]>,
 ) -> Result<Vec<u8>, String> {
+    let report_data = report_data.copied().unwrap_or([0u8; SGX_REPORT_DATA_LEN]);
+
     if let Some(runtime) = load_hardware_runtime_if_configured()? {
-        let report_data = report_data.copied().unwrap_or([0u8; 64]);
-        let report_bytes = runtime
-            .get_report(report_data)
-            .map_err(|error| error.to_string())?;
-        return generate_quote_via_dcap_ffi(&report_bytes);
+        return generate_quote_via_targeted_dcap_ffi(&runtime, report_data);
     }
 
     if has_hardware_report_source_config() {
-        let report_data = report_data.copied().unwrap_or([0u8; 64]);
+        tracing::warn!(
+            "using legacy SGX report source fallback for quote generation; this path is for debugging only and bypasses QE target-info driven report generation"
+        );
         return generate_quote_via_dcap_ffi_from_report(&report_data);
     }
 
     if let Ok(command) = env::var(TEE_SGX_QUOTE_GENERATOR_CMD_ENV) {
         let mut command = shell_command(command.trim())?;
-        if let Some(report_data) = report_data {
-            command.env(TEE_SGX_REPORT_DATA_HEX_ENV, hex::encode(report_data));
-        }
+        command.env(TEE_SGX_REPORT_DATA_HEX_ENV, hex::encode(report_data));
 
         let output = command.output().map_err(|error| {
-            format!(
-                "failed to execute `{}`: {error}",
-                TEE_SGX_QUOTE_GENERATOR_CMD_ENV
-            )
+            format!("failed to execute `{TEE_SGX_QUOTE_GENERATOR_CMD_ENV}`: {error}")
         })?;
 
         if !output.status.success() {
@@ -170,10 +165,7 @@ pub(crate) fn load_or_generate_hardware_quote(
         }
 
         let stdout = String::from_utf8(output.stdout).map_err(|error| {
-            format!(
-                "`{}` returned non UTF-8 quote output: {error}",
-                TEE_SGX_QUOTE_GENERATOR_CMD_ENV
-            )
+            format!("`{TEE_SGX_QUOTE_GENERATOR_CMD_ENV}` returned non UTF-8 quote output: {error}")
         })?;
 
         return decode_text_bytes(TEE_SGX_QUOTE_GENERATOR_CMD_ENV, &stdout);
@@ -263,12 +255,7 @@ pub(crate) fn register_pcs_with_backend(quote_bytes: &[u8]) -> Result<Option<Str
     let output = shell_command(command.trim())?
         .env(TEE_SGX_QUOTE_INPUT_B64_ENV, STANDARD.encode(quote_bytes))
         .output()
-        .map_err(|error| {
-            format!(
-                "failed to execute `{}`: {error}",
-                TEE_SGX_PCS_REGISTER_CMD_ENV
-            )
-        })?;
+        .map_err(|error| format!("failed to execute `{TEE_SGX_PCS_REGISTER_CMD_ENV}`: {error}"))?;
 
     if !output.status.success() {
         return Err(format_command_failure(
@@ -282,8 +269,7 @@ pub(crate) fn register_pcs_with_backend(quote_bytes: &[u8]) -> Result<Option<Str
     let registration_id = stdout.trim();
     if registration_id.is_empty() {
         return Err(format!(
-            "`{}` completed successfully but returned an empty registration id",
-            TEE_SGX_PCS_REGISTER_CMD_ENV
+            "`{TEE_SGX_PCS_REGISTER_CMD_ENV}` completed successfully but returned an empty registration id"
         ));
     }
 
@@ -308,16 +294,10 @@ pub(crate) fn load_hardware_measurements() -> Result<([u8; 32], [u8; 32]), Strin
     }
 
     let mrenclave = env::var(TEE_SGX_MRENCLAVE_ENV).map_err(|_| {
-        format!(
-            "TEE_MODE=hardware requested, but neither a quote nor `{}` was configured",
-            TEE_SGX_MRENCLAVE_ENV
-        )
+        format!("TEE_MODE=hardware requested, but neither a quote nor `{TEE_SGX_MRENCLAVE_ENV}` was configured")
     })?;
     let mrsigner = env::var(TEE_SGX_MRSIGNER_ENV).map_err(|_| {
-        format!(
-            "TEE_MODE=hardware requested, but neither a quote nor `{}` was configured",
-            TEE_SGX_MRSIGNER_ENV
-        )
+        format!("TEE_MODE=hardware requested, but neither a quote nor `{TEE_SGX_MRSIGNER_ENV}` was configured")
     })?;
 
     Ok((
@@ -421,25 +401,112 @@ fn generate_quote_via_dcap_ffi_from_report(report_data: &[u8; 64]) -> Result<Vec
 }
 
 #[cfg(feature = "tee-hardware")]
-fn generate_quote_via_dcap_ffi(report_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    if report_bytes.len() != SGX_REPORT_SIZE {
+trait QuoteGenerationBackend {
+    fn get_target_info(&self, target_info: &mut [u8; SGX_TARGET_INFO_LEN]) -> u32;
+    fn get_quote_size(&self, quote_size: &mut u32) -> u32;
+    fn get_quote(&self, report_bytes: &[u8], quote_size: u32, quote: &mut [u8]) -> u32;
+}
+
+#[cfg(feature = "tee-hardware")]
+struct DcapQlQuoteGenerationBackend {
+    _library: DynamicLibrary,
+    get_target_info_fn: unsafe extern "C" fn(*mut c_void) -> u32,
+    get_quote_size_fn: unsafe extern "C" fn(*mut u32) -> u32,
+    get_quote_fn: unsafe extern "C" fn(*const c_void, u32, *mut u8) -> u32,
+}
+
+#[cfg(feature = "tee-hardware")]
+impl DcapQlQuoteGenerationBackend {
+    fn open() -> Result<Self, String> {
+        let library = DynamicLibrary::open(
+            TEE_SGX_DCAP_QL_LIB_PATH_ENV,
+            &["libsgx_dcap_ql.so.1", "libsgx_dcap_ql.so"],
+        )?;
+        let get_target_info_fn = unsafe {
+            library
+                .symbol("sgx_qe_get_target_info")
+                .map_err(|error| format!("failed to resolve sgx_qe_get_target_info: {error}"))?
+        };
+        let get_quote_size_fn = unsafe {
+            library
+                .symbol("sgx_qe_get_quote_size")
+                .map_err(|error| format!("failed to resolve sgx_qe_get_quote_size: {error}"))?
+        };
+        let get_quote_fn = unsafe {
+            library
+                .symbol("sgx_qe_get_quote")
+                .map_err(|error| format!("failed to resolve sgx_qe_get_quote: {error}"))?
+        };
+
+        Ok(Self {
+            _library: library,
+            get_target_info_fn,
+            get_quote_size_fn,
+            get_quote_fn,
+        })
+    }
+}
+
+#[cfg(feature = "tee-hardware")]
+impl QuoteGenerationBackend for DcapQlQuoteGenerationBackend {
+    fn get_target_info(&self, target_info: &mut [u8; SGX_TARGET_INFO_LEN]) -> u32 {
+        unsafe { (self.get_target_info_fn)(target_info.as_mut_ptr().cast()) }
+    }
+
+    fn get_quote_size(&self, quote_size: &mut u32) -> u32 {
+        unsafe { (self.get_quote_size_fn)(quote_size) }
+    }
+
+    fn get_quote(&self, report_bytes: &[u8], quote_size: u32, quote: &mut [u8]) -> u32 {
+        unsafe { (self.get_quote_fn)(report_bytes.as_ptr().cast(), quote_size, quote.as_mut_ptr()) }
+    }
+}
+
+#[cfg(feature = "tee-hardware")]
+fn generate_quote_via_targeted_dcap_ffi(
+    runtime: &dyn EnclaveRuntime,
+    report_data: [u8; SGX_REPORT_DATA_LEN],
+) -> Result<Vec<u8>, String> {
+    let backend = DcapQlQuoteGenerationBackend::open()?;
+    generate_quote_via_targeted_backend(runtime, &backend, report_data)
+}
+
+#[cfg(feature = "tee-hardware")]
+fn generate_quote_via_targeted_backend(
+    runtime: &dyn EnclaveRuntime,
+    backend: &impl QuoteGenerationBackend,
+    report_data: [u8; SGX_REPORT_DATA_LEN],
+) -> Result<Vec<u8>, String> {
+    let mut target_info = [0u8; SGX_TARGET_INFO_LEN];
+    let rc = backend.get_target_info(&mut target_info);
+    if rc != 0 {
         return Err(format!(
-            "SGX report must be exactly {SGX_REPORT_SIZE} bytes, got {}",
-            report_bytes.len()
+            "sgx_qe_get_target_info failed with code 0x{rc:08x}"
         ));
     }
 
-    let library = DynamicLibrary::open(
-        TEE_SGX_DCAP_QL_LIB_PATH_ENV,
-        &["libsgx_dcap_ql.so.1", "libsgx_dcap_ql.so"],
-    )?;
-    let get_quote_size: unsafe extern "C" fn(*mut u32) -> u32 =
-        unsafe { library.symbol("sgx_qe_get_quote_size")? };
-    let get_quote: unsafe extern "C" fn(*const c_void, u32, *mut u8) -> u32 =
-        unsafe { library.symbol("sgx_qe_get_quote")? };
+    let report_bytes = runtime
+        .get_targeted_report(target_info, report_data)
+        .map_err(|error| format!("targeted report generation failed: {error}"))?;
+    generate_quote_via_backend_from_report(backend, &report_bytes)
+}
+
+#[cfg(feature = "tee-hardware")]
+fn generate_quote_via_dcap_ffi(report_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let backend = DcapQlQuoteGenerationBackend::open()?;
+    generate_quote_via_backend_from_report(&backend, report_bytes)
+}
+
+#[cfg(feature = "tee-hardware")]
+fn generate_quote_via_backend_from_report(
+    backend: &impl QuoteGenerationBackend,
+    report_bytes: &[u8],
+) -> Result<Vec<u8>, String> {
+    ensure_valid_sgx_report(report_bytes)
+        .map_err(|error| format!("targeted report generation failed: {error}"))?;
 
     let mut quote_size = 0u32;
-    let rc = unsafe { get_quote_size(&mut quote_size) };
+    let rc = backend.get_quote_size(&mut quote_size);
     if rc != 0 {
         return Err(format!("sgx_qe_get_quote_size failed with code 0x{rc:08x}"));
     }
@@ -448,12 +515,23 @@ fn generate_quote_via_dcap_ffi(report_bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let mut quote = vec![0u8; quote_size as usize];
-    let rc = unsafe { get_quote(report_bytes.as_ptr().cast(), quote_size, quote.as_mut_ptr()) };
+    let rc = backend.get_quote(report_bytes, quote_size, &mut quote);
     if rc != 0 {
         return Err(format!("sgx_qe_get_quote failed with code 0x{rc:08x}"));
     }
 
     Ok(quote)
+}
+
+#[cfg(feature = "tee-hardware")]
+fn ensure_valid_sgx_report(report_bytes: &[u8]) -> Result<(), String> {
+    if report_bytes.len() != SGX_REPORT_SIZE {
+        return Err(format!(
+            "SGX report must be exactly {SGX_REPORT_SIZE} bytes, got {}",
+            report_bytes.len()
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "tee-hardware")]
@@ -721,11 +799,103 @@ fn last_dlerror() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "tee-hardware")]
+    use crate::tee::ffi_types::{EnclaveIdentity, SGX_SEALING_KEY_LEN};
+    #[cfg(feature = "tee-hardware")]
+    use crate::tee::host_runtime::HostRuntimeError;
+    #[cfg(feature = "tee-hardware")]
+    use crate::tee::sealing::SealPolicy;
+    #[cfg(feature = "tee-hardware")]
+    use std::sync::Arc;
     use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    #[derive(Clone)]
+    struct MockRuntime {
+        log: Arc<Mutex<Vec<&'static str>>>,
+        targeted_report_result: Result<Vec<u8>, HostRuntimeError>,
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    impl EnclaveRuntime for MockRuntime {
+        fn get_identity(&self) -> Result<EnclaveIdentity, HostRuntimeError> {
+            Ok(EnclaveIdentity::new([0u8; 32], [0u8; 32]))
+        }
+
+        fn get_targeted_report(
+            &self,
+            _target_info: [u8; SGX_TARGET_INFO_LEN],
+            _report_data: [u8; SGX_REPORT_DATA_LEN],
+        ) -> Result<Vec<u8>, HostRuntimeError> {
+            self.log.lock().unwrap().push("get_targeted_report");
+            self.targeted_report_result.clone()
+        }
+
+        fn get_sealing_key(
+            &self,
+            _policy: SealPolicy,
+        ) -> Result<[u8; SGX_SEALING_KEY_LEN], HostRuntimeError> {
+            Ok([0u8; SGX_SEALING_KEY_LEN])
+        }
+
+        fn encrypt_credential(
+            &self,
+            _tenant_id: &str,
+            _user_id_hash: &str,
+            _credential_id: &str,
+            _plaintext: &[u8],
+        ) -> Result<crate::crypto::EncryptedBlob, HostRuntimeError> {
+            Err(HostRuntimeError::UnsupportedPlatform {
+                operation: "encrypt_credential",
+            })
+        }
+
+        fn decrypt_credential(
+            &self,
+            _tenant_id: &str,
+            _user_id_hash: &str,
+            _credential_id: &str,
+            _blob: &crate::crypto::EncryptedBlob,
+        ) -> Result<Vec<u8>, HostRuntimeError> {
+            Err(HostRuntimeError::UnsupportedPlatform {
+                operation: "decrypt_credential",
+            })
+        }
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    struct MockQuoteBackend {
+        log: Arc<Mutex<Vec<&'static str>>>,
+        get_target_info_rc: u32,
+        get_quote_size_rc: u32,
+        get_quote_rc: u32,
+        quote_size: u32,
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    impl QuoteGenerationBackend for MockQuoteBackend {
+        fn get_target_info(&self, target_info: &mut [u8; SGX_TARGET_INFO_LEN]) -> u32 {
+            self.log.lock().unwrap().push("get_target_info");
+            target_info.fill(0xAB);
+            self.get_target_info_rc
+        }
+
+        fn get_quote_size(&self, quote_size: &mut u32) -> u32 {
+            self.log.lock().unwrap().push("get_quote_size");
+            *quote_size = self.quote_size;
+            self.get_quote_size_rc
+        }
+
+        fn get_quote(&self, _report_bytes: &[u8], _quote_size: u32, quote: &mut [u8]) -> u32 {
+            self.log.lock().unwrap().push("get_quote");
+            quote.fill(0xCD);
+            self.get_quote_rc
+        }
     }
 
     #[test]
@@ -759,5 +929,132 @@ mod tests {
 
         let error = verify_quote_with_backend(b"quote-bytes", None).unwrap_err();
         assert!(error.contains(TEE_SGX_QUOTE_VERIFY_CMD_ENV));
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    #[test]
+    fn targeted_quote_path_requests_qe_target_info_before_quote_size() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let runtime = MockRuntime {
+            log: log.clone(),
+            targeted_report_result: Ok(vec![0u8; SGX_REPORT_SIZE]),
+        };
+        let backend = MockQuoteBackend {
+            log: log.clone(),
+            get_target_info_rc: 0,
+            get_quote_size_rc: 0,
+            get_quote_rc: 0,
+            quote_size: 16,
+        };
+
+        let quote = generate_quote_via_targeted_backend(&runtime, &backend, [0u8; 64]).unwrap();
+        assert_eq!(quote.len(), 16);
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![
+                "get_target_info",
+                "get_targeted_report",
+                "get_quote_size",
+                "get_quote"
+            ]
+        );
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    #[test]
+    fn targeted_quote_path_reports_target_info_stage_errors() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let runtime = MockRuntime {
+            log: log.clone(),
+            targeted_report_result: Ok(vec![0u8; SGX_REPORT_SIZE]),
+        };
+        let backend = MockQuoteBackend {
+            log: log.clone(),
+            get_target_info_rc: 0x0000_e00f,
+            get_quote_size_rc: 0,
+            get_quote_rc: 0,
+            quote_size: 16,
+        };
+
+        let error = generate_quote_via_targeted_backend(&runtime, &backend, [0u8; 64]).unwrap_err();
+        assert!(error.contains("sgx_qe_get_target_info failed"));
+        assert_eq!(*log.lock().unwrap(), vec!["get_target_info"]);
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    #[test]
+    fn targeted_quote_path_reports_targeted_report_stage_errors() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let runtime = MockRuntime {
+            log: log.clone(),
+            targeted_report_result: Err(HostRuntimeError::MissingEnclavePath),
+        };
+        let backend = MockQuoteBackend {
+            log: log.clone(),
+            get_target_info_rc: 0,
+            get_quote_size_rc: 0,
+            get_quote_rc: 0,
+            quote_size: 16,
+        };
+
+        let error = generate_quote_via_targeted_backend(&runtime, &backend, [0u8; 64]).unwrap_err();
+        assert!(error.contains("targeted report generation failed"));
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["get_target_info", "get_targeted_report"]
+        );
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    #[test]
+    fn targeted_quote_path_reports_quote_size_stage_errors() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let runtime = MockRuntime {
+            log: log.clone(),
+            targeted_report_result: Ok(vec![0u8; SGX_REPORT_SIZE]),
+        };
+        let backend = MockQuoteBackend {
+            log: log.clone(),
+            get_target_info_rc: 0,
+            get_quote_size_rc: 0x10,
+            get_quote_rc: 0,
+            quote_size: 16,
+        };
+
+        let error = generate_quote_via_targeted_backend(&runtime, &backend, [0u8; 64]).unwrap_err();
+        assert!(error.contains("sgx_qe_get_quote_size failed"));
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["get_target_info", "get_targeted_report", "get_quote_size"]
+        );
+    }
+
+    #[cfg(feature = "tee-hardware")]
+    #[test]
+    fn targeted_quote_path_reports_quote_stage_errors() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let runtime = MockRuntime {
+            log: log.clone(),
+            targeted_report_result: Ok(vec![0u8; SGX_REPORT_SIZE]),
+        };
+        let backend = MockQuoteBackend {
+            log: log.clone(),
+            get_target_info_rc: 0,
+            get_quote_size_rc: 0,
+            get_quote_rc: 0x20,
+            quote_size: 16,
+        };
+
+        let error = generate_quote_via_targeted_backend(&runtime, &backend, [0u8; 64]).unwrap_err();
+        assert!(error.contains("sgx_qe_get_quote failed"));
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec![
+                "get_target_info",
+                "get_targeted_report",
+                "get_quote_size",
+                "get_quote"
+            ]
+        );
     }
 }

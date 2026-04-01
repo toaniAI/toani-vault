@@ -881,7 +881,9 @@ mod tests {
     #[cfg(feature = "tee-hardware")]
     use crate::crypto::EncryptedBlob;
     #[cfg(feature = "tee-hardware")]
-    use crate::tee::ffi_types::{EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN};
+    use crate::tee::ffi_types::{
+        EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN, SGX_TARGET_INFO_LEN,
+    };
     #[cfg(feature = "tee-hardware")]
     use crate::tee::host_runtime::{EnclaveRuntime, HostRuntimeError, SharedEnclaveRuntime};
     use crate::vault::models::UserId;
@@ -911,8 +913,9 @@ mod tests {
             Ok(EnclaveIdentity::new([0x11; 32], [0x22; 32]))
         }
 
-        fn get_report(
+        fn get_targeted_report(
             &self,
+            _target_info: [u8; SGX_TARGET_INFO_LEN],
             _report_data: [u8; SGX_REPORT_DATA_LEN],
         ) -> Result<Vec<u8>, HostRuntimeError> {
             Ok(vec![0u8; 432])

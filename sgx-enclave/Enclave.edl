@@ -17,6 +17,16 @@ enclave {
             [out] size_t* written_len
         );
 
+        public int32_t credbridge_enclave_get_targeted_report(
+            [in, size=512] const uint8_t* target_info,
+            size_t target_info_len,
+            [in, size=64] const uint8_t* report_data,
+            size_t report_data_len,
+            [out, size=432] uint8_t* report_bytes,
+            size_t report_bytes_len,
+            [out] size_t* written_len
+        );
+
         public int32_t credbridge_enclave_get_sealing_key(
             uint32_t policy,
             [out, size=32] uint8_t* key_bytes,
