@@ -1,13 +1,13 @@
 /**
- * CredBridge TypeScript SDK - 批量操作示例
+ * Toani Vault SDK TypeScript - 批量操作示例
  *
  * 展示批量创建、获取和删除凭证的操作
  */
 
-import { CredBridgeClient, CredentialType } from '@credbridge/sdk';
+import { CredBridgeClient, CredentialType } from '@toani/vault-sdk';
 
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'https://api.credbridge.io';
-const TOKEN = process.env.CREDBRIDGE_TOKEN || 'your-api-token';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || 'https://api.toani.io';
+const TOKEN = process.env.TOANI_VAULT_TOKEN || 'your-api-token';
 
 async function main() {
   const client = new CredBridgeClient({
@@ -15,7 +15,7 @@ async function main() {
     token: TOKEN,
   });
 
-  console.log('=== CredBridge 批量操作示例 ===\n');
+  console.log('=== Toani Vault 批量操作示例 ===\n');
 
   const createdIds: string[] = [];
 

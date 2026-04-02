@@ -1,13 +1,13 @@
-import { CredBridgeSDK, CredentialType } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredentialType } from '@toani/vault-sdk';
 
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'http://localhost:8082';
-const TOKEN = process.env.CREDBRIDGE_TOKEN || '';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || 'http://localhost:8082';
+const TOKEN = process.env.TOANI_VAULT_TOKEN || '';
 
 async function main() {
   console.log('BASE_URL:', BASE_URL);
   console.log('TOKEN:', TOKEN.substring(0, 50) + '...');
-  
-  const sdk = new CredBridgeSDK({
+
+  const sdk = new ToaniVaultSDK({
     baseUrl: BASE_URL,
     token: TOKEN,
     timeout: 30000,

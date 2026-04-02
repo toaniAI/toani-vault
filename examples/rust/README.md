@@ -1,11 +1,11 @@
-# CredBridge Rust SDK 示例
+# Toani Vault Rust SDK 示例
 
-本目录包含 CredBridge Rust SDK 的使用示例。
+本目录包含 Toani Vault Rust SDK 的使用示例。
 
 ## 配置环境变量
 
 ```bash
-export CREDBRIDGE_BASE_URL="https://api.credbridge.io"
+export CREDBRIDGE_BASE_URL="https://api.toani.io"
 export CREDBRIDGE_TOKEN="your-api-token"
 ```
 
@@ -86,7 +86,7 @@ cargo run --example axum_integration
 
 ### 5. Axum 集成示例 (axum_integration)
 
-展示如何在 Axum Web 应用中集成 CredBridge SDK：
+展示如何在 Axum Web 应用中集成 Toani Vault SDK：
 
 - 权限检查中间件
 - RESTful API 端点
@@ -123,7 +123,7 @@ examples/rust/
 
 ## 依赖
 
-- `credbridge-sdk`: CredBridge Rust SDK
+- `toani-vault-sdk`: Toani Vault Rust SDK
 - `tokio`: 异步运行时
 - `serde_json`: JSON 序列化
 - `chrono`: 日期时间处理

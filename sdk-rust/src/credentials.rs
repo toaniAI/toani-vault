@@ -34,7 +34,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
     /// use serde_json::json;
     /// use std::sync::Arc;
     ///
@@ -100,7 +100,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -148,7 +148,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -196,7 +196,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -242,7 +242,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialFilter};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialFilter};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -312,7 +312,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -341,7 +341,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -394,7 +394,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -498,7 +498,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -528,7 +528,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -558,7 +558,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {

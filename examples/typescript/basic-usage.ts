@@ -1,25 +1,25 @@
 /**
- * CredBridge TypeScript SDK - 基础使用示例
+ * Toani Vault SDK TypeScript - 基础使用示例
  *
  * 展示凭证创建、获取、解密和删除的基本操作
  */
 
-import { CredBridgeSDK, CredentialType } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredentialType } from '@toani/vault-sdk';
 
 // 配置
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'https://api.credbridge.io';
-const TOKEN = process.env.CREDBRIDGE_TOKEN || 'your-api-token';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || 'https://api.toani.io';
+const TOKEN = process.env.TOANI_VAULT_TOKEN || 'your-api-token';
 
 async function main() {
   // 初始化 SDK
-  const sdk = new CredBridgeSDK({
+  const sdk = new ToaniVaultSDK({
     baseUrl: BASE_URL,
     token: TOKEN,
     timeout: 30000,
     maxRetries: 3,
   });
 
-  console.log('=== CredBridge TypeScript SDK 基础示例 ===\n');
+  console.log('=== Toani Vault SDK TypeScript 基础示例 ===\n');
 
   try {
     // 1. 创建用户名密码凭证

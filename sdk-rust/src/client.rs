@@ -78,7 +78,7 @@ impl CredBridgeClient {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = CredBridgeConfig::new("https://api.credbridge.io")

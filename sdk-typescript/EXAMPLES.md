@@ -1,4 +1,6 @@
-# CredBridge SDK 使用示例
+# Toani Vault SDK 使用示例
+
+> **迁移说明**: 本 SDK 已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，主类从 `CredBridgeSDK` 重命名为 `ToaniVaultSDK`。旧名称 `CredBridgeSDK` 仍然作为兼容性别名保留，但建议使用新名称。`CredBridgeClient`、`CredBridgeError`、`CredBridgeErrorCode` 等类名保持不变。
 
 本文档提供了各种场景下的 SDK 使用示例。
 
@@ -18,24 +20,24 @@
 ### 初始化 SDK
 
 ```typescript
-import { CredBridgeSDK, CredentialType } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredentialType } from '@toani/vault-sdk';
 
 // 方式 1：构造函数
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
-  token: process.env.CREDBRIDGE_TOKEN!,
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://vault.toani.io',
+  token: process.env.TOANI_VAULT_TOKEN!,
 });
 
 // 方式 2：工厂方法
-const sdk2 = CredBridgeSDK.create(
-  'https://vault.credbridge.io',
-  process.env.CREDBRIDGE_TOKEN!
+const sdk2 = ToaniVaultSDK.create(
+  'https://vault.toani.io',
+  process.env.TOANI_VAULT_TOKEN!
 );
 
 // 高级配置
-const sdk3 = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
-  token: process.env.CREDBRIDGE_TOKEN!,
+const sdk3 = new ToaniVaultSDK({
+  baseUrl: 'https://vault.toani.io',
+  token: process.env.TOANI_VAULT_TOKEN!,
   timeout: 60000,
   maxRetries: 5,
   autoRefreshToken: true,
@@ -53,10 +55,10 @@ const sdk3 = new CredBridgeSDK({
 ### 示例 1：存储金融账户凭证
 
 ```typescript
-import { CredBridgeSDK, CredentialType, CredBridgeError } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredentialType, CredBridgeError } from '@toani/vault-sdk';
 
 async function storeSchwabCredentials(
-  sdk: CredBridgeSDK,
+  sdk: ToaniVaultSDK,
   username: string,
   password: string
 ): Promise<string> {
@@ -87,7 +89,7 @@ async function storeSchwabCredentials(
 
 ```typescript
 async function performLogin(
-  sdk: CredBridgeSDK,
+  sdk: ToaniVaultSDK,
   credentialId: string
 ): Promise<{ username: string; password: string }> {
   try {
@@ -126,7 +128,7 @@ async function performLogin(
 ### 示例 3：批量存储多个服务的凭证
 
 ```typescript
-async function setupUserCredentials(sdk: CredBridgeSDK) {
+async function setupUserCredentials(sdk: ToaniVaultSDK) {
   const services = [
     {
       serviceId: 'schwab',
@@ -176,7 +178,7 @@ async function setupUserCredentials(sdk: CredBridgeSDK) {
 ### 示例 4：列出并按服务过滤凭证
 
 ```typescript
-async function listUserCredentials(sdk: CredBridgeSDK) {
+async function listUserCredentials(sdk: ToaniVaultSDK) {
   // 获取所有凭证
   const { credentials, total } = await sdk.credentials.list();
   console.log(`Total credentials: ${total}`);
@@ -196,7 +198,7 @@ async function listUserCredentials(sdk: CredBridgeSDK) {
   return byService;
 }
 
-async function getServiceCredentials(sdk: CredBridgeSDK, serviceId: string) {
+async function getServiceCredentials(sdk: ToaniVaultSDK, serviceId: string) {
   // 只获取特定服务的凭证
   const { credentials } = await sdk.credentials.getByService(serviceId);
   console.log(`Found ${credentials.length} credential(s) for ${serviceId}`);
@@ -208,7 +210,7 @@ async function getServiceCredentials(sdk: CredBridgeSDK, serviceId: string) {
 
 ```typescript
 async function rotateCredentials(
-  sdk: CredBridgeSDK,
+  sdk: ToaniVaultSDK,
   credentialId: string,
   newPassword: string
 ) {
@@ -242,7 +244,7 @@ async function rotateCredentials(
   }
 }
 
-async function cleanupExpiredCredentials(sdk: CredBridgeSDK) {
+async function cleanupExpiredCredentials(sdk: ToaniVaultSDK) {
   // 获取所有凭证（包含已过期的）
   const { credentials } = await sdk.credentials.list({
     includeDeleted: true,
@@ -273,13 +275,13 @@ async function cleanupExpiredCredentials(sdk: CredBridgeSDK) {
 ### 示例 6：Token 有效性监控
 
 ```typescript
-import { CredBridgeSDK, CredBridgeError } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredBridgeError } from '@toani/vault-sdk';
 
 class TokenMonitor {
-  private sdk: CredBridgeSDK;
+  private sdk: ToaniVaultSDK;
   private refreshCallback?: (newToken: string) => void;
 
-  constructor(sdk: CredBridgeSDK, refreshCallback?: (newToken: string) => void) {
+  constructor(sdk: ToaniVaultSDK, refreshCallback?: (newToken: string) => void) {
     this.sdk = sdk;
     this.refreshCallback = refreshCallback;
     this.startMonitoring();
@@ -335,9 +337,9 @@ class TokenMonitor {
 }
 
 // 使用示例
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
-  token: process.env.CREDBRIDGE_TOKEN!,
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://vault.toani.io',
+  token: process.env.TOANI_VAULT_TOKEN!,
   autoRefreshToken: true,
 });
 
@@ -352,7 +354,7 @@ console.log(monitor.getTokenInfo());
 ### 示例 7：权限检查
 
 ```typescript
-function checkPermissions(sdk: CredBridgeSDK) {
+function checkPermissions(sdk: ToaniVaultSDK) {
   const scopes = sdk.token.getScopes();
   console.log('Current token scopes:', scopes);
 
@@ -379,7 +381,7 @@ function checkPermissions(sdk: CredBridgeSDK) {
   return permissions;
 }
 
-async function performSecureOperation(sdk: CredBridgeSDK) {
+async function performSecureOperation(sdk: ToaniVaultSDK) {
   // 在执行敏感操作前检查权限
   if (!sdk.token.hasScope('credential:decrypt')) {
     throw new Error('Insufficient permissions: credential:decrypt scope required');
@@ -403,12 +405,12 @@ async function performSecureOperation(sdk: CredBridgeSDK) {
 
 ```typescript
 import {
-  CredBridgeSDK,
+  ToaniVaultSDK,
   CredBridgeError,
   CredBridgeErrorCode,
-} from '@credbridge/sdk';
+} from '@toani/vault-sdk';
 
-async function safeCredentialOperation(sdk: CredBridgeSDK, credentialId: string) {
+async function safeCredentialOperation(sdk: ToaniVaultSDK, credentialId: string) {
   try {
     const credential = await sdk.credentials.get(credentialId);
     return credential;
@@ -497,9 +499,9 @@ async function withRetry<T>(
 ### 示例 9：请求日志和监控
 
 ```typescript
-import { CredBridgeSDK, SdkEventType } from '@credbridge/sdk';
+import { ToaniVaultSDK, SdkEventType } from '@toani/vault-sdk';
 
-function setupRequestLogging(sdk: CredBridgeSDK) {
+function setupRequestLogging(sdk: ToaniVaultSDK) {
   const requestTimings = new Map<string, number>();
 
   // 请求开始
@@ -539,9 +541,9 @@ function setupRequestLogging(sdk: CredBridgeSDK) {
 }
 
 // 使用
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
-  token: process.env.CREDBRIDGE_TOKEN!,
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://vault.toani.io',
+  token: process.env.TOANI_VAULT_TOKEN!,
 });
 
 setupRequestLogging(sdk);
@@ -554,14 +556,14 @@ setupRequestLogging(sdk);
 ### 示例 10：AI Agent 自动登录系统
 
 ```typescript
-import { CredBridgeSDK, CredentialType, CredBridgeError } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredentialType, CredBridgeError } from '@toani/vault-sdk';
 
 class AgentLoginSystem {
-  private sdk: CredBridgeSDK;
+  private sdk: ToaniVaultSDK;
 
   constructor(token: string) {
-    this.sdk = new CredBridgeSDK({
-      baseUrl: process.env.CREDBRIDGE_URL!,
+    this.sdk = new ToaniVaultSDK({
+      baseUrl: process.env.TOANI_VAULT_URL!,
       token,
     });
   }
@@ -645,7 +647,7 @@ class AgentLoginSystem {
 
 // 使用示例
 async function main() {
-  const system = new AgentLoginSystem(process.env.CREDBRIDGE_TOKEN!);
+  const system = new AgentLoginSystem(process.env.TOANI_VAULT_TOKEN!);
 
   // 检查服务可用性
   const availability = await system.checkServiceAvailability('schwab');
@@ -670,7 +672,7 @@ main().catch(console.error);
 ### 示例 11：多租户管理控制台
 
 ```typescript
-import { CredBridgeSDK } from '@credbridge/sdk';
+import { ToaniVaultSDK } from '@toani/vault-sdk';
 
 interface TenantStats {
   tenantId: string;
@@ -679,7 +681,7 @@ interface TenantStats {
   expiringSoon: number;
 }
 
-async function getTenantStats(sdk: CredBridgeSDK): Promise<TenantStats> {
+async function getTenantStats(sdk: ToaniVaultSDK): Promise<TenantStats> {
   const { credentials } = await sdk.credentials.list();
 
   const now = new Date();
@@ -701,7 +703,7 @@ async function getTenantStats(sdk: CredBridgeSDK): Promise<TenantStats> {
   };
 }
 
-async function generateCredentialsReport(sdk: CredBridgeSDK) {
+async function generateCredentialsReport(sdk: ToaniVaultSDK) {
   const { credentials } = await sdk.credentials.list({ includeDeleted: false });
 
   console.log('\n📊 Credentials Report');
@@ -746,14 +748,14 @@ async function generateCredentialsReport(sdk: CredBridgeSDK) {
 
 ```typescript
 // ✅ 正确：从环境变量读取 Token
-const sdk = new CredBridgeSDK({
-  baseUrl: process.env.CREDBRIDGE_URL!,
-  token: process.env.CREDBRIDGE_TOKEN!,
+const sdk = new ToaniVaultSDK({
+  baseUrl: process.env.TOANI_VAULT_URL!,
+  token: process.env.TOANI_VAULT_TOKEN!,
 });
 
 // ❌ 错误：硬编码 Token
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://vault.toani.io',
   token: 'v4.local.hardcoded-token',
 });
 ```

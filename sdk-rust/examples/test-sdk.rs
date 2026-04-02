@@ -1,11 +1,11 @@
-// CredBridge Rust SDK 测试脚本
+// Toani Vault Rust SDK 测试脚本
 // 用于测试 SDK 的基本功能
 
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK, types::CredentialType};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, types::CredentialType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== CredBridge Rust SDK 测试 ===\n");
+    println!("=== Toani Vault Rust SDK 测试 ===\n");
 
     // 测试 1: SDK 配置
     println!("1. 测试 SDK 配置...");
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 测试 2: SDK 初始化
     println!("\n2. 测试 SDK 初始化...");
-    match CredBridgeSDK::new(config) {
+    match ToaniVaultSDK::new(config) {
         Ok(sdk) => {
             println!("✅ SDK 初始化成功");
             

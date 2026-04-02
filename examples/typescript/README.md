@@ -1,6 +1,6 @@
-# CredBridge TypeScript SDK 示例
+# Toani Vault SDK TypeScript 示例
 
-本目录包含 CredBridge TypeScript SDK 的使用示例。
+本目录包含 Toani Vault SDK 的使用示例。
 
 ## 安装依赖
 
@@ -11,8 +11,8 @@ npm install
 ## 配置环境变量
 
 ```bash
-export CREDBRIDGE_BASE_URL="https://api.credbridge.io"
-export CREDBRIDGE_TOKEN="your-api-token"
+export TOANI_VAULT_BASE_URL="https://api.toani.io"
+export TOANI_VAULT_TOKEN="your-api-token"
 ```
 
 ## 运行示例
@@ -44,8 +44,8 @@ curl -X POST http://localhost:8082/api/v1/auth/login \
 
 2. 设置环境变量：
 ```bash
-export CREDBRIDGE_BASE_URL="http://localhost:8082"
-export CREDBRIDGE_TOKEN="v4.local.xxx..."
+export TOANI_VAULT_BASE_URL="http://localhost:8082"
+export TOANI_VAULT_TOKEN="v4.local.xxx..."
 ```
 
 3. 运行示例：
@@ -87,7 +87,7 @@ npm run error
 
 ### 5. Express 集成示例
 
-展示如何在 Express 应用中集成 CredBridge SDK：
+展示如何在 Express 应用中集成 Toani Vault SDK：
 
 ```bash
 npm run express
@@ -125,6 +125,6 @@ examples/typescript/
 
 ## 依赖
 
-- `@credbridge/sdk`: CredBridge TypeScript SDK
+- `@toani/vault-sdk`: Toani Vault SDK
 - `express`: Web 框架示例
 - `tsx`: TypeScript 执行器

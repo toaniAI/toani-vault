@@ -1,6 +1,8 @@
-# CredBridge Rust SDK
+# Toani Vault Rust SDK
 
-用于与 CredBridge Vault API 交互的 Rust SDK。
+> **迁移注意**: 此 crate 已从 `credbridge-sdk` 重命名为 `toani-vault-sdk`。`CredBridgeSDK` 已被弃用，请使用 `ToaniVaultSDK`。`CredBridgeSDK` 仍可作为 `ToaniVaultSDK` 的类型别名使用，以保持向后兼容性。
+
+用于与 Toani Vault API 交互的 Rust SDK。
 
 ## 特性
 
@@ -17,7 +19,7 @@
 
 ```toml
 [dependencies]
-credbridge-sdk = "0.1.0"
+toani-vault-sdk = "0.1.0"
 tokio = { version = "1.0", features = ["full"] }
 ```
 
@@ -26,15 +28,15 @@ tokio = { version = "1.0", features = ["full"] }
 ### 基本使用
 
 ```rust
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK, types::CredentialType};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, types::CredentialType};
 use std::collections::HashMap;
 use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 创建 SDK 实例
-    let sdk = CredBridgeSDK::new(
-        CredBridgeConfig::new("https://api.credbridge.io")
+    let sdk = ToaniVaultSDK::new(
+        CredBridgeConfig::new("https://api.toani.io")
             .with_token("your-api-token")
             .with_timeout_ms(30000)
     )?;
@@ -100,7 +102,7 @@ let credential = sdk.credentials()
 ### Token 管理
 
 ```rust
-use credbridge_sdk::types::TokenScope;
+use toani_vault_sdk::types::TokenScope;
 
 // 检查 Token 权限
 if sdk.token().has_scope(TokenScope::CredentialRead) {
@@ -132,9 +134,9 @@ if revoked {
 ## 配置选项
 
 ```rust
-use credbridge_sdk::CredBridgeConfig;
+use toani_vault_sdk::CredBridgeConfig;
 
-let config = CredBridgeConfig::new("https://api.credbridge.io")
+let config = CredBridgeConfig::new("https://api.toani.io")
     .with_token("your-api-token")
     .with_tenant_id("tenant1")
     .with_user_id("user1")
@@ -148,7 +150,7 @@ let config = CredBridgeConfig::new("https://api.credbridge.io")
 SDK 使用 `CredBridgeError` 作为统一错误类型：
 
 ```rust
-use credbridge_sdk::types::{CredBridgeErrorCode, CredBridgeError};
+use toani_vault_sdk::types::{CredBridgeErrorCode, CredBridgeError};
 
 match sdk.credentials().get("invalid-id", None).await {
     Ok(credential) => println!("Found: {:?}", credential),
@@ -187,7 +189,7 @@ match sdk.credentials().get("invalid-id", None).await {
 可以为单个请求设置选项：
 
 ```rust
-use credbridge_sdk::types::RequestOptions;
+use toani_vault_sdk::types::RequestOptions;
 
 let options = RequestOptions::new()
     .with_timeout_ms(10000)           // 自定义超时
@@ -204,7 +206,7 @@ let credential = sdk.credentials()
 ## 凭证过滤
 
 ```rust
-use credbridge_sdk::types::{CredentialFilter, CredentialType};
+use toani_vault_sdk::types::{CredentialFilter, CredentialType};
 
 // 按服务 ID 过滤
 let filter = CredentialFilter {
@@ -230,7 +232,7 @@ let filter = CredentialFilter {
 
 ## API 文档
 
-查看 [docs.rs](https://docs.rs/credbridge-sdk) 获取完整的 API 文档。
+查看 [docs.rs](https://docs.rs/toani-vault-sdk) 获取完整的 API 文档。
 
 ## 示例
 
@@ -240,7 +242,7 @@ let filter = CredentialFilter {
 
 ```toml
 [dependencies]
-credbridge-sdk = { version = "0.1.0", default-features = false, features = ["native-tls"] }
+toani-vault-sdk = { version = "0.1.0", default-features = false, features = ["native-tls"] }
 ```
 
 - `rustls` (默认): 使用 rustls 进行 TLS 连接

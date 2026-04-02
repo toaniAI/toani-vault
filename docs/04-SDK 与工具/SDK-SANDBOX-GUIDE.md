@@ -1,8 +1,10 @@
 # CredBridge Sandbox SDK 使用指南
 
+> **迁移注意**: SDK 包已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，旧包名已弃用。请将 `import { CredBridgeSDK }` 改为 `import { ToaniVaultSDK }`。
+
 **版本**: v1.0
 **最后更新**: 2026-03-17
-**适用版本**: @credbridge/sdk >= 0.1.0
+**适用版本**: @toani/vault-sdk >= 0.1.0
 
 ---
 
@@ -25,20 +27,20 @@
 ### 安装
 
 ```bash
-npm install @credbridge/sdk
+npm install @toani/vault-sdk
 # 或
-yarn add @credbridge/sdk
+yarn add @toani/vault-sdk
 # 或
-pnpm add @credbridge/sdk
+pnpm add @toani/vault-sdk
 ```
 
 ### 初始化 SDK
 
 ```typescript
-import { CredBridgeSDK } from '@credbridge/sdk';
+import { ToaniVaultSDK } from '@toani/vault-sdk';
 
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://api.credbridge.io',
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://api.toani.io',
   token: 'v4.local.your-paseto-token',
 });
 ```
@@ -46,10 +48,10 @@ const sdk = new CredBridgeSDK({
 ### 完整示例：自动化登录并获取数据
 
 ```typescript
-import { CredBridgeSDK, OperationType } from '@credbridge/sdk';
+import { ToaniVaultSDK, OperationType } from '@toani/vault-sdk';
 
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://api.credbridge.io',
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://api.toani.io',
   token: 'v4.local.your-paseto-token',
 });
 
@@ -161,7 +163,7 @@ Creating → Running → [Paused] → Closed
 ### 创建会话
 
 ```typescript
-import { SessionStatus } from '@credbridge/sdk';
+import { SessionStatus } from '@toani/vault-sdk';
 
 // 基础创建
 const session = await sdk.sandbox.createSession({
@@ -373,11 +375,11 @@ WebSocket 连接提供实时控制和监控能力，适用于需要即时反馈�
 ### 基础用法
 
 ```typescript
-import { SandboxWebSocketClient, WebSocketState } from '@credbridge/sdk';
+import { SandboxWebSocketClient, WebSocketState } from '@toani/vault-sdk';
 
 // 创建 WebSocket 客户端
 const ws = new SandboxWebSocketClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: 'v4.local.your-paseto-token',
   sessionId: 'session-uuid',
   credentialId: 'credential-uuid',
@@ -471,11 +473,11 @@ console.log('State:', ws.getState()); // 'closed'
 ### 完整 WebSocket 示例
 
 ```typescript
-import { SandboxWebSocketClient } from '@credbridge/sdk';
+import { SandboxWebSocketClient } from '@toani/vault-sdk';
 
 async function executeWithWebSocket(sessionId: string, credentialId: string) {
   const ws = new SandboxWebSocketClient({
-    baseUrl: 'https://api.credbridge.io',
+    baseUrl: 'https://api.toani.io',
     token: 'v4.local.your-token',
     sessionId,
     credentialId,
@@ -627,7 +629,7 @@ try {
 
 ```typescript
 const ws = new SandboxWebSocketClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: 'v4.local.your-token',
   sessionId,
   credentialId,
@@ -658,7 +660,7 @@ await sdk.sandbox.click(sessionId, '#quick-button', {
 ### 4. 处理所有错误情况
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 try {
   await sdk.sandbox.click(sessionId, '#button');
@@ -700,9 +702,9 @@ await sdk.sandbox.closeSession(sessionId);
 ```typescript
 class SandboxSessionPool {
   private sessions: Map<string, string> = new Map();
-  private sdk: CredBridgeSDK;
+  private sdk: ToaniVaultSDK;
 
-  constructor(sdk: CredBridgeSDK) {
+  constructor(sdk: ToaniVaultSDK) {
     this.sdk = sdk;
   }
 
@@ -744,7 +746,7 @@ class SandboxSessionPool {
 ### 错误类型
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 try {
   await sdk.sandbox.click(sessionId, '#button');
@@ -955,11 +957,11 @@ enum WebSocketState {
 ### 完整示例：自动化投资组合查询
 
 ```typescript
-import { CredBridgeSDK, SessionStatus, CredBridgeError } from '@credbridge/sdk';
+import { ToaniVaultSDK, SessionStatus, CredBridgeError } from '@toani/vault-sdk';
 
-const sdk = new CredBridgeSDK({
-  baseUrl: process.env.CREDBRIDGE_BASE_URL!,
-  token: process.env.CREDBRIDGE_TOKEN!,
+const sdk = new ToaniVaultSDK({
+  baseUrl: process.env.TOANI_VAULT_BASE_URL!,
+  token: process.env.TOANI_VAULT_TOKEN!,
 });
 
 interface PortfolioData {

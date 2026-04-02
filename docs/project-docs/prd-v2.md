@@ -55,7 +55,7 @@ CredBridge 是 AI Agent 领域第一个专用的零信任凭证保险库开源�
 | REQ-011 | CLI 输出英文化 | P0 | 确保 CLI 工具的所有用户可见文本为英文 |
 | REQ-012 | 前端 UI 品牌化 | P1 | 将控制台 UI 配色方案更新为 zk.me 品牌色系 |
 | REQ-013 | 品牌资源替换 | P1 | 替换 favicon 和 Logo 为 CredBridge/zk.me 品牌资源 |
-| REQ-014 | npm 包发布配置 | P1 | 完善 package.json 配置并发布 @credbridge/sdk 到 npm |
+| REQ-014 | npm 包发布配置 | P1 | 完善 package.json 配置并发布 @toani/vault-sdk 到 npm (旧名 @credbridge/sdk 已弃用) |
 | REQ-015 | 贡献指南 | P1 | 创建 CONTRIBUTING.md 贡献流程文档 |
 | REQ-016 | 行为准则 | P1 | 创建 CODE_OF_CONDUCT.md 社区行为准则 |
 | REQ-017 | Issue/PR 模板 | P1 | 创建 GitHub/Clawhub Issue 和 PR 模板 |
@@ -360,14 +360,14 @@ detect-secrets scan > .secrets.baseline
 ### REQ-014: npm 包发布配置
 
 **优先级**: P1
-**验收标准**: @credbridge/sdk 可在 npm 公有 registry 安装
+**验收标准**: @toani/vault-sdk 可在 npm 公有 registry 安装 (旧包名 @credbridge/sdk 已弃用)
 
 **详细描述**:
 
 1. **package.json 完善**:
    ```json
    {
-     "name": "@credbridge/sdk",
+     "name": "@toani/vault-sdk",
      "version": "1.0.0",
      "repository": {
        "type": "git",
@@ -387,7 +387,7 @@ detect-secrets scan > .secrets.baseline
    ```
 
 2. **版本同步**:
-   - `CredBridgeSDK.get version` 中的硬编码版本号与 `package.json` 版本同步
+   - `ToaniVaultSDK.get version` 中的硬编码版本号与 `package.json` 版本同步
    - 考虑从 package.json 动态读取版本
 
 3. **发布流程**:
@@ -565,7 +565,7 @@ TEE_ENABLED=false
 | 指标 | 目标值 | 时间范围 |
 |------|--------|----------|
 | 社区发布 | 成功推送到 Clawhub 社区 | 发布时 |
-| npm 包可用 | @credbridge/sdk 可安装 | 发布后 |
+| npm 包可用 | @toani/vault-sdk 可安装 (旧名 @credbridge/sdk) | 发布后 |
 | GitHub/Clawhub Stars | > 500 | 发布后 3 个月 |
 | 外部贡献 | 至少 10 个 Issue 或 PR | 发布后 3 个月 |
 

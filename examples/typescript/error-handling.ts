@@ -1,5 +1,5 @@
 /**
- * CredBridge TypeScript SDK - 错误处理示例
+ * Toani Vault SDK TypeScript - 错误处理示例
  *
  * 展示各种错误场景的处理方式
  */
@@ -8,10 +8,10 @@ import {
   CredBridgeClient,
   CredBridgeError,
   CredBridgeErrorCode,
-} from '@credbridge/sdk';
+} from '@toani/vault-sdk';
 
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'https://api.credbridge.io';
-const TOKEN = process.env.CREDBRIDGE_TOKEN || 'your-api-token';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || 'https://api.toani.io';
+const TOKEN = process.env.TOANI_VAULT_TOKEN || 'your-api-token';
 
 async function main() {
   const client = new CredBridgeClient({
@@ -19,7 +19,7 @@ async function main() {
     token: TOKEN,
   });
 
-  console.log('=== CredBridge 错误处理示例 ===\n');
+  console.log('=== Toani Vault 错误处理示例 ===\n');
 
   // 示例 1: 凭证不存在
   console.log('1. 处理凭证不存在错误...');
@@ -58,7 +58,7 @@ async function main() {
   try {
     // 使用错误的 URL 触发网络错误
     const badClient = new CredBridgeClient({
-      baseUrl: 'https://invalid.credbridge.io',
+      baseUrl: 'https://invalid.toani.io',
       token: TOKEN,
       maxRetries: 2, // 限制重试次数
     });

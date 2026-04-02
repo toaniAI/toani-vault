@@ -1,5 +1,7 @@
 # CredBridge SDK 综合指南
 
+> **迁移注意**: SDK 包已从 `@credbridge/sdk` (TypeScript) 和 `credbridge-sdk` (Rust) 重命名为 `@toani/vault-sdk` 和 `toani-vault-sdk`。旧包名已弃用。请将 `import { CredBridgeClient }` 改为 `import { CredBridgeClient } from '@toani/vault-sdk'`（类名保持不变），Rust 中使用 `use toani_vault_sdk::`。
+
 本文档提供 CredBridge TypeScript 和 Rust SDK 的完整使用指南。
 
 ## 目录
@@ -32,14 +34,14 @@ CredBridge SDK 提供两种语言的官方实现：
 ### TypeScript
 
 ```bash
-npm install @credbridge/sdk
+npm install @toani/vault-sdk
 ```
 
 ```typescript
-import { CredBridgeClient, CredentialType } from '@credbridge/sdk';
+import { CredBridgeClient, CredentialType } from '@toani/vault-sdk';
 
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: 'your-api-token',
 });
 
@@ -61,19 +63,19 @@ const decrypted = await client.credentials.decrypt(
 
 ```toml
 [dependencies]
-credbridge-sdk = "0.1.0"
+toani-vault-sdk = "0.1.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
 ```rust
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = CredBridgeConfig::new("https://api.credbridge.io")
+    let config = CredBridgeConfig::new("https://api.toani.io")
         .with_token("your-api-token");
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     // 创建凭证
     let credential = sdk.credentials()
@@ -121,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | 操作 | TypeScript | Rust |
 |------|-----------|------|
-| 创建客户端 | `new CredBridgeClient(config)` | `CredBridgeSDK::new(config)` |
+| 创建客户端 | `new CredBridgeClient(config)` | `ToaniVaultSDK::new(config)` |
 | 设置 Token | `client.setToken(token)` | `client.set_token(token)` |
 | 获取 Token 信息 | `client.getTokenInfo()` | `client.get_token_info()` |
 
@@ -261,7 +263,7 @@ if (!client.token.hasAllScopes(['credential:read', 'credential:decrypt'])) {
 <TabItem value="rust" label="Rust">
 
 ```rust
-use credbridge_sdk::types::TokenScope;
+use toani_vault_sdk::types::TokenScope;
 
 // 检查权限
 if !sdk.token().has_scope(TokenScope::CredentialDecrypt) {
@@ -287,7 +289,7 @@ if !sdk.token().has_all_scopes(&required) {
 ```typescript
 // 使用环境变量存储敏感信息
 const client = new CredBridgeClient({
-  baseUrl: process.env.CREDBRIDGE_API_URL!,
+  baseUrl: process.env.TOANI_VAULT_API_URL!,
   token: process.env.CREDBRIDGE_TOKEN!,
   timeout: 30000,
   maxRetries: 3,
@@ -297,7 +299,7 @@ const client = new CredBridgeClient({
 ### 2. 错误处理
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 try {
   const credential = await client.credentials.get(id);
@@ -377,7 +379,7 @@ if (client.token.isExpiringSoon()) {
 **解决方案**:
 ```typescript
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: 'your-token',
   timeout: 60000,  // 增加超时时间
   maxRetries: 5,   // 增加重试次数

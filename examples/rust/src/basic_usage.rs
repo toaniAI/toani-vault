@@ -1,9 +1,9 @@
-//! CredBridge Rust SDK - 基础使用示例
+//! Toani Vault Rust SDK - 基础使用示例
 //!
 //! 展示凭证创建、获取、解密和删除的基本操作
 
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::CredentialType;
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::CredentialType;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -14,9 +14,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
-    println!("=== CredBridge Rust SDK 基础示例 ===\n");
+    println!("=== Toani Vault Rust SDK 基础示例 ===\n");
 
     let mut created_ids = Vec::new();
 
@@ -107,7 +107,7 @@ pub async fn create_custom_credential() -> Result<(), Box<dyn std::error::Error>
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     // 创建 OAuth 刷新令牌
     println!("\n创建 OAuth 刷新令牌凭证...");

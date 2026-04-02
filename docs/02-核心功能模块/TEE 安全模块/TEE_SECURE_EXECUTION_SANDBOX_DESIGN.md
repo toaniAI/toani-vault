@@ -918,9 +918,9 @@ interface OperationResult {
 ### 1.3 SDK 使用示例
 
 ```typescript
-import { CredBridgeSDK } from '@credbridge/sdk';
+import { ToaniVaultSDK } from '@toani/vault-sdk';
 
-const sdk = new CredBridgeSDK({
+const sdk = new ToaniVaultSDK({
   baseUrl: 'https://vault.credbridge.io',
   token: 'your-paseto-token',
 });
@@ -4798,9 +4798,9 @@ export class CredBridgeClient {
 #### 8.5.3 使用示例
 
 ```typescript
-import { CredBridgeSDK } from '@credbridge/sdk';
+import { ToaniVaultSDK } from '@toani/vault-sdk';
 
-const sdk = new CredBridgeSDK({
+const sdk = new ToaniVaultSDK({
   baseUrl: 'https://vault.credbridge.io',
   token: 'your-paseto-token',
 });

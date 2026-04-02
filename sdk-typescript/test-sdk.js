@@ -1,9 +1,9 @@
-// CredBridge TypeScript SDK 测试脚本
+// Toani Vault TypeScript SDK 测试脚本
 // 用于测试 SDK 的基本功能
 
-const { CredBridgeSDK, CredentialType } = require('./dist/index.js');
+const { ToaniVaultSDK, CredentialType } = require('./dist/index.js');
 
-console.log('=== CredBridge TypeScript SDK 测试 ===\n');
+console.log('=== Toani Vault TypeScript SDK 测试 ===\n');
 
 // 测试配置
 const config = {
@@ -15,7 +15,7 @@ const config = {
 
 console.log('1. 测试 SDK 初始化...');
 try {
-  const sdk = new CredBridgeSDK(config);
+  const sdk = new ToaniVaultSDK(config);
   console.log('✅ SDK 初始化成功');
   console.log('   配置:', {
     baseUrl: config.baseUrl,
@@ -37,10 +37,10 @@ console.log('   - KycDocument:', CredentialType.KycDocument);
 
 console.log('\n3. 测试 SDK 服务实例...');
 console.log('   (跳过实例化 - 需要有效的 PASETO Token)');
-console.log('   - credentials 服务：CredBridgeSDK 实例方法');
-console.log('   - token 服务：CredBridgeSDK 实例方法');
-console.log('   - sandbox 服务：CredBridgeSDK 实例方法');
-console.log('   - client 服务：CredBridgeSDK 实例方法');
+console.log('   - credentials 服务：ToaniVaultSDK 实例方法');
+console.log('   - token 服务：ToaniVaultSDK 实例方法');
+console.log('   - sandbox 服务：ToaniVaultSDK 实例方法');
+console.log('   - client 服务：ToaniVaultSDK 实例方法');
 
 console.log('\n4. 测试凭证创建方法...');
 console.log('   可用方法:');
@@ -75,3 +75,4 @@ console.log('   - exportData(sessionId, request)');
 
 console.log('\n=== 测试完成 ===');
 console.log('\n注意：以上测试仅验证 SDK 接口可用性，实际 API 调用需要有效的 Token 和后端服务支持。');
+console.log('\n迁移说明: CredBridgeSDK 已重命名为 ToaniVaultSDK，旧名称仍可作为兼容别名使用。');

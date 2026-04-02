@@ -1,7 +1,7 @@
 /**
- * CredBridge TypeScript SDK - Express 集成示例
+ * Toani Vault SDK TypeScript - Express 集成示例
  *
- * 展示如何在 Express 应用中集成 CredBridge SDK
+ * 展示如何在 Express 应用中集成 Toani Vault SDK
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -10,7 +10,7 @@ import {
   CredBridgeError,
   CredBridgeErrorCode,
   CredentialType,
-} from '@credbridge/sdk';
+} from '@toani/vault-sdk';
 
 // 扩展 Express Request 类型
 declare global {
@@ -26,9 +26,9 @@ declare global {
 const app = express();
 app.use(express.json());
 
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'https://api.credbridge.io';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || 'https://api.toani.io';
 
-// 初始化 CredBridge 客户端中间件
+// 初始化 Toani Vault 客户端中间件
 function initCredBridge() {
   return (req: Request, _res: Response, next: NextFunction) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -57,7 +57,7 @@ function initCredBridge() {
 function requireScopes(...scopes: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.credbridge) {
-      return res.status(500).json({ error: 'CredBridge client not initialized' });
+      return res.status(500).json({ error: 'Toani Vault client not initialized' });
     }
 
     const token = req.credbridge.token;
@@ -249,7 +249,7 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Express server running on port ${PORT}`);
-  console.log(`CredBridge API: ${BASE_URL}`);
+  console.log(`Toani Vault API: ${BASE_URL}`);
   console.log('');
   console.log('API Endpoints:');
   console.log('  GET  /health                    - 健康检查');

@@ -1,15 +1,15 @@
-//! CredBridge SDK 集成测试
+//! Toani Vault SDK 集成测试
 //!
 //! 测试 SDK 的核心功能，包括客户端、凭证管理和 Token 管理。
 
 use std::collections::HashMap;
 
-use credbridge_sdk::{
+use toani_vault_sdk::{
     client::CredBridgeClient,
     credentials::CredentialsService,
     token::TokenManager,
     types::{CredBridgeConfig, CredBridgeErrorCode, CredentialType, RequestOptions},
-    CredBridgeSDK,
+    ToaniVaultSDK,
 };
 use serde_json::json;
 use wiremock::{
@@ -228,7 +228,7 @@ async fn test_list_credentials_with_filter() {
     let client = std::sync::Arc::new(CredBridgeClient::new(config).unwrap());
     let credentials = CredentialsService::new(client);
 
-    let filter = credbridge_sdk::types::CredentialFilter {
+    let filter = toani_vault_sdk::types::CredentialFilter {
         service_id: Some("schwab".to_string()),
         ..Default::default()
     };
@@ -432,20 +432,20 @@ async fn test_token_manager_scopes() {
     let token_manager = TokenManager::new(client);
 
     // Check scopes from the test token
-    assert!(token_manager.has_scope(credbridge_sdk::types::TokenScope::CredentialRead));
-    assert!(token_manager.has_scope(credbridge_sdk::types::TokenScope::CredentialWrite));
-    assert!(token_manager.has_scope(credbridge_sdk::types::TokenScope::CredentialDecrypt));
+    assert!(token_manager.has_scope(toani_vault_sdk::types::TokenScope::CredentialRead));
+    assert!(token_manager.has_scope(toani_vault_sdk::types::TokenScope::CredentialWrite));
+    assert!(token_manager.has_scope(toani_vault_sdk::types::TokenScope::CredentialDecrypt));
 
     // Check has_any_scope
     assert!(token_manager.has_any_scope(&[
-        credbridge_sdk::types::TokenScope::CredentialRead,
-        credbridge_sdk::types::TokenScope::Admin,
+        toani_vault_sdk::types::TokenScope::CredentialRead,
+        toani_vault_sdk::types::TokenScope::Admin,
     ]));
 
     // Check has_all_scopes
     assert!(token_manager.has_all_scopes(&[
-        credbridge_sdk::types::TokenScope::CredentialRead,
-        credbridge_sdk::types::TokenScope::CredentialWrite,
+        toani_vault_sdk::types::TokenScope::CredentialRead,
+        toani_vault_sdk::types::TokenScope::CredentialWrite,
     ]));
 }
 
@@ -473,11 +473,11 @@ async fn test_sdk_creation() {
     let mock_server = MockServer::start().await;
 
     let config = create_test_config(&mock_server.uri());
-    let sdk = CredBridgeSDK::new(config);
+    let sdk = ToaniVaultSDK::new(config);
     assert!(sdk.is_ok());
 
     let sdk = sdk.unwrap();
-    assert_eq!(credbridge_sdk::version(), CredBridgeSDK::version());
+    assert_eq!(toani_vault_sdk::version(), ToaniVaultSDK::version());
 }
 
 #[tokio::test]
@@ -495,7 +495,7 @@ async fn test_sdk_services() {
         .await;
 
     let config = create_test_config(&mock_server.uri());
-    let sdk = CredBridgeSDK::new(config).unwrap();
+    let sdk = ToaniVaultSDK::new(config).unwrap();
 
     // Test credentials service
     let (credentials, total) = sdk.credentials().list(None, None).await.unwrap();
@@ -602,7 +602,7 @@ async fn test_token_scope_display() {
     let mut output = String::new();
     write!(&mut output,
         "{}",
-        credbridge_sdk::types::TokenScope::CredentialRead
+        toani_vault_sdk::types::TokenScope::CredentialRead
     )
     .unwrap();
     assert_eq!(output, "credential:read");
@@ -611,8 +611,24 @@ async fn test_token_scope_display() {
     write!(
         &mut output,
         "{}",
-        credbridge_sdk::types::TokenScope::Admin
+        toani_vault_sdk::types::TokenScope::Admin
     )
     .unwrap();
     assert_eq!(output, "admin");
 }
+
+#[tokio::test]
+async fn test_deprecated_sdk_alias() {
+    // Test that CredBridgeSDK is available as a type alias for ToaniVaultSDK
+    let mock_server = MockServer::start().await;
+
+    let config = create_test_config(&mock_server.uri());
+
+    // Using the deprecated CredBridgeSDK alias should still work
+    let sdk = toani_vault_sdk::CredBridgeSDK::new(config);
+    assert!(sdk.is_ok());
+
+    // Both should point to the same type
+    let _sdk: toani_vault_sdk::ToaniVaultSDK = sdk.unwrap();
+}
+

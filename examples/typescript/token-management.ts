@@ -1,13 +1,13 @@
 /**
- * CredBridge TypeScript SDK - Token 管理示例
+ * Toani Vault SDK TypeScript - Token 管理示例
  *
  * 展示 Token 验证、权限检查和刷新操作
  */
 
-import { CredBridgeClient, CredBridgeError } from '@credbridge/sdk';
+import { CredBridgeClient, CredBridgeError } from '@toani/vault-sdk';
 
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'https://api.credbridge.io';
-const TOKEN = process.env.CREDBRIDGE_TOKEN || 'your-api-token';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || 'https://api.toani.io';
+const TOKEN = process.env.TOANI_VAULT_TOKEN || 'your-api-token';
 
 async function main() {
   const client = new CredBridgeClient({
@@ -15,7 +15,7 @@ async function main() {
     token: TOKEN,
   });
 
-  console.log('=== CredBridge Token 管理示例 ===\n');
+  console.log('=== Toani Vault Token 管理示例 ===\n');
 
   try {
     // 1. 获取 Token 信息
@@ -78,7 +78,7 @@ async function main() {
 
   } catch (error) {
     if (error instanceof CredBridgeError) {
-      console.error('CredBridge 错误:', error.code, error.message);
+      console.error('Toani Vault 错误:', error.code, error.message);
     } else {
       console.error('错误:', error);
     }

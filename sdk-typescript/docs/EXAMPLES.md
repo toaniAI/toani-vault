@@ -1,5 +1,7 @@
 # CredBridge TypeScript SDK - 高级示例
 
+> **迁移说明**: 本 SDK 已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，主类从 `CredBridgeSDK` 重命名为 `ToaniVaultSDK`。旧名称 `CredBridgeSDK` 仍然作为兼容性别名保留，但建议使用新名称。`CredBridgeClient`、`CredBridgeError`、`CredBridgeErrorCode` 等类名保持不变。
+
 ## 目录
 
 1. [基础凭证操作](#1-基础凭证操作)
@@ -20,11 +22,11 @@
 ### 1.1 创建不同类型的凭证
 
 ```typescript
-import { CredBridgeClient, CredentialType } from '@credbridge/sdk';
+import { CredBridgeClient, CredentialType } from '@toani/vault-sdk';
 
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
-  token: process.env.CREDBRIDGE_TOKEN!,
+  baseUrl: 'https://api.toani.io',
+  token: process.env.TOANI_VAULT_TOKEN!,
 });
 
 // 创建用户名密码凭证
@@ -245,7 +247,7 @@ class TokenManager {
     this.client.on('token_refreshed', (event) => {
       console.log('Token refreshed successfully');
       // 更新环境变量或配置文件
-      process.env.CREDBRIDGE_TOKEN = event.data.token;
+      process.env.TOANI_VAULT_TOKEN = event.data.token;
     });
   }
 
@@ -304,7 +306,7 @@ class TokenManager {
 ## 4. 错误处理与重试
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 class SafeCredentialClient {
   constructor(private client: CredBridgeClient) {}
@@ -445,7 +447,7 @@ class AuditLogger {
 import express from 'express';
 import crypto from 'crypto';
 
-class CredBridgeWebhookHandler {
+class ToaniVaultWebhookHandler {
   constructor(private webhookSecret: string) {}
 
   // 验证 Webhook 签名
@@ -508,7 +510,7 @@ class CredBridgeWebhookHandler {
 
 // Express 中间件
 export function createWebhookMiddleware(webhookSecret: string) {
-  const handler = new CredBridgeWebhookHandler(webhookSecret);
+  const handler = new ToaniVaultWebhookHandler(webhookSecret);
 
   return express.json({
     verify: (req: any, _res, buf) => {
@@ -524,21 +526,21 @@ export function createWebhookMiddleware(webhookSecret: string) {
 
 ```typescript
 import { Request, Response, NextFunction } from 'express';
-import { CredBridgeClient, CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeClient, CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 // 扩展 Express Request 类型
 declare global {
   namespace Express {
     interface Request {
-      credbridge?: CredBridgeClient;
+      toaniVault?: CredBridgeClient;
       tenantId?: string;
       userId?: string;
     }
   }
 }
 
-// 初始化 CredBridge 客户端中间件
-export function initCredBridge(config: {
+// 初始化 Toani Vault 客户端中间件
+export function initToaniVault(config: {
   baseUrl: string;
   getToken: (req: Request) => string | undefined;
 }) {
@@ -546,16 +548,16 @@ export function initCredBridge(config: {
     const token = config.getToken(req);
 
     if (!token) {
-      return next(new Error('Missing CredBridge token'));
+      return next(new Error('Missing Toani Vault token'));
     }
 
-    req.credbridge = new CredBridgeClient({
+    req.toaniVault = new CredBridgeClient({
       baseUrl: config.baseUrl,
       token,
     });
 
     // 从 Token 中提取租户和用户 ID
-    const tokenInfo = req.credbridge.getTokenInfo();
+    const tokenInfo = req.toaniVault.getTokenInfo();
     if (tokenInfo) {
       req.tenantId = tokenInfo.tenantId;
       req.userId = tokenInfo.userId;
@@ -568,11 +570,11 @@ export function initCredBridge(config: {
 // 权限检查中间件
 export function requireScopes(...scopes: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.credbridge) {
-      return res.status(500).json({ error: 'CredBridge client not initialized' });
+    if (!req.toaniVault) {
+      return res.status(500).json({ error: 'Toani Vault client not initialized' });
     }
 
-    const token = req.credbridge.token;
+    const token = req.toaniVault.token;
     const hasScopes = token.hasAllScopes(scopes as any);
 
     if (!hasScopes) {
@@ -588,7 +590,7 @@ export function requireScopes(...scopes: string[]) {
 }
 
 // 错误处理中间件
-export function credBridgeErrorHandler(
+export function toaniVaultErrorHandler(
   err: Error,
   _req: Request,
   res: Response,
@@ -628,8 +630,8 @@ import express from 'express';
 
 const app = express();
 
-app.use(initCredBridge({
-  baseUrl: 'https://api.credbridge.io',
+app.use(initToaniVault({
+  baseUrl: 'https://api.toani.io',
   getToken: (req) => req.headers.authorization?.replace('Bearer ', ''),
 }));
 
@@ -637,7 +639,7 @@ app.use(initCredBridge({
 app.get('/api/credentials',
   requireScopes('credential:read'),
   async (req, res) => {
-    const { credentials } = await req.credbridge!.credentials.list();
+    const { credentials } = await req.toaniVault!.credentials.list();
     res.json(credentials);
   }
 );
@@ -645,12 +647,12 @@ app.get('/api/credentials',
 app.post('/api/credentials',
   requireScopes('credential:write'),
   async (req, res) => {
-    const credential = await req.credbridge!.credentials.create(req.body);
+    const credential = await req.toaniVault!.credentials.create(req.body);
     res.json(credential);
   }
 );
 
-app.use(credBridgeErrorHandler);
+app.use(toaniVaultErrorHandler);
 */
 ```
 
@@ -660,7 +662,7 @@ app.use(credBridgeErrorHandler);
 
 ```typescript
 import { useState, useEffect, useCallback } from 'react';
-import { CredBridgeClient, CredentialType } from '@credbridge/sdk';
+import { CredBridgeClient, CredentialType } from '@toani/vault-sdk';
 
 interface UseCredentialsOptions {
   baseUrl: string;
@@ -741,7 +743,7 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
 /*
 function CredentialManager() {
   const { credentials, loading, create, delete: deleteCred } = useCredentials({
-    baseUrl: 'https://api.credbridge.io',
+    baseUrl: 'https://api.toani.io',
     token: 'your-token',
     serviceId: 'schwab',
   });
@@ -896,7 +898,7 @@ class AutoRefreshTokenClient {
 // 使用示例
 /*
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: initialToken,
 });
 

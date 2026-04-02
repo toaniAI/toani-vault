@@ -1,8 +1,8 @@
-# @credbridge/sdk
+# @toani/vault-sdk
 
-CredBridge Vault SDK - TypeScript client for secure credential management.
+Toani Vault SDK - TypeScript client for secure credential management.
 
-[![npm version](https://img.shields.io/npm/v/@credbridge/sdk.svg)](https://www.npmjs.com/package/@credbridge/sdk)
+[![npm version](https://img.shields.io/npm/v/@toani/vault-sdk.svg)](https://www.npmjs.com/package/@toani/vault-sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
 
@@ -18,21 +18,21 @@ CredBridge Vault SDK - TypeScript client for secure credential management.
 ## 安装
 
 ```bash
-npm install @credbridge/sdk
+npm install @toani/vault-sdk
 # 或
-yarn add @credbridge/sdk
+yarn add @toani/vault-sdk
 # 或
-pnpm add @credbridge/sdk
+pnpm add @toani/vault-sdk
 ```
 
 ## 快速开始
 
 ```typescript
-import { CredBridgeSDK, CredentialType } from '@credbridge/sdk';
+import { ToaniVaultSDK, CredentialType } from '@toani/vault-sdk';
 
 // 初始化 SDK
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
+const sdk = new ToaniVaultSDK({
+  baseUrl: 'https://vault.toani.io',
   token: 'v4.local.your-paseto-token',
 });
 
@@ -53,12 +53,28 @@ const decrypted = await sdk.credentials.decrypt(credential.credentialId);
 console.log('Username:', decrypted.plaintextData.username);
 ```
 
+## 迁移说明
+
+> **注意**: 如果你之前使用的是 `@credbridge/sdk` 和 `CredBridgeSDK`，它们仍然可用但已标记为弃用。
+>
+> 旧名称将在 v1.0.0 版本中移除，建议尽快迁移到新名称。
+
+```typescript
+// ✅ 新名称（推荐）
+import { ToaniVaultSDK } from '@toani/vault-sdk';
+const sdk = new ToaniVaultSDK({ ... });
+
+// ⚠️ 旧名称（已弃用，仍兼容）
+import { CredBridgeSDK } from '@toani/vault-sdk';
+const sdk = new CredBridgeSDK({ ... }); // 等同于 ToaniVaultSDK
+```
+
 ## 配置选项
 
 ```typescript
-const sdk = new CredBridgeSDK({
+const sdk = new ToaniVaultSDK({
   // 必需
-  baseUrl: 'https://vault.credbridge.io',
+  baseUrl: 'https://vault.toani.io',
   token: 'v4.local.your-token',
 
   // 可选
@@ -244,7 +260,7 @@ sdk.client.on('retry', (event) => {
 ## 错误处理
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 try {
   const credential = await sdk.credentials.get('invalid-id');
@@ -379,4 +395,4 @@ npm run lint
 
 ## 许可证
 
-MIT License © CredBridge Team
+MIT License © Toani Team

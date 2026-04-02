@@ -1,22 +1,36 @@
-# CredBridge TypeScript SDK - 快速入门
+# Toani Vault TypeScript SDK - 快速入门
 
 ## 安装
 
 ```bash
-npm install @credbridge/sdk
+npm install @toani/vault-sdk
 # 或
-yarn add @credbridge/sdk
+yarn add @toani/vault-sdk
 # 或
-pnpm add @credbridge/sdk
+pnpm add @toani/vault-sdk
+```
+
+## 迁移说明
+
+如果你之前使用的是 `@credbridge/sdk` 包，`CredBridgeSDK` 类仍然可用但已标记为弃用。建议迁移到新的 `ToaniVaultSDK` 类。
+
+```typescript
+// ✅ 新名称（推荐）
+import { ToaniVaultSDK } from '@toani/vault-sdk';
+const sdk = new ToaniVaultSDK({ ... });
+
+// ⚠️ 旧名称（已弃用，仍兼容）
+import { CredBridgeSDK } from '@toani/vault-sdk';
+const sdk = new CredBridgeSDK({ ... }); // 等同于 ToaniVaultSDK
 ```
 
 ## 初始化 SDK
 
 ```typescript
-import { CredBridgeClient } from '@credbridge/sdk';
+import { CredBridgeClient } from '@toani/vault-sdk';
 
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: 'your-api-token', // PASETO v4.local Token
   timeout: 30000,          // 请求超时时间（毫秒）
   maxRetries: 3,           // 最大重试次数
@@ -28,7 +42,7 @@ const client = new CredBridgeClient({
 ### 创建凭证
 
 ```typescript
-import { CredentialType } from '@credbridge/sdk';
+import { CredentialType } from '@toani/vault-sdk';
 
 // 创建用户名密码凭证
 const credential = await client.credentials.create({
@@ -140,7 +154,7 @@ const isValid = await client.token.verify();
 ## 错误处理
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
 
 try {
   const credential = await client.credentials.get('invalid-id');
@@ -192,7 +206,7 @@ unsubscribe();
 
 ```typescript
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: 'your-token',
   tenantId: 'tenant-123',  // 可选
   userId: 'user-456',      // 可选

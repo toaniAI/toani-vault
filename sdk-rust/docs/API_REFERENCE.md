@@ -1,8 +1,10 @@
-# CredBridge Rust SDK - API 参考
+# Toani Vault Rust SDK - API 参考
+
+> **迁移注意**: 此 crate 已从 `credbridge-sdk` 重命名为 `toani-vault-sdk`。`CredBridgeSDK` 已被弃用，请使用 `ToaniVaultSDK`。`CredBridgeSDK` 仍可作为 `ToaniVaultSDK` 的类型别名使用。
 
 ## 目录
 
-- [CredBridgeSDK](#credbridgesdk)
+- [ToaniVaultSDK](#toanivaultsdk)
 - [CredBridgeClient](#credbridgeclient)
 - [CredentialsService](#credentialsservice)
 - [TokenManager](#tokenmanager)
@@ -11,7 +13,7 @@
 
 ---
 
-## CredBridgeSDK
+## ToaniVaultSDK
 
 SDK 主入口，提供便捷的方法访问各种服务。
 

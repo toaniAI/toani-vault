@@ -1,4 +1,6 @@
-# CredBridge Rust SDK - 高级示例
+# Toani Vault Rust SDK - 高级示例
+
+> **迁移注意**: 此 crate 已从 `credbridge-sdk` 重命名为 `toani-vault-sdk`。`CredBridgeSDK` 已被弃用，请使用 `ToaniVaultSDK`。
 
 ## 目录
 
@@ -19,20 +21,20 @@
 ### 1.1 创建不同类型的凭证
 
 ```rust
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::CredentialType;
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::CredentialType;
 use serde_json::json;
 use std::collections::HashMap;
 
 struct CredentialCreator {
-    sdk: CredBridgeSDK,
+    sdk: ToaniVaultSDK,
 }
 
 impl CredentialCreator {
     fn new(base_url: &str, token: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let config = CredBridgeConfig::new(base_url)
             .with_token(token);
-        let sdk = CredBridgeSDK::new(config)?;
+        let sdk = ToaniVaultSDK::new(config)?;
         Ok(Self { sdk })
     }
 
@@ -118,14 +120,14 @@ impl CredentialCreator {
 ### 1.2 凭证生命周期管理
 
 ```rust
-use credbridge_sdk::types::{CredBridgeError, CredBridgeErrorCode};
+use toani_vault_sdk::types::{CredBridgeError, CredBridgeErrorCode};
 
 struct CredentialLifecycleManager {
-    sdk: CredBridgeSDK,
+    sdk: ToaniVaultSDK,
 }
 
 impl CredentialLifecycleManager {
-    fn new(sdk: CredBridgeSDK) -> Self {
+    fn new(sdk: ToaniVaultSDK) -> Self {
         Self { sdk }
     }
 
@@ -220,11 +222,11 @@ impl CredentialLifecycleManager {
 use futures::future::join_all;
 
 struct BulkCredentialManager {
-    sdk: CredBridgeSDK,
+    sdk: ToaniVaultSDK,
 }
 
 impl BulkCredentialManager {
-    fn new(sdk: CredBridgeSDK) -> Self {
+    fn new(sdk: ToaniVaultSDK) -> Self {
         Self { sdk }
     }
 
@@ -300,12 +302,12 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 
 struct TokenManager {
-    sdk: Arc<CredBridgeSDK>,
+    sdk: Arc<ToaniVaultSDK>,
     refresh_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl TokenManager {
-    fn new(sdk: CredBridgeSDK) -> Self {
+    fn new(sdk: ToaniVaultSDK) -> Self {
         let sdk = Arc::new(sdk);
         Self {
             sdk,
@@ -338,7 +340,7 @@ impl TokenManager {
     }
 
     // 检查并刷新 Token
-    async fn check_and_refresh(sdk: &CredBridgeSDK) -> Result<(), Box<dyn std::error::Error>> {
+    async fn check_and_refresh(sdk: &ToaniVaultSDK) -> Result<(), Box<dyn std::error::Error>> {
         let token = sdk.token();
 
         // 检查 Token 是否有效
@@ -399,11 +401,11 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 struct SafeCredentialClient {
-    sdk: CredBridgeSDK,
+    sdk: ToaniVaultSDK,
 }
 
 impl SafeCredentialClient {
-    fn new(sdk: CredBridgeSDK) -> Self {
+    fn new(sdk: ToaniVaultSDK) -> Self {
         Self { sdk }
     }
 
@@ -513,11 +515,11 @@ struct ErrorResponse {
 use chrono::{DateTime, Utc};
 
 struct AuditLogger {
-    sdk: Arc<CredBridgeSDK>,
+    sdk: Arc<ToaniVaultSDK>,
 }
 
 impl AuditLogger {
-    fn new(sdk: CredBridgeSDK) -> Self {
+    fn new(sdk: ToaniVaultSDK) -> Self {
         Self { sdk: Arc::new(sdk) }
     }
 
@@ -601,7 +603,7 @@ use std::sync::Arc;
 // 应用状态
 #[derive(Clone)]
 struct AppState {
-    sdk: Arc<CredBridgeSDK>,
+    sdk: Arc<ToaniVaultSDK>,
 }
 
 // 创建凭证请求
@@ -739,7 +741,7 @@ fn parse_credential_type(s: &str) -> Result<CredentialType, String> {
 }
 
 // 创建路由器
-fn create_router(sdk: CredBridgeSDK) -> Router {
+fn create_router(sdk: ToaniVaultSDK) -> Router {
     let state = AppState {
         sdk: Arc::new(sdk),
     };
@@ -755,10 +757,10 @@ fn create_router(sdk: CredBridgeSDK) -> Router {
 /*
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = CredBridgeConfig::new("https://api.credbridge.io")
+    let config = CredBridgeConfig::new("https://api.toani.io")
         .with_token(std::env::var("CREDBRIDGE_TOKEN")?);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
     let app = create_router(sdk);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
@@ -779,7 +781,7 @@ use std::collections::HashMap;
 struct MultiTenantCredentialManager {
     base_url: String,
     tenant_tokens: HashMap<String, String>,
-    clients: RwLock<HashMap<String, Arc<CredBridgeSDK>>>,
+    clients: RwLock<HashMap<String, Arc<ToaniVaultSDK>>>,
 }
 
 impl MultiTenantCredentialManager {
@@ -797,7 +799,7 @@ impl MultiTenantCredentialManager {
     }
 
     // 获取或创建租户客户端
-    async fn get_client(&self, tenant_id: &str) -> Result<Arc<CredBridgeSDK>, Box<dyn std::error::Error>> {
+    async fn get_client(&self, tenant_id: &str) -> Result<Arc<ToaniVaultSDK>, Box<dyn std::error::Error>> {
         // 先尝试读取
         {
             let clients = self.clients.read().await;
@@ -814,7 +816,7 @@ impl MultiTenantCredentialManager {
         let config = CredBridgeConfig::new(&self.base_url)
             .with_token(token);
 
-        let sdk = Arc::new(CredBridgeSDK::new(config)?);
+        let sdk = Arc::new(ToaniVaultSDK::new(config)?);
 
         // 写入缓存
         let mut clients = self.clients.write().await;
@@ -880,14 +882,14 @@ impl MultiTenantCredentialManager {
 use tokio::sync::Mutex;
 
 struct AutoRefreshTokenClient {
-    sdk: Arc<CredBridgeSDK>,
+    sdk: Arc<ToaniVaultSDK>,
     refresh_callback: Arc<dyn Fn() -> futures::future::BoxFuture<'static, Result<String, Box<dyn std::error::Error + Send>>> + Send + Sync>,
     is_refreshing: Mutex<bool>,
 }
 
 impl AutoRefreshTokenClient {
     fn new<F, Fut>(
-        sdk: CredBridgeSDK,
+        sdk: ToaniVaultSDK,
         refresh_callback: F,
     ) -> Self
     where
@@ -955,10 +957,10 @@ impl AutoRefreshTokenClient {
 /*
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = CredBridgeConfig::new("https://api.credbridge.io")
+    let config = CredBridgeConfig::new("https://api.toani.io")
         .with_token(initial_token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     let auto_refresh = Arc::new(AutoRefreshTokenClient::new(
         sdk,
@@ -966,7 +968,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // 调用 Token 刷新端点
             let client = reqwest::Client::new();
             let response = client
-                .post("https://api.credbridge.io/api/v1/tokens/refresh")
+                .post("https://api.toani.io/api/v1/tokens/refresh")
                 .bearer_auth(current_token)
                 .send()
                 .await?;
@@ -995,11 +997,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```rust
 struct CredentialRotator {
-    sdk: CredBridgeSDK,
+    sdk: ToaniVaultSDK,
 }
 
 impl CredentialRotator {
-    fn new(sdk: CredBridgeSDK) -> Self {
+    fn new(sdk: ToaniVaultSDK) -> Self {
         Self { sdk }
     }
 

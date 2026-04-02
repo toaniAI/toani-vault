@@ -1,7 +1,7 @@
 {
-  "name": "@credbridge/sdk",
+  "name": "@toani/vault-sdk",
   "version": "0.1.0",
-  "description": "CredBridge Vault SDK - TypeScript client for secure credential management",
+  "description": "Toani Vault SDK - TypeScript client for secure credential management",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -24,7 +24,7 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
-    "credbridge",
+    "toani",
     "vault",
     "credentials",
     "security",
@@ -32,7 +32,7 @@
     "zero-trust",
     "sdk"
   ],
-  "author": "CredBridge Team",
+  "author": "Toani Team",
   "license": "MIT",
   "engines": {
     "node": ">=22.0.0"

@@ -45,7 +45,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient};
     ///
     /// # async fn example() {
     /// let config = CredBridgeConfig::new("https://api.credbridge.io")
@@ -66,7 +66,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -95,7 +95,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -125,7 +125,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -152,7 +152,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -197,7 +197,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -280,7 +280,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -305,7 +305,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -324,7 +324,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -343,7 +343,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -395,7 +395,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
