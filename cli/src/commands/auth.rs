@@ -15,7 +15,7 @@ pub async fn execute(cmd: AuthCommands, config: Config) -> Result<()> {
 async fn login(url: String, token: String) -> Result<()> {
     println!("{} {} ...", tr("cli.auth.connecting"), url);
 
-    let sdk = credbridge_sdk::CredBridgeSDK::new(
+    let sdk = credbridge_sdk::ToaniVaultSDK::new(
         credbridge_sdk::CredBridgeConfig::new(&url)
             .with_token(&token)
             .with_timeout_ms(30000),
@@ -54,7 +54,7 @@ async fn status(config: Config) -> Result<()> {
 
     println!("{}\n", tr("cli.auth.checking_status"));
 
-    let sdk = credbridge_sdk::CredBridgeSDK::new(
+    let sdk = credbridge_sdk::ToaniVaultSDK::new(
         credbridge_sdk::CredBridgeConfig::new(url)
             .with_token(token)
             .with_timeout_ms(10000),

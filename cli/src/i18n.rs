@@ -15,9 +15,7 @@ pub fn current_locale() -> &'static str {
 pub fn tr(key: &str) -> &str {
     match (current_locale(), key) {
         ("zh-CN", "cli.not_configured") => "未配置，请先运行 'toani auth login'",
-        ("en-US", "cli.not_configured") => {
-            "CLI is not configured. Run 'toani auth login' first."
-        }
+        ("en-US", "cli.not_configured") => "CLI is not configured. Run 'toani auth login' first.",
         ("zh-CN", "cli.auth.connecting") => "🔌 正在连接到",
         ("en-US", "cli.auth.connecting") => "🔌 Connecting to",
         ("zh-CN", "cli.auth.login_success") => "✅ 登录成功!",

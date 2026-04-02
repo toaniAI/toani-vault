@@ -24,8 +24,8 @@ pub async fn execute(cmd: TokenCommands, config: Config) -> Result<()> {
     }
 }
 
-fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
-    credbridge_sdk::CredBridgeSDK::new(
+fn create_sdk(config: &Config) -> Result<credbridge_sdk::ToaniVaultSDK> {
+    credbridge_sdk::ToaniVaultSDK::new(
         credbridge_sdk::CredBridgeConfig::new(config.require_url()?)
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
@@ -34,7 +34,7 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
 }
 
 async fn create_token(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     expires_in: u64,
     scopes: Option<String>,
@@ -58,7 +58,7 @@ async fn create_token(
 }
 
 async fn list_tokens(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
 ) -> Result<()> {
     let response = sdk.token().list(None).await?;
@@ -87,7 +87,7 @@ async fn list_tokens(
 }
 
 async fn revoke_token(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
@@ -102,7 +102,7 @@ async fn revoke_token(
 }
 
 async fn verify_token(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     token: Option<String>,
 ) -> Result<()> {
@@ -124,7 +124,7 @@ async fn verify_token(
                         "token_id": info.token_id,
                         "expires_at": info.expires_at,
                         "remaining_seconds": sdk.token().get_remaining_time(),
-                        "scopes": info.scopes.iter().map(|s| format!("{:?}", s)).collect::<Vec<_>>(),
+                        "scopes": info.scopes.iter().map(|s| format!("{s:?}")).collect::<Vec<_>>(),
                     });
                     formatter.print_object(&view)?;
                 }

@@ -34,8 +34,8 @@ pub async fn execute(cmd: AuditCommands, config: Config) -> Result<()> {
     }
 }
 
-fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
-    credbridge_sdk::CredBridgeSDK::new(
+fn create_sdk(config: &Config) -> Result<credbridge_sdk::ToaniVaultSDK> {
+    credbridge_sdk::ToaniVaultSDK::new(
         credbridge_sdk::CredBridgeConfig::new(config.require_url()?)
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
@@ -44,7 +44,7 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
 }
 
 async fn query_logs(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     from: Option<String>,
     to: Option<String>,
@@ -94,7 +94,7 @@ async fn query_logs(
 }
 
 async fn export_logs(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     output: String,
     format: String,
     from: Option<String>,
@@ -116,11 +116,11 @@ async fn export_logs(
         .ok_or_else(|| anyhow::anyhow!("missing export payload"))?;
     let bytes = base64::engine::general_purpose::STANDARD.decode(&data.content)?;
     std::fs::write(&output, bytes)?;
-    eprintln!("export written to {}", output);
+    eprintln!("export written to {output}");
     Ok(())
 }
 
-async fn verify_logs(sdk: &credbridge_sdk::CredBridgeSDK) -> Result<()> {
+async fn verify_logs(sdk: &credbridge_sdk::ToaniVaultSDK) -> Result<()> {
     let logs = sdk.audit().logs(AuditLogFilter::default(), None).await?;
     let first = logs
         .data
@@ -146,7 +146,7 @@ fn parse_timestamp(value: Option<String>) -> Result<Option<u64>> {
         .map(|item| {
             chrono::DateTime::parse_from_rfc3339(&item)
                 .map(|dt| dt.timestamp_millis() as u64)
-                .map_err(|e| anyhow::anyhow!("invalid timestamp `{}`: {}", item, e))
+                .map_err(|e| anyhow::anyhow!("invalid timestamp `{item}`: {e}"))
         })
         .transpose()
 }

@@ -293,7 +293,6 @@ dependencies = [
  "colored",
  "comfy-table",
  "console",
- "credbridge-sdk",
  "dialoguer",
  "dirs",
  "humantime",
@@ -302,29 +301,12 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "toani-vault-sdk",
  "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "credbridge-sdk"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.21.7",
- "chrono",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "url",
- "urlencoding",
- "uuid",
 ]
 
 [[package]]
@@ -1524,6 +1506,24 @@ checksum = "42d3e9c45c09de15d06dd8acf5f4e0e399e85927b7f00711024eb7ae10fa4869"
 dependencies = [
  "displaydoc",
  "zerovec",
+]
+
+[[package]]
+name = "toani-vault-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
 ]
 
 [[package]]

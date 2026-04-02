@@ -49,8 +49,8 @@ pub async fn execute(cmd: CredentialCommands, config: Config) -> Result<()> {
     }
 }
 
-fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
-    credbridge_sdk::CredBridgeSDK::new(
+fn create_sdk(config: &Config) -> Result<credbridge_sdk::ToaniVaultSDK> {
+    credbridge_sdk::ToaniVaultSDK::new(
         credbridge_sdk::CredBridgeConfig::new(config.require_url()?)
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
@@ -59,7 +59,7 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
 }
 
 async fn list_credentials(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     credential_type: Option<String>,
     _limit: u32,
@@ -110,7 +110,7 @@ async fn list_credentials(
 }
 
 async fn get_credential(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
@@ -128,7 +128,7 @@ async fn get_credential(
         println!("  Type:         {}", credential.credential_type);
         println!("  Created At:   {}", credential.created_at);
         if let Some(expires) = &credential.expires_at {
-            println!("  Expires At:   {}", expires);
+            println!("  Expires At:   {expires}");
         }
         println!("  Deleted:      {}", credential.is_deleted);
         if credential.encrypted_payload.is_some() {
@@ -151,7 +151,7 @@ async fn get_credential(
 }
 
 async fn create_credential(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     name: String,
     credential_type: String,
@@ -193,7 +193,7 @@ async fn create_credential(
 }
 
 async fn update_credential(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
     name: Option<String>,
@@ -241,7 +241,7 @@ async fn update_credential(
 }
 
 async fn delete_credential(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     id: String,
     force: bool,
 ) -> Result<()> {
@@ -267,7 +267,7 @@ async fn delete_credential(
 }
 
 async fn decrypt_credential(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
@@ -304,7 +304,7 @@ async fn decrypt_credential(
 }
 
 async fn list_versions(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
@@ -333,7 +333,7 @@ async fn list_versions(
 }
 
 async fn rollback_credential(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
     version: i32,
@@ -364,8 +364,7 @@ fn parse_credential_type(s: &str) -> Result<CredentialType> {
         "ssh_key" | "sshkey" => Ok(CredentialType::SshKey),
         "database_connection" | "databaseconnection" => Ok(CredentialType::DatabaseConnection),
         _ => anyhow::bail!(
-            "Invalid credential type: {}. Supported values: username_password, api_key, oauth_refresh, session_cookie, kyc_document, certificate, ssh_key, database_connection",
-            s
+            "Invalid credential type: {s}. Supported values: username_password, api_key, oauth_refresh, session_cookie, kyc_document, certificate, ssh_key, database_connection"
         ),
     }
 }

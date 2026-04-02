@@ -43,7 +43,7 @@ impl Config {
     /// 从指定路径加载配置
     pub fn load_from(path: &str) -> Result<Self> {
         let content =
-            std::fs::read_to_string(path).with_context(|| format!("读取配置文件失败: {}", path))?;
+            std::fs::read_to_string(path).with_context(|| format!("读取配置文件失败: {path}"))?;
 
         let config: Config = toml::from_str(&content).context("解析配置文件失败")?;
 

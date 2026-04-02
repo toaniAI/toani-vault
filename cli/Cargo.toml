@@ -16,7 +16,7 @@ path = "src/main.rs"
 clap = { version = "4.5", features = ["derive", "env", "cargo"] }
 
 # CredBridge SDK
-credbridge-sdk = { path = "../sdk-rust" }
+credbridge-sdk = { package = "toani-vault-sdk", path = "../sdk-rust" }
 
 # 异步运行时
 tokio = { version = "1", features = ["full", "rt-multi-thread"] }

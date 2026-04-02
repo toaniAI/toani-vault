@@ -17,7 +17,7 @@ impl OutputFormatter {
         match self.format {
             crate::config::OutputFormat::Json => {
                 let json = serde_json::to_string_pretty(obj)?;
-                println!("{}", json);
+                println!("{json}");
             }
             crate::config::OutputFormat::Table => {
                 // 将对象转换为键值表格
@@ -36,7 +36,7 @@ impl OutputFormatter {
                     }
                 }
 
-                println!("{}", table);
+                println!("{table}");
             }
         }
         Ok(())
@@ -47,7 +47,7 @@ impl OutputFormatter {
         match self.format {
             crate::config::OutputFormat::Json => {
                 let json = serde_json::to_string_pretty(items)?;
-                println!("{}", json);
+                println!("{json}");
             }
             crate::config::OutputFormat::Table => {
                 let mut table = Table::new();
@@ -73,7 +73,7 @@ impl OutputFormatter {
                     }
                 }
 
-                println!("{}", table);
+                println!("{table}");
             }
         }
         Ok(())
@@ -83,10 +83,10 @@ impl OutputFormatter {
     pub fn print_success(&self, message: &str) {
         match self.format {
             crate::config::OutputFormat::Json => {
-                println!("{{\"status\":\"success\",\"message\":\"{}\"}}", message);
+                println!("{{\"status\":\"success\",\"message\":\"{message}\"}}");
             }
             crate::config::OutputFormat::Table => {
-                println!("✅ {}", message);
+                println!("✅ {message}");
             }
         }
     }
@@ -95,10 +95,10 @@ impl OutputFormatter {
     pub fn print_error(&self, message: &str) {
         match self.format {
             crate::config::OutputFormat::Json => {
-                eprintln!("{{\"status\":\"error\",\"message\":\"{}\"}}", message);
+                eprintln!("{{\"status\":\"error\",\"message\":\"{message}\"}}");
             }
             crate::config::OutputFormat::Table => {
-                eprintln!("❌ {}", message);
+                eprintln!("❌ {message}");
             }
         }
     }
@@ -110,7 +110,7 @@ impl OutputFormatter {
 
     /// 向 stderr 输出诊断信息
     pub fn print_diagnostic(&self, message: &str) {
-        eprintln!("{}", message);
+        eprintln!("{message}");
     }
 }
 
@@ -148,7 +148,7 @@ fn format_value(value: &serde_json::Value) -> String {
 /// 打印原始 JSON
 pub fn print_raw_json<T: Serialize>(obj: &T) -> Result<()> {
     let json = serde_json::to_string_pretty(obj)?;
-    println!("{}", json);
+    println!("{json}");
     Ok(())
 }
 

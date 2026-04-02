@@ -105,6 +105,6 @@ async fn get_config(key: String) -> Result<()> {
         _ => anyhow::bail!("{}: {}", tr("cli.config.unknown_key"), key),
     };
 
-    println!("{}", value);
+    println!("{value}");
     Ok(())
 }

@@ -36,8 +36,8 @@ pub async fn execute(cmd: SandboxCommands, config: Config) -> Result<()> {
     }
 }
 
-fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
-    credbridge_sdk::CredBridgeSDK::new(
+fn create_sdk(config: &Config) -> Result<credbridge_sdk::ToaniVaultSDK> {
+    credbridge_sdk::ToaniVaultSDK::new(
         credbridge_sdk::CredBridgeConfig::new(config.require_url()?)
             .with_token(config.require_token()?)
             .with_timeout_ms(config.timeout * 1000),
@@ -46,7 +46,7 @@ fn create_sdk(config: &Config) -> Result<credbridge_sdk::CredBridgeSDK> {
 }
 
 async fn create_session(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     credential_id: String,
     original_intent: String,
@@ -68,7 +68,7 @@ async fn create_session(
 }
 
 async fn list_sessions(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
 ) -> Result<()> {
     formatter.print_diagnostic(&format!("{}\n", tr("cli.sandbox.list")));
@@ -78,7 +78,7 @@ async fn list_sessions(
 }
 
 async fn get_session(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
@@ -89,7 +89,7 @@ async fn get_session(
 }
 
 async fn terminate_session(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     id: String,
 ) -> Result<()> {
@@ -100,7 +100,7 @@ async fn terminate_session(
 }
 
 async fn execute_operation(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     session_id: String,
     operation_type: String,
@@ -117,7 +117,7 @@ async fn execute_operation(
             &session_id,
             ExecuteSandboxOperationRequest {
                 operation_type: operation_type.clone(),
-                description: format!("CLI {}", operation_type),
+                description: format!("CLI {operation_type}"),
                 parameters,
             },
             None,
@@ -128,7 +128,7 @@ async fn execute_operation(
 }
 
 async fn get_operation(
-    sdk: &credbridge_sdk::CredBridgeSDK,
+    sdk: &credbridge_sdk::ToaniVaultSDK,
     formatter: &OutputFormatter,
     operation_id: String,
 ) -> Result<()> {
@@ -138,7 +138,7 @@ async fn get_operation(
     Ok(())
 }
 
-async fn get_stats(sdk: &credbridge_sdk::CredBridgeSDK, formatter: &OutputFormatter) -> Result<()> {
+async fn get_stats(sdk: &credbridge_sdk::ToaniVaultSDK, formatter: &OutputFormatter) -> Result<()> {
     formatter.print_diagnostic(&format!("{}\n", tr("cli.sandbox.stats")));
     let response = sdk.sandbox().stats(None).await?;
     formatter.print_object(&response)?;
