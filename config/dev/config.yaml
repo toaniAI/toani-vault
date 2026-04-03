@@ -10,12 +10,12 @@ server:
 # 连接地址: postgresql-hl.dev.svc.cluster.local:5432
 # User: dn
 # Password: dnXcdYxcv56H
-# Database: platformid
+# Database: credbridge
 # SSL: disabled (集群内访问)
 # 建表参考: https://help.aliyun.com/zh/rds/apsaradb-rds-for-postgresql/use-the-timescaledb-extension
 # =============================================================================
 database:
-  url: "postgres://dn:dnXcdYxcv56H@postgresql-hl.dev.svc.cluster.local:5432/platformid?sslmode=disable"
+  url: "postgres://dn:dnXcdYxcv56H@postgresql-hl.dev.svc.cluster.local:5432/credbridge?sslmode=disable"
   pool_size: 10
   timeout_seconds: 30
 

@@ -27,10 +27,13 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::HashMap;
 use thiserror::Error;
+use uuid::Uuid;
 
 use super::TenantId;
+use crate::services::db::DatabasePool;
 
 /// 租户配置错误
 #[derive(Debug, Error)]
@@ -610,6 +613,158 @@ pub trait TenantConfigStore: Send + Sync {
     async fn list_configs(&self) -> Result<Vec<(TenantId, TenantConfig)>, TenantConfigError>;
 }
 
+#[async_trait]
+impl<T> TenantConfigStore for std::sync::Arc<T>
+where
+    T: TenantConfigStore + ?Sized,
+{
+    async fn get_config(&self, tenant_id: &TenantId) -> Result<TenantConfig, TenantConfigError> {
+        self.as_ref().get_config(tenant_id).await
+    }
+
+    async fn save_config(
+        &self,
+        tenant_id: &TenantId,
+        config: &TenantConfig,
+    ) -> Result<(), TenantConfigError> {
+        self.as_ref().save_config(tenant_id, config).await
+    }
+
+    async fn delete_config(&self, tenant_id: &TenantId) -> Result<(), TenantConfigError> {
+        self.as_ref().delete_config(tenant_id).await
+    }
+
+    async fn config_exists(&self, tenant_id: &TenantId) -> Result<bool, TenantConfigError> {
+        self.as_ref().config_exists(tenant_id).await
+    }
+
+    async fn list_configs(&self) -> Result<Vec<(TenantId, TenantConfig)>, TenantConfigError> {
+        self.as_ref().list_configs().await
+    }
+}
+
+/// PostgreSQL-backed tenant config storage.
+#[derive(Clone)]
+pub struct PostgresTenantConfigStore {
+    db_pool: DatabasePool,
+}
+
+impl PostgresTenantConfigStore {
+    pub fn new(db_pool: DatabasePool) -> Self {
+        Self { db_pool }
+    }
+
+    fn parse_tenant_uuid(tenant_id: &TenantId) -> Result<Uuid, TenantConfigError> {
+        Uuid::parse_str(tenant_id.as_str()).map_err(|error| {
+            TenantConfigError::ValidationError(format!(
+                "租户 ID 必须是 UUID 才能使用 PostgreSQL 配置存储: {} ({error})",
+                tenant_id.as_str()
+            ))
+        })
+    }
+
+    fn deserialize_config(value: serde_json::Value) -> Result<TenantConfig, TenantConfigError> {
+        serde_json::from_value(value)
+            .map_err(|error| TenantConfigError::SerializationError(error.to_string()))
+    }
+
+    fn serialize_config(config: &TenantConfig) -> Result<serde_json::Value, TenantConfigError> {
+        serde_json::to_value(config)
+            .map_err(|error| TenantConfigError::SerializationError(error.to_string()))
+    }
+}
+
+#[async_trait]
+impl TenantConfigStore for PostgresTenantConfigStore {
+    async fn get_config(&self, tenant_id: &TenantId) -> Result<TenantConfig, TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        let row = sqlx::query("SELECT config FROM tenants WHERE id = $1")
+            .bind(tenant_uuid)
+            .fetch_optional(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?
+            .ok_or_else(|| TenantConfigError::NotFound(tenant_id.clone()))?;
+
+        let value: serde_json::Value = row
+            .try_get("config")
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        Self::deserialize_config(value)
+    }
+
+    async fn save_config(
+        &self,
+        tenant_id: &TenantId,
+        config: &TenantConfig,
+    ) -> Result<(), TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        let config_value = Self::serialize_config(config)?;
+
+        let result =
+            sqlx::query("UPDATE tenants SET config = $2, updated_at = NOW() WHERE id = $1")
+                .bind(tenant_uuid)
+                .bind(config_value)
+                .execute(self.db_pool.pool())
+                .await
+                .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(TenantConfigError::NotFound(tenant_id.clone()));
+        }
+
+        Ok(())
+    }
+
+    async fn delete_config(&self, tenant_id: &TenantId) -> Result<(), TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        let result = sqlx::query(
+            "UPDATE tenants SET config = '{}'::jsonb, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(tenant_uuid)
+        .execute(self.db_pool.pool())
+        .await
+        .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(TenantConfigError::NotFound(tenant_id.clone()));
+        }
+
+        Ok(())
+    }
+
+    async fn config_exists(&self, tenant_id: &TenantId) -> Result<bool, TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        let exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM tenants WHERE id = $1)")
+                .bind(tenant_uuid)
+                .fetch_one(self.db_pool.pool())
+                .await
+                .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        Ok(exists)
+    }
+
+    async fn list_configs(&self) -> Result<Vec<(TenantId, TenantConfig)>, TenantConfigError> {
+        let rows = sqlx::query("SELECT id, config FROM tenants")
+            .fetch_all(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                let tenant_id: Uuid = row
+                    .try_get("id")
+                    .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+                let value: serde_json::Value = row
+                    .try_get("config")
+                    .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+                Ok((
+                    TenantId::from(tenant_id.to_string()),
+                    Self::deserialize_config(value)?,
+                ))
+            })
+            .collect()
+    }
+}
+
 /// 内存租户配置存储（用于测试）
 #[derive(Clone)]
 pub struct MemoryTenantConfigStore {
@@ -1070,5 +1225,27 @@ mod tests {
         // 删除配置
         manager.delete_config(&tenant_id).await.unwrap();
         assert!(manager.get_config(&tenant_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_arc_tenant_config_store_delegates() {
+        let store: std::sync::Arc<dyn TenantConfigStore> =
+            std::sync::Arc::new(MemoryTenantConfigStore::new());
+        let tenant_id = TenantId::new();
+        let config = TenantConfig::default();
+
+        store.save_config(&tenant_id, &config).await.unwrap();
+        let loaded = store.get_config(&tenant_id).await.unwrap();
+
+        assert_eq!(loaded.version, config.version);
+        assert!(store.config_exists(&tenant_id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_postgres_tenant_store_rejects_non_uuid_tenant_id() {
+        let invalid_tenant_id = TenantId::from_string("tenant-001");
+        let error = PostgresTenantConfigStore::parse_tenant_uuid(&invalid_tenant_id).unwrap_err();
+
+        assert!(matches!(error, TenantConfigError::ValidationError(_)));
     }
 }

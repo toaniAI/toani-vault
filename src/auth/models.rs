@@ -11,6 +11,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sqlx::{FromRow, Postgres};
+use std::str::FromStr;
 use uuid::Uuid;
 
 // ============================================================================
@@ -488,7 +490,7 @@ impl MfaStatus {
 ///
 /// 代表系统中的持久用户记录，与外部身份提供商解耦。
 /// 用户可以有多个外部身份（如 Privy 钱包、Email、Google OAuth）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct User {
     /// 用户唯一 ID（UUID v7）
     pub id: Uuid,
@@ -590,7 +592,7 @@ impl Default for User {
 ///
 /// 将用户与外部身份提供商（Privy、Email、OAuth 等）关联。
 /// 支持钱包地址和邮箱作为身份标识。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ExternalIdentity {
     /// 身份唯一 ID（UUID v7）
     pub id: Uuid,
@@ -704,7 +706,7 @@ impl ExternalIdentity {
 ///
 /// 定义用户与租户之间的关系，包括角色、权限和状态。
 /// 支持邀请加入和所有者创建两种来源。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct TenantMembership {
     /// 成员资格唯一 ID（UUID v7）
     pub id: Uuid,
@@ -850,7 +852,7 @@ impl TenantMembership {
 ///
 /// 用于邀请用户加入租户。支持邮箱邀请、钱包邀请和开放邀请链接。
 /// 使用 Token 哈希验证邀请有效性，防止泄露。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct TenantInvitation {
     /// 邀请唯一 ID（UUID v7）
     pub id: Uuid,
@@ -1039,7 +1041,7 @@ impl TenantInvitation {
 ///
 /// 服务端会话追踪记录，包含用户身份、活跃租户、MFA 状态等信息。
 /// 使用 Token 哈希验证会话有效性，支持会话撤销。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AuthSession {
     /// 会话唯一 ID（UUID v7）
     pub id: Uuid,
@@ -1254,7 +1256,7 @@ impl AuthEventType {
 /// 认证审计日志实体
 ///
 /// 记录所有认证相关事件，用于安全审计和合规追踪。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AuthAuditLog {
     /// 日志唯一 ID（UUID v7）
     pub id: Uuid,
@@ -1379,7 +1381,7 @@ impl AuthAuditLog {
 /// Privy 认证响应数据
 ///
 /// 从 Privy 认证服务返回的用户信息。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct PrivyAuthResponse {
     /// Privy 用户 ID（did）
     pub did: String,
@@ -1416,6 +1418,312 @@ pub struct CreateSessionRequest {
     pub user_agent: Option<String>,
     /// IP 地址
     pub ip_address: Option<String>,
+}
+
+// ============================================================================
+// SQLx trait implementations
+// ====================================================================================
+
+// UserStatus SQLx implementations
+impl std::str::FromStr for UserStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "active" => Ok(UserStatus::Active),
+            "inactive" => Ok(UserStatus::Inactive),
+            "suspended" => Ok(UserStatus::Suspended),
+            "pending_deletion" => Ok(UserStatus::PendingDeletion),
+            _ => Err(format!("Unknown user status: {s}")),
+        }
+    }
+}
+
+impl sqlx::Type<Postgres> for UserStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for UserStatus {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for UserStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// IdentityProvider SQLx implementations
+impl sqlx::Type<Postgres> for IdentityProvider {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for IdentityProvider {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for IdentityProvider {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// MembershipRole SQLx implementations
+impl sqlx::Type<Postgres> for MembershipRole {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for MembershipRole {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for MembershipRole {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// MembershipStatus SQLx implementations
+impl std::str::FromStr for MembershipStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "active" => Ok(MembershipStatus::Active),
+            "pending" => Ok(MembershipStatus::Pending),
+            "suspended" => Ok(MembershipStatus::Suspended),
+            "inactive" => Ok(MembershipStatus::Inactive),
+            _ => Err(format!("Unknown membership status: {s}")),
+        }
+    }
+}
+
+impl sqlx::Type<Postgres> for MembershipStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for MembershipStatus {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for MembershipStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// MembershipSource SQLx implementations
+impl std::fmt::Display for MembershipSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for MembershipSource {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "invitation" => Ok(MembershipSource::Invitation),
+            "owner_creation" => Ok(MembershipSource::OwnerCreation),
+            "system" => Ok(MembershipSource::System),
+            "oauth_sync" => Ok(MembershipSource::OAuthSync),
+            _ => Err(format!("Unknown membership source: {s}")),
+        }
+    }
+}
+
+impl sqlx::Type<Postgres> for MembershipSource {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for MembershipSource {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for MembershipSource {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// InviteeType SQLx implementations
+impl std::fmt::Display for InviteeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for InviteeType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "email" => Ok(InviteeType::Email),
+            "wallet" => Ok(InviteeType::Wallet),
+            "any" => Ok(InviteeType::Any),
+            _ => Err(format!("Unknown invitee type: {s}")),
+        }
+    }
+}
+
+impl sqlx::Type<Postgres> for InviteeType {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for InviteeType {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for InviteeType {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// InvitationStatus SQLx implementations
+impl std::str::FromStr for InvitationStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pending" => Ok(InvitationStatus::Pending),
+            "consumed" => Ok(InvitationStatus::Consumed),
+            "expired" => Ok(InvitationStatus::Expired),
+            "revoked" => Ok(InvitationStatus::Revoked),
+            _ => Err(format!("Unknown invitation status: {s}")),
+        }
+    }
+}
+
+impl sqlx::Type<Postgres> for InvitationStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for InvitationStatus {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for InvitationStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+// MfaStatus SQLx implementations
+impl std::fmt::Display for MfaStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for MfaStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pending" => Ok(MfaStatus::Pending),
+            "verified" => Ok(MfaStatus::Verified),
+            "not_required" => Ok(MfaStatus::NotRequired),
+            _ => Err(format!("Unknown MFA status: {s}")),
+        }
+    }
+}
+
+impl sqlx::Type<Postgres> for MfaStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for MfaStatus {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for MfaStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
 }
 
 #[cfg(test)]

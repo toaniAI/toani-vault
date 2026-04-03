@@ -32,7 +32,10 @@ use vault_service::api::{
     attestation::{
         AttestationApiConfig, AttestationState, attestation_routes, init_attestation_api,
     },
-    audit::{AuditApiState, MemoryAuditStorageAdapter, audit_routes},
+    audit::{
+        AuditApiState, AuditStorage, ImmuDbAuditStorageAdapter, MemoryAuditStorageAdapter,
+        audit_routes,
+    },
     auth::{AuthApiState, auth_routes, protected_auth_routes},
     credentials::{
         AppState as CredentialAppState, StorageAuditLogger, routes as credential_routes,
@@ -44,14 +47,16 @@ use vault_service::api::{
     sandbox::{SandboxState, sandbox_routes},
     tenant::{TenantApiState, tenant_routes},
 };
-use vault_service::audit::MemoryAuditStorage;
+use vault_service::audit::{ImmuDbAuditStore, MemoryAuditStorage};
 use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
+use vault_service::services::db::DatabasePool;
 use vault_service::tee::{
     Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, StartupReadiness,
     TEE_HARDWARE_BUILD_ENABLED, validate_runtime_requirements,
 };
 use vault_service::tenant::{
-    MemoryTenantConfigStore, MemoryTenantStorage, TenantManager, TenantService,
+    MemoryTenantConfigStore, MemoryTenantStorage, PostgresTenantConfigStore, TenantConfig,
+    TenantConfigStore, TenantId, TenantManager, TenantService,
 };
 use vault_service::vault::backend::VaultStorageBackend;
 use vault_service::vault::postgres::PostgresStorageBackend;
@@ -229,12 +234,14 @@ struct AppState {
     credential_state: CredentialAppState,
     audit_state: AuditApiState,
     auth_state: AuthApiState,
-    tenant_store: MemoryTenantConfigStore,
+    tenant_store: Arc<dyn TenantConfigStore>,
     rate_limit_state: RateLimitState,
     attestation_state: Option<Arc<AttestationState>>,
     sandbox_state: SandboxState,
     startup_checks: Vec<SelfCheckItem>,
 }
+
+const SYSTEM_TENANT_ID: &str = "00000000-0000-0000-0000-000000000000";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -394,17 +401,15 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化审计日志存储"
     );
-    let audit_storage = Arc::new(tokio::sync::Mutex::new(
-        MemoryAuditStorage::new(100_000).map_err(|e| format!("创建审计存储失败: {e:?}"))?,
-    ));
-    let audit_storage_adapter =
-        MemoryAuditStorageAdapter::from_shared_storage(audit_storage.clone());
+    let (audit_storage, audit_verifier_public_key, audit_backend) =
+        initialize_audit_storage(config).await?;
     let audit_logger = Arc::new(StorageAuditLogger::new(audit_storage.clone()));
-    let audit_verifier_public_key = {
-        let storage = audit_storage.lock().await;
-        storage.recorder().public_key().to_vec()
-    };
-    info!(module = "audit", status = "ready", "审计日志存储就绪");
+    info!(
+        module = "audit",
+        status = "ready",
+        backend = audit_backend,
+        "审计日志存储就绪"
+    );
 
     let credential_state = CredentialAppState {
         vault,
@@ -431,9 +436,11 @@ async fn initialize_app_state(
         "开始初始化认证模块"
     );
     let audit_state = AuditApiState {
-        storage: Arc::new(audit_storage_adapter),
+        storage: audit_storage.clone(),
         verifier_public_key: audit_verifier_public_key,
     };
+
+    let database_pool = initialize_database_pool(config).await?;
 
     // --- Tenant (must be before Auth since Auth depends on it) ---
     info!(
@@ -441,21 +448,11 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化租户配置"
     );
-    let tenant_store = MemoryTenantConfigStore::new();
-    let mut default_tenant_config = vault_service::tenant::TenantConfig::default();
-    default_tenant_config.settings.language = "zh-CN".to_string();
-    use vault_service::tenant::TenantConfigStore;
-    tenant_store
-        .save_config(
-            &vault_service::tenant::TenantId::from_string("tenant-001"),
-            &default_tenant_config,
-        )
-        .await
-        .map_err(|e| format!("初始化默认租户配置失败: {e}"))?;
+    let tenant_store = build_tenant_config_store(config, database_pool.clone()).await?;
     info!(module = "tenant", status = "ready", "租户配置就绪");
 
-    // Create AuthService instance (without database for now)
-    let auth_service = vault_service::auth::AuthServiceImpl::new_in_memory(
+    let auth_service = vault_service::auth::AuthServiceImpl::new(
+        database_pool.as_ref().map(|pool| pool.pool().clone()),
         vault_service::tenant::TenantManager::new_simple(tenant_store.clone()),
     );
     let auth_state = AuthApiState::new(std::sync::Arc::new(auth_service))
@@ -684,7 +681,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         tenant_manager: Arc::new(tenant_manager),
         tenant_service,
     };
-    let tenant_routes = tenant_routes::<MemoryTenantConfigStore>().with_state(tenant_api_state);
+    let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
 
     // 认证中间件层
@@ -742,6 +739,129 @@ fn build_api_routes(app_state: AppState) -> Router {
     router = router.merge(sandbox_routes);
 
     router.layer(Extension(app_state))
+}
+
+async fn initialize_database_pool(
+    config: &ServerConfig,
+) -> Result<Option<DatabasePool>, Box<dyn std::error::Error>> {
+    if env_var_present("DATABASE_URL") {
+        let pool = DatabasePool::from_env()
+            .await
+            .map_err(|error| std::io::Error::other(format!("数据库连接池初始化失败: {error}")))?;
+        pool.health_check()
+            .await
+            .map_err(|error| std::io::Error::other(format!("数据库健康检查失败: {error}")))?;
+        info!(
+            module = "database",
+            status = "ready",
+            backend = "postgres",
+            "数据库连接池就绪"
+        );
+        return Ok(Some(pool));
+    }
+
+    if config.environment == Environment::Production {
+        return Err(
+            std::io::Error::other("生产环境要求 DATABASE_URL 用于认证和租户配置持久化").into(),
+        );
+    }
+
+    warn!(
+        module = "database",
+        status = "fallback",
+        backend = "memory",
+        "未配置 DATABASE_URL，开发模式下认证和租户配置将回退到内存存储"
+    );
+    Ok(None)
+}
+
+fn audit_memory_fallback_allowed() -> bool {
+    env::var("CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn immudb_explicitly_configured() -> bool {
+    env_var_present("IMMUDB_HOST")
+        || env_var_present("IMMUDB_DATABASE")
+        || env_var_present("IMMUDB_USERNAME")
+        || env_var_present("IMMUDB_PASSWORD")
+}
+
+async fn initialize_audit_storage(
+    config: &ServerConfig,
+) -> Result<(Arc<dyn AuditStorage>, Vec<u8>, &'static str), Box<dyn std::error::Error>> {
+    if immudb_explicitly_configured() {
+        let store = Arc::new(
+            ImmuDbAuditStore::from_env(String::new(), Vec::new())
+                .await
+                .map_err(|error| {
+                    std::io::Error::other(format!("immudb 审计存储初始化失败: {error}"))
+                })?,
+        );
+        let public_key = store.public_key().to_vec();
+        let adapter: Arc<dyn AuditStorage> = Arc::new(ImmuDbAuditStorageAdapter::new(store));
+        return Ok((adapter, public_key, "immudb"));
+    }
+
+    if config.environment == Environment::Development && audit_memory_fallback_allowed() {
+        let storage = Arc::new(tokio::sync::Mutex::new(
+            MemoryAuditStorage::new(100_000).map_err(|error| {
+                std::io::Error::other(format!("创建内存审计存储失败: {error:?}"))
+            })?,
+        ));
+        let public_key = {
+            let storage = storage.lock().await;
+            storage.recorder().public_key().to_vec()
+        };
+        let adapter: Arc<dyn AuditStorage> =
+            Arc::new(MemoryAuditStorageAdapter::from_shared_storage(storage));
+        warn!(
+            module = "audit",
+            status = "fallback",
+            backend = "memory",
+            "未检测到 immudb 配置，因 CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true 回退到内存审计存储"
+        );
+        return Ok((adapter, public_key, "memory"));
+    }
+
+    Err(std::io::Error::other(
+        "审计日志要求显式配置 immudb（IMMUDB_*），或在开发环境设置 CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true 以允许内存回退",
+    )
+    .into())
+}
+
+async fn build_tenant_config_store(
+    config: &ServerConfig,
+    database_pool: Option<DatabasePool>,
+) -> Result<Arc<dyn TenantConfigStore>, Box<dyn std::error::Error>> {
+    if let Some(pool) = database_pool {
+        info!(
+            module = "tenant",
+            backend = "postgres",
+            "租户配置使用 PostgreSQL"
+        );
+        return Ok(Arc::new(PostgresTenantConfigStore::new(pool)));
+    }
+
+    let tenant_store = Arc::new(MemoryTenantConfigStore::new());
+    let mut default_tenant_config = TenantConfig::default();
+    default_tenant_config.settings.language = "zh-CN".to_string();
+    tenant_store
+        .save_config(
+            &TenantId::from_string(SYSTEM_TENANT_ID),
+            &default_tenant_config,
+        )
+        .await
+        .map_err(|error| std::io::Error::other(format!("初始化默认租户配置失败: {error}")))?;
+
+    info!(
+        module = "tenant",
+        backend = "memory",
+        environment = config.environment.as_str(),
+        "租户配置使用内存回退存储"
+    );
+    Ok(tenant_store)
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "active": false,
+  "skill": "team",
+  "keyword": "$team",
+  "phase": "completing",
+  "activated_at": "2026-04-03T08:09:04.334Z",
+  "updated_at": "2026-04-03T09:03:12.465Z",
+  "source": "keyword-detector",
+  "input_lock": null
+}

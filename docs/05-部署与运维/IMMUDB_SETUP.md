@@ -131,6 +131,12 @@ export IMMUDB_USE_TLS=false
 
 # 集合名称（默认 audit_logs）
 export IMMUDB_COLLECTION=audit_logs
+
+# 开发环境下若暂时没有 immudb，可显式允许回退到内存审计
+export CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=false
+
+# 可选：固定审计签名密钥路径，确保重启后 verify 仍使用同一把密钥
+export CREDBRIDGE_AUDIT_SIGNING_KEY_PATH=/var/lib/credbridge/audit-signing-key.json
 ```
 
 ### 代码配置
@@ -184,6 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `IMMUDB_TIMEOUT` | `30` | 连接超时（秒） |
 | `IMMUDB_USE_TLS` | `false` | 是否使用 TLS |
 | `IMMUDB_COLLECTION` | `audit_logs` | 审计日志集合名称 |
+| `CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK` | `false` | 仅开发环境使用；显式允许无 immudb 时回退到内存审计 |
+| `CREDBRIDGE_AUDIT_SIGNING_KEY_PATH` | 系统临时目录下的 `credbridge-immudb-sim/*.signing-key.json` | 审计签名密钥持久化路径，确保重启后校验公钥稳定 |
 
 ### 生产环境配置
 
@@ -197,6 +205,8 @@ IMMUDB_PASSWORD=<your-strong-password>
 IMMUDB_TIMEOUT=60
 IMMUDB_USE_TLS=true
 IMMUDB_COLLECTION=audit_logs
+CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=false
+CREDBRIDGE_AUDIT_SIGNING_KEY_PATH=/var/lib/credbridge/audit-signing-key.json
 ```
 
 ## 数据库初始化

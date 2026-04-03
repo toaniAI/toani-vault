@@ -7,6 +7,7 @@
 //! - POST /api/v1/credentials/:id/decrypt - 解密凭证
 //! - DELETE /api/v1/credentials/:id - 删除凭证
 
+use crate::api::audit::AuditStorage;
 use crate::api::middleware::{TokenScope, ValidatedToken, require_any_scope, require_scope};
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
@@ -163,16 +164,24 @@ impl AuditLogger for DefaultAuditLogger {
     }
 }
 
-use crate::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RedactedParam};
+use crate::audit::{AuditAction, AuditEntry, Outcome, RedactedParam};
 
-/// 存储审计日志记录器 - 将日志写入 MemoryAuditStorage 并打印到控制台
+/// 存储审计日志记录器 - 将日志写入统一审计后端并打印到控制台
 pub struct StorageAuditLogger {
-    storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>,
+    storage: Arc<dyn AuditStorage>,
+}
+
+struct CredentialAuditContext<'a> {
+    tenant_id: &'a str,
+    user_id: &'a str,
+    credential_id: &'a str,
+    jti: &'a str,
+    mrenclave: &'a str,
 }
 
 impl StorageAuditLogger {
     /// 创建新的存储审计日志记录器
-    pub fn new(storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>) -> Self {
+    pub fn new(storage: Arc<dyn AuditStorage>) -> Self {
         Self { storage }
     }
 
@@ -183,43 +192,34 @@ impl StorageAuditLogger {
     fn record_to_storage(
         &self,
         action: AuditAction,
-        user_id: &str,
-        credential_id: &str,
         outcome: Outcome,
-        jti: &str,
-        mrenclave: &str,
+        context: CredentialAuditContext<'_>,
     ) {
-        // 使用 try_lock 避免阻塞，如果锁不可用则记录警告日志
-        match self.storage.try_lock() {
-            Ok(storage) => {
-                // 使用用户 ID 的哈希
-                let user_id_hash = crate::audit::events::hash_user_id(user_id);
+        let storage = Arc::clone(&self.storage);
+        let user_id_hash = crate::audit::events::hash_user_id(context.user_id);
+        let entry = AuditEntry::new(
+            user_id_hash,
+            "session",
+            "credentials",
+            action,
+            outcome,
+            context.mrenclave,
+            context.jti,
+        )
+        .with_param(
+            "credential_id",
+            RedactedParam::Plain(context.credential_id.to_string()),
+        )
+        .with_param(
+            "tenant_id",
+            RedactedParam::Plain(context.tenant_id.to_string()),
+        );
 
-                let entry = AuditEntry::new(
-                    user_id_hash,
-                    "session",     // session_id
-                    "credentials", // service
-                    action,
-                    outcome,
-                    mrenclave, // tee_mrenclave - 来自调用方（软件模式为 "software_mode"）
-                    jti,       // action_token_jti - 来自 ValidatedToken.token_id
-                )
-                .with_param(
-                    "credential_id",
-                    RedactedParam::Plain(credential_id.to_string()),
-                )
-                .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
-
-                if let Err(e) = storage.record(entry) {
-                    tracing::warn!("[AUDIT] 存储审计日志失败：{e:?}");
-                }
+        tokio::spawn(async move {
+            if let Err(error) = storage.record(entry).await {
+                tracing::warn!("[AUDIT] 存储审计日志失败：{error}");
             }
-            Err(_) => {
-                tracing::warn!(
-                    "[AUDIT-DROP] Lock contention: credential={credential_id}, action={action:?}, user={user_id}"
-                );
-            }
-        }
+        });
     }
 }
 
@@ -240,11 +240,14 @@ impl AuditLogger for StorageAuditLogger {
         // 写入存储
         self.record_to_storage(
             AuditAction::CredentialCreate,
-            user_id,
-            credential_id,
             Outcome::Success,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 
@@ -264,11 +267,14 @@ impl AuditLogger for StorageAuditLogger {
         // 写入存储
         self.record_to_storage(
             AuditAction::CredentialAccess,
-            user_id,
-            credential_id,
             Outcome::Success,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 
@@ -288,11 +294,14 @@ impl AuditLogger for StorageAuditLogger {
         // 写入存储
         self.record_to_storage(
             AuditAction::CredentialDelete,
-            user_id,
-            credential_id,
             Outcome::Success,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 
@@ -318,11 +327,14 @@ impl AuditLogger for StorageAuditLogger {
         };
         self.record_to_storage(
             AuditAction::CredentialDecrypt,
-            user_id,
-            credential_id,
             outcome,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 }

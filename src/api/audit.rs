@@ -29,7 +29,11 @@ use std::sync::Arc;
 
 use crate::api::audit_models::*;
 use crate::api::middleware::{TokenScope, ValidatedToken};
-use crate::audit::{AuditFilter, MemoryAuditStorage, SignedAuditEntry, VerificationProof};
+use crate::audit::immudb_store::AuditStorage as ImmuDbRecorderStorage;
+use crate::audit::{
+    AuditEntry, AuditFilter, ImmuDbAuditStore, MemoryAuditStorage, SignedAuditEntry,
+    VerificationProof,
+};
 
 /// 审计 API 状态
 #[derive(Clone)]
@@ -53,6 +57,9 @@ impl std::fmt::Debug for AuditApiState {
 /// 抽象审计存储操作，支持不同的后端实现
 #[async_trait::async_trait]
 pub trait AuditStorage: Send + Sync {
+    /// 记录审计日志
+    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, String>;
+
     /// 查询审计日志
     async fn query(
         &self,
@@ -110,6 +117,11 @@ impl MemoryAuditStorageAdapter {
 
 #[async_trait::async_trait]
 impl AuditStorage for MemoryAuditStorageAdapter {
+    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, String> {
+        let storage = self.storage.lock().await;
+        storage.record(entry).map_err(|e| e.to_string())
+    }
+
     async fn query(
         &self,
         filter: AuditFilter,
@@ -217,6 +229,111 @@ impl AuditStorage for MemoryAuditStorageAdapter {
 
         // 验证整个链
         storage.verify().map_err(|e| e.to_string())
+    }
+
+    async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String> {
+        let (entries, _) = self.query(filter, 0, 100_000).await?;
+        Ok(entries)
+    }
+}
+
+/// immudb 审计存储适配器
+#[derive(Clone)]
+pub struct ImmuDbAuditStorageAdapter {
+    storage: Arc<ImmuDbAuditStore>,
+}
+
+impl std::fmt::Debug for ImmuDbAuditStorageAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImmuDbAuditStorageAdapter")
+            .field("storage", &"<Arc<ImmuDbAuditStore>>")
+            .finish()
+    }
+}
+
+impl ImmuDbAuditStorageAdapter {
+    pub fn new(storage: Arc<ImmuDbAuditStore>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditStorage for ImmuDbAuditStorageAdapter {
+    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, String> {
+        self.storage.record(entry).await.map_err(|e| e.to_string())
+    }
+
+    async fn query(
+        &self,
+        filter: AuditFilter,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<SignedAuditEntry>, u64), String> {
+        let total = self.storage.count().await.map_err(|e| e.to_string())?;
+        let entries = {
+            let storage = self.storage.storage();
+            let storage = storage.lock().await;
+            storage
+                .query(&crate::audit::QueryOptions {
+                    start_time: filter.start_time,
+                    end_time: filter.end_time,
+                    user_id_hash: filter.user_id_hash,
+                    action: filter.action,
+                    risk_tier: filter.risk_tier,
+                    outcome: filter.outcome,
+                    limit: Some(limit),
+                    offset: Some(offset),
+                })
+                .await
+                .map_err(|e| e.to_string())?
+        };
+
+        let entries = entries
+            .into_iter()
+            .map(|entry| entry.signed_entry)
+            .filter(|entry| {
+                if let Some(ref service) = filter.service {
+                    return &entry.entry.service == service;
+                }
+                true
+            })
+            .collect();
+
+        Ok((entries, total))
+    }
+
+    async fn get_by_id(&self, id: &str) -> Result<Option<SignedAuditEntry>, String> {
+        let (entries, _) = self.query(AuditFilter::new(), 0, 100_000).await?;
+        Ok(entries.into_iter().find(|entry| entry.entry.id == id))
+    }
+
+    async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String> {
+        self.storage
+            .get_by_index(index)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn get_verification_proof(
+        &self,
+        index: u64,
+    ) -> Result<Option<VerificationProof>, String> {
+        let storage = self.storage.storage();
+        let storage = storage.lock().await;
+        storage
+            .client()
+            .verify_entry(&format!("audit:{index}"))
+            .await
+            .map(Some)
+            .map_err(|e| e.to_string())
+    }
+
+    async fn verify_entry(&self, index: u64) -> Result<bool, String> {
+        self.storage
+            .verify_entry(index)
+            .await
+            .map(|result| result.verified)
+            .map_err(|e| e.to_string())
     }
 
     async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String> {

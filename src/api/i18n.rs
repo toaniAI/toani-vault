@@ -20,7 +20,7 @@ use serde_json::Value;
 use crate::api::context::RequestContext;
 use crate::api::middleware::ValidatedToken;
 use crate::auth::AuthService;
-use crate::tenant::{MemoryTenantConfigStore, TenantConfigStore, TenantId};
+use crate::tenant::{TenantConfigStore, TenantId};
 
 pub const DEFAULT_LOCALE: &str = "zh-CN";
 pub const EN_US_LOCALE: &str = "en-US";
@@ -87,13 +87,13 @@ where
 #[derive(Clone)]
 pub struct LocaleResolverState {
     pub auth_service: std::sync::Arc<dyn AuthService>,
-    pub tenant_store: MemoryTenantConfigStore,
+    pub tenant_store: std::sync::Arc<dyn TenantConfigStore>,
 }
 
 impl LocaleResolverState {
     pub fn new(
         auth_service: std::sync::Arc<dyn AuthService>,
-        tenant_store: MemoryTenantConfigStore,
+        tenant_store: std::sync::Arc<dyn TenantConfigStore>,
     ) -> Self {
         Self {
             auth_service,

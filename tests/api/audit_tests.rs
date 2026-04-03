@@ -241,15 +241,16 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
     }
 
     let auth_service = std::sync::Arc::new(MockAuthService);
-    let auth_state = AuthApiState::new(auth_service).with_audit_storage(shared_storage.clone());
+    let audit_adapter = std::sync::Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
+        shared_storage.clone(),
+    ));
+    let auth_state = AuthApiState::new(auth_service).with_audit_storage(audit_adapter.clone());
     let verifier_public_key = {
         let storage = shared_storage.lock().await;
         storage.recorder().public_key().to_vec()
     };
     let audit_state = AuditApiState {
-        storage: std::sync::Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
-            shared_storage.clone(),
-        )),
+        storage: audit_adapter,
         verifier_public_key,
     };
     let app = Router::new()
@@ -434,7 +435,10 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
     }
 
     let auth_service = std::sync::Arc::new(MockAuthService);
-    let auth_state = AuthApiState::new(auth_service).with_audit_storage(shared_storage);
+    let audit_adapter = std::sync::Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
+        shared_storage,
+    ));
+    let auth_state = AuthApiState::new(auth_service).with_audit_storage(audit_adapter);
     let app = Router::new()
         .merge(auth_routes().with_state(auth_state.clone()))
         .merge(protected_auth_routes().with_state(auth_state));

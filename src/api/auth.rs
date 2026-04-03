@@ -30,9 +30,10 @@ use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::api::audit::AuditStorage;
 use crate::api::i18n::{I18nParams, ResolvedLocale, set_content_language, translate};
 use crate::api::middleware::ValidatedToken;
-use crate::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RedactedParam};
+use crate::audit::{AuditAction, AuditEntry, Outcome, RedactedParam};
 use crate::auth::{AuthError, AuthService, CreateUserRequest};
 
 use super::token_blacklist::{TokenStore, create_token_store};
@@ -49,7 +50,7 @@ pub struct AuthApiState {
     /// Token 黑名单存储
     pub token_store: TokenStore,
     /// 审计存储（可选）
-    pub audit_storage: Option<Arc<tokio::sync::Mutex<MemoryAuditStorage>>>,
+    pub audit_storage: Option<Arc<dyn AuditStorage>>,
 }
 
 impl AuthApiState {
@@ -63,10 +64,7 @@ impl AuthApiState {
     }
 
     /// 设置审计存储
-    pub fn with_audit_storage(
-        mut self,
-        storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>,
-    ) -> Self {
+    pub fn with_audit_storage(mut self, storage: Arc<dyn AuditStorage>) -> Self {
         self.audit_storage = Some(storage);
         self
     }
@@ -99,7 +97,7 @@ impl AuthApiState {
             entry
         };
 
-        if let Err(error) = storage.lock().await.record(entry) {
+        if let Err(error) = storage.record(entry).await {
             tracing::warn!("[AUDIT] Auth audit record failed: {error:?}");
         }
     }

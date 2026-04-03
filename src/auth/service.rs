@@ -7,6 +7,8 @@
 //! - 会话管理
 //! - 审计日志记录
 
+#![allow(clippy::needless_borrows_for_generic_args)]
+
 use async_trait::async_trait;
 use serde_json::Value as JsonValue;
 use sqlx::PgPool;
@@ -22,7 +24,7 @@ use crate::audit::AuditRecorder;
 use crate::auth::privy::JwksVerifier;
 use crate::config::PrivyConfig;
 use crate::crypto::constant_time::ct_compare;
-use crate::tenant::TenantManager;
+use crate::tenant::{TenantConfigStore, TenantManager};
 
 /// 认证服务 Trait
 ///
@@ -180,9 +182,6 @@ pub struct AuthServiceImpl {
     /// 数据库连接池（可选，用于持久化存储）
     db_pool: Option<PgPool>,
 
-    /// 租户管理器
-    tenant_manager: TenantManager<crate::tenant::config::MemoryTenantConfigStore>,
-
     /// 审计记录器（可选）
     audit_recorder: Option<AuditRecorder>,
 
@@ -195,13 +194,12 @@ pub struct AuthServiceImpl {
 
 impl AuthServiceImpl {
     /// 创建新的认证服务实例
-    pub fn new(
+    pub fn new<S: TenantConfigStore>(
         db_pool: Option<PgPool>,
-        tenant_manager: TenantManager<crate::tenant::config::MemoryTenantConfigStore>,
+        _tenant_manager: TenantManager<S>,
     ) -> Self {
         Self {
             db_pool,
-            tenant_manager,
             audit_recorder: None,
             jwks_verifier: None,
             privy_config: None,
@@ -209,12 +207,9 @@ impl AuthServiceImpl {
     }
 
     /// 创建无数据库的认证服务实例（使用内存存储）
-    pub fn new_in_memory(
-        tenant_manager: TenantManager<crate::tenant::config::MemoryTenantConfigStore>,
-    ) -> Self {
+    pub fn new_in_memory<S: TenantConfigStore>(_tenant_manager: TenantManager<S>) -> Self {
         Self {
             db_pool: None,
-            tenant_manager,
             audit_recorder: None,
             jwks_verifier: None,
             privy_config: None,
@@ -328,9 +323,38 @@ impl AuthServiceImpl {
 
     /// 创建用户记录
     async fn create_user_record(&self, user: &User) -> Result<User, AuthError> {
-        // TODO: 实现数据库插入
-        // 当前返回 Mock 数据
-        Ok(user.clone())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, User>(
+            r#"
+            INSERT INTO users (id, status, display_name, default_tenant_id, onboarding_completed, deleted_at, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, status, display_name, default_tenant_id, onboarding_completed, deleted_at, created_at, updated_at
+            "#,
+        )
+        .bind(user.id)
+        .bind(user.status.as_str())
+        .bind(&user.display_name)
+        .bind(user.default_tenant_id)
+        .bind(user.onboarding_completed)
+        .bind(user.deleted_at)
+        .bind(user.created_at)
+        .bind(user.updated_at)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db_err) = &e {
+                if db_err.constraint() == Some("users_pkey") {
+                    return AuthError::UserAlreadyExists { user_id: user.id };
+                }
+            }
+            AuthError::DatabaseError(e)
+        })?;
+
+        Ok(row)
     }
 
     /// 创建外部身份记录
@@ -338,8 +362,50 @@ impl AuthServiceImpl {
         &self,
         identity: &ExternalIdentity,
     ) -> Result<ExternalIdentity, AuthError> {
-        // TODO: 实现数据库插入
-        Ok(identity.clone())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, ExternalIdentity>(
+            r#"
+            INSERT INTO external_identities (
+                id, user_id, provider, provider_subject, wallet_address, email,
+                provider_profile, is_verified, is_primary, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING id, user_id, provider, provider_subject, wallet_address, email,
+                      provider_profile, is_verified, is_primary, mfa_verified, mfa_verified_at,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(identity.id)
+        .bind(identity.user_id)
+        .bind(identity.provider.as_str())
+        .bind(&identity.provider_subject)
+        .bind(&identity.wallet_address)
+        .bind(&identity.email)
+        .bind(&identity.provider_profile)
+        .bind(identity.is_verified)
+        .bind(identity.is_primary)
+        .bind(identity.created_at)
+        .bind(identity.updated_at)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db_err) = &e {
+                if db_err.constraint() == Some("external_identities_provider_provider_subject_key")
+                {
+                    return AuthError::ExternalIdentityAlreadyExists {
+                        provider: identity.provider,
+                        subject: identity.provider_subject.clone(),
+                    };
+                }
+            }
+            AuthError::DatabaseError(e)
+        })?;
+
+        Ok(row)
     }
 
     /// 创建成员资格记录
@@ -347,8 +413,51 @@ impl AuthServiceImpl {
         &self,
         membership: &TenantMembership,
     ) -> Result<TenantMembership, AuthError> {
-        // TODO: 实现数据库插入
-        Ok(membership.clone())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let scopes_json =
+            serde_json::to_value(&membership.scopes).map_err(AuthError::SerializationError)?;
+
+        let row = sqlx::query_as::<_, TenantMembership>(
+            r#"
+            INSERT INTO tenant_memberships (
+                id, tenant_id, user_id, role, status, invited_by, joined_at,
+                source, scopes, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING id, tenant_id, user_id, role, status, invited_by, joined_at,
+                      source, scopes, created_at, updated_at
+            "#,
+        )
+        .bind(membership.id)
+        .bind(membership.tenant_id)
+        .bind(membership.user_id)
+        .bind(membership.role.as_str())
+        .bind(membership.status.as_str())
+        .bind(membership.invited_by)
+        .bind(membership.joined_at)
+        .bind(membership.source.as_str())
+        .bind(&scopes_json)
+        .bind(membership.created_at)
+        .bind(membership.updated_at)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db_err) = &e {
+                if db_err.constraint() == Some("tenant_memberships_tenant_id_user_id_key") {
+                    return AuthError::MembershipAlreadyExists {
+                        user_id: membership.user_id,
+                        tenant_id: membership.tenant_id,
+                    };
+                }
+            }
+            AuthError::DatabaseError(e)
+        })?;
+
+        Ok(row)
     }
 
     /// 创建邀请记录
@@ -356,87 +465,472 @@ impl AuthServiceImpl {
         &self,
         invitation: &TenantInvitation,
     ) -> Result<TenantInvitation, AuthError> {
-        // TODO: 实现数据库插入
-        Ok(invitation.clone())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantInvitation>(
+            r#"
+            INSERT INTO tenant_invitations (
+                id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                token_hash, created_by, expires_at, consumed_at, consumed_by,
+                status, max_uses, use_count, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            RETURNING id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                      token_hash, created_by, expires_at, consumed_at, consumed_by,
+                      status, max_uses, use_count, created_at, updated_at
+            "#,
+        )
+        .bind(invitation.id)
+        .bind(invitation.tenant_id)
+        .bind(invitation.role.as_str())
+        .bind(invitation.invitee_type.as_str())
+        .bind(&invitation.invitee_email)
+        .bind(&invitation.invitee_wallet)
+        .bind(&invitation.token_hash)
+        .bind(invitation.created_by)
+        .bind(invitation.expires_at)
+        .bind(invitation.consumed_at)
+        .bind(invitation.consumed_by)
+        .bind(invitation.status.as_str())
+        .bind(invitation.max_uses)
+        .bind(invitation.use_count)
+        .bind(invitation.created_at)
+        .bind(invitation.updated_at)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db_err) = &e {
+                if db_err.constraint() == Some("tenant_invitations_token_hash_key") {
+                    return AuthError::InternalError("Invitation token hash collision".to_string());
+                }
+            }
+            AuthError::DatabaseError(e)
+        })?;
+
+        Ok(row)
     }
 
     /// 创建会话记录
     async fn create_session_record(&self, session: &AuthSession) -> Result<AuthSession, AuthError> {
-        // TODO: 实现数据库插入
-        Ok(session.clone())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, AuthSession>(
+            r#"
+            INSERT INTO auth_sessions (
+                id, user_id, session_token_hash, identity_id, active_membership_id,
+                mfa_status, mfa_verified_at, user_agent, ip_address, expires_at,
+                last_active_at, revoked_at, revoked_reason, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING id, user_id, session_token_hash, identity_id, active_membership_id,
+                      mfa_status, mfa_verified_at, user_agent, ip_address, expires_at,
+                      last_active_at, revoked_at, revoked_reason, created_at, updated_at
+            "#,
+        )
+        .bind(session.id)
+        .bind(session.user_id)
+        .bind(&session.session_token_hash)
+        .bind(session.identity_id)
+        .bind(session.active_membership_id)
+        .bind(session.mfa_status.as_str())
+        .bind(session.mfa_verified_at)
+        .bind(&session.user_agent)
+        .bind(&session.ip_address)
+        .bind(session.expires_at)
+        .bind(session.last_active_at)
+        .bind(session.revoked_at)
+        .bind(&session.revoked_reason)
+        .bind(session.created_at)
+        .bind(session.updated_at)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db_err) = &e {
+                if db_err.constraint() == Some("auth_sessions_session_token_hash_key") {
+                    return AuthError::InternalError("Session token hash collision".to_string());
+                }
+            }
+            AuthError::DatabaseError(e)
+        })?;
+
+        Ok(row)
     }
 
     /// 创建审计日志记录
     async fn create_audit_log_record(&self, log: &AuthAuditLog) -> Result<(), AuthError> {
-        // TODO: 实现数据库插入
-        // 当前 AuthAuditLog 与 AuditEntry 结构不同，需要映射
-        // 暂时只记录到日志
-        tracing::info!(
-            event_type = log.event_type.as_str(),
-            user_id = log.user_id.map(|id| id.to_string()).unwrap_or_default(),
-            success = log.success,
-            "Auth audit event recorded"
-        );
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let event_data =
+            serde_json::to_value(&log.details).map_err(AuthError::SerializationError)?;
+
+        let severity = if log.success { "info" } else { "warning" };
+
+        sqlx::query(
+            r#"
+            INSERT INTO auth_audit_logs (
+                id, event_type, severity, user_id, identity_id, tenant_id,
+                membership_id, invitation_id, session_id, event_data,
+                ip_address, user_agent, created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            "#,
+        )
+        .bind(&log.id)
+        .bind(&log.event_type.as_str())
+        .bind(&severity)
+        .bind(&log.user_id)
+        .bind(&log.identity_id)
+        .bind(&log.tenant_id)
+        .bind(&log.session_id) // Note: schema uses membership_id for session_id field
+        .bind(&log.invitation_id)
+        .bind(&log.session_id)
+        .bind(&event_data)
+        .bind(&log.ip_address)
+        .bind(&log.user_agent)
+        .bind(&log.created_at)
+        .execute(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
         Ok(())
     }
 
     /// 查询用户
-    async fn query_user(&self, _user_id: Uuid) -> Result<Option<User>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(None)
+    async fn query_user(&self, user_id: Uuid) -> Result<Option<User>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, User>(
+            r#"
+            SELECT id, status, display_name, default_tenant_id, onboarding_completed,
+                   deleted_at, created_at, updated_at
+            FROM users
+            WHERE id = $1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(&user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
     }
 
     /// 查询外部身份
     async fn query_external_identity(
         &self,
-        _provider: IdentityProvider,
-        _subject: &str,
+        provider: IdentityProvider,
+        subject: &str,
     ) -> Result<Option<ExternalIdentity>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(None)
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, ExternalIdentity>(
+            r#"
+            SELECT id, user_id, provider, provider_subject, wallet_address, email,
+                   provider_profile, is_verified, is_primary, mfa_verified, mfa_verified_at,
+                   created_at, updated_at
+            FROM external_identities
+            WHERE provider = $1 AND provider_subject = $2
+            "#,
+        )
+        .bind(&provider.as_str())
+        .bind(&subject)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
     }
 
     /// 查询邀请
+    #[allow(dead_code)]
     async fn query_invitation(
         &self,
-        _invitation_id: Uuid,
+        invitation_id: Uuid,
     ) -> Result<Option<TenantInvitation>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(None)
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantInvitation>(
+            r#"
+            SELECT id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                   token_hash, created_by, expires_at, consumed_at, consumed_by,
+                   status, max_uses, use_count, created_at, updated_at
+            FROM tenant_invitations
+            WHERE id = $1
+            "#,
+        )
+        .bind(&invitation_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
     }
 
     /// 查询会话
-    async fn query_session(&self, _session_id: Uuid) -> Result<Option<AuthSession>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(None)
+    async fn query_session(&self, session_id: Uuid) -> Result<Option<AuthSession>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, AuthSession>(
+            r#"
+            SELECT id, user_id, session_token_hash, identity_id, active_membership_id,
+                   mfa_status, mfa_verified_at, user_agent, ip_address, expires_at,
+                   last_active_at, revoked_at, revoked_reason, created_at, updated_at
+            FROM auth_sessions
+            WHERE id = $1
+            "#,
+        )
+        .bind(&session_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
     }
 
-    /// 查询用户的所有外部身份
     async fn query_user_identities(
         &self,
-        _user_id: Uuid,
+        user_id: Uuid,
     ) -> Result<Vec<ExternalIdentity>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(Vec::new())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let rows = sqlx::query_as::<_, ExternalIdentity>(
+            r#"
+            SELECT id, user_id, provider, provider_subject, wallet_address, email,
+                   provider_profile, is_verified, is_primary, mfa_verified, mfa_verified_at,
+                   created_at, updated_at
+            FROM external_identities
+            WHERE user_id = $1
+            ORDER BY is_primary DESC, created_at ASC
+            "#,
+        )
+        .bind(&user_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
     }
 
     /// 查询用户的所有成员资格
     async fn query_user_memberships(
         &self,
-        _user_id: Uuid,
+        user_id: Uuid,
     ) -> Result<Vec<TenantMembership>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(Vec::new())
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let rows = sqlx::query_as::<_, TenantMembership>(
+            r#"
+            SELECT id, tenant_id, user_id, role, status, invited_by, joined_at,
+                   source, scopes, created_at, updated_at
+            FROM tenant_memberships
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(&user_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
     }
 
     /// 查询活跃成员资格
     async fn query_active_membership(
         &self,
-        _user_id: Uuid,
-        _tenant_id: Uuid,
+        user_id: Uuid,
+        tenant_id: Uuid,
     ) -> Result<Option<TenantMembership>, AuthError> {
-        // TODO: 实现数据库查询
-        Ok(None)
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantMembership>(
+            r#"
+            SELECT id, tenant_id, user_id, role, status, invited_by, joined_at,
+                   source, scopes, created_at, updated_at
+            FROM tenant_memberships
+            WHERE user_id = $1 AND tenant_id = $2 AND status = 'active'
+            "#,
+        )
+        .bind(&user_id)
+        .bind(&tenant_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    /// 根据 Token 哈希查询邀请
+    async fn query_invitation_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<TenantInvitation>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantInvitation>(
+            r#"
+            SELECT id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                   token_hash, created_by, expires_at, consumed_at, consumed_by,
+                   status, max_uses, use_count, created_at, updated_at
+            FROM tenant_invitations
+            WHERE token_hash = $1
+            "#,
+        )
+        .bind(token_hash)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    /// 根据 Token 哈希查询会话
+    async fn query_session_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<AuthSession>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, AuthSession>(
+            r#"
+            SELECT id, user_id, session_token_hash, identity_id, active_membership_id,
+                   mfa_status, mfa_verified_at, user_agent, ip_address, expires_at,
+                   last_active_at, revoked_at, revoked_reason, created_at, updated_at
+            FROM auth_sessions
+            WHERE session_token_hash = $1
+            "#,
+        )
+        .bind(token_hash)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    /// 更新邀请消费状态
+    async fn update_invitation_consumed(
+        &self,
+        invitation_id: Uuid,
+        consumed_by: Uuid,
+    ) -> Result<(), AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        sqlx::query(
+            r#"
+            UPDATE tenant_invitations
+            SET use_count = use_count + 1,
+                consumed_at = NOW(),
+                consumed_by = $2,
+                status = CASE WHEN use_count + 1 >= max_uses THEN 'consumed' ELSE status END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(invitation_id)
+        .bind(consumed_by)
+        .execute(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(())
+    }
+
+    /// 更新会话撤销状态
+    async fn update_session_revoked(
+        &self,
+        session_id: Uuid,
+        reason: &str,
+    ) -> Result<(), AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        sqlx::query(
+            r#"
+            UPDATE auth_sessions
+            SET revoked_at = NOW(),
+                revoked_reason = $2,
+                updated_at = NOW()
+            WHERE id = $1 AND revoked_at IS NULL
+            "#,
+        )
+        .bind(session_id)
+        .bind(reason)
+        .execute(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(())
+    }
+
+    /// 更新身份 MFA 状态
+    async fn update_identity_mfa_status(
+        &self,
+        identity_id: Uuid,
+        mfa_verified: bool,
+    ) -> Result<(), AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        sqlx::query(
+            r#"
+            UPDATE external_identities
+            SET mfa_verified = $2,
+                mfa_verified_at = CASE WHEN $2 THEN NOW() ELSE mfa_verified_at END,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(identity_id)
+        .bind(mfa_verified)
+        .execute(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(())
     }
 
     /// 从 Privy API 获取 MFA 状态
@@ -703,12 +1197,10 @@ impl AuthService for AuthServiceImpl {
         user_id: Uuid,
     ) -> Result<TenantMembership, AuthError> {
         // 1. 计算 Token 哈希并查找邀请
-        let _token_hash = Self::hash_token(invitation_token);
+        let token_hash = Self::hash_token(invitation_token);
 
-        // TODO: 实现根据 token_hash 查询邀请
-        // 当前使用 Mock 实现
         let invitation = self
-            .query_invitation(Uuid::nil())
+            .query_invitation_by_token_hash(&token_hash)
             .await?
             .ok_or(AuthError::InvalidInvitationToken)?;
 
@@ -746,7 +1238,8 @@ impl AuthService for AuthServiceImpl {
         self.create_membership_record(&membership).await?;
 
         // 7. 更新邀请状态
-        // TODO: 实现邀请消费记录更新
+        self.update_invitation_consumed(invitation.id, user_id)
+            .await?;
 
         // 8. 记录审计日志
         self.audit_log(
@@ -848,13 +1341,11 @@ impl AuthService for AuthServiceImpl {
     }
 
     async fn verify_session(&self, session_token: &str) -> Result<AuthSession, AuthError> {
-        // 1. 计算 Token 哈希
-        let _token_hash = Self::hash_token(session_token);
+        // 1. 计算 Token 哈希并查询会话
+        let token_hash = Self::hash_token(session_token);
 
-        // TODO: 实现根据 token_hash 查询会话
-        // 当前使用 Mock 实现
         let session = self
-            .query_session(Uuid::nil())
+            .query_session_by_token_hash(&token_hash)
             .await?
             .ok_or(AuthError::SessionNotFound(Uuid::nil()))?;
 
@@ -900,7 +1391,7 @@ impl AuthService for AuthServiceImpl {
         }
 
         // 3. 撤销会话
-        // TODO: 实现数据库更新
+        self.update_session_revoked(session_id, reason).await?;
 
         // 4. 记录审计日志
         self.audit_log(
@@ -964,12 +1455,17 @@ impl AuthService for AuthServiceImpl {
         self.get_user(user_id).await?;
 
         // 2. 调用 Privy API 获取 MFA 状态
-        // TODO: 实现实际的 Privy API 调用
-        // 当前返回 Mock 数据
         let mfa_status = self.fetch_privy_mfa_status(privy_token).await?;
 
         // 3. 更新外部身份的 MFA 状态
-        // TODO: 实现数据库更新
+        let identities = self.query_user_identities(user_id).await?;
+        if let Some(privy_identity) = identities
+            .iter()
+            .find(|i| i.provider == IdentityProvider::Privy)
+        {
+            self.update_identity_mfa_status(privy_identity.id, mfa_status.verified)
+                .await?;
+        }
 
         // 4. 记录审计日志
         self.audit_log(

@@ -36,8 +36,9 @@ pub mod service;
 
 // 重新导出主要类型
 pub use config::{
-    FeatureFlags, MemoryTenantConfigStore, PartialTenantConfig, QuotaLimits, TenantConfig,
-    TenantConfigError, TenantConfigManager, TenantConfigStore, TenantSettings, TenantStatus,
+    FeatureFlags, MemoryTenantConfigStore, PartialTenantConfig, PostgresTenantConfigStore,
+    QuotaLimits, TenantConfig, TenantConfigError, TenantConfigManager, TenantConfigStore,
+    TenantSettings, TenantStatus,
 };
 pub use service::{
     CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, OwnerExternalIdentity,
