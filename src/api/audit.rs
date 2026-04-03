@@ -759,6 +759,8 @@ mod tests {
             expires_at: 9999999999,
             scopes: vec![TokenScope::AuditRead],
             issued_at: 1000,
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
         }
     }
 
@@ -771,6 +773,8 @@ mod tests {
             expires_at: 9999999999,
             scopes: vec![TokenScope::Admin],
             issued_at: 1000,
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
         }
     }
 
@@ -796,6 +800,8 @@ mod tests {
             expires_at: 9999999999,
             scopes: vec![TokenScope::CredentialRead],
             issued_at: 1000,
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
         };
         assert!(!has_audit_permission(&no_scope_token));
     }

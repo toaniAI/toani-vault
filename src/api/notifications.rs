@@ -83,6 +83,8 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("system time before unix epoch")
                 .as_secs(),
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
         }
     }
 

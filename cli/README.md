@@ -8,6 +8,47 @@ CredBridge 命令行管理工具
 cargo install --path cli
 ```
 
+## 认证模式
+
+> **重要**: CLI 支持两种认证模式，请根据使用场景选择正确的方式。
+
+### 认证模式对比
+
+| 认证类型 | 适用场景 | 认证方式 |
+|---------|---------|---------|
+| **用户认证** | 最终用户访问 | Web 界面 Privy 钱包登录 |
+| **服务账户认证** | 自动化、CI/CD、后台服务 | Platform API Token (CLI) |
+
+### 用户认证 (Privy 钱包)
+
+用户认证通过 Web 界面完成：
+
+1. 访问 https://vault.toani.io
+2. 使用 Privy 钱包（MetaMask、Phantom 等）登录
+
+**CLI 不支持用户 Privy 钱包认证。**
+
+### 服务账户认证 (CLI)
+
+CLI 仅支持服务账户认证，适用于：
+
+- CI/CD 管道自动化
+- 管理脚本和运维工具
+- 跨系统集成
+
+```bash
+# 登录服务账户
+toani auth login --url https://vault.toani.io --token <platform-api-token> --service-account
+```
+
+### 如何获取 Platform API Token
+
+1. 使用管理员账户登录 Web 界面
+2. 进入"开发者中心" > "API Tokens"
+3. 创建新的服务账户 Token
+
+---
+
 ## 快速开始
 
 ```bash

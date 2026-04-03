@@ -51,17 +51,22 @@ impl ApiContext {
 
 /// 请求上下文
 ///
-/// 包含当前请求的所有上下文信息，从 Token 中提取
+/// 包含当前请求的所有上下文信息，从 Token 中提取。
+/// 支持 membership-based 的租户隔离和权限控制。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestContext {
-    /// 租户ID
+    /// 租户ID（从 membership 中获取）
     pub tenant_id: String,
     /// 用户ID
     pub user_id: String,
     /// Token ID (jti)
     pub token_id: String,
-    /// 授权 Scope 列表
+    /// 授权 Scope 列表（从 membership 中获取）
     pub scopes: Vec<String>,
+    /// 成员资格 ID（可选，用于 membership-based 隔离）
+    pub membership_id: Option<String>,
+    /// 会话 ID（可选）
+    pub session_id: Option<String>,
     /// 请求ID（用于追踪）
     pub request_id: String,
     /// 当前请求解析后的 locale
@@ -81,12 +86,16 @@ impl RequestContext {
             user_id: user_id.into(),
             token_id: token_id.into(),
             scopes,
+            membership_id: None,
+            session_id: None,
             request_id: generate_request_id(),
             resolved_locale: crate::api::i18n::DEFAULT_LOCALE.to_string(),
         }
     }
 
     /// 从 ValidatedToken 创建请求上下文
+    ///
+    /// 使用 membership 数据填充 tenant_id 和 scopes。
     pub fn from_validated_token(token: &ValidatedToken) -> Self {
         Self {
             tenant_id: token.tenant_id.clone(),
@@ -97,6 +106,8 @@ impl RequestContext {
                 .iter()
                 .map(|s| s.as_str().to_string())
                 .collect(),
+            membership_id: token.membership_id.clone(),
+            session_id: token.session_id().map(|s| s.to_string()),
             request_id: generate_request_id(),
             resolved_locale: crate::api::i18n::DEFAULT_LOCALE.to_string(),
         }
@@ -127,6 +138,16 @@ impl RequestContext {
         &self.request_id
     }
 
+    /// 获取成员资格 ID
+    pub fn membership_id(&self) -> Option<&str> {
+        self.membership_id.as_deref()
+    }
+
+    /// 获取会话 ID
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
     /// 设置请求ID
     pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
         self.request_id = request_id.into();
@@ -136,6 +157,18 @@ impl RequestContext {
     /// 设置已解析的 locale
     pub fn with_resolved_locale(mut self, locale: impl Into<String>) -> Self {
         self.resolved_locale = locale.into();
+        self
+    }
+
+    /// 设置成员资格 ID
+    pub fn with_membership_id(mut self, membership_id: impl Into<String>) -> Self {
+        self.membership_id = Some(membership_id.into());
+        self
+    }
+
+    /// 设置会话 ID
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
         self
     }
 }
@@ -213,13 +246,16 @@ where
 
 /// 数据库 RLS 上下文
 ///
-/// 用于 PostgreSQL RLS（行级安全）的会话变量设置
+/// 用于 PostgreSQL RLS（行级安全）的会话变量设置。
+/// 支持 membership-based 的租户隔离。
 #[derive(Debug, Clone)]
 pub struct RlsContext {
     /// 租户ID
     pub tenant_id: String,
     /// 用户ID
     pub user_id: String,
+    /// 成员资格 ID（可选）
+    pub membership_id: Option<String>,
     /// 允许的 Scope
     pub scopes: Vec<String>,
     /// 是否为管理员（绕过 RLS 检查）
@@ -232,6 +268,7 @@ impl RlsContext {
         Self {
             tenant_id: ctx.tenant_id.clone(),
             user_id: ctx.user_id.clone(),
+            membership_id: ctx.membership_id.clone(),
             scopes: ctx.scopes.clone(),
             is_admin: ctx.scopes.contains(&"admin".to_string()),
         }
@@ -249,9 +286,16 @@ impl RlsContext {
         Self {
             tenant_id,
             user_id,
+            membership_id: None,
             scopes,
             is_admin,
         }
+    }
+
+    /// 设置成员资格 ID
+    pub fn with_membership_id(mut self, membership_id: impl Into<String>) -> Self {
+        self.membership_id = Some(membership_id.into());
+        self
     }
 
     /// 生成 PostgreSQL RLS 设置 SQL（事务级别）
@@ -259,15 +303,27 @@ impl RlsContext {
     /// 使用 SET LOCAL 确保变量仅在事务级别生效，避免连接池污染
     /// 这些语句必须在事务内执行
     pub fn to_sql_transaction_local(&self) -> String {
+        let membership_sql = self
+            .membership_id
+            .as_ref()
+            .map(|id| {
+                format!(
+                    " SET LOCAL app.current_membership_id = '{}';",
+                    escape_sql_string(id)
+                )
+            })
+            .unwrap_or_default();
+
         format!(
             "SET LOCAL app.current_tenant_id = '{}'; \
              SET LOCAL app.current_user_id = '{}'; \
              SET LOCAL app.current_scopes = '{}'; \
-             SET LOCAL app.is_admin = '{}';",
+             SET LOCAL app.is_admin = '{}';{}",
             escape_sql_string(&self.tenant_id),
             escape_sql_string(&self.user_id),
             escape_sql_string(&self.scopes.join(",")),
-            self.is_admin
+            self.is_admin,
+            membership_sql
         )
     }
 
@@ -275,7 +331,7 @@ impl RlsContext {
     ///
     /// 这些语句应该在连接获取后立即执行
     pub fn to_sql_statements(&self) -> Vec<String> {
-        vec![
+        let mut statements = vec![
             format!(
                 "SET app.current_tenant_id = '{}'",
                 escape_sql_string(&self.tenant_id)
@@ -289,7 +345,16 @@ impl RlsContext {
                 escape_sql_string(&self.scopes.join(","))
             ),
             format!("SET app.is_admin = '{}'", self.is_admin),
-        ]
+        ];
+
+        if let Some(ref membership_id) = self.membership_id {
+            statements.push(format!(
+                "SET app.current_membership_id = '{}'",
+                escape_sql_string(membership_id)
+            ));
+        }
+
+        statements
     }
 
     /// 检查是否有管理员权限
@@ -500,6 +565,23 @@ mod tests {
         assert_eq!(ctx.token_id, "token_789");
         assert!(ctx.has_scope("credential:read"));
         assert!(!ctx.has_scope("admin"));
+        assert!(ctx.membership_id.is_none());
+        assert!(ctx.session_id.is_none());
+    }
+
+    #[test]
+    fn test_request_context_with_membership() {
+        let ctx = RequestContext::new(
+            "tenant_123",
+            "user_456",
+            "token_789",
+            vec!["credential:read".to_string()],
+        )
+        .with_membership_id("membership_001")
+        .with_session_id("session_001");
+
+        assert_eq!(ctx.membership_id(), Some("membership_001"));
+        assert_eq!(ctx.session_id(), Some("session_001"));
     }
 
     #[test]
@@ -565,6 +647,7 @@ mod tests {
         let ctx = RlsContext {
             tenant_id: "tenant_123".to_string(),
             user_id: "user_456".to_string(),
+            membership_id: None,
             scopes: vec!["read".to_string(), "write".to_string()],
             is_admin: false,
         };
@@ -578,10 +661,24 @@ mod tests {
     }
 
     #[test]
+    fn test_rls_context_with_membership() {
+        let ctx = RlsContext::new("tenant_123", "user_456", vec!["read".to_string()])
+            .with_membership_id("membership_001");
+
+        let statements = ctx.to_sql_statements();
+        assert_eq!(statements.len(), 5);
+        assert!(statements[4].contains("SET app.current_membership_id = 'membership_001'"));
+
+        let sql = ctx.to_sql_transaction_local();
+        assert!(sql.contains("SET LOCAL app.current_membership_id = 'membership_001'"));
+    }
+
+    #[test]
     fn test_rls_context_transaction_local() {
         let ctx = RlsContext {
             tenant_id: "tenant_123".to_string(),
             user_id: "user_456".to_string(),
+            membership_id: None,
             scopes: vec!["read".to_string(), "admin".to_string()],
             is_admin: true,
         };
@@ -610,11 +707,13 @@ mod tests {
             "user_456",
             "token_789",
             vec!["admin".to_string(), "write".to_string()],
-        );
+        )
+        .with_membership_id("membership_001");
 
         let rls_ctx = RlsContext::from_request_context(&req_ctx);
         assert_eq!(rls_ctx.tenant_id, "tenant_123");
         assert_eq!(rls_ctx.user_id, "user_456");
+        assert_eq!(rls_ctx.membership_id, Some("membership_001".to_string()));
         assert!(rls_ctx.is_admin);
     }
 }

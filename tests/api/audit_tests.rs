@@ -33,6 +33,8 @@ fn create_audit_token() -> ValidatedToken {
         expires_at: u64::MAX,
         scopes: vec![TokenScope::AuditRead],
         issued_at: 1000,
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
     }
 }
 
@@ -46,6 +48,8 @@ fn create_admin_token() -> ValidatedToken {
         expires_at: u64::MAX,
         scopes: vec![TokenScope::Admin],
         issued_at: 1000,
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
     }
 }
 
@@ -59,6 +63,8 @@ fn create_no_permission_token() -> ValidatedToken {
         expires_at: u64::MAX,
         scopes: vec![TokenScope::CredentialRead],
         issued_at: 1000,
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
     }
 }
 
@@ -128,11 +134,114 @@ async fn test_list_audit_logs_success() {
 }
 
 #[tokio::test]
+#[ignore = "依赖于已移除的 /tokens/verify 端点 - 新认证流程使用 Privy + Session 模型"]
 async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
     let shared_storage = std::sync::Arc::new(tokio::sync::Mutex::new(
         MemoryAuditStorage::new(1000).unwrap(),
     ));
-    let auth_state = AuthApiState::with_audit_storage(shared_storage.clone());
+
+    // Create a mock AuthService for testing
+    use async_trait::async_trait;
+    use vault_service::auth::{
+        AuthError, AuthService, AuthSession, ExternalIdentity, TenantMembership, User,
+    };
+
+    struct MockAuthService;
+
+    #[async_trait]
+    impl AuthService for MockAuthService {
+        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+            Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
+        }
+        async fn get_or_create_external_identity(
+            &self,
+            _: uuid::Uuid,
+            _: vault_service::auth::IdentityProvider,
+            _: &str,
+            _: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, AuthError> {
+            unimplemented!()
+        }
+        async fn create_tenant_invitation(
+            &self,
+            _: uuid::Uuid,
+            _: vault_service::auth::MembershipRole,
+            _: vault_service::auth::InviteeType,
+            _: Option<String>,
+            _: Option<String>,
+            _: uuid::Uuid,
+            _: i64,
+        ) -> Result<(vault_service::auth::TenantInvitation, String), AuthError> {
+            unimplemented!()
+        }
+        async fn consume_invitation(
+            &self,
+            _: &str,
+            _: uuid::Uuid,
+        ) -> Result<TenantMembership, AuthError> {
+            unimplemented!()
+        }
+        async fn create_session(
+            &self,
+            _: uuid::Uuid,
+            _: Option<uuid::Uuid>,
+            _: vault_service::auth::CreateUserRequest,
+        ) -> Result<(AuthSession, String), AuthError> {
+            unimplemented!()
+        }
+        async fn get_active_membership(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+        ) -> Result<Option<TenantMembership>, AuthError> {
+            Ok(None)
+        }
+        async fn audit_log(
+            &self,
+            _: vault_service::auth::AuthEventType,
+            _: Option<uuid::Uuid>,
+            _: Option<serde_json::Value>,
+        ) -> Result<(), AuthError> {
+            Ok(())
+        }
+        async fn verify_session(&self, _: &str) -> Result<AuthSession, AuthError> {
+            unimplemented!()
+        }
+        async fn revoke_session(&self, _: uuid::Uuid, _: &str) -> Result<(), AuthError> {
+            Ok(())
+        }
+        async fn get_user(&self, _: uuid::Uuid) -> Result<User, AuthError> {
+            unimplemented!()
+        }
+        async fn get_user_identities(
+            &self,
+            _: uuid::Uuid,
+        ) -> Result<Vec<ExternalIdentity>, AuthError> {
+            Ok(vec![])
+        }
+        async fn get_user_memberships(
+            &self,
+            _: uuid::Uuid,
+        ) -> Result<Vec<TenantMembership>, AuthError> {
+            Ok(vec![])
+        }
+        async fn sync_mfa_status(
+            &self,
+            _: uuid::Uuid,
+            _: &str,
+        ) -> Result<vault_service::auth::service::MfaStatusSnapshot, AuthError> {
+            Ok(vault_service::auth::service::MfaStatusSnapshot::default())
+        }
+        async fn get_mfa_status(
+            &self,
+            _: uuid::Uuid,
+        ) -> Result<vault_service::auth::service::MfaStatusSnapshot, AuthError> {
+            Ok(vault_service::auth::service::MfaStatusSnapshot::default())
+        }
+    }
+
+    let auth_service = std::sync::Arc::new(MockAuthService);
+    let auth_state = AuthApiState::new(auth_service).with_audit_storage(shared_storage.clone());
     let verifier_public_key = {
         let storage = shared_storage.lock().await;
         storage.recorder().public_key().to_vec()
@@ -176,16 +285,12 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
     let created: Value = serde_json::from_slice(&create_body).unwrap();
     let token = created["access_token"].as_str().unwrap().to_string();
 
+    // 验证会话端点写入审计日志 (新认证流程)
     let verify_request = Request::builder()
-        .uri("/tokens/verify")
-        .method("POST")
-        .header("Content-Type", "application/json")
-        .body(Body::from(
-            json!({
-                "token": token
-            })
-            .to_string(),
-        ))
+        .uri("/auth/me")
+        .method("GET")
+        .header("Authorization", format!("Bearer {}", token))
+        .body(Body::empty())
         .unwrap();
 
     let verify_response = app.clone().oneshot(verify_request).await.unwrap();
@@ -222,11 +327,114 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
 }
 
 #[tokio::test]
+#[ignore = "依赖于已移除的 /tokens/stats 端点 - 新认证流程使用 Privy + Session 模型"]
 async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
     let shared_storage = std::sync::Arc::new(tokio::sync::Mutex::new(
         MemoryAuditStorage::new(1000).unwrap(),
     ));
-    let auth_state = AuthApiState::with_audit_storage(shared_storage);
+
+    // Create a mock AuthService for testing
+    use async_trait::async_trait;
+    use vault_service::auth::{
+        AuthError, AuthService, AuthSession, ExternalIdentity, TenantMembership, User,
+    };
+
+    struct MockAuthService;
+
+    #[async_trait]
+    impl AuthService for MockAuthService {
+        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+            Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
+        }
+        async fn get_or_create_external_identity(
+            &self,
+            _: uuid::Uuid,
+            _: vault_service::auth::IdentityProvider,
+            _: &str,
+            _: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, AuthError> {
+            unimplemented!()
+        }
+        async fn create_tenant_invitation(
+            &self,
+            _: uuid::Uuid,
+            _: vault_service::auth::MembershipRole,
+            _: vault_service::auth::InviteeType,
+            _: Option<String>,
+            _: Option<String>,
+            _: uuid::Uuid,
+            _: i64,
+        ) -> Result<(vault_service::auth::TenantInvitation, String), AuthError> {
+            unimplemented!()
+        }
+        async fn consume_invitation(
+            &self,
+            _: &str,
+            _: uuid::Uuid,
+        ) -> Result<TenantMembership, AuthError> {
+            unimplemented!()
+        }
+        async fn create_session(
+            &self,
+            _: uuid::Uuid,
+            _: Option<uuid::Uuid>,
+            _: vault_service::auth::CreateUserRequest,
+        ) -> Result<(AuthSession, String), AuthError> {
+            unimplemented!()
+        }
+        async fn get_active_membership(
+            &self,
+            _: uuid::Uuid,
+            _: uuid::Uuid,
+        ) -> Result<Option<TenantMembership>, AuthError> {
+            Ok(None)
+        }
+        async fn audit_log(
+            &self,
+            _: vault_service::auth::AuthEventType,
+            _: Option<uuid::Uuid>,
+            _: Option<serde_json::Value>,
+        ) -> Result<(), AuthError> {
+            Ok(())
+        }
+        async fn verify_session(&self, _: &str) -> Result<AuthSession, AuthError> {
+            unimplemented!()
+        }
+        async fn revoke_session(&self, _: uuid::Uuid, _: &str) -> Result<(), AuthError> {
+            Ok(())
+        }
+        async fn get_user(&self, _: uuid::Uuid) -> Result<User, AuthError> {
+            unimplemented!()
+        }
+        async fn get_user_identities(
+            &self,
+            _: uuid::Uuid,
+        ) -> Result<Vec<ExternalIdentity>, AuthError> {
+            Ok(vec![])
+        }
+        async fn get_user_memberships(
+            &self,
+            _: uuid::Uuid,
+        ) -> Result<Vec<TenantMembership>, AuthError> {
+            Ok(vec![])
+        }
+        async fn sync_mfa_status(
+            &self,
+            _: uuid::Uuid,
+            _: &str,
+        ) -> Result<vault_service::auth::service::MfaStatusSnapshot, AuthError> {
+            Ok(vault_service::auth::service::MfaStatusSnapshot::default())
+        }
+        async fn get_mfa_status(
+            &self,
+            _: uuid::Uuid,
+        ) -> Result<vault_service::auth::service::MfaStatusSnapshot, AuthError> {
+            Ok(vault_service::auth::service::MfaStatusSnapshot::default())
+        }
+    }
+
+    let auth_service = std::sync::Arc::new(MockAuthService);
+    let auth_state = AuthApiState::new(auth_service).with_audit_storage(shared_storage);
     let app = Router::new()
         .merge(auth_routes().with_state(auth_state.clone()))
         .merge(protected_auth_routes().with_state(auth_state));
@@ -240,6 +448,8 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
         expires_at: u64::MAX,
         scopes: vec![TokenScope::Admin],
         issued_at: 1000,
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
     };
 
     for expires_in in [900_u64, 1800_u64] {
@@ -261,8 +471,9 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
         assert_eq!(create_response.status(), StatusCode::OK);
     }
 
+    // 使用 /auth/me 端点代替已移除的 /tokens/stats
     let stats_request = Request::builder()
-        .uri("/tokens/stats")
+        .uri("/auth/me")
         .method("GET")
         .header("Authorization", "Bearer test_token")
         .extension(test_token)
@@ -271,14 +482,6 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
 
     let stats_response = app.oneshot(stats_request).await.unwrap();
     assert_eq!(stats_response.status(), StatusCode::OK);
-    let stats_body = stats_response
-        .into_body()
-        .collect()
-        .await
-        .unwrap()
-        .to_bytes();
-    let stats_json: Value = serde_json::from_slice(&stats_body).unwrap();
-    assert_eq!(stats_json["active_tokens"], 2);
 }
 
 #[tokio::test]

@@ -23,6 +23,7 @@
 
 pub mod api;
 pub mod audit;
+pub mod auth;
 pub mod config;
 pub mod connector;
 pub mod crypto;
@@ -84,6 +85,14 @@ pub use connector::{
     http::{HttpConnector, HttpConnectorConfig},
     timeout::{TimeoutConfig, TimeoutError, TimeoutWrapper},
     validator::{CompositeValidator, SchemaValidator, ValidationRule, ValidatorBuilder},
+};
+
+// 重新导出 Auth 模块
+pub use auth::{
+    AuthAuditLog, AuthError, AuthEventType, AuthService, AuthServiceImpl, AuthSession,
+    CreateSessionRequest, CreateUserRequest, ExternalIdentity, IdentityProvider, InvitationStatus,
+    InviteeType, MembershipRole, MembershipSource, MembershipStatus, MfaStatus, PrivyAuthResponse,
+    TenantInvitation, TenantMembership, User, UserStatus, create_owner_membership,
 };
 
 /// 库版本

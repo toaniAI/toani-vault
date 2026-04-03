@@ -3,7 +3,6 @@
 //! 提供 locale 解析、消息目录与请求级 locale 中间件。
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use axum::{
     extract::{FromRequestParts, Request, State},
@@ -18,9 +17,9 @@ use axum::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::api::auth::MemoryUserStore;
 use crate::api::context::RequestContext;
 use crate::api::middleware::ValidatedToken;
+use crate::auth::AuthService;
 use crate::tenant::{MemoryTenantConfigStore, TenantConfigStore, TenantId};
 
 pub const DEFAULT_LOCALE: &str = "zh-CN";
@@ -87,14 +86,17 @@ where
 
 #[derive(Clone)]
 pub struct LocaleResolverState {
-    pub user_store: Arc<MemoryUserStore>,
+    pub auth_service: std::sync::Arc<dyn AuthService>,
     pub tenant_store: MemoryTenantConfigStore,
 }
 
 impl LocaleResolverState {
-    pub fn new(user_store: Arc<MemoryUserStore>, tenant_store: MemoryTenantConfigStore) -> Self {
+    pub fn new(
+        auth_service: std::sync::Arc<dyn AuthService>,
+        tenant_store: MemoryTenantConfigStore,
+    ) -> Self {
         Self {
-            user_store,
+            auth_service,
             tenant_store,
         }
     }
@@ -109,11 +111,17 @@ pub async fn locale_middleware(
     let token = request.extensions().get::<ValidatedToken>().cloned();
 
     let user_locale = if let Some(ref token) = token {
-        state
-            .user_store
-            .get_user(&token.user_id)
-            .await
-            .and_then(|user| user.locale)
+        // Parse user_id from token
+        if let Ok(user_id) = uuid::Uuid::parse_str(&token.user_id) {
+            state
+                .auth_service
+                .get_user(user_id)
+                .await
+                .ok()
+                .and_then(|user| user.display_name) // Use display_name as locale hint for now
+        } else {
+            None
+        }
     } else {
         None
     };

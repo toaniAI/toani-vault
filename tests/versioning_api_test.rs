@@ -72,6 +72,8 @@ fn create_test_token(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) ->
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs(),
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
     }
 }
 

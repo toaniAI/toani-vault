@@ -1,9 +1,21 @@
 //! API 认证中间件
 //!
-//! 实现 PASETO v4.local Token 验证中间件
-//! - Token 15 分钟有效期
-//! - jti 单次使用验证
+//! 实现 Session Token 和 Privy Token 验证中间件：
+//! - 支持 Privy Access Token（用于创建会话）
+//! - 支持 Session Token（用于 API 访问）
 //! - Scope 权限控制
+//! - Membership-based tenant isolation
+//!
+//! # Token 类型
+//!
+//! 1. **Privy Access Token**: 前端从 Privy 获取，用于创建会话
+//!    - 格式: Privy JWT
+//!    - 用途: POST /auth/session
+//!
+//! 2. **Session Token**: 后端生成，用于 API 访问
+//!    - 格式: PASETO v4.local 或内部 Token
+//!    - 用途: 所有需要认证的 API 请求
+//!    - 包含: user_id, tenant_id, membership_id, scopes
 
 use axum::{
     Json,
@@ -14,6 +26,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::context::RequestContext;
@@ -26,6 +39,8 @@ use serde_json::Value;
 use super::token_blacklist::TokenStore;
 
 /// Token Scope 定义
+///
+/// 基于 MembershipRole 的权限范围
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenScope {
@@ -35,6 +50,8 @@ pub enum TokenScope {
     CredentialDecrypt,
     /// 凭证写入权限（创建/删除）
     CredentialWrite,
+    /// 凭证删除权限
+    CredentialDelete,
     /// 审计日志读取权限
     AuditRead,
     /// 沙箱执行权限
@@ -43,7 +60,35 @@ pub enum TokenScope {
     SandboxRead,
     /// 沙箱写入权限（创建/删除）
     SandboxWrite,
-    /// 管理员权限
+    /// 租户管理权限
+    TenantAdmin,
+    /// 租户读取权限
+    TenantRead,
+    /// 租户写入权限
+    TenantWrite,
+    /// 租户删除权限
+    TenantDelete,
+    /// 成员管理权限
+    MembersRead,
+    /// 成员写入权限
+    MembersWrite,
+    /// 成员邀请权限
+    MembersInvite,
+    /// 邀请管理权限
+    InvitationsRead,
+    /// 邀请写入权限
+    InvitationsWrite,
+    /// Token 读取权限
+    TokensRead,
+    /// Token 写入权限（创建）
+    TokensWrite,
+    /// Token 撤销权限
+    TokensRevoke,
+    /// 用户管理权限
+    UsersManage,
+    /// 角色管理权限
+    RolesManage,
+    /// 管理员权限（超级权限）
     Admin,
 }
 
@@ -54,10 +99,25 @@ impl TokenScope {
             TokenScope::CredentialRead => "credential:read",
             TokenScope::CredentialDecrypt => "credential:decrypt",
             TokenScope::CredentialWrite => "credential:write",
+            TokenScope::CredentialDelete => "credential:delete",
             TokenScope::AuditRead => "audit:read",
             TokenScope::SandboxExecute => "sandbox:execute",
             TokenScope::SandboxRead => "sandbox:read",
             TokenScope::SandboxWrite => "sandbox:write",
+            TokenScope::TenantAdmin => "tenant:admin",
+            TokenScope::TenantRead => "tenant:read",
+            TokenScope::TenantWrite => "tenant:write",
+            TokenScope::TenantDelete => "tenant:delete",
+            TokenScope::MembersRead => "members:read",
+            TokenScope::MembersWrite => "members:write",
+            TokenScope::MembersInvite => "members:invite",
+            TokenScope::InvitationsRead => "invitations:read",
+            TokenScope::InvitationsWrite => "invitations:write",
+            TokenScope::TokensRead => "tokens:read",
+            TokenScope::TokensWrite => "tokens:write",
+            TokenScope::TokensRevoke => "tokens:revoke",
+            TokenScope::UsersManage => "users:manage",
+            TokenScope::RolesManage => "roles:manage",
             TokenScope::Admin => "admin",
         }
     }
@@ -68,12 +128,107 @@ impl TokenScope {
             "credential:read" => Some(TokenScope::CredentialRead),
             "credential:decrypt" => Some(TokenScope::CredentialDecrypt),
             "credential:write" => Some(TokenScope::CredentialWrite),
+            "credential:delete" => Some(TokenScope::CredentialDelete),
             "audit:read" => Some(TokenScope::AuditRead),
             "sandbox:execute" => Some(TokenScope::SandboxExecute),
             "sandbox:read" => Some(TokenScope::SandboxRead),
             "sandbox:write" => Some(TokenScope::SandboxWrite),
+            "tenant:admin" => Some(TokenScope::TenantAdmin),
+            "tenant:read" => Some(TokenScope::TenantRead),
+            "tenant:write" => Some(TokenScope::TenantWrite),
+            "tenant:delete" => Some(TokenScope::TenantDelete),
+            "members:read" => Some(TokenScope::MembersRead),
+            "members:write" => Some(TokenScope::MembersWrite),
+            "members:invite" => Some(TokenScope::MembersInvite),
+            "invitations:read" => Some(TokenScope::InvitationsRead),
+            "invitations:write" => Some(TokenScope::InvitationsWrite),
+            "tokens:read" => Some(TokenScope::TokensRead),
+            "tokens:write" => Some(TokenScope::TokensWrite),
+            "tokens:revoke" => Some(TokenScope::TokensRevoke),
+            "users:manage" => Some(TokenScope::UsersManage),
+            "roles:manage" => Some(TokenScope::RolesManage),
             "admin" => Some(TokenScope::Admin),
+            // Legacy compatibility mappings
+            "credentials:read" => Some(TokenScope::CredentialRead),
+            "credentials:write" => Some(TokenScope::CredentialWrite),
+            "credentials:delete" => Some(TokenScope::CredentialDelete),
             _ => None,
+        }
+    }
+
+    /// 从 MembershipRole 的默认 scopes 转换
+    pub fn from_membership_scopes(scope_str: &str) -> Vec<TokenScope> {
+        scope_str
+            .split_whitespace()
+            .filter_map(Self::parse)
+            .collect()
+    }
+
+    /// 从 MembershipRole 映射到 TokenScope 列表
+    ///
+    /// # 映射规则
+    /// - **owner**: 所有权限（包含 Admin）
+    /// - **admin**: credential:*, tokens:*, audit:read, members:*, invitations:*
+    /// - **member**: credential:read, credential:write, tokens:read, tokens:write
+    /// - **readonly**: credential:read, tokens:read
+    pub fn from_role(role: crate::auth::models::MembershipRole) -> Vec<TokenScope> {
+        use crate::auth::models::MembershipRole;
+        match role {
+            MembershipRole::Owner => vec![
+                TokenScope::Admin,
+                TokenScope::TenantRead,
+                TokenScope::TenantWrite,
+                TokenScope::TenantAdmin,
+                TokenScope::TenantDelete,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::CredentialWrite,
+                TokenScope::CredentialDelete,
+                TokenScope::AuditRead,
+                TokenScope::MembersRead,
+                TokenScope::MembersWrite,
+                TokenScope::MembersInvite,
+                TokenScope::InvitationsRead,
+                TokenScope::InvitationsWrite,
+                TokenScope::TokensRead,
+                TokenScope::TokensWrite,
+                TokenScope::TokensRevoke,
+                TokenScope::UsersManage,
+                TokenScope::RolesManage,
+            ],
+            MembershipRole::Admin => vec![
+                TokenScope::TenantRead,
+                TokenScope::TenantWrite,
+                TokenScope::TenantAdmin,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::CredentialWrite,
+                TokenScope::CredentialDelete,
+                TokenScope::AuditRead,
+                TokenScope::MembersRead,
+                TokenScope::MembersWrite,
+                TokenScope::MembersInvite,
+                TokenScope::InvitationsRead,
+                TokenScope::InvitationsWrite,
+                TokenScope::TokensRead,
+                TokenScope::TokensWrite,
+                TokenScope::TokensRevoke,
+                TokenScope::UsersManage,
+            ],
+            MembershipRole::Member => vec![
+                TokenScope::TenantRead,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::CredentialWrite,
+                TokenScope::AuditRead,
+                TokenScope::TokensRead,
+                TokenScope::TokensWrite,
+            ],
+            MembershipRole::Readonly => vec![
+                TokenScope::TenantRead,
+                TokenScope::CredentialRead,
+                TokenScope::TokensRead,
+            ],
         }
     }
 }
@@ -87,22 +242,29 @@ impl std::str::FromStr for TokenScope {
 }
 
 /// 验证后的 Token 信息
+///
+/// 包含从 Session Token 或 Privy Token 中提取的用户身份和权限信息。
+/// 支持 membership-based 的租户隔离和权限控制。
 #[derive(Debug, Clone)]
 pub struct ValidatedToken {
     /// Token ID (jti)
     pub token_id: String,
     /// 主题（租户ID:用户ID）
     pub subject: String,
-    /// 租户 ID
+    /// 租户 ID（从 membership 中获取）
     pub tenant_id: String,
     /// 用户 ID
     pub user_id: String,
     /// Token 有效期（秒）
     pub expires_at: u64,
-    /// 授权 Scope 列表
+    /// 授权 Scope 列表（从 membership 中获取）
     pub scopes: Vec<TokenScope>,
     /// 签发时间
     pub issued_at: u64,
+    /// 成员资格 ID（可选，用于 membership-based 隔离）
+    pub membership_id: Option<String>,
+    /// 额外元数据（如 session_id, identity_id 等）
+    pub metadata: HashMap<String, String>,
 }
 
 impl ValidatedToken {
@@ -123,6 +285,39 @@ impl ValidatedToken {
             .unwrap()
             .as_secs();
         now > self.expires_at
+    }
+
+    /// 获取 membership_id（如果存在）
+    pub fn membership_id(&self) -> Option<&str> {
+        self.metadata.get("membership_id").map(|s| s.as_str())
+    }
+
+    /// 获取 session_id（如果存在）
+    pub fn session_id(&self) -> Option<&str> {
+        self.metadata.get("session_id").map(|s| s.as_str())
+    }
+
+    /// 创建用于测试的模拟 Token
+    #[cfg(test)]
+    pub fn mock(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) -> Self {
+        Self {
+            token_id: uuid::Uuid::now_v7().to_string(),
+            subject: format!("{tenant_id}:{user_id}"),
+            tenant_id: tenant_id.to_string(),
+            user_id: user_id.to_string(),
+            expires_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 3600,
+            scopes,
+            issued_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            membership_id: None,
+            metadata: HashMap::new(),
+        }
     }
 }
 
@@ -344,6 +539,26 @@ fn validate_paseto_token(
     let (tenant_id, user_id) = parse_subject(&subject, locale)
         .map_err(|e| format!("parse subject failed: {}", e.message))?;
 
+    // 提取可选的 membership_id 和 session_id
+    let membership_id = claims
+        .get_claim("membership_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let session_id = claims
+        .get_claim("session_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // 构建元数据
+    let mut metadata = HashMap::new();
+    if let Some(ref sid) = session_id {
+        metadata.insert("session_id".to_string(), sid.clone());
+    }
+    if let Some(ref mid) = membership_id {
+        metadata.insert("membership_id".to_string(), mid.clone());
+    }
+
     Ok(ValidatedToken {
         token_id,
         subject,
@@ -352,6 +567,8 @@ fn validate_paseto_token(
         expires_at,
         scopes,
         issued_at,
+        membership_id,
+        metadata,
     })
 }
 
@@ -509,6 +726,8 @@ pub mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
+            membership_id: None,
+            metadata: HashMap::new(),
         }
     }
 }

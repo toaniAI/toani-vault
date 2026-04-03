@@ -4,6 +4,66 @@
 
 用于与 Toani Vault API 交互的 Rust SDK。
 
+## 认证模式
+
+> **重要**: 此 SDK 支持两种认证模式，请根据使用场景选择正确的方式。
+
+### 认证模式对比
+
+| 认证类型 | 适用场景 | 认证方式 |
+|---------|---------|---------|
+| **用户认证** | 最终用户访问 | Web 界面 Privy 钱包登录 |
+| **服务账户认证** | 自动化、CI/CD、后台服务 | Platform API Token (此 SDK) |
+
+### 用户认证 (Privy 钱包)
+
+用户认证通过 Web 界面完成，使用 Privy 钱包登录：
+
+1. 访问 https://vault.toani.io
+2. 点击"使用钱包登录"
+3. 通过 Privy 支持的钱包（如 MetaMask、Phantom）完成认证
+4. 认证成功后获得用户 Session Token
+
+**注意**: 用户 Privy 认证 Token 不应通过此 SDK 直接管理。
+
+### 服务账户认证 (Platform API Token)
+
+此 SDK 用于服务账户认证，适用于：
+
+- CI/CD 管道自动化
+- 后台服务/微服务
+- 管理脚本和自动化工具
+- 跨系统集成
+
+使用 CLI 登录服务账户：
+
+```bash
+# 登录服务账户（需要 Platform API Token）
+toani auth login --url https://vault.toani.io --token <your-platform-token> --service-account
+```
+
+或在代码中直接设置：
+
+```rust
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+
+// 服务账户认证 - 使用 Platform API Token
+let sdk = ToaniVaultSDK::new(
+    CredBridgeConfig::new("https://vault.toani.io")
+        .with_token("v4.local.your-platform-api-token")
+)?;
+```
+
+### 如何获取 Platform API Token
+
+Platform API Token 需通过管理界面或 API 创建：
+
+1. 使用管理员账户登录 Web 界面
+2. 进入"开发者中心" > "API Tokens"
+3. 创建新的服务账户 Token，设置所需权限范围
+
+---
+
 ## 特性
 
 - **完整的凭证管理**: 创建、读取、更新、删除、解密凭证

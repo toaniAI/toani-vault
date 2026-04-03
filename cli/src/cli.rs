@@ -54,15 +54,22 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum AuthCommands {
-    /// 登录到 Toani Vault 服务
+    /// 登录到 Toani Vault 服务（仅限服务账户和平台 API Token）
+    ///
+    /// 此认证方法仅用于服务账户和平台 API Token。
+    /// 用户认证请通过 Web 界面使用 Privy 钱包登录。
     Login {
         /// 服务 URL
         #[arg(short, long, env = "CREDBRIDGE_URL")]
         url: String,
 
-        /// API Token
+        /// API Token（平台 API Token，非用户认证）
         #[arg(short, long, env = "CREDBRIDGE_TOKEN")]
         token: String,
+
+        /// 确认此 Token 为服务账户 Token
+        #[arg(long)]
+        service_account: bool,
     },
     /// 查看当前登录状态
     Status,

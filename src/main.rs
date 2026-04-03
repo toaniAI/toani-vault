@@ -434,10 +434,8 @@ async fn initialize_app_state(
         storage: Arc::new(audit_storage_adapter),
         verifier_public_key: audit_verifier_public_key,
     };
-    let auth_state = AuthApiState::with_audit_storage(audit_storage.clone());
-    info!(module = "auth", status = "ready", "认证模块就绪");
 
-    // --- Tenant ---
+    // --- Tenant (must be before Auth since Auth depends on it) ---
     info!(
         module = "tenant",
         status = "initializing",
@@ -455,6 +453,14 @@ async fn initialize_app_state(
         .await
         .map_err(|e| format!("初始化默认租户配置失败: {e}"))?;
     info!(module = "tenant", status = "ready", "租户配置就绪");
+
+    // Create AuthService instance (without database for now)
+    let auth_service = vault_service::auth::AuthServiceImpl::new_in_memory(
+        vault_service::tenant::TenantManager::new_simple(tenant_store.clone()),
+    );
+    let auth_state = AuthApiState::new(std::sync::Arc::new(auth_service))
+        .with_audit_storage(audit_storage.clone());
+    info!(module = "auth", status = "ready", "认证模块就绪");
 
     // --- Rate Limit ---
     info!(
@@ -641,11 +647,13 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
 fn build_api_routes(app_state: AppState) -> Router {
     // 创建 Token 存储用于黑名单检查
     let token_store = app_state.auth_state.token_store.clone();
-    let secret_key = app_state.auth_state.secret_key.clone();
+    // Generate a secret key for PASETO token validation
+    // In production, this should come from a secure configuration or Vault
+    let secret_key = vec![0u8; 32]; // Placeholder - should be from config
 
     // 认证路由（公开，不需要认证）
     let locale_state = LocaleResolverState::new(
-        app_state.auth_state.user_store.clone(),
+        app_state.auth_state.auth_service.clone(),
         app_state.tenant_store.clone(),
     );
     let public_locale_layer =

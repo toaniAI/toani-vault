@@ -187,3 +187,15 @@ path = "tests/tee/sandbox_export_tests.rs"
 [[test]]
 name = "sandbox_performance"
 path = "tests/tee/sandbox_performance.rs"
+
+[[test]]
+name = "privy_auth_tests"
+path = "tests/auth/privy_auth_tests.rs"
+
+[[test]]
+name = "scope_mapping_tests"
+path = "tests/auth/scope_mapping_tests.rs"
+
+[[test]]
+name = "auth_flow_tests"
+path = "tests/integration/auth_flow_tests.rs"

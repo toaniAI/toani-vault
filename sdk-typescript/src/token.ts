@@ -1,7 +1,23 @@
 /**
  * CredBridge SDK - Token 管理模块
  *
- * 提供 Token 验证、刷新和管理功能
+ * 管理 Platform API Tokens，用于服务账户认证。
+ *
+ * **重要说明**:
+ * 此 TokenManager 管理的是 Platform API Tokens，用于服务账户和自动化场景，
+ * **不**用于最终用户的 Privy 钱包认证。
+ *
+ * ## 认证模式对比
+ *
+ * | 认证类型 | 适用场景 | 认证方式 |
+ * |---------|---------|---------|
+ * | 用户认证 | 最终用户 | Web 界面 Privy 钱包登录 |
+ * | 服务账户认证 | 自动化、CI/CD、后台服务 | Platform API Token (CLI/SDK) |
+ *
+ * - **用户认证**: 通过 Web 界面 (https://vault.toani.io) 使用 Privy 钱包登录
+ * - **服务账户认证**: 使用 CLI `auth login` 或 SDK 直接设置 Token
+ *
+ * @module token
  */
 
 import type { CredBridgeClient } from './client.js';
@@ -36,6 +52,12 @@ interface TokenRevokeResponse {
 
 /**
  * Token 管理类
+ *
+ * 管理 Platform API Tokens，用于服务账户认证。
+ *
+ * **注意**: 此类管理的 Token 是 Platform API Tokens，
+ * 用于服务账户和自动化场景，不用于用户 Privy 钱包认证。
+ * 用户认证请通过 Web 界面使用 Privy 钱包登录。
  */
 export class TokenManager {
   private client: CredBridgeClient;

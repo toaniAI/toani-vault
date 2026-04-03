@@ -4,15 +4,50 @@ use crate::i18n::tr;
 use anyhow::Result;
 use colored::Colorize;
 
+/// 显示服务账户认证警告
+fn show_service_account_warning() {
+    println!("\n{}", "⚠️  重要提示".yellow().bold());
+    println!("{}", "━".repeat(50).yellow());
+    println!(
+        "{}",
+        "此认证方法仅用于服务账户和平台 API Token。".yellow()
+    );
+    println!(
+        "{}",
+        "用户认证请通过 Web 界面使用 Privy 钱包登录。".yellow()
+    );
+    println!(
+        "{}",
+        "https://vault.toani.io".cyan()
+    );
+    println!("{}", "━".repeat(50).yellow());
+    println!();
+}
+
 pub async fn execute(cmd: AuthCommands, config: Config) -> Result<()> {
     match cmd {
-        AuthCommands::Login { url, token } => login(url, token).await,
+        AuthCommands::Login {
+            url,
+            token,
+            service_account,
+        } => login(url, token, service_account).await,
         AuthCommands::Status => status(config).await,
         AuthCommands::Logout => logout().await,
     }
 }
 
-async fn login(url: String, token: String) -> Result<()> {
+async fn login(url: String, token: String, service_account: bool) -> Result<()> {
+    // 显示服务账户认证警告
+    show_service_account_warning();
+
+    // 如果未指定 --service-account，提示用户确认
+    if !service_account {
+        println!(
+            "{}",
+            "提示: 使用 --service-account 标志可跳过此确认提示。".dimmed()
+        );
+    }
+
     println!("{} {} ...", tr("cli.auth.connecting"), url);
 
     let sdk = credbridge_sdk::ToaniVaultSDK::new(

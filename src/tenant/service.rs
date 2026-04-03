@@ -32,16 +32,25 @@
 //!                                                  │
 //!        ┌─────────────────────────────────────────┘
 //!        ▼
-//! ┌──────────────┐     ┌──────────────┐
-//! │ 创建默认角色  │ ──▶ │ 记录审计日志  │
-//! └──────────────┘     └──────────────┘
+//! ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+//! │ 创建默认角色  │ ──▶ │ 绑定所有者    │ ──▶ │ 记录审计日志  │
+//! └──────────────┘     └──────────────┘     └──────────────┘
 //! ```
+//!
+//! # 所有者绑定
+//!
+//! 创建租户时可以指定初始所有者：
+//! - `owner_user_id`: 已存在的用户 ID
+//! - `owner_external_identity`: 外部身份（Privy did、邮箱等）
+//! - 如果两者都提供，优先使用 `owner_user_id`
+//! - 如果只提供外部身份，会自动创建用户并绑定
 
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 use super::{
     DefaultRoles, PartialTenantConfig, Tenant, TenantConfig, TenantConfigError,
@@ -111,6 +120,34 @@ pub struct CreateTenantRequest {
     /// 是否生成加密密钥
     #[serde(default = "default_true")]
     pub generate_keys: bool,
+    /// 所有者用户 ID（可选，用于绑定已存在用户）
+    #[serde(default)]
+    pub owner_user_id: Option<Uuid>,
+    /// 所有者外部身份（可选，用于创建新用户并绑定）
+    /// 格式: { provider: "privy", subject: "did:privy:xxx", email: "user@example.com" }
+    #[serde(default)]
+    pub owner_external_identity: Option<OwnerExternalIdentity>,
+    /// 是否自动绑定所有者（如果提供了 owner_user_id 或 owner_external_identity）
+    #[serde(default = "default_true")]
+    pub bind_owner: bool,
+}
+
+/// 所有者外部身份信息
+#[derive(Debug, Clone, Deserialize)]
+pub struct OwnerExternalIdentity {
+    /// 身份提供商类型 (privy, email, google, etc.)
+    pub provider: String,
+    /// 提供商中的唯一标识（如 Privy did、Google user_id）
+    pub subject: String,
+    /// 钱包地址（可选）
+    #[serde(default)]
+    pub wallet_address: Option<String>,
+    /// 邮箱地址（可选）
+    #[serde(default)]
+    pub email: Option<String>,
+    /// 显示名称（可选）
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 fn default_tier() -> String {
@@ -133,6 +170,9 @@ impl CreateTenantRequest {
             create_default_roles: true,
             init_schema: true,
             generate_keys: true,
+            owner_user_id: None,
+            owner_external_identity: None,
+            bind_owner: true,
         }
     }
 
@@ -145,6 +185,41 @@ impl CreateTenantRequest {
     /// 设置管理员邮箱
     pub fn with_admin_email(mut self, email: impl Into<String>) -> Self {
         self.admin_email = Some(email.into());
+        self
+    }
+
+    /// 设置所有者用户 ID（绑定已存在用户）
+    pub fn with_owner_user_id(mut self, user_id: Uuid) -> Self {
+        self.owner_user_id = Some(user_id);
+        self
+    }
+
+    /// 设置所有者外部身份（创建新用户并绑定）
+    pub fn with_owner_external_identity(mut self, identity: OwnerExternalIdentity) -> Self {
+        self.owner_external_identity = Some(identity);
+        self
+    }
+
+    /// 设置所有者 Privy 身份（便捷方法）
+    pub fn with_owner_privy(
+        mut self,
+        did: impl Into<String>,
+        wallet_address: Option<String>,
+        email: Option<String>,
+    ) -> Self {
+        self.owner_external_identity = Some(OwnerExternalIdentity {
+            provider: "privy".to_string(),
+            subject: did.into(),
+            wallet_address,
+            email,
+            display_name: None,
+        });
+        self
+    }
+
+    /// 禁用所有者绑定
+    pub fn without_owner_binding(mut self) -> Self {
+        self.bind_owner = false;
         self
     }
 
@@ -164,6 +239,11 @@ impl CreateTenantRequest {
             "enterprise" => TenantConfig::enterprise_tier(),
             _ => TenantConfig::default(),
         }
+    }
+
+    /// 检查是否需要绑定所有者
+    pub fn needs_owner_binding(&self) -> bool {
+        self.bind_owner && (self.owner_user_id.is_some() || self.owner_external_identity.is_some())
     }
 }
 

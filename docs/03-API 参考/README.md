@@ -13,10 +13,11 @@
 
 **基础路径**: `/api/v1`
 
-### 认证 API
-- `POST /api/v1/auth/login` - 登录
-- `POST /api/v1/auth/refresh` - 刷新 Token
-- `POST /api/v1/auth/me` - 获取当前用户信息
+### 认证 API (Privy 钱包优先)
+- `POST /api/v1/auth/session` - 从 Privy Token 创建会话
+- `GET /api/v1/auth/me` - 获取当前用户信息
+- `POST /api/v1/auth/logout` - 注销会话
+- `POST /api/v1/auth/invitations/consume` - 消费邀请 Token
 
 ### Token 管理 API
 - `POST /api/v1/tokens` - 创建 Token

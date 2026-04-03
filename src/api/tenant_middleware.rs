@@ -372,6 +372,8 @@ mod tests {
             expires_at: u64::MAX,
             scopes: vec![TokenScope::CredentialRead],
             issued_at: 0,
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
         }
     }
 

@@ -40,9 +40,9 @@ pub use config::{
     TenantConfigError, TenantConfigManager, TenantConfigStore, TenantSettings, TenantStatus,
 };
 pub use service::{
-    CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, TenantCreationError,
-    TenantManager, TenantManagerBuilder, TenantProvisioningError, TenantService,
-    UpdateTenantRequest,
+    CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, OwnerExternalIdentity,
+    TenantCreationError, TenantManager, TenantManagerBuilder, TenantProvisioningError,
+    TenantService, UpdateTenantRequest,
 };
 
 use chrono::{DateTime, Utc};
