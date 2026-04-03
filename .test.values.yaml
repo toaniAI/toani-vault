@@ -25,6 +25,7 @@ envs:
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: info
   DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
+  REDIS_URL: "redis://:Ysdn2025G0217@redis74-master.test.svc.cluster.local:6379/0"
   VAULT_ADDR: "http://vault:8200"
 
 o_envs: []

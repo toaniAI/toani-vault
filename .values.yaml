@@ -28,6 +28,7 @@ envs:
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: debug
   DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@postgresql-hl.dev:5432/credbridge?sslmode=disable"
+  REDIS_URL: "redis://:Ysdn2025G0217@redis74-master.test.svc.cluster.local:6379/0"
   CREDBRIDGE_PG_SCHEMA: "credbridge_vault"
   VAULT_ADDR: "http://vault:8200"
   DCAP_PCCS_URL: "https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/"
