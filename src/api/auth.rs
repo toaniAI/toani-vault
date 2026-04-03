@@ -63,6 +63,18 @@ impl AuthApiState {
         }
     }
 
+    /// 创建新的认证 API 状态（显式指定 Token 存储后端）
+    pub fn new_with_token_store(
+        auth_service: Arc<dyn AuthService>,
+        token_store: TokenStore,
+    ) -> Self {
+        Self {
+            auth_service,
+            token_store,
+            audit_storage: None,
+        }
+    }
+
     /// 设置审计存储
     pub fn with_audit_storage(mut self, storage: Arc<dyn AuditStorage>) -> Self {
         self.audit_storage = Some(storage);

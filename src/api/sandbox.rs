@@ -19,6 +19,7 @@ use crate::tee::sandbox::{
     config::SandboxConfig,
     error::SandboxError,
     pool::{NsjailSandboxPool, SandboxPool},
+    repository::{PostgresSandboxRepository, SandboxOperationRecord, SandboxRepository},
     session::SandboxSession,
     types::{OperationRequest, OperationType, SessionId, SessionRequest},
 };
@@ -30,6 +31,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
@@ -43,12 +45,23 @@ pub struct SandboxState {
     pub pool: Arc<dyn SandboxPool>,
     /// 沙箱配置
     pub config: SandboxConfig,
+    /// 持久化仓储
+    pub repository: Option<Arc<dyn SandboxRepository>>,
 }
 
 impl SandboxState {
     /// 创建新的沙箱状态
-    pub async fn new(config: SandboxConfig) -> Result<Self, SandboxError> {
-        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+    pub async fn new(
+        config: SandboxConfig,
+        database_pool: Option<PgPool>,
+    ) -> Result<Self, SandboxError> {
+        let repository: Option<Arc<dyn SandboxRepository>> = database_pool.map(|pool| {
+            Arc::new(PostgresSandboxRepository::new(pool)) as Arc<dyn SandboxRepository>
+        });
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new_with_repository(
+            config.clone(),
+            repository.clone(),
+        ));
 
         // 初始化池 - 通过 downcast 调用 NsjailSandboxPool 特有的 initialize 方法
         let pool_ref = pool.clone();
@@ -56,12 +69,20 @@ impl SandboxState {
             nsjail_pool.initialize().await?;
         }
 
-        Ok(Self { pool, config })
+        Ok(Self {
+            pool,
+            config,
+            repository,
+        })
     }
 
     /// 创建简化版沙箱状态（用于测试）
     pub fn new_with_pool(pool: Arc<dyn SandboxPool>, config: SandboxConfig) -> Self {
-        Self { pool, config }
+        Self {
+            pool,
+            config,
+            repository: None,
+        }
     }
 }
 
@@ -317,23 +338,55 @@ pub async fn list_sessions(
         return e;
     }
 
+    let tenant_id = parse_uuid(&token.tenant_id);
+
+    if let Some(repository) = &state.repository {
+        match repository.list_sessions_by_tenant(tenant_id).await {
+            Ok(records) => {
+                let sessions = records
+                    .into_iter()
+                    .map(|record| SessionSummary {
+                        session_id: record.session_id.into(),
+                        sandbox_id: record.sandbox_id,
+                        credential_id: record.credential_id,
+                        status: record.status.clone(),
+                        original_intent: record.original_intent,
+                        created_at: record.started_at.to_rfc3339(),
+                        expires_at: record.expires_at.to_rfc3339(),
+                        is_expired: chrono::Utc::now() > record.expires_at
+                            || record.status == "expired",
+                    })
+                    .collect::<Vec<_>>();
+                let response = ListSessionsResponse {
+                    total: sessions.len(),
+                    sessions,
+                };
+                return Json(ApiSuccessResponse::new(response)).into_response();
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to read sandbox sessions from repository, fallback to memory: {error}"
+                );
+            }
+        }
+    }
+
     let mut sessions = Vec::new();
     if let Some(pool) = state.pool.as_any().downcast_ref::<NsjailSandboxPool>() {
         for session in pool.list_active_sessions().await {
             let context = session.context().clone();
-            if context.tenant_id.to_string() != token.tenant_id {
+            if context.tenant_id != tenant_id {
                 continue;
             }
-            let is_expired = context.is_expired();
             sessions.push(SessionSummary {
                 session_id: context.session_id.into(),
                 sandbox_id: context.sandbox_id.into(),
                 credential_id: context.credential_id,
                 status: session.status().await.to_string(),
-                original_intent: context.original_intent,
+                original_intent: context.original_intent.clone(),
                 created_at: context.created_at.to_string(),
                 expires_at: context.expires_at.to_string(),
-                is_expired,
+                is_expired: context.is_expired(),
             });
         }
     }
@@ -358,6 +411,35 @@ pub async fn get_session(
     }
 
     let session_id = SessionId::from(id);
+    let tenant_id = parse_uuid(&token.tenant_id);
+
+    if let Some(repository) = &state.repository {
+        match repository.get_session_by_id(tenant_id, session_id).await {
+            Ok(Some(record)) => {
+                let response = SessionDetailResponse {
+                    session_id: record.session_id.into(),
+                    sandbox_id: record.sandbox_id,
+                    tenant_id: record.tenant_id,
+                    user_id: record.created_by,
+                    credential_id: record.credential_id,
+                    original_intent: record.original_intent,
+                    status: record.status.clone(),
+                    created_at: record.started_at.to_rfc3339(),
+                    expires_at: record.expires_at.to_rfc3339(),
+                    last_activity_at: record.updated_at.to_rfc3339(),
+                    is_expired: chrono::Utc::now() > record.expires_at
+                        || record.status == "expired",
+                };
+                return Json(ApiSuccessResponse::new(response)).into_response();
+            }
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    "Failed to read sandbox session from repository, fallback to memory: {error}"
+                );
+            }
+        }
+    }
 
     match state.pool.get_session(session_id).await {
         Ok(session) => {
@@ -470,6 +552,15 @@ pub async fn pause_session(
     match state.pool.get_session(session_id).await {
         Ok(session) => match session.pause().await {
             Ok(_) => {
+                if let Some(repository) = &state.repository
+                    && let Err(error) = repository.update_session_status(session_id, "paused").await
+                {
+                    error!(
+                        "Failed to persist paused status for session {}: {}",
+                        session_id, error
+                    );
+                    return map_sandbox_error(error).into_response();
+                }
                 let response = SessionActionResponse {
                     session_id: id,
                     success: true,
@@ -500,6 +591,15 @@ pub async fn resume_session(
     match state.pool.get_session(session_id).await {
         Ok(session) => match session.resume().await {
             Ok(_) => {
+                if let Some(repository) = &state.repository
+                    && let Err(error) = repository.update_session_status(session_id, "active").await
+                {
+                    error!(
+                        "Failed to persist active status for session {}: {}",
+                        session_id, error
+                    );
+                    return map_sandbox_error(error).into_response();
+                }
                 let response = SessionActionResponse {
                     session_id: id,
                     success: true,
@@ -670,6 +770,25 @@ pub async fn get_operation(
         return e;
     }
 
+    let tenant_id = parse_uuid(&token.tenant_id);
+
+    if let Some(repository) = &state.repository {
+        match repository
+            .get_operation_by_id(tenant_id, operation_id)
+            .await
+        {
+            Ok(Some(record)) => {
+                return Json(ApiSuccessResponse::new(map_operation_record(record))).into_response();
+            }
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    "Failed to read sandbox operation from repository, fallback to memory: {error}"
+                );
+            }
+        }
+    }
+
     let Some(pool) = state.pool.as_any().downcast_ref::<NsjailSandboxPool>() else {
         return ApiErrorResponse::service_unavailable(
             "Sandbox pool does not support operation lookup",
@@ -747,6 +866,18 @@ fn parse_operation_type(s: &str) -> Option<OperationType> {
         "wait" => Some(OperationType::Wait),
         "custom" => Some(OperationType::Custom),
         _ => None,
+    }
+}
+
+fn map_operation_record(record: SandboxOperationRecord) -> OperationDetailResponse {
+    OperationDetailResponse {
+        operation_id: record.operation_id,
+        session_id: record.session_id.into(),
+        operation_type: record.operation_type,
+        status: record.status,
+        started_at: record.started_at.to_rfc3339(),
+        completed_at: record.completed_at.map(|value| value.to_rfc3339()),
+        execution_time_ms: record.execution_duration_ms.map(|value| value as u64),
     }
 }
 
@@ -841,6 +972,9 @@ async fn websocket_upgrade(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tee::sandbox::{SessionId, repository::SandboxOperationRecord};
+    use chrono::Utc;
+    use uuid::Uuid;
 
     #[test]
     fn test_parse_operation_type() {
@@ -864,5 +998,24 @@ mod tests {
         let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
         let uuid = parse_uuid(uuid_str);
         assert_eq!(uuid.to_string(), uuid_str);
+    }
+
+    #[test]
+    fn test_map_operation_record() {
+        let now = Utc::now();
+        let record = SandboxOperationRecord {
+            operation_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
+            operation_type: "navigate".to_string(),
+            status: "completed".to_string(),
+            started_at: now,
+            completed_at: Some(now),
+            execution_duration_ms: Some(42),
+        };
+
+        let mapped = map_operation_record(record);
+        assert_eq!(mapped.status, "completed");
+        assert_eq!(mapped.execution_time_ms, Some(42));
+        assert!(mapped.completed_at.is_some());
     }
 }

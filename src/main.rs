@@ -46,9 +46,14 @@ use vault_service::api::{
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
     tenant::{TenantApiState, tenant_routes},
+    token_blacklist::{TokenStore, create_redis_token_store, create_token_store},
 };
 use vault_service::audit::{ImmuDbAuditStore, MemoryAuditStorage};
-use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
+use vault_service::config::{
+    CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK_ENV, CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK_ENV,
+    CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV, CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK_ENV,
+    CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV, ConfigError, TeeRuntimeConfig, TeeRuntimeMode,
+};
 use vault_service::services::db::DatabasePool;
 use vault_service::tee::{
     Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, StartupReadiness,
@@ -455,8 +460,17 @@ async fn initialize_app_state(
         database_pool.as_ref().map(|pool| pool.pool().clone()),
         vault_service::tenant::TenantManager::new_simple(tenant_store.clone()),
     );
-    let auth_state = AuthApiState::new(std::sync::Arc::new(auth_service))
-        .with_audit_storage(audit_storage.clone());
+    let (token_store, token_backend) = initialize_token_store(config)?;
+    info!(
+        module = "token_state",
+        status = "ready",
+        backend = token_backend,
+        "Token 状态存储就绪"
+    );
+
+    let auth_state =
+        AuthApiState::new_with_token_store(std::sync::Arc::new(auth_service), token_store)
+            .with_audit_storage(audit_storage.clone());
     info!(module = "auth", status = "ready", "认证模块就绪");
 
     // --- Rate Limit ---
@@ -509,9 +523,12 @@ async fn initialize_app_state(
         status = "initializing",
         "开始初始化沙箱 API"
     );
-    let sandbox_state = initialize_sandbox_state()
-        .await
-        .map_err(|e| std::io::Error::other(format!("Sandbox API 初始化失败，服务启动终止: {e}")))?;
+    let sandbox_state = initialize_sandbox_state(
+        config,
+        database_pool.as_ref().map(|pool| pool.pool().clone()),
+    )
+    .await
+    .map_err(|e| std::io::Error::other(format!("Sandbox API 初始化失败，服务启动终止: {e}")))?;
     info!(module = "sandbox", status = "ready", "沙箱 API 就绪");
 
     Ok(AppState {
@@ -558,11 +575,21 @@ async fn build_credential_vault(
 }
 
 /// 初始化沙箱状态
-async fn initialize_sandbox_state() -> Result<SandboxState, Box<dyn std::error::Error>> {
+async fn initialize_sandbox_state(
+    config: &ServerConfig,
+    database_pool: Option<sqlx::PgPool>,
+) -> Result<SandboxState, Box<dyn std::error::Error>> {
     use vault_service::tee::sandbox::config::SandboxConfig;
 
+    if database_pool.is_none() && !sandbox_memory_fallback_allowed(config) {
+        return Err(std::io::Error::other(format!(
+            "沙箱持久化要求 DATABASE_URL；仅在开发/测试环境且 {CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV}=true 时允许内存回退"
+        ))
+        .into());
+    }
+
     let config = SandboxConfig::from_env();
-    let state = SandboxState::new(config)
+    let state = SandboxState::new(config, database_pool)
         .await
         .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 
@@ -760,25 +787,38 @@ async fn initialize_database_pool(
         return Ok(Some(pool));
     }
 
-    if config.environment == Environment::Production {
-        return Err(
-            std::io::Error::other("生产环境要求 DATABASE_URL 用于认证和租户配置持久化").into(),
+    let auth_fallback = auth_memory_fallback_allowed(config);
+    let tenant_fallback = tenant_memory_fallback_allowed(config);
+    let sandbox_fallback = sandbox_memory_fallback_allowed(config);
+
+    if auth_fallback && tenant_fallback && sandbox_fallback {
+        warn!(
+            module = "database",
+            status = "fallback",
+            backend = "memory",
+            auth_fallback_flag = CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK_ENV,
+            tenant_fallback_flag = CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK_ENV,
+            sandbox_fallback_flag = CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV,
+            "未配置 DATABASE_URL，开发/测试模式下通过显式开关使用内存回退"
         );
+        return Ok(None);
     }
 
-    warn!(
-        module = "database",
-        status = "fallback",
-        backend = "memory",
-        "未配置 DATABASE_URL，开发模式下认证和租户配置将回退到内存存储"
-    );
-    Ok(None)
+    if config.environment == Environment::Production {
+        return Err(std::io::Error::other(
+            "生产环境要求 DATABASE_URL 用于 auth/tenant/sandbox 持久化",
+        )
+        .into());
+    }
+
+    Err(std::io::Error::other(format!(
+        "未配置 DATABASE_URL，且未显式允许内存回退。开发/测试若需回退，请同时设置 {CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK_ENV}=true, {CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK_ENV}=true, {CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV}=true"
+    ))
+    .into())
 }
 
 fn audit_memory_fallback_allowed() -> bool {
-    env::var("CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK")
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false)
+    env_flag_enabled(CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK_ENV)
 }
 
 fn immudb_explicitly_configured() -> bool {
@@ -804,7 +844,7 @@ async fn initialize_audit_storage(
         return Ok((adapter, public_key, "immudb"));
     }
 
-    if config.environment == Environment::Development && audit_memory_fallback_allowed() {
+    if is_non_production(config) && audit_memory_fallback_allowed() {
         let storage = Arc::new(tokio::sync::Mutex::new(
             MemoryAuditStorage::new(100_000).map_err(|error| {
                 std::io::Error::other(format!("创建内存审计存储失败: {error:?}"))
@@ -820,7 +860,8 @@ async fn initialize_audit_storage(
             module = "audit",
             status = "fallback",
             backend = "memory",
-            "未检测到 immudb 配置，因 CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true 回退到内存审计存储"
+            fallback_flag = CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK_ENV,
+            "未检测到 immudb 配置，按显式开关回退到内存审计存储"
         );
         return Ok((adapter, public_key, "memory"));
     }
@@ -844,6 +885,13 @@ async fn build_tenant_config_store(
         return Ok(Arc::new(PostgresTenantConfigStore::new(pool)));
     }
 
+    if !tenant_memory_fallback_allowed(config) {
+        return Err(std::io::Error::other(format!(
+            "租户配置要求 PostgreSQL；仅在开发/测试环境且 {CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK_ENV}=true 时允许内存回退"
+        ))
+        .into());
+    }
+
     let tenant_store = Arc::new(MemoryTenantConfigStore::new());
     let mut default_tenant_config = TenantConfig::default();
     default_tenant_config.settings.language = "zh-CN".to_string();
@@ -862,6 +910,63 @@ async fn build_tenant_config_store(
         "租户配置使用内存回退存储"
     );
     Ok(tenant_store)
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    env::var(name)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn is_non_production(config: &ServerConfig) -> bool {
+    config.environment != Environment::Production
+}
+
+fn auth_memory_fallback_allowed(config: &ServerConfig) -> bool {
+    is_non_production(config) && env_flag_enabled(CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK_ENV)
+}
+
+fn tenant_memory_fallback_allowed(config: &ServerConfig) -> bool {
+    is_non_production(config) && env_flag_enabled(CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK_ENV)
+}
+
+fn sandbox_memory_fallback_allowed(config: &ServerConfig) -> bool {
+    is_non_production(config) && env_flag_enabled(CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV)
+}
+
+fn token_memory_fallback_allowed(config: &ServerConfig) -> bool {
+    is_non_production(config) && env_flag_enabled(CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV)
+}
+
+fn initialize_token_store(
+    config: &ServerConfig,
+) -> Result<(TokenStore, &'static str), Box<dyn std::error::Error>> {
+    if let Ok(redis_url) = env::var("REDIS_URL") {
+        let token_store = create_redis_token_store(&redis_url).map_err(|error| {
+            std::io::Error::other(format!("Redis Token 存储初始化失败: {error}"))
+        })?;
+        return Ok((token_store, "redis"));
+    }
+
+    if token_memory_fallback_allowed(config) {
+        warn!(
+            module = "token_state",
+            status = "fallback",
+            backend = "memory",
+            fallback_flag = CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV,
+            "未配置 REDIS_URL，开发/测试模式下回退到内存 Token 存储"
+        );
+        return Ok((create_token_store(), "memory"));
+    }
+
+    if config.environment == Environment::Production {
+        return Err(std::io::Error::other("生产环境要求 REDIS_URL 用于 token state 持久化").into());
+    }
+
+    Err(std::io::Error::other(format!(
+        "token state 要求 REDIS_URL；仅在开发/测试环境且 {CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV}=true 时允许内存回退"
+    ))
+    .into())
 }
 
 #[derive(Debug, Clone)]

@@ -17,6 +17,16 @@
 
 ## 监控与运维
 
+### 启动存储策略
+- 生产环境必须配置：`DATABASE_URL`（auth/tenant/sandbox）、`REDIS_URL`（token state）、`IMMUDB_*`（audit）。
+- 缺失上述后端时服务会启动失败，不再静默降级到内存。
+- 开发/测试若需内存回退，必须显式设置：
+  - `CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK=true`
+  - `CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK=true`
+  - `CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK=true`
+  - `CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true`
+  - `CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK=true`
+
 ### 监控告警
 - [监控告警](MONITORING.md) - Prometheus + Grafana 监控配置
 - 健康检查端点：`/health`（liveness）, `/ready` / `/health/detail`（readiness）
@@ -50,4 +60,4 @@
 
 ---
 
-**更新时间**: 2026-03-20
+**更新时间**: 2026-04-03

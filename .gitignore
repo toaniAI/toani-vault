@@ -3,6 +3,7 @@ docs/internal/
 
 # Hidden directories
 .claude/
+.omc/
 .idea/
 .local/
 .playwright-mcp/
@@ -33,3 +34,4 @@ coverage/
 *.swp
 *.swo
 *~
+.omx/

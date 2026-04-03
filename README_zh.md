@@ -13,6 +13,27 @@ Toani Vault 是一个围绕 Intel SGX TEE 构建的 AI 原生零信任凭证保�
 - 审计日志、远程证明、TEE Sandbox 执行接口
 - React 管理界面、Rust SDK、TypeScript SDK、CLI
 
+## 运行时存储策略（Phase 5）
+
+服务启动时会按域强制校验存储后端：
+
+- `vault`：PostgreSQL 或 HashiCorp Vault（`CREDBRIDGE_STORAGE_BACKEND`）
+- `auth`：PostgreSQL（`DATABASE_URL`）
+- `tenant config`：PostgreSQL（`DATABASE_URL`）
+- `sandbox records`：PostgreSQL（`DATABASE_URL`）
+- `audit`：默认 immudb（`IMMUDB_*`）
+- `token state`：Redis（`REDIS_URL`）
+
+在生产环境，缺失必需持久化后端会直接启动失败。
+
+仅在开发/测试环境，且显式开启开关时允许内存回退：
+
+- `CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK=true`
+
 ## 架构摘要
 
 ```text

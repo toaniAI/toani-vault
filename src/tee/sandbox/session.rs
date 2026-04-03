@@ -3,6 +3,9 @@
 use crate::tee::sandbox::{
     error::{SandboxError, SessionError},
     nsjail::NsjailSandbox,
+    repository::{
+        CompleteSandboxOperationRecord, NewSandboxOperationRecord, SandboxRepository, to_chrono_utc,
+    },
     review::{OperationReviewer, ReviewContext, SuggestedAction},
     types::{
         ExecutionResult, OperationRequest, OperationStatus, SessionContext, SessionId,
@@ -55,6 +58,8 @@ pub struct ActiveNsjailSession {
     operation_history: Arc<RwLock<Vec<OperationRecord>>>,
     /// 操作审核器
     operation_reviewer: Option<Arc<OperationReviewer>>,
+    /// 持久化仓储
+    repository: Option<Arc<dyn SandboxRepository>>,
 }
 
 /// 操作记录
@@ -77,6 +82,16 @@ pub struct OperationRecord {
 impl ActiveNsjailSession {
     /// 创建新的活跃会话
     pub fn new(id: SessionId, context: SessionContext, sandbox: NsjailSandbox) -> Self {
+        Self::new_with_repository(id, context, sandbox, None)
+    }
+
+    /// 创建带持久化仓储的活跃会话
+    pub fn new_with_repository(
+        id: SessionId,
+        context: SessionContext,
+        sandbox: NsjailSandbox,
+        repository: Option<Arc<dyn SandboxRepository>>,
+    ) -> Self {
         Self {
             id,
             context,
@@ -84,6 +99,7 @@ impl ActiveNsjailSession {
             sandbox: Arc::new(RwLock::new(Some(sandbox))),
             operation_history: Arc::new(RwLock::new(Vec::new())),
             operation_reviewer: None,
+            repository,
         }
     }
 
@@ -108,6 +124,7 @@ impl ActiveNsjailSession {
             sandbox: Arc::new(RwLock::new(Some(sandbox))),
             operation_history: Arc::new(RwLock::new(Vec::new())),
             operation_reviewer: Some(reviewer),
+            repository: None,
         }
     }
 
@@ -211,6 +228,20 @@ impl SandboxSession for ActiveNsjailSession {
             execution_time_ms: None,
         };
         self.add_operation_record(record).await;
+        if let Some(repository) = &self.repository {
+            repository
+                .create_operation(NewSandboxOperationRecord {
+                    operation_id: operation.operation_id,
+                    session_id: self.context.session_id,
+                    tenant_id: self.context.tenant_id,
+                    credential_id: self.context.credential_id,
+                    operation_type: operation.operation_type.to_string(),
+                    input_params: serde_json::to_value(&operation.parameters)
+                        .unwrap_or_else(|_| serde_json::Value::Object(Default::default())),
+                    started_at: to_chrono_utc(start_time),
+                })
+                .await?;
+        }
 
         // AI 审核流程
         if let Some(ref reviewer) = self.operation_reviewer {
@@ -251,6 +282,21 @@ impl SandboxSession for ActiveNsjailSession {
                             }
                             // 恢复状态为就绪
                             *self.status.write().await = SessionStatus::Ready;
+                            if let Some(repository) = &self.repository {
+                                repository
+                                    .complete_operation(CompleteSandboxOperationRecord {
+                                        operation_id: operation.operation_id,
+                                        status: "cancelled",
+                                        output_result: None,
+                                        error_message: Some(format!(
+                                            "Operation requires confirmation: {}",
+                                            review_result.reason
+                                        )),
+                                        completed_at: chrono::Utc::now(),
+                                        execution_duration_ms: 0,
+                                    })
+                                    .await?;
+                            }
                             return Err(SessionError::OperationRejected {
                                 reason: format!(
                                     "Operation requires confirmation: {}",
@@ -273,6 +319,21 @@ impl SandboxSession for ActiveNsjailSession {
                             }
                             // 恢复状态为就绪
                             *self.status.write().await = SessionStatus::Ready;
+                            if let Some(repository) = &self.repository {
+                                repository
+                                    .complete_operation(CompleteSandboxOperationRecord {
+                                        operation_id: operation.operation_id,
+                                        status: "cancelled",
+                                        output_result: None,
+                                        error_message: Some(format!(
+                                            "Operation requires additional authentication: {}",
+                                            review_result.reason
+                                        )),
+                                        completed_at: chrono::Utc::now(),
+                                        execution_duration_ms: 0,
+                                    })
+                                    .await?;
+                            }
                             return Err(SessionError::OperationRejected {
                                 reason: format!(
                                     "Operation requires additional authentication: {}",
@@ -293,6 +354,21 @@ impl SandboxSession for ActiveNsjailSession {
                             }
                             // 恢复状态为就绪
                             *self.status.write().await = SessionStatus::Ready;
+                            if let Some(repository) = &self.repository {
+                                repository
+                                    .complete_operation(CompleteSandboxOperationRecord {
+                                        operation_id: operation.operation_id,
+                                        status: "cancelled",
+                                        output_result: None,
+                                        error_message: Some(format!(
+                                            "Operation rejected: {}",
+                                            review_result.reason
+                                        )),
+                                        completed_at: chrono::Utc::now(),
+                                        execution_duration_ms: 0,
+                                    })
+                                    .await?;
+                            }
                             return Err(SessionError::OperationRejected {
                                 reason: format!("Operation rejected: {}", review_result.reason),
                             }
@@ -312,6 +388,18 @@ impl SandboxSession for ActiveNsjailSession {
                             record.completed_at = Some(OffsetDateTime::now_utc());
                         }
                         *self.status.write().await = SessionStatus::Ready;
+                        if let Some(repository) = &self.repository {
+                            repository
+                                .complete_operation(CompleteSandboxOperationRecord {
+                                    operation_id: operation.operation_id,
+                                    status: "cancelled",
+                                    output_result: None,
+                                    error_message: Some(format!("AI review failed: {e}")),
+                                    completed_at: chrono::Utc::now(),
+                                    execution_duration_ms: 0,
+                                })
+                                .await?;
+                        }
                         return Err(SessionError::OperationRejected {
                             reason: format!("AI review failed: {e}"),
                         }
@@ -371,6 +459,26 @@ impl SandboxSession for ActiveNsjailSession {
                 }
             }
         };
+
+        if let Some(repository) = &self.repository {
+            let completed_at = chrono::Utc::now();
+            let duration = i32::try_from(result.execution_time_ms).unwrap_or(i32::MAX);
+            let status = if result.success {
+                "completed"
+            } else {
+                "failed"
+            };
+            repository
+                .complete_operation(CompleteSandboxOperationRecord {
+                    operation_id: operation.operation_id,
+                    status,
+                    output_result: result.data.clone(),
+                    error_message: result.error.clone(),
+                    completed_at,
+                    execution_duration_ms: duration,
+                })
+                .await?;
+        }
 
         // 恢复状态为就绪
         *self.status.write().await = SessionStatus::Ready;

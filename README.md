@@ -15,6 +15,27 @@ CLI for operators and agent-facing automation.
 - Audit logging, attestation endpoints, and TEE sandbox execution APIs
 - Rust SDK, TypeScript SDK, CLI, and a React frontend
 
+## Runtime Storage Policy (Phase 5)
+
+The service now enforces explicit per-domain storage requirements at startup:
+
+- `vault`: PostgreSQL or HashiCorp Vault (`CREDBRIDGE_STORAGE_BACKEND`)
+- `auth`: PostgreSQL (`DATABASE_URL`)
+- `tenant config`: PostgreSQL (`DATABASE_URL`)
+- `sandbox records`: PostgreSQL (`DATABASE_URL`)
+- `audit`: immudb (`IMMUDB_*`) by default
+- `token state`: Redis (`REDIS_URL`)
+
+Production startup fails if required durable backends are missing.
+
+For local development/testing only, memory fallback must be explicitly enabled:
+
+- `CREDBRIDGE_AUTH_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_TENANT_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true`
+- `CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK=true`
+
 ## Architecture Summary
 
 ```text

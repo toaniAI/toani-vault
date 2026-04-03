@@ -358,7 +358,50 @@ VALUES (
     'system',
     'System tenant for internal operations',
     'active',
-    '{}'::jsonb
+    jsonb_build_object(
+        'feature_flags', jsonb_build_object(
+            'enable_credential_encryption', true,
+            'enable_audit_logging', true,
+            'enable_token_revocation', true,
+            'enable_mfa', false,
+            'enable_remote_attestation', false,
+            'enable_auto_rotation', false,
+            'allow_cors', false,
+            'enable_ip_whitelist', false,
+            'enable_webhooks', false,
+            'enable_sso', false,
+            'enable_custom_crypto', false,
+            'enable_advanced_audit', false
+        ),
+        'quota_limits', jsonb_build_object(
+            'max_credentials', 1000,
+            'max_tokens_per_user', 10,
+            'max_requests_per_minute', 1000,
+            'max_users', 100,
+            'max_connectors', 20,
+            'max_webhooks', 10,
+            'storage_quota_mb', 1024,
+            'audit_retention_days', 30,
+            'max_token_ttl_seconds', 86400,
+            'max_batch_size', 100
+        ),
+        'settings', jsonb_build_object(
+            'token_ttl_seconds', 900,
+            'session_timeout_seconds', 3600,
+            'max_login_attempts', 5,
+            'lockout_duration_seconds', 900,
+            'password_min_length', 8,
+            'require_password_complexity', true,
+            'require_mfa', false,
+            'allowed_callback_urls', '[]'::jsonb,
+            'timezone', 'UTC',
+            'language', 'zh-CN',
+            'metadata', '{}'::jsonb
+        ),
+        'version', 1,
+        'updated_at', NULL,
+        'updated_by', NULL
+    )
 )
 ON CONFLICT (id) DO NOTHING;
 

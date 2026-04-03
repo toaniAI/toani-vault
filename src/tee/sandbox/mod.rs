@@ -63,6 +63,7 @@ pub mod error;
 pub mod export;
 pub mod nsjail;
 pub mod pool;
+pub mod repository;
 pub mod review;
 pub mod security;
 pub mod session;
@@ -85,6 +86,10 @@ pub use error::{SandboxError, SecurityError, SessionError};
 // 公开导出 - 核心组件
 pub use nsjail::{NsjailSandbox, WarmNsjailInstance};
 pub use pool::{NsjailSandboxPool, SandboxPool};
+pub use repository::{
+    CompleteSandboxOperationRecord, NewSandboxOperationRecord, NewSandboxSessionRecord,
+    PostgresSandboxRepository, SandboxRepository, metadata_to_json, to_chrono_utc,
+};
 pub use session::{ActiveNsjailSession, SandboxSession};
 
 // 公开导出 - 安全
