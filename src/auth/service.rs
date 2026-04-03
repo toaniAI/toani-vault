@@ -19,6 +19,8 @@ use super::models::{
     TenantInvitation, TenantMembership, User,
 };
 use crate::audit::AuditRecorder;
+use crate::auth::privy::JwksVerifier;
+use crate::config::PrivyConfig;
 use crate::crypto::constant_time::ct_compare;
 use crate::tenant::TenantManager;
 
@@ -183,6 +185,12 @@ pub struct AuthServiceImpl {
 
     /// 审计记录器（可选）
     audit_recorder: Option<AuditRecorder>,
+
+    /// JWKS Token 验证器
+    jwks_verifier: Option<JwksVerifier>,
+
+    /// Privy 配置
+    privy_config: Option<PrivyConfig>,
 }
 
 impl AuthServiceImpl {
@@ -195,6 +203,8 @@ impl AuthServiceImpl {
             db_pool,
             tenant_manager,
             audit_recorder: None,
+            jwks_verifier: None,
+            privy_config: None,
         }
     }
 
@@ -206,12 +216,23 @@ impl AuthServiceImpl {
             db_pool: None,
             tenant_manager,
             audit_recorder: None,
+            jwks_verifier: None,
+            privy_config: None,
         }
     }
 
     /// 设置审计记录器
     pub fn with_audit_recorder(mut self, recorder: AuditRecorder) -> Self {
         self.audit_recorder = Some(recorder);
+        self
+    }
+
+    /// 设置 Privy 配置
+    pub fn with_privy_config(mut self, config: PrivyConfig) -> Self {
+        self.privy_config = Some(config.clone());
+        if !config.mock_enabled {
+            self.jwks_verifier = Some(JwksVerifier::new(config));
+        }
         self
     }
 
@@ -265,13 +286,44 @@ impl AuthServiceImpl {
 
     /// 验证 Privy Token 并获取用户信息
     ///
-    /// 这里是 Mock 实现，实际实现需要调用 Privy API。
-    async fn verify_privy_token(&self, _token: &str) -> Result<PrivyAuthResponse, AuthError> {
-        // TODO: 实现实际的 Privy Token 验证
-        // Mock 实现用于测试
-        Err(AuthError::PrivyAuthenticationFailed(
-            "Privy authentication not implemented".to_string(),
-        ))
+    /// 支持 Mock 模式和真实 JWKS 验证。
+    async fn verify_privy_token(&self, token: &str) -> Result<PrivyAuthResponse, AuthError> {
+        // 检查是否启用 Mock 模式
+        if let Some(ref config) = self.privy_config {
+            if config.mock_enabled {
+                return self.mock_verify_privy_token(token);
+            }
+        }
+
+        // 真实 JWKS 验证
+        let verifier = self
+            .jwks_verifier
+            .as_ref()
+            .ok_or_else(|| AuthError::ConfigError("JWKS verifier not initialized".to_string()))?;
+
+        let claims = verifier.verify(token).await?;
+
+        Ok(PrivyAuthResponse {
+            did: claims.sub,
+            wallet_address: claims.custom.wallet_address,
+            email: claims.custom.email,
+            name: claims.custom.name,
+            is_new_user: false, // 通过数据库查询判断
+            profile: None,
+        })
+    }
+
+    /// Mock 验证 Privy Token（用于开发和测试）
+    fn mock_verify_privy_token(&self, _token: &str) -> Result<PrivyAuthResponse, AuthError> {
+        // Mock 实现：返回测试用户数据
+        Ok(PrivyAuthResponse {
+            did: "did:privy:mock".to_string(),
+            wallet_address: Some("0x1234567890abcdef".to_string()),
+            email: Some("mock@example.com".to_string()),
+            name: Some("Mock User".to_string()),
+            is_new_user: false,
+            profile: None,
+        })
     }
 
     /// 创建用户记录
@@ -392,11 +444,73 @@ impl AuthServiceImpl {
     /// 调用 Privy API 获取用户的 MFA 配置状态。
     async fn fetch_privy_mfa_status(
         &self,
-        _privy_token: &str,
+        privy_token: &str,
     ) -> Result<MfaStatusSnapshot, AuthError> {
-        // TODO: 实现实际的 Privy API 调用
-        // 当前返回 Mock 数据，假设用户未启用 MFA
-        Ok(MfaStatusSnapshot::default())
+        // 检查是否启用 Mock 模式
+        if let Some(ref config) = self.privy_config {
+            if config.mock_enabled {
+                return Ok(MfaStatusSnapshot::default());
+            }
+        }
+
+        // 获取 Privy 配置
+        let config = self
+            .privy_config
+            .as_ref()
+            .ok_or_else(|| AuthError::ConfigError("Privy config not initialized".to_string()))?;
+
+        // 调用 Privy API 获取 MFA 状态
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("{}/users/me/mfa", config.api_url))
+            .header("Authorization", format!("Bearer {privy_token}"))
+            .header("privy-app-id", &config.app_id)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| AuthError::PrivyApiError {
+                status: 0,
+                message: format!("Failed to fetch MFA status: {e}"),
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(AuthError::PrivyApiError {
+                status,
+                message: text,
+            });
+        }
+
+        // 解析 MFA 状态响应
+        let mfa_info: serde_json::Value =
+            response
+                .json()
+                .await
+                .map_err(|e| AuthError::PrivyApiError {
+                    status: 0,
+                    message: format!("Failed to parse MFA response: {e}"),
+                })?;
+
+        let enabled = mfa_info
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let verified = mfa_info
+            .get("verified")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(MfaStatusSnapshot {
+            enabled,
+            verified,
+            requires_step_up: false,
+            last_verified_at: None,
+            synced_at: chrono::Utc::now().to_rfc3339(),
+        })
     }
 }
 

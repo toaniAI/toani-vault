@@ -64,6 +64,9 @@ time = { version = "=0.3.36", features = ["serde"] }
 # PASETO Token (降级到兼容 Rust 1.85 的版本)
 pasetors = { version = "=0.6.8", features = ["v4"] }
 
+# JWT 验证 (用于 Privy)
+jsonwebtoken = "9"
+
 # HTTP API 框架（Axum）
 axum = { version = "0.7", features = ["json", "macros", "ws"] }
 tower = { version = "0.4", features = ["full"] }

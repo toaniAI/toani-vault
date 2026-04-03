@@ -60,6 +60,7 @@
 
 pub mod error;
 pub mod models;
+pub mod privy;
 pub mod service;
 
 // 重新导出主要类型
@@ -70,6 +71,7 @@ pub use models::{
     MembershipSource, MembershipStatus, MfaStatus, PrivyAuthResponse, TenantInvitation,
     TenantMembership, User, UserStatus,
 };
+pub use privy::{JwksVerifier, PrivyClaims, PrivyCustomClaims};
 pub use service::{AuthService, AuthServiceImpl, create_owner_membership};
 
 #[cfg(test)]

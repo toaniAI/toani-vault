@@ -43,7 +43,7 @@ pub use crypto::{
 };
 
 pub use config::{
-    ConfigError, TEE_DEBUG_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig,
+    ConfigError, PrivyConfig, TEE_DEBUG_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig,
     TeeRuntimeMode,
 };
 

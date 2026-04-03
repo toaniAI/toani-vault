@@ -44,9 +44,25 @@ pub enum AuthError {
     #[error("Privy Token 已过期")]
     PrivyTokenExpired,
 
-    /// Privy 认证失败
+    /// Privy Token 验证失败
+    #[error("Privy Token 验证失败: {0}")]
+    PrivyTokenVerificationFailed(String),
+
+    /// Privy JWKS 获取失败
+    #[error("Privy JWKS 获取失败: {0}")]
+    PrivyJwksError(String),
+
+    /// Privy API 错误
+    #[error("Privy API 错误: {status} - {message}")]
+    PrivyApiError { status: u16, message: String },
+
+    /// Privy 认证失败（保留兼容性）
     #[error("Privy 认证失败: {0}")]
     PrivyAuthenticationFailed(String),
+
+    /// MFA 验证要求
+    #[error("需要 MFA 验证")]
+    MfaRequired,
 
     /// 租户成员资格未找到
     #[error("租户成员资格未找到: user={user_id}, tenant={tenant_id}")]
@@ -149,6 +165,8 @@ impl AuthError {
             AuthError::UserNotFound(_)
                 | AuthError::InvalidPrivyToken(_)
                 | AuthError::PrivyTokenExpired
+                | AuthError::PrivyTokenVerificationFailed(_)
+                | AuthError::MfaRequired
                 | AuthError::InvitationExpired(_)
                 | AuthError::InvalidInvitationToken
                 | AuthError::InsufficientPermissions { .. }
@@ -173,7 +191,11 @@ impl AuthError {
 
             AuthError::InvalidPrivyToken(_) => 401,
             AuthError::PrivyTokenExpired => 401,
+            AuthError::PrivyTokenVerificationFailed(_) => 401,
             AuthError::PrivyAuthenticationFailed(_) => 401,
+            AuthError::PrivyJwksError(_) => 503,
+            AuthError::PrivyApiError { status, .. } => *status,
+            AuthError::MfaRequired => 403,
             AuthError::ExternalIdentityVerificationFailed { .. } => 401,
             AuthError::SessionExpired(_) => 401,
             AuthError::SessionRevoked(_) => 401,
