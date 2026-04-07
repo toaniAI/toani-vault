@@ -10,8 +10,8 @@ pub enum CredentialType {
     UsernamePassword,
     /// OAuth 刷新令牌
     #[serde(
-        rename = "oauth_refresh",
-        alias = "oauth_token",
+        rename = "oauth_token",
+        alias = "oauth_refresh",
         alias = "o_auth_refresh"
     )]
     OAuthRefresh,
@@ -31,7 +31,7 @@ impl CredentialType {
     pub fn as_str(&self) -> &'static str {
         match self {
             CredentialType::UsernamePassword => "username_password",
-            CredentialType::OAuthRefresh => "oauth_refresh",
+            CredentialType::OAuthRefresh => "oauth_token",
             CredentialType::ApiKey => "api_key",
             CredentialType::SessionCookie => "session_cookie",
             CredentialType::KycDocument => "kyc_document",
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn oauth_refresh_serializes_to_canonical_value() {
         let json = serde_json::to_string(&CredentialType::OAuthRefresh).unwrap();
-        assert_eq!(json, "\"oauth_refresh\"");
+        assert_eq!(json, "\"oauth_token\"");
     }
 
     #[test]

@@ -455,8 +455,12 @@ fn validate_expires_at(expires_at: Option<u64>) -> Result<(), ApiError> {
 pub async fn create_credential(
     State(state): State<AppState>,
     Extension(token): Extension<ValidatedToken>,
-    Json(request): Json<CreateCredentialApiRequest>,
+    payload: Result<Json<CreateCredentialApiRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<(StatusCode, Json<CreateCredentialResponse>), ApiError> {
+    // 处理 JSON 反序列化错误（如必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) =
+        payload.map_err(|e| ApiError::new("invalid_request", format!("请求体解析失败: {e}")))?;
+
     // 验证 Scope: credential:write
     require_scope(TokenScope::CredentialWrite)(&token)
         .map_err(|e| ApiError::new("forbidden", e.message))?;

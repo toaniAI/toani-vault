@@ -479,9 +479,15 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 195,
-      "lastAccessed": 1775598374367,
+      "accessCount": 214,
+      "lastAccessed": 1775602969709,
       "type": "directory"
+    },
+    {
+      "path": "src/api/credentials.rs",
+      "accessCount": 76,
+      "lastAccessed": 1775602785383,
+      "type": "file"
     },
     {
       "path": "frontend/src/shared/i18n/messages.ts",
@@ -496,9 +502,15 @@
       "type": "file"
     },
     {
-      "path": "src/api/credentials.rs",
-      "accessCount": 11,
-      "lastAccessed": 1775597580853,
+      "path": "src/vault/models.rs",
+      "accessCount": 15,
+      "lastAccessed": 1775599161604,
+      "type": "directory"
+    },
+    {
+      "path": "src/models/mod.rs",
+      "accessCount": 13,
+      "lastAccessed": 1775603054044,
       "type": "file"
     },
     {
@@ -524,12 +536,6 @@
       "accessCount": 7,
       "lastAccessed": 1775097716492,
       "type": "file"
-    },
-    {
-      "path": "src/vault/models.rs",
-      "accessCount": 7,
-      "lastAccessed": 1775597333404,
-      "type": "directory"
     },
     {
       "path": "sdk-typescript/src/index.ts",
@@ -583,12 +589,6 @@
       "path": "sdk-typescript/EXAMPLES.md",
       "accessCount": 5,
       "lastAccessed": 1775547793417,
-      "type": "file"
-    },
-    {
-      "path": "src/models/mod.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775548728024,
       "type": "file"
     },
     {
@@ -737,8 +737,8 @@
     },
     {
       "path": "src/models",
-      "accessCount": 1,
-      "lastAccessed": 1775045525065,
+      "accessCount": 2,
+      "lastAccessed": 1775602757533,
       "type": "directory"
     },
     {

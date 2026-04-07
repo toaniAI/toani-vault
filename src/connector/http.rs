@@ -577,15 +577,25 @@ mod tests {
         let config = HttpConnectorConfig::default();
 
         // 验证默认重试次数为 2（原值为 3，减少以避免累积超时）
-        assert_eq!(config.retry_count, 2, "重试次数应为 2，避免累积超时超过前端 30s 预算");
+        assert_eq!(
+            config.retry_count, 2,
+            "重试次数应为 2，避免累积超时超过前端 30s 预算"
+        );
 
         // 验证默认重试延迟为 500ms（原值为 100ms，增加以给网络恢复时间）
-        assert_eq!(config.retry_delay_ms, 500, "重试延迟应为 500ms，给网络恢复时间");
+        assert_eq!(
+            config.retry_delay_ms, 500,
+            "重试延迟应为 500ms，给网络恢复时间"
+        );
 
         // 验证超时预算计算
         // 新配置: 2次重试 × (10s连接超时 + 0.5s延迟) ≈ 21s，留有充足余量
-        let total_timeout_budget = config.retry_count as u64 * (config.connect_timeout_secs + config.retry_delay_ms / 1000);
-        assert!(total_timeout_budget <= 25, "总超时预算应小于前端 30s 超时，留有缓冲");
+        let total_timeout_budget = config.retry_count as u64
+            * (config.connect_timeout_secs + config.retry_delay_ms / 1000);
+        assert!(
+            total_timeout_budget <= 25,
+            "总超时预算应小于前端 30s 超时，留有缓冲"
+        );
     }
 
     #[tokio::test]
