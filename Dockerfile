@@ -1,16 +1,9 @@
 # CredBridge 后端 Dockerfile
 
+FROM ubuntu:22.04 AS sgxsdk
+
 ARG SGX_SDK_VERSION=2.28.100.1
 ARG SGX_SDK_URL=https://download.01.org/intel-sgx/sgx-linux/2.28/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.28.100.1.bin
-ARG RUST_IMAGE=rust:1.88.0-slim-bookworm
-ARG UBUNTU_IMAGE=ubuntu:22.04
-ARG BASE_BUILDER_IMAGE=builder-base
-ARG BASE_RUNTIME_IMAGE=runtime-base
-
-FROM ${UBUNTU_IMAGE} AS sgxsdk
-
-ARG SGX_SDK_VERSION
-ARG SGX_SDK_URL
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils \
@@ -26,17 +19,16 @@ RUN set -eux; \
     /tmp/sgx_linux_x64_sdk.bin --prefix=/opt/intel; \
     rm -f /tmp/sgx_linux_x64_sdk.bin
 
-FROM ${RUST_IMAGE} AS builder-base
+FROM rust:1.88.0-slim-bookworm AS builder
 
 WORKDIR /app
+
+ARG SGX_SIGNING_KEY
 
 COPY --from=sgxsdk /opt/intel/sgxsdk /opt/intel/sgxsdk
 
 ENV SGX_SDK=/opt/intel/sgxsdk
 ENV PATH=/opt/intel/sgxsdk/bin/x64:${PATH}
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV CARGO_PROFILE_RELEASE_LTO=off
-ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -47,7 +39,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-FROM ${UBUNTU_IMAGE} AS runtime-base
+# 先复制 manifest，尽量复用依赖缓存。
+COPY Cargo.toml Cargo.lock ./
+COPY cli/Cargo.toml ./cli/
+COPY sdk-rust/Cargo.toml ./sdk-rust/
+COPY vault-service/Cargo.toml ./vault-service/
+COPY examples/rust/Cargo.toml ./examples/rust/
+
+RUN mkdir -p src cli/src sdk-rust/src vault-service/src examples/rust/src
+RUN printf 'fn main() {}\n' > src/main.rs
+RUN printf 'fn main() {}\n' > cli/src/main.rs
+RUN printf 'fn main() {}\n' > examples/rust/src/main.rs
+RUN printf 'pub fn placeholder() {}\n' > sdk-rust/src/lib.rs
+RUN printf 'pub fn placeholder() {}\n' > vault-service/src/lib.rs
+RUN cargo build --release || true
+
+COPY src ./src
+COPY cli ./cli
+COPY sdk-rust ./sdk-rust
+COPY vault-service ./vault-service
+COPY examples ./examples
+COPY migrations ./migrations
+COPY sgx-enclave ./sgx-enclave
+COPY scripts ./scripts
+RUN set -eu; \
+    if [ -n "${SGX_SIGNING_KEY:-}" ]; then \
+      umask 077; \
+      printf '%s\n' "${SGX_SIGNING_KEY}" > /tmp/sgx-signing-key.pem; \
+      export SGX_SIGNING_KEY=/tmp/sgx-signing-key.pem; \
+    fi; \
+    SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
+    bash scripts/sign-sgx-enclave.sh; \
+    rm -f /tmp/sgx-signing-key.pem
+RUN cargo build --release --features tee-hardware && cargo build --manifest-path cli/Cargo.toml --release
+
+FROM ubuntu:22.04
 
 WORKDIR /app
 
@@ -79,37 +105,6 @@ RUN set -eux; \
       libsgx-dcap-default-qpl \
       sgx-aesm-service; \
     rm -rf /var/lib/apt/lists/*
-
-FROM ${BASE_BUILDER_IMAGE} AS builder
-
-WORKDIR /app
-
-ARG SGX_SIGNING_KEY
-
-# 先复制 manifest，尽量复用依赖缓存。
-COPY Cargo.toml Cargo.lock ./
-
-RUN mkdir -p src
-RUN printf 'fn main() {}\n' > src/main.rs
-RUN printf 'pub fn placeholder() {}\n' > src/lib.rs
-RUN cargo build --release --features tee-hardware --bin vault-service
-
-COPY src ./src
-COPY migrations ./migrations
-COPY sgx-enclave ./sgx-enclave
-COPY scripts ./scripts
-RUN set -eu; \
-    if [ -n "${SGX_SIGNING_KEY:-}" ]; then \
-      umask 077; \
-      printf '%s\n' "${SGX_SIGNING_KEY}" > /tmp/sgx-signing-key.pem; \
-      export SGX_SIGNING_KEY=/tmp/sgx-signing-key.pem; \
-    fi; \
-    SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
-    bash scripts/sign-sgx-enclave.sh; \
-    rm -f /tmp/sgx-signing-key.pem
-RUN cargo build --release --features tee-hardware --bin vault-service
-
-FROM ${BASE_RUNTIME_IMAGE}
 
 COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
