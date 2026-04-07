@@ -12,7 +12,7 @@
 //! - POST   /api/v1/sandbox/sessions/:id/export   - 导出数据
 
 use crate::api::context::{ApiContext, RequestContext};
-use crate::api::middleware::{TokenScope, ValidatedToken};
+use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
 use crate::api::websocket::handle_socket;
 use crate::tee::sandbox::{
@@ -838,13 +838,10 @@ pub async fn get_stats(
 
 /// 检查 Scope
 async fn check_scope(token: &ValidatedToken, required: TokenScope) -> Result<(), Response> {
-    if !token.has_scope(&required) {
-        return Err(ApiErrorResponse::forbidden(format!(
-            "Missing required scope: {}",
-            required.as_str()
-        ))
-        .into_response());
+    if let Err(error) = require_scope(required)(token) {
+        return Err(error.into_response());
     }
+
     Ok(())
 }
 
@@ -972,8 +969,11 @@ async fn websocket_upgrade(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::middleware::{TokenScope, tests::create_mock_token};
     use crate::tee::sandbox::{SessionId, repository::SandboxOperationRecord};
+    use axum::body::to_bytes;
     use chrono::Utc;
+    use serde_json::Value;
     use uuid::Uuid;
 
     #[test]
@@ -1017,5 +1017,30 @@ mod tests {
         assert_eq!(mapped.status, "completed");
         assert_eq!(mapped.execution_time_ms, Some(42));
         assert!(mapped.completed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_check_scope_returns_insufficient_scope_error_shape() {
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxExecute]);
+
+        let response = check_scope(&token, TokenScope::SandboxRead)
+            .await
+            .expect_err("missing scope should return an error response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+
+        assert_eq!(body["error"], "insufficient_scope");
+        assert_eq!(body["i18n"]["key"], "errors.auth.insufficient_scope");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("sandbox:read"),
+            "message should mention required scope"
+        );
     }
 }
