@@ -7,6 +7,9 @@ ARG UBUNTU_IMAGE=ubuntu:22.04
 
 FROM ${UBUNTU_IMAGE} AS sgxsdk
 
+ARG SGX_SDK_VERSION
+ARG SGX_SDK_URL
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils \
     ca-certificates \
