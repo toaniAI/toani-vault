@@ -30,6 +30,8 @@ COPY --from=sgxsdk /opt/intel/sgxsdk /opt/intel/sgxsdk
 ENV SGX_SDK=/opt/intel/sgxsdk
 ENV PATH=/opt/intel/sgxsdk/bin/x64:${PATH}
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+ENV CARGO_PROFILE_RELEASE_LTO=off
+ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -46,7 +48,7 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src
 RUN printf 'fn main() {}\n' > src/main.rs
 RUN printf 'pub fn placeholder() {}\n' > src/lib.rs
-RUN cargo build --release --features tee-hardware
+RUN cargo build --release --features tee-hardware --bin vault-service
 
 COPY src ./src
 COPY migrations ./migrations
@@ -61,7 +63,7 @@ RUN set -eu; \
     SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
     bash scripts/sign-sgx-enclave.sh; \
     rm -f /tmp/sgx-signing-key.pem
-RUN cargo build --release --features tee-hardware
+RUN cargo build --release --features tee-hardware --bin vault-service
 
 FROM ubuntu:22.04
 

@@ -183,14 +183,22 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
-      PRIVY_APP_ID:
+      PRIVY_APP_ID_RAW:
         from_secret: privy-app-id
-      PRIVY_APP_SECRET:
+      PRIVY_APP_SECRET_RAW:
         from_secret: privy-app-secret
+      PRIVY_APP_ID_ALT:
+        from_secret: PRIVY_APP_ID
+      PRIVY_APP_SECRET_ALT:
+        from_secret: PRIVY_APP_SECRET
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-}}"
+      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-}}"
+      - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; check Drone secret privy-app-id or PRIVY_APP_ID" && exit 1)
+      - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; check Drone secret privy-app-secret or PRIVY_APP_SECRET" && exit 1)
       - |
         cat > .drone-runtime.values.yaml <<EOF
         envs:
@@ -218,14 +226,22 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
-      PRIVY_APP_ID:
+      PRIVY_APP_ID_RAW:
         from_secret: privy-app-id
-      PRIVY_APP_SECRET:
+      PRIVY_APP_SECRET_RAW:
         from_secret: privy-app-secret
+      PRIVY_APP_ID_ALT:
+        from_secret: PRIVY_APP_ID
+      PRIVY_APP_SECRET_ALT:
+        from_secret: PRIVY_APP_SECRET
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-}}"
+      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-}}"
+      - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; check Drone secret privy-app-id or PRIVY_APP_ID" && exit 1)
+      - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; check Drone secret privy-app-secret or PRIVY_APP_SECRET" && exit 1)
       - |
         cat > .drone-runtime.values.yaml <<EOF
         envs:
@@ -279,6 +295,20 @@ get:
 ---
 kind: secret
 name: privy-app-secret
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_SECRET
+
+---
+kind: secret
+name: PRIVY_APP_ID
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_ID
+
+---
+kind: secret
+name: PRIVY_APP_SECRET
 get:
   path: credbridge-privy
   name: PRIVY_APP_SECRET
