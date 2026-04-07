@@ -479,8 +479,8 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 176,
-      "lastAccessed": 1775538486564,
+      "accessCount": 183,
+      "lastAccessed": 1775549201456,
       "type": "directory"
     },
     {
@@ -569,8 +569,14 @@
     },
     {
       "path": "sdk-typescript/EXAMPLES.md",
-      "accessCount": 4,
-      "lastAccessed": 1775096633585,
+      "accessCount": 5,
+      "lastAccessed": 1775547793417,
+      "type": "file"
+    },
+    {
+      "path": "src/models/mod.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775548728024,
       "type": "file"
     },
     {
@@ -598,12 +604,6 @@
       "type": "file"
     },
     {
-      "path": "src/models/mod.rs",
-      "accessCount": 4,
-      "lastAccessed": 1775117977106,
-      "type": "file"
-    },
-    {
       "path": "src/api/credentials.rs",
       "accessCount": 4,
       "lastAccessed": 1775122466278,
@@ -616,21 +616,21 @@
       "type": "file"
     },
     {
-      "path": "sdk-typescript/package.json",
-      "accessCount": 3,
-      "lastAccessed": 1775095741160,
-      "type": "file"
-    },
-    {
       "path": "examples/typescript/package.json",
-      "accessCount": 3,
-      "lastAccessed": 1775096777205,
+      "accessCount": 4,
+      "lastAccessed": 1775547804744,
       "type": "file"
     },
     {
       "path": "examples/typescript/README.md",
+      "accessCount": 4,
+      "lastAccessed": 1775547804809,
+      "type": "file"
+    },
+    {
+      "path": "sdk-typescript/package.json",
       "accessCount": 3,
-      "lastAccessed": 1775096815721,
+      "lastAccessed": 1775095741160,
       "type": "file"
     },
     {
@@ -688,15 +688,15 @@
       "type": "directory"
     },
     {
-      "path": "sdk-typescript/docs/QUICKSTART.md",
-      "accessCount": 2,
-      "lastAccessed": 1775096081958,
+      "path": "examples/typescript/basic-usage.ts",
+      "accessCount": 3,
+      "lastAccessed": 1775547804800,
       "type": "file"
     },
     {
-      "path": "examples/typescript/basic-usage.ts",
+      "path": "sdk-typescript/docs/QUICKSTART.md",
       "accessCount": 2,
-      "lastAccessed": 1775096995883,
+      "lastAccessed": 1775096081958,
       "type": "file"
     },
     {

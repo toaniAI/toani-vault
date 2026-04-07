@@ -176,11 +176,24 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
+      PRIVY_APP_ID:
+        from_secret: privy-app-id
+      PRIVY_APP_SECRET:
+        from_secret: privy-app-secret
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge dn/go -f .values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - |
+        cat > .drone-runtime.values.yaml <<EOF
+        envs:
+          PRIVY_APP_ID: "${PRIVY_APP_ID}"
+          PRIVY_APP_SECRET: "${PRIVY_APP_SECRET}"
+          PRIVY_JWKS_URL: "https://auth.privy.io/api/v1/sessions/jwks.json"
+          PRIVY_API_URL: "https://auth.privy.io/api/v1"
+          PRIVY_MOCK_ENABLED: "false"
+        EOF
+      - helm upgrade --install credbridge dn/go -f .values.yaml -f .drone-runtime.values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -198,11 +211,24 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
+      PRIVY_APP_ID:
+        from_secret: privy-app-id
+      PRIVY_APP_SECRET:
+        from_secret: privy-app-secret
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge dn/go -f .test.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - |
+        cat > .drone-runtime.values.yaml <<EOF
+        envs:
+          PRIVY_APP_ID: "${PRIVY_APP_ID}"
+          PRIVY_APP_SECRET: "${PRIVY_APP_SECRET}"
+          PRIVY_JWKS_URL: "https://auth.privy.io/api/v1/sessions/jwks.json"
+          PRIVY_API_URL: "https://auth.privy.io/api/v1"
+          PRIVY_MOCK_ENABLED: "false"
+        EOF
+      - helm upgrade --install credbridge dn/go -f .test.values.yaml -f .drone-runtime.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -235,3 +261,17 @@ name: kube-config
 get:
   path: drone-helm-secret
   name: config
+
+---
+kind: secret
+name: privy-app-id
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_ID
+
+---
+kind: secret
+name: privy-app-secret
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_SECRET

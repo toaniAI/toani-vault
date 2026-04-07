@@ -456,10 +456,34 @@ async fn initialize_app_state(
     let tenant_store = build_tenant_config_store(config, database_pool.clone()).await?;
     info!(module = "tenant", status = "ready", "租户配置就绪");
 
-    let auth_service = vault_service::auth::AuthServiceImpl::new(
+    // --- Privy 配置加载 ---
+    let privy_config_result = vault_service::config::PrivyConfig::from_env();
+    let auth_service_builder = vault_service::auth::AuthServiceImpl::new(
         database_pool.as_ref().map(|pool| pool.pool().clone()),
         vault_service::tenant::TenantManager::new_simple(tenant_store.clone()),
     );
+
+    // 根据 Privy 配置是否加载成功，决定是否初始化 JWKS verifier
+    let auth_service = match privy_config_result {
+        Ok(config) => {
+            info!(
+                module = "privy",
+                status = "configured",
+                mock_enabled = config.mock_enabled,
+                "Privy 配置已加载"
+            );
+            auth_service_builder.with_privy_config(config)
+        }
+        Err(e) => {
+            warn!(
+                module = "privy",
+                status = "not_configured",
+                error = %e,
+                "Privy 配置未加载，认证功能将受限。请设置 PRIVY_APP_ID 和 PRIVY_APP_SECRET 环境变量，或启用 PRIVY_MOCK_ENABLED=true 用于开发测试"
+            );
+            auth_service_builder
+        }
+    };
     let (token_store, token_backend) = initialize_token_store(config)?;
     info!(
         module = "token_state",
