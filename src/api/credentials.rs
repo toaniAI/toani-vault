@@ -344,6 +344,8 @@ impl AuditLogger for StorageAuditLogger {
 pub struct ApiError {
     pub error: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
 }
 
 impl ApiError {
@@ -351,7 +353,13 @@ impl ApiError {
         Self {
             error: error.into(),
             message: message.into(),
+            details: None,
         }
+    }
+
+    pub fn with_details(mut self, details: serde_json::Value) -> Self {
+        self.details = Some(details);
+        self
     }
 }
 
@@ -382,8 +390,8 @@ impl IntoResponse for ApiError {
 pub struct CreateCredentialApiRequest {
     /// 服务 ID
     pub service_id: String,
-    /// 凭证类型
-    pub credential_type: CredentialType,
+    /// 凭证类型（字符串形式，将在业务层验证）
+    pub credential_type: String,
     /// 明文凭证内容（将被加密）
     pub plaintext_data: serde_json::Value,
     /// 过期时间（Unix 时间戳，可选）
@@ -455,6 +463,9 @@ pub async fn create_credential(
 
     validate_expires_at(request.expires_at)?;
 
+    // 解析并验证 credential_type，无效时返回 400 invalid_request
+    let credential_type = parse_credential_type(&request.credential_type)?;
+
     // 先创建 UserId 对象，用于加密和存储
     let user_id = UserId::new(&token.user_id);
     let tenant_id = TenantId::new(&token.tenant_id);
@@ -462,7 +473,7 @@ pub async fn create_credential(
     // 先生成 credential_id，确保加密时使用的 ID 与存储时一致
     let credential_id = CredentialId::new();
     let normalized_plaintext_data =
-        normalize_oauth_plaintext_data(request.credential_type, &request.plaintext_data);
+        normalize_oauth_plaintext_data(credential_type, &request.plaintext_data);
 
     // 加密凭证内容（在 TEE 内完成）
     let encrypted_payload = encrypt_credential_in_tee(
@@ -480,7 +491,7 @@ pub async fn create_credential(
         tenant_id,
         user_id,
         service_id: ServiceId::new(&request.service_id),
-        credential_type: request.credential_type,
+        credential_type,
         expires_at: request.expires_at,
     };
 
@@ -578,7 +589,11 @@ fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
         _ => Err(ApiError::new(
             "invalid_request",
             format!("不支持的凭证类型: {value}"),
-        )),
+        ).with_details(serde_json::json!({
+            "field": "credential_type",
+            "received": value,
+            "allowed": ["username_password", "oauth_refresh", "oauth_token", "o_auth_refresh", "api_key", "session_cookie", "kyc_document"]
+        }))),
     }
 }
 
@@ -1070,7 +1085,9 @@ mod tests {
 
         for payload in payloads {
             let parsed: CreateCredentialApiRequest = serde_json::from_value(payload).unwrap();
-            assert_eq!(parsed.credential_type, CredentialType::OAuthRefresh);
+            // 验证 credential_type 可以被成功解析为 OAuthRefresh
+            let credential_type = parse_credential_type(&parsed.credential_type).unwrap();
+            assert_eq!(credential_type, CredentialType::OAuthRefresh);
         }
     }
 

@@ -22,6 +22,7 @@ use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
 use vault_service::tee::{Enclave, EnclaveConfig};
+use vault_service::models::CredentialType;
 use vault_service::vault::models::{
     CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId,
 };
@@ -179,7 +180,7 @@ async fn test_create_credential_rejects_past_expires_at() {
         axum::Json(
             vault_service::api::credentials::CreateCredentialApiRequest {
                 service_id: "test_service".to_string(),
-                credential_type: vault_service::models::CredentialType::UsernamePassword,
+                credential_type: "username_password".to_string(),
                 plaintext_data: serde_json::json!({
                     "username": "test_user",
                     "password": "secret123"
@@ -241,7 +242,7 @@ async fn test_list_credentials_includes_expired_entries() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("expired_service"),
-                credential_type: vault_service::models::CredentialType::ApiKey,
+                credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
             },
             create_test_payload(),
@@ -295,7 +296,7 @@ async fn test_list_credentials_filters_by_service_id() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("github-prod"),
-                credential_type: vault_service::models::CredentialType::ApiKey,
+                credential_type: CredentialType::ApiKey,
                 expires_at: None,
             },
             create_test_payload(),
@@ -309,7 +310,7 @@ async fn test_list_credentials_filters_by_service_id() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("aws-dev"),
-                credential_type: vault_service::models::CredentialType::UsernamePassword,
+                credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
             },
             create_test_payload(),
@@ -351,7 +352,7 @@ async fn test_list_credentials_filters_by_credential_type() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("github-prod"),
-                credential_type: vault_service::models::CredentialType::ApiKey,
+                credential_type: CredentialType::ApiKey,
                 expires_at: None,
             },
             create_test_payload(),
@@ -365,7 +366,7 @@ async fn test_list_credentials_filters_by_credential_type() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("aws-dev"),
-                credential_type: vault_service::models::CredentialType::UsernamePassword,
+                credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
             },
             create_test_payload(),
@@ -412,7 +413,7 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("expired-service"),
-                credential_type: vault_service::models::CredentialType::ApiKey,
+                credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
             },
             create_test_payload(),
@@ -426,7 +427,7 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
                 tenant_id: TenantId::new("tenant_123"),
                 user_id: UserId::new("user_456"),
                 service_id: ServiceId::new("valid-service"),
-                credential_type: vault_service::models::CredentialType::ApiKey,
+                credential_type: CredentialType::ApiKey,
                 expires_at: None,
             },
             create_test_payload(),
@@ -599,7 +600,7 @@ async fn test_decrypt_expired_credential_returns_422() {
                 tenant_id: tenant_id.clone(),
                 user_id: user_id.clone(),
                 service_id: ServiceId::new("expired_service"),
-                credential_type: vault_service::models::CredentialType::ApiKey,
+                credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
             },
             EncryptedPayload::new(
