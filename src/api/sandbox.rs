@@ -99,7 +99,7 @@ impl SandboxState {
 #[derive(Debug, Deserialize)]
 pub struct CreateSessionRequest {
     /// 凭证 ID
-    pub credential_id: Uuid,
+    pub credential_id: Option<Uuid>,
     /// 原始意图描述
     pub original_intent: String,
     /// 会话元数据（可选）
@@ -302,9 +302,12 @@ pub async fn create_session(
         token.tenant_id, token.user_id
     );
 
-    if let Err(error) =
-        ensure_credential_exists(state.vault.as_ref(), &token, request.credential_id)
-    {
+    let credential_id = match validate_create_session_credential_id(request.credential_id) {
+        Ok(credential_id) => credential_id,
+        Err(message) => return ApiErrorResponse::invalid_request(message).into_response(),
+    };
+
+    if let Err(error) = ensure_credential_exists(state.vault.as_ref(), &token, credential_id) {
         return map_sandbox_error(error);
     }
 
@@ -312,7 +315,7 @@ pub async fn create_session(
     let session_request = SessionRequest {
         tenant_id: parse_uuid(&token.tenant_id),
         user_id: parse_uuid(&token.user_id),
-        credential_id: request.credential_id,
+        credential_id,
         original_intent: request.original_intent,
         metadata: request.metadata,
     };
@@ -887,6 +890,12 @@ fn ensure_credential_exists(
     }
 }
 
+fn validate_create_session_credential_id(
+    credential_id: Option<Uuid>,
+) -> Result<Uuid, &'static str> {
+    credential_id.ok_or("missing required field: credential_id")
+}
+
 /// 解析 UUID
 fn parse_uuid(s: &str) -> Uuid {
     Uuid::parse_str(s).unwrap_or_else(|_| Uuid::new_v4())
@@ -1182,5 +1191,72 @@ mod tests {
 
         ensure_credential_exists(Some(&vault), &token, credential_id)
             .expect("existing credential should pass");
+    }
+
+    #[tokio::test]
+    async fn test_validate_create_session_credential_id_missing_returns_400_invalid_request() {
+        let message = validate_create_session_credential_id(None)
+            .expect_err("missing credential_id should return invalid_request response");
+        let response = ApiErrorResponse::invalid_request(message).into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+
+        assert_eq!(body["error"], "invalid_request");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("credential_id"),
+            "message should mention credential_id"
+        );
+    }
+
+    #[test]
+    fn test_create_session_request_missing_credential_id_deserializes_to_none() {
+        let raw = serde_json::json!({
+            "original_intent": "open page",
+            "metadata": {
+                "k": "v"
+            }
+        });
+
+        let request: CreateSessionRequest =
+            serde_json::from_value(raw).expect("request should deserialize");
+
+        assert_eq!(request.credential_id, None);
+    }
+
+    #[test]
+    fn test_create_session_request_with_credential_id_deserializes() {
+        let credential_id = Uuid::new_v4();
+        let raw = serde_json::json!({
+            "credential_id": credential_id,
+            "original_intent": "open page"
+        });
+
+        let request: CreateSessionRequest =
+            serde_json::from_value(raw).expect("request should deserialize");
+
+        assert_eq!(request.credential_id, Some(credential_id));
+    }
+
+    #[test]
+    fn test_create_session_request_missing_original_intent_still_fails_deserialize() {
+        let raw = serde_json::json!({
+            "credential_id": Uuid::new_v4()
+        });
+
+        let error = serde_json::from_value::<CreateSessionRequest>(raw)
+            .expect_err("missing original_intent should fail deserialization");
+
+        assert!(
+            error.to_string().contains("original_intent"),
+            "error should mention original_intent"
+        );
     }
 }
