@@ -144,6 +144,56 @@ trigger:
       - frontend/**
 
 steps:
+  - name: docker-builder-base
+    image: plugins/docker
+    pull: if-not-exists
+    settings:
+      registry: hub.bitkinetic.com
+      repo: hub.bitkinetic.com/zkme/credbridge-builder-base
+      tags:
+        - rust-1.88.0-sgx-2.28.100.1
+      cache_from:
+        - hub.bitkinetic.com/zkme/credbridge-builder-base:rust-1.88.0-sgx-2.28.100.1
+      compress: true
+      purge: true
+      username:
+        from_secret: docker-hub-username
+      password:
+        from_secret: docker-hub-password
+      context: ./
+      dockerfile: docker/base/builder.Dockerfile
+    when:
+      paths:
+        include:
+          - Dockerfile
+          - docker/base/**
+          - .drone.yml
+
+  - name: docker-runtime-base
+    image: plugins/docker
+    pull: if-not-exists
+    settings:
+      registry: hub.bitkinetic.com
+      repo: hub.bitkinetic.com/zkme/credbridge-runtime-base
+      tags:
+        - ubuntu22.04-sgx-2.28.100.1
+      cache_from:
+        - hub.bitkinetic.com/zkme/credbridge-runtime-base:ubuntu22.04-sgx-2.28.100.1
+      compress: true
+      purge: true
+      username:
+        from_secret: docker-hub-username
+      password:
+        from_secret: docker-hub-password
+      context: ./
+      dockerfile: docker/base/runtime.Dockerfile
+    when:
+      paths:
+        include:
+          - Dockerfile
+          - docker/base/**
+          - .drone.yml
+
   - name: docker-build
     image: plugins/docker
     pull: if-not-exists
@@ -168,6 +218,9 @@ steps:
         from_secret: docker-hub-password
       context: ./
       dockerfile: Dockerfile
+      build_args:
+        - BASE_BUILDER_IMAGE=hub.bitkinetic.com/zkme/credbridge-builder-base:rust-1.88.0-sgx-2.28.100.1
+        - BASE_RUNTIME_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-base:ubuntu22.04-sgx-2.28.100.1
       build_args_from_env:
         - SGX_SIGNING_KEY
 

@@ -6,6 +6,9 @@
 
 ```
 docker/
+├── base/
+│   ├── builder.Dockerfile      # CI 预构建 SGX builder 基础镜像
+│   └── runtime.Dockerfile      # CI 预构建 SGX runtime 基础镜像
 ├── Dockerfile                  # Vault Service 多阶段构建镜像
 ├── docker-compose.yml          # 开发环境服务编排
 ├── docker-compose.prod.yml     # 生产环境配置
@@ -21,6 +24,22 @@ docker/
     ├── nginx/
     └── prometheus/
 ```
+
+## CI 基础镜像
+
+为缩短远程 `docker-build` 的冷构建时间，仓库新增了两类可复用基础镜像：
+
+- `docker/base/builder.Dockerfile`
+  预装 Rust、Intel SGX SDK、Rust 构建依赖，以及面向 CI 的更快 release 编译配置。
+- `docker/base/runtime.Dockerfile`
+  预装 SGX runtime 相关系统依赖，供最终业务镜像直接复用。
+
+根目录 `Dockerfile` 兼容两种模式：
+
+- 本地默认模式：不传参，继续使用内联 stage 自举构建。
+- CI 加速模式：通过 `BASE_BUILDER_IMAGE` 和 `BASE_RUNTIME_IMAGE` 指向已发布的基础镜像。
+
+`.drone.yml` 已经接入这两个基础镜像的构建与引用流程。
 
 ## 快速开始
 

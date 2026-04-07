@@ -1,9 +1,11 @@
 # CredBridge 后端 Dockerfile
 
-FROM ubuntu:22.04 AS sgxsdk
-
 ARG SGX_SDK_VERSION=2.28.100.1
 ARG SGX_SDK_URL=https://download.01.org/intel-sgx/sgx-linux/2.28/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.28.100.1.bin
+ARG RUST_IMAGE=rust:1.88.0-slim-bookworm
+ARG UBUNTU_IMAGE=ubuntu:22.04
+
+FROM ${UBUNTU_IMAGE} AS sgxsdk
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     binutils \
@@ -19,11 +21,9 @@ RUN set -eux; \
     /tmp/sgx_linux_x64_sdk.bin --prefix=/opt/intel; \
     rm -f /tmp/sgx_linux_x64_sdk.bin
 
-FROM rust:1.88.0-slim-bookworm AS builder
+FROM ${RUST_IMAGE} AS builder-base
 
 WORKDIR /app
-
-ARG SGX_SIGNING_KEY
 
 COPY --from=sgxsdk /opt/intel/sgxsdk /opt/intel/sgxsdk
 
@@ -42,30 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# 先复制 manifest，尽量复用依赖缓存。
-COPY Cargo.toml Cargo.lock ./
-
-RUN mkdir -p src
-RUN printf 'fn main() {}\n' > src/main.rs
-RUN printf 'pub fn placeholder() {}\n' > src/lib.rs
-RUN cargo build --release --features tee-hardware --bin vault-service
-
-COPY src ./src
-COPY migrations ./migrations
-COPY sgx-enclave ./sgx-enclave
-COPY scripts ./scripts
-RUN set -eu; \
-    if [ -n "${SGX_SIGNING_KEY:-}" ]; then \
-      umask 077; \
-      printf '%s\n' "${SGX_SIGNING_KEY}" > /tmp/sgx-signing-key.pem; \
-      export SGX_SIGNING_KEY=/tmp/sgx-signing-key.pem; \
-    fi; \
-    SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
-    bash scripts/sign-sgx-enclave.sh; \
-    rm -f /tmp/sgx-signing-key.pem
-RUN cargo build --release --features tee-hardware --bin vault-service
-
-FROM ubuntu:22.04
+FROM ${UBUNTU_IMAGE} AS runtime-base
 
 WORKDIR /app
 
@@ -97,6 +74,39 @@ RUN set -eux; \
       libsgx-dcap-default-qpl \
       sgx-aesm-service; \
     rm -rf /var/lib/apt/lists/*
+
+ARG BASE_BUILDER_IMAGE=builder-base
+FROM ${BASE_BUILDER_IMAGE} AS builder
+
+WORKDIR /app
+
+ARG SGX_SIGNING_KEY
+
+# 先复制 manifest，尽量复用依赖缓存。
+COPY Cargo.toml Cargo.lock ./
+
+RUN mkdir -p src
+RUN printf 'fn main() {}\n' > src/main.rs
+RUN printf 'pub fn placeholder() {}\n' > src/lib.rs
+RUN cargo build --release --features tee-hardware --bin vault-service
+
+COPY src ./src
+COPY migrations ./migrations
+COPY sgx-enclave ./sgx-enclave
+COPY scripts ./scripts
+RUN set -eu; \
+    if [ -n "${SGX_SIGNING_KEY:-}" ]; then \
+      umask 077; \
+      printf '%s\n' "${SGX_SIGNING_KEY}" > /tmp/sgx-signing-key.pem; \
+      export SGX_SIGNING_KEY=/tmp/sgx-signing-key.pem; \
+    fi; \
+    SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
+    bash scripts/sign-sgx-enclave.sh; \
+    rm -f /tmp/sgx-signing-key.pem
+RUN cargo build --release --features tee-hardware --bin vault-service
+
+ARG BASE_RUNTIME_IMAGE=runtime-base
+FROM ${BASE_RUNTIME_IMAGE}
 
 COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so

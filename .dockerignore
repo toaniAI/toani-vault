@@ -53,7 +53,10 @@ benches/
 
 # Docker files (not needed in build context)
 docker/
+!docker/base/
+!docker/base/**
 !docker/scripts/
+!docker/scripts/**
 docker-compose*.yml
 Dockerfile*
 
