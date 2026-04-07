@@ -286,8 +286,7 @@ pub async fn create_session(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateSessionRequest>,
 ) -> Response {
-    // 验证 Scope: sandbox:write
-    if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
+    if let Err(e) = check_create_session_scopes(&token).await {
         return e;
     }
 
@@ -845,6 +844,11 @@ async fn check_scope(token: &ValidatedToken, required: TokenScope) -> Result<(),
     Ok(())
 }
 
+async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Response> {
+    check_scope(token, TokenScope::SandboxWrite).await?;
+    check_scope(token, TokenScope::CredentialDecrypt).await
+}
+
 /// 解析 UUID
 fn parse_uuid(s: &str) -> Uuid {
     Uuid::parse_str(s).unwrap_or_else(|_| Uuid::new_v4())
@@ -1042,5 +1046,43 @@ mod tests {
                 .contains("sandbox:read"),
             "message should mention required scope"
         );
+    }
+
+    #[tokio::test]
+    async fn test_check_create_session_scopes_requires_credential_decrypt() {
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+
+        let response = check_create_session_scopes(&token)
+            .await
+            .expect_err("missing decrypt scope should return an error response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+
+        assert_eq!(body["error"], "insufficient_scope");
+        assert_eq!(body["i18n"]["key"], "errors.auth.insufficient_scope");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("credential:decrypt"),
+            "message should mention required decrypt scope"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_create_session_scopes_accepts_required_scopes() {
+        let token = create_mock_token(
+            "tenant_123",
+            "user_456",
+            vec![TokenScope::SandboxWrite, TokenScope::CredentialDecrypt],
+        );
+
+        check_create_session_scopes(&token)
+            .await
+            .expect("token with sandbox:write + credential:decrypt should pass");
     }
 }
