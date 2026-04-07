@@ -144,68 +144,16 @@ trigger:
       - frontend/**
 
 steps:
-  - name: docker-builder-base
-    image: plugins/docker
-    pull: if-not-exists
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/zkme/credbridge-builder-base
-      tags:
-        - rust-1.88.0-sgx-2.28.100.1
-        - latest
-      cache_from:
-        - hub.bitkinetic.com/zkme/credbridge-builder-base:rust-1.88.0-sgx-2.28.100.1
-        - hub.bitkinetic.com/zkme/credbridge-builder-base:latest
-      compress: true
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./
-      dockerfile: docker/base/builder.Dockerfile
-
-  - name: docker-runtime-base
-    image: plugins/docker
-    pull: if-not-exists
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/zkme/credbridge-runtime-base
-      tags:
-        - ubuntu22.04-sgx-2.28.100.1
-        - latest
-      cache_from:
-        - hub.bitkinetic.com/zkme/credbridge-runtime-base:ubuntu22.04-sgx-2.28.100.1
-        - hub.bitkinetic.com/zkme/credbridge-runtime-base:latest
-      compress: true
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./
-      dockerfile: docker/base/runtime.Dockerfile
-
   - name: docker-build
     image: plugins/docker
     pull: if-not-exists
-    depends_on:
-      - docker-builder-base
-      - docker-runtime-base
     environment:
       SGX_SIGNING_KEY:
         from_secret: sgx-signing-key
     settings:
       registry: hub.bitkinetic.com
       repo: hub.bitkinetic.com/zkme/credbridge
-      tags:
-        - alpha-${DRONE_BUILD_NUMBER}
-        - ${DRONE_BRANCH}-cache
-        - buildcache
-      cache_from:
-        - hub.bitkinetic.com/zkme/credbridge:${DRONE_BRANCH}-cache
-        - hub.bitkinetic.com/zkme/credbridge:buildcache
-      compress: true
+      tags: alpha-${DRONE_BUILD_NUMBER}
       purge: true
       username:
         from_secret: docker-hub-username
@@ -213,9 +161,6 @@ steps:
         from_secret: docker-hub-password
       context: ./
       dockerfile: Dockerfile
-      build_args:
-        - BASE_BUILDER_IMAGE=hub.bitkinetic.com/zkme/credbridge-builder-base:rust-1.88.0-sgx-2.28.100.1
-        - BASE_RUNTIME_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-base:ubuntu22.04-sgx-2.28.100.1
       build_args_from_env:
         - SGX_SIGNING_KEY
 
