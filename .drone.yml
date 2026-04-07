@@ -153,7 +153,14 @@ steps:
     settings:
       registry: hub.bitkinetic.com
       repo: hub.bitkinetic.com/zkme/credbridge
-      tags: alpha-${DRONE_BUILD_NUMBER}
+      tags:
+        - alpha-${DRONE_BUILD_NUMBER}
+        - ${DRONE_BRANCH}-cache
+        - buildcache
+      cache_from:
+        - hub.bitkinetic.com/zkme/credbridge:${DRONE_BRANCH}-cache
+        - hub.bitkinetic.com/zkme/credbridge:buildcache
+      compress: true
       purge: true
       username:
         from_secret: docker-hub-username

@@ -47,6 +47,9 @@ benches/
 .envrc
 .sealed/
 .claude/
+.agents/
+.codex/
+.omx/
 
 # Docker files (not needed in build context)
 docker/
@@ -55,6 +58,7 @@ docker-compose*.yml
 Dockerfile*
 
 # Node.js (if any)
+frontend/
 node_modules/
 npm-debug.log
 yarn-error.log
@@ -108,8 +112,11 @@ _bmad/
 _bmad-output/
 
 # SDKs (separate packages) - 注意：Dockerfile 需要这些目录
-# sdk-rust/  # 暂时注释掉，Dockerfile 构建需要
+cli/
+examples/
+sdk-rust/
 sdk-typescript/
+vault-service/
 
 # Target directory (Rust build output)
 target/
