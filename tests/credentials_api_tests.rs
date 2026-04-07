@@ -21,8 +21,8 @@ use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
-use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::models::CredentialType;
+use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::vault::models::{
     CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId,
 };
@@ -204,6 +204,53 @@ async fn test_create_credential_rejects_past_expires_at() {
     assert_eq!(
         json["message"].as_str(),
         Some("expires_at must be in the future")
+    );
+}
+
+/// BUG-18100: 测试创建凭证时传入无效的 credential_type 返回 400 + invalid_request
+#[tokio::test]
+async fn test_create_credential_rejects_invalid_credential_type() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "test_service",
+                "credential_type": "database_connection",
+                "plaintext_data": {
+                    "dsn": "postgres://user:pass@localhost:5432/app"
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("不支持的凭证类型")
+    );
+    assert!(json["details"].is_object());
+    assert_eq!(json["details"]["field"].as_str(), Some("credential_type"));
+    assert_eq!(
+        json["details"]["received"].as_str(),
+        Some("database_connection")
     );
 }
 
