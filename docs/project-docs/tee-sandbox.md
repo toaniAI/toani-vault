@@ -221,29 +221,43 @@ pub enum SandboxStatus {
 ### 沙箱 API
 
 **创建会话**:
-```rust
+```json
 POST /api/v1/sandbox/sessions
 {
-  "runtime": "python3.11",
-  "timeout_seconds": 300,
-  "memory_limit_mb": 512
+  "credential_id": "550e8400-e29b-41d4-a716-446655440000",
+  "original_intent": "查询投资组合",
+  "metadata": {
+    "source": "mobile_app"
+  }
 }
 ```
 
-**执行代码**:
-```rust
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `credential_id` | UUID | 是 | 凭证ID，用于在沙箱中安全访问凭证 |
+| `original_intent` | string | 是 | 原始意图描述，用于审计和AI审核，最大500字符 |
+| `metadata` | object | 否 | 可选的会话元数据 |
+
+**执行操作**:
+```json
 POST /api/v1/sandbox/sessions/{id}/execute
 {
-  "operation_type": "execute_code",
-  "code": "print('Hello, TEE!')",
-  "language": "python"
+  "operation_type": "navigate",
+  "description": "导航到登录页面",
+  "parameters": {
+    "url": "https://example.com/login"
+  }
 }
 ```
 
-**终止会话**:
-```rust
-POST /api/v1/sandbox/sessions/{id}/terminate
+**关闭会话**:
 ```
+DELETE /api/v1/sandbox/sessions/{id}
+```
+
+> **注意**: 完整 API 规范请参考 `docs/openapi/sandbox.yaml` 和 `docs/03-API 参考/REST-API.md`
 
 ---
 

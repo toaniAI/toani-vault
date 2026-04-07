@@ -7,6 +7,7 @@
 - [健康检查 API](#健康检查-api)
 - [认证](#认证)
 - [凭证管理 API](#凭证管理-api)
+- [沙箱会话 API](#沙箱会话-api)
 - [审计日志 API](#审计日志-api)
 - [错误处理](#错误处理)
 
@@ -145,6 +146,9 @@ Authorization: Bearer <paseto_v4_local_token>
 | `credential:read` | 读取凭证元数据 |
 | `credential:decrypt` | 解密凭证获取明文 |
 | `credential:write` | 创建/更新凭证 |
+| `sandbox:read` | 读取沙箱会话信息 |
+| `sandbox:write` | 创建/暂停/恢复/关闭沙箱会话 |
+| `sandbox:execute` | 在沙箱中执行操作 |
 | `audit:read` | 读取审计日志 |
 | `admin` | 所有管理权限 |
 
@@ -318,6 +322,314 @@ Authorization: Bearer <paseto_v4_local_token>
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
   "deleted": true
+}
+```
+
+---
+
+## 沙箱会话 API
+
+沙箱会话 API 提供 TEE 安全执行环境，用于安全地执行浏览器自动化操作。
+
+### 创建沙箱会话
+
+创建一个新的 TEE 沙箱会话。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions`
+
+**Scope**: `sandbox:write`
+
+**请求体**:
+```json
+{
+  "credential_id": "550e8400-e29b-41d4-a716-446655440000",
+  "original_intent": "查询投资组合",
+  "metadata": {
+    "source": "mobile_app",
+    "priority": "high"
+  }
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `credential_id` | string (UUID) | 是 | 凭证 ID，用于在沙箱中安全访问凭证 |
+| `original_intent` | string | 是 | 原始意图描述，用于审计和 AI 审核，最大 500 字符 |
+| `metadata` | object | 否 | 可选的会话元数据 |
+
+**响应 (201 Created)**:
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440001",
+  "sandbox_id": "550e8400-e29b-41d4-a716-446655440002",
+  "status": "ready",
+  "created_at": "2024-01-15T10:30:00Z",
+  "expires_at": "2024-01-15T11:00:00Z"
+}
+```
+
+---
+
+### 列出沙箱会话
+
+获取当前租户的所有活跃沙箱会话列表。
+
+**Endpoint**: `GET /api/v1/sandbox/sessions`
+
+**Scope**: `sandbox:read`
+
+**响应 (200 OK)**:
+```json
+{
+  "sessions": [
+    {
+      "session_id": "550e8400-e29b-41d4-a716-446655440001",
+      "sandbox_id": "550e8400-e29b-41d4-a716-446655440002",
+      "credential_id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "ready",
+      "original_intent": "查询投资组合",
+      "created_at": "2024-01-15T10:30:00Z",
+      "expires_at": "2024-01-15T11:00:00Z",
+      "is_expired": false
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+### 获取会话详情
+
+获取指定沙箱会话的详细信息。
+
+**Endpoint**: `GET /api/v1/sandbox/sessions/:id`
+
+**Scope**: `sandbox:read`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `id` | string (UUID) | 会话 ID |
+
+**响应 (200 OK)**:
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440001",
+  "sandbox_id": "550e8400-e29b-41d4-a716-446655440002",
+  "tenant_id": "550e8400-e29b-41d4-a716-446655440003",
+  "user_id": "550e8400-e29b-41d4-a716-446655440004",
+  "credential_id": "550e8400-e29b-41d4-a716-446655440000",
+  "original_intent": "查询投资组合",
+  "status": "ready",
+  "created_at": "2024-01-15T10:30:00Z",
+  "expires_at": "2024-01-15T11:00:00Z",
+  "last_activity_at": "2024-01-15T10:35:00Z",
+  "is_expired": false
+}
+```
+
+**会话状态**:
+
+| 状态 | 说明 |
+|------|------|
+| `creating` | 会话创建中 |
+| `ready` | 会话就绪，可执行操作 |
+| `executing` | 正在执行操作 |
+| `paused` | 会话已暂停 |
+| `closed` | 会话已关闭 |
+
+---
+
+### 执行操作
+
+在沙箱会话中执行浏览器自动化操作。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions/:id/execute`
+
+**Scope**: `sandbox:execute`
+
+**请求体**:
+```json
+{
+  "operation_type": "navigate",
+  "description": "导航到登录页面",
+  "parameters": {
+    "url": "https://example.com/login"
+  }
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `operation_type` | string | 是 | 操作类型（见下表） |
+| `description` | string | 是 | 操作描述，用于审计日志，最大 500 字符 |
+| `parameters` | object | 否 | 操作参数，根据操作类型不同而变化 |
+
+**操作类型**:
+
+| 类型 | 说明 |
+|------|------|
+| `navigate` | 导航到 URL |
+| `click` | 点击元素 |
+| `fill` | 填充表单字段 |
+| `get_text` | 获取文本内容 |
+| `screenshot` | 截取屏幕截图 |
+| `export` | 导出数据 |
+| `execute_script` | 执行自定义脚本 |
+| `wait` | 等待条件 |
+| `custom` | 自定义操作 |
+
+**响应 (200 OK)**:
+```json
+{
+  "operation_id": "550e8400-e29b-41d4-a716-446655440005",
+  "success": true,
+  "data": null,
+  "error": null,
+  "execution_time_ms": 150
+}
+```
+
+---
+
+### 暂停会话
+
+暂停指定的沙箱会话。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions/:id/pause`
+
+**Scope**: `sandbox:write`
+
+**响应 (200 OK)**:
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440001",
+  "success": true,
+  "status": "paused",
+  "message": "Session paused successfully"
+}
+```
+
+---
+
+### 恢复会话
+
+恢复已暂停的沙箱会话。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions/:id/resume`
+
+**Scope**: `sandbox:write`
+
+**响应 (200 OK)**:
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440001",
+  "success": true,
+  "status": "ready",
+  "message": "Session resumed successfully"
+}
+```
+
+---
+
+### 关闭会话
+
+关闭并清理指定的沙箱会话。
+
+**Endpoint**: `DELETE /api/v1/sandbox/sessions/:id`
+
+**Scope**: `sandbox:write`
+
+**响应 (200 OK)**:
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440001",
+  "success": true,
+  "status": "closed",
+  "message": "Session closed successfully"
+}
+```
+
+---
+
+### 截取屏幕截图
+
+截取沙箱会话的屏幕截图。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions/:id/screenshot`
+
+**Scope**: `sandbox:execute`
+
+**响应 (200 OK)**:
+```json
+{
+  "screenshot_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "format": "png",
+  "width": 1920,
+  "height": 1080
+}
+```
+
+---
+
+### 导出数据
+
+从沙箱会话导出数据。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions/:id/export`
+
+**Scope**: `sandbox:execute`
+
+**请求体**:
+```json
+{
+  "format": "json",
+  "selectors": [".data-table", ".portfolio-item"]
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `format` | string | 是 | 导出格式：`json`、`csv` 或 `html` |
+| `selectors` | array | 否 | CSS 选择器列表，指定要导出的数据区域 |
+
+**响应 (200 OK)**:
+```json
+{
+  "export_id": "550e8400-e29b-41d4-a716-446655440006",
+  "data_base64": "eyJkYXRhIjogW119...",
+  "format": "json",
+  "filename": "export_550e8400.json",
+  "size_bytes": 1024
+}
+```
+
+---
+
+### 获取沙箱统计
+
+获取沙箱池的统计信息和健康状态。
+
+**Endpoint**: `GET /api/v1/sandbox/stats`
+
+**Scope**: `sandbox:read`
+
+**响应 (200 OK)**:
+```json
+{
+  "pool_status": "healthy",
+  "active_sessions": 5,
+  "warm_instances": 3,
+  "healthy": true,
+  "error": null
 }
 ```
 
@@ -729,6 +1041,9 @@ API 实施速率限制以防止滥用：
 | `POST /api/v1/credentials` | 100/分钟 |
 | `GET /api/v1/credentials` | 300/分钟 |
 | `POST /api/v1/credentials/*/decrypt` | 60/分钟 |
+| `POST /api/v1/sandbox/sessions` | 60/分钟 |
+| `GET /api/v1/sandbox/sessions` | 120/分钟 |
+| `POST /api/v1/sandbox/sessions/*/execute` | 100/分钟 |
 | `GET /api/v1/audit/logs` | 60/分钟 |
 | `POST /api/v1/audit/export` | 10/分钟 |
 | `POST /api/v1/audit/verify` | 120/分钟 |
