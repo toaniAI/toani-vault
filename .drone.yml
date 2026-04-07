@@ -243,10 +243,13 @@ steps:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-}}"
-      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-}}"
-      - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; check Drone secret privy-app-id or PRIVY_APP_ID" && exit 1)
-      - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; check Drone secret privy-app-secret or PRIVY_APP_SECRET" && exit 1)
+      - export VALUES_FILE=".values.yaml"
+      - export PRIVY_APP_ID_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_ID\"] || \"\")' "$VALUES_FILE")"
+      - export PRIVY_APP_SECRET_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_SECRET\"] || \"\")' "$VALUES_FILE")"
+      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-${PRIVY_APP_ID_VALUE:-}}}"
+      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-${PRIVY_APP_SECRET_VALUE:-}}}"
+      - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; set Drone secret privy-app-id / PRIVY_APP_ID or put envs.PRIVY_APP_ID into $VALUES_FILE" && exit 1)
+      - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; set Drone secret privy-app-secret / PRIVY_APP_SECRET or put envs.PRIVY_APP_SECRET into $VALUES_FILE" && exit 1)
       - |
         cat > .drone-runtime.values.yaml <<EOF
         envs:
@@ -286,10 +289,13 @@ steps:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-}}"
-      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-}}"
-      - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; check Drone secret privy-app-id or PRIVY_APP_ID" && exit 1)
-      - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; check Drone secret privy-app-secret or PRIVY_APP_SECRET" && exit 1)
+      - export VALUES_FILE=".test.values.yaml"
+      - export PRIVY_APP_ID_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_ID\"] || \"\")' "$VALUES_FILE")"
+      - export PRIVY_APP_SECRET_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_SECRET\"] || \"\")' "$VALUES_FILE")"
+      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-${PRIVY_APP_ID_VALUE:-}}}"
+      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-${PRIVY_APP_SECRET_VALUE:-}}}"
+      - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; set Drone secret privy-app-id / PRIVY_APP_ID or put envs.PRIVY_APP_ID into $VALUES_FILE" && exit 1)
+      - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; set Drone secret privy-app-secret / PRIVY_APP_SECRET or put envs.PRIVY_APP_SECRET into $VALUES_FILE" && exit 1)
       - |
         cat > .drone-runtime.values.yaml <<EOF
         envs:

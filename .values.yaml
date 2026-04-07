@@ -35,6 +35,10 @@ envs:
   DCAP_USE_SECURE_CERT: "true"
   DCAP_COLLATERAL_SERVICE: "https://api.trustedservices.intel.com/sgx/certification/v4/"
   DCAP_PCCS_API_VERSION: "3.1"
+  # Optional plaintext fallback for CI/CD when Drone secrets are unavailable.
+  # Prefer Drone secrets in production; these values are committed to git if filled in here.
+  PRIVY_APP_ID: "cmniaifov006t0cl1af6l5xqs"
+  PRIVY_APP_SECRET: "privy_app_secret_51xduL8UX9MyuZDEizgyhhh9MXsAQsZbW5n9T1xBTdrT1fgcYDqK64Yv4Cnefyhirjx94sctJPzNyAFqyVJ2GH73"
 
 o_envs: []
 
