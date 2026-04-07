@@ -243,11 +243,28 @@ steps:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - export VALUES_FILE=".values.yaml"
-      - export PRIVY_APP_ID_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_ID\"] || \"\")' "$VALUES_FILE")"
-      - export PRIVY_APP_SECRET_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_SECRET\"] || \"\")' "$VALUES_FILE")"
-      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-${PRIVY_APP_ID_VALUE:-}}}"
-      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-${PRIVY_APP_SECRET_VALUE:-}}}"
+      - |
+        export VALUES_FILE=".values.yaml"
+        export PRIVY_APP_ID_VALUE="$(awk -F': ' '
+          /^envs:/ { in_envs=1; next }
+          in_envs && /^[^[:space:]]/ { in_envs=0 }
+          in_envs && $1 ~ /^[[:space:]]+PRIVY_APP_ID$/ {
+            gsub(/^"|"$/, "", $2)
+            print $2
+            exit
+          }
+        ' "$VALUES_FILE")"
+        export PRIVY_APP_SECRET_VALUE="$(awk -F': ' '
+          /^envs:/ { in_envs=1; next }
+          in_envs && /^[^[:space:]]/ { in_envs=0 }
+          in_envs && $1 ~ /^[[:space:]]+PRIVY_APP_SECRET$/ {
+            gsub(/^"|"$/, "", $2)
+            print $2
+            exit
+          }
+        ' "$VALUES_FILE")"
+        export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-${PRIVY_APP_ID_VALUE:-}}}"
+        export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-${PRIVY_APP_SECRET_VALUE:-}}}"
       - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; set Drone secret privy-app-id / PRIVY_APP_ID or put envs.PRIVY_APP_ID into $VALUES_FILE" && exit 1)
       - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; set Drone secret privy-app-secret / PRIVY_APP_SECRET or put envs.PRIVY_APP_SECRET into $VALUES_FILE" && exit 1)
       - |
@@ -289,11 +306,28 @@ steps:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - export VALUES_FILE=".test.values.yaml"
-      - export PRIVY_APP_ID_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_ID\"] || \"\")' "$VALUES_FILE")"
-      - export PRIVY_APP_SECRET_VALUE="$(ruby -e 'require \"yaml\"; data = YAML.load_file(ARGV[0]) || {}; puts ((data[\"envs\"] || {})[\"PRIVY_APP_SECRET\"] || \"\")' "$VALUES_FILE")"
-      - export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-${PRIVY_APP_ID_VALUE:-}}}"
-      - export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-${PRIVY_APP_SECRET_VALUE:-}}}"
+      - |
+        export VALUES_FILE=".test.values.yaml"
+        export PRIVY_APP_ID_VALUE="$(awk -F': ' '
+          /^envs:/ { in_envs=1; next }
+          in_envs && /^[^[:space:]]/ { in_envs=0 }
+          in_envs && $1 ~ /^[[:space:]]+PRIVY_APP_ID$/ {
+            gsub(/^"|"$/, "", $2)
+            print $2
+            exit
+          }
+        ' "$VALUES_FILE")"
+        export PRIVY_APP_SECRET_VALUE="$(awk -F': ' '
+          /^envs:/ { in_envs=1; next }
+          in_envs && /^[^[:space:]]/ { in_envs=0 }
+          in_envs && $1 ~ /^[[:space:]]+PRIVY_APP_SECRET$/ {
+            gsub(/^"|"$/, "", $2)
+            print $2
+            exit
+          }
+        ' "$VALUES_FILE")"
+        export PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-${PRIVY_APP_ID_VALUE:-}}}"
+        export PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-${PRIVY_APP_SECRET_VALUE:-}}}"
       - test -n "$PRIVY_APP_ID" || (echo "PRIVY_APP_ID is empty; set Drone secret privy-app-id / PRIVY_APP_ID or put envs.PRIVY_APP_ID into $VALUES_FILE" && exit 1)
       - test -n "$PRIVY_APP_SECRET" || (echo "PRIVY_APP_SECRET is empty; set Drone secret privy-app-secret / PRIVY_APP_SECRET or put envs.PRIVY_APP_SECRET into $VALUES_FILE" && exit 1)
       - |
