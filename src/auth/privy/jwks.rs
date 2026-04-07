@@ -8,10 +8,12 @@ use std::time::{Duration, Instant};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::auth::error::AuthError;
 use crate::config::PrivyConfig;
+
+const PRIVY_ALLOWED_ISSUERS: &[&str] = &["privy.io", "https://auth.privy.io"];
 
 /// JWKS 响应结构
 #[derive(Debug, Clone, Deserialize)]
@@ -161,7 +163,7 @@ impl JwksVerifier {
         // 5. 验证 Token
         let mut validation = Validation::new(self.algorithm_from_str(&jwk.alg)?);
         validation.set_audience(&[&self.config.app_id]);
-        validation.set_issuer(&["https://auth.privy.io"]);
+        validation.set_issuer(PRIVY_ALLOWED_ISSUERS);
 
         let token_data = decode::<PrivyClaims>(token, &decoding_key, &validation).map_err(|e| {
             match e.kind() {
@@ -255,11 +257,16 @@ impl JwksVerifier {
                 })
             }
             "EC" => {
-                // EC 密钥支持
-                warn!("EC keys not yet fully supported");
-                Err(AuthError::PrivyJwksError(
-                    "EC key type not yet supported".to_string(),
-                ))
+                let x = jwk.x.as_ref().ok_or_else(|| {
+                    AuthError::PrivyJwksError("EC key missing 'x' parameter".to_string())
+                })?;
+                let y = jwk.y.as_ref().ok_or_else(|| {
+                    AuthError::PrivyJwksError("EC key missing 'y' parameter".to_string())
+                })?;
+
+                DecodingKey::from_ec_components(x, y).map_err(|e| {
+                    AuthError::PrivyJwksError(format!("Failed to create EC decoding key: {e}"))
+                })
             }
             _ => Err(AuthError::PrivyJwksError(format!(
                 "Unsupported key type: {}",
@@ -318,7 +325,43 @@ mod tests {
             verifier.algorithm_from_str("RS512").unwrap(),
             Algorithm::RS512
         );
+        assert_eq!(
+            verifier.algorithm_from_str("ES256").unwrap(),
+            Algorithm::ES256
+        );
         assert!(verifier.algorithm_from_str("INVALID").is_err());
+    }
+
+    #[test]
+    fn test_allowed_issuers_include_privy_docs_value() {
+        assert!(PRIVY_ALLOWED_ISSUERS.contains(&"privy.io"));
+    }
+
+    #[test]
+    fn test_create_decoding_key_supports_ec_keys() {
+        let config = PrivyConfig {
+            app_id: "test".to_string(),
+            app_secret: "test".to_string(),
+            jwks_url: "https://test".to_string(),
+            api_url: "https://test".to_string(),
+            mock_enabled: true,
+        };
+
+        let verifier = JwksVerifier::new(config);
+        let jwk = JwkKey {
+            kid: "test-kid".to_string(),
+            kty: "EC".to_string(),
+            alg: "ES256".to_string(),
+            n: None,
+            e: None,
+            crv: Some("P-256".to_string()),
+            x: Some("f83OJ3D2xF4J1vSWT8gJtIhXCTITVEWilQoNqA9XyM4".to_string()),
+            y: Some("x_FEzRu9w3b0x8RJWb1x1o1t4bmPqhGV8eK3opgDdGQ".to_string()),
+        };
+
+        verifier
+            .create_decoding_key(&jwk)
+            .expect("EC key should be supported");
     }
 
     #[test]
