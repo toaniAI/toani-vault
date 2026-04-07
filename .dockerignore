@@ -114,12 +114,8 @@ SECURITY.md
 _bmad/
 _bmad-output/
 
-# SDKs (separate packages) - 注意：Dockerfile 需要这些目录
-cli/
-examples/
-sdk-rust/
-sdk-typescript/
-vault-service/
+# SDKs / workspace crates
+# Dockerfile 需要这些目录参与后端镜像构建，因此不要在 build context 中排除。
 
 # Target directory (Rust build output)
 target/
