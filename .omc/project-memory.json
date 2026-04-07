@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775133723621,
+  "lastScanned": 1775522198379,
   "projectRoot": "/Users/yvan/AIWorkspace/credbridge",
   "techStack": {
     "languages": [
@@ -57,7 +57,7 @@
       "path": "_bmad",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1775133723582,
+      "lastAccessed": 1775522198338,
       "keyFiles": [
         "config.yaml",
         "state.json"
@@ -67,7 +67,7 @@
       "path": "_bmad-output",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775133723584,
+      "lastAccessed": 1775522198351,
       "keyFiles": [
         "project-context.md"
       ]
@@ -76,14 +76,14 @@
       "path": "automations",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1775133723587,
+      "lastAccessed": 1775522198352,
       "keyFiles": []
     },
     "cli": {
       "path": "cli",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1775133723593,
+      "lastAccessed": 1775522198353,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -94,14 +94,14 @@
       "path": "config",
       "purpose": "Configuration files",
       "fileCount": 1,
-      "lastAccessed": 1775133723596,
+      "lastAccessed": 1775522198354,
       "keyFiles": []
     },
     "docker": {
       "path": "docker",
       "purpose": null,
       "fileCount": 6,
-      "lastAccessed": 1775133723596,
+      "lastAccessed": 1775522198355,
       "keyFiles": [
         "Dockerfile",
         "README.md",
@@ -113,7 +113,7 @@
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 2,
-      "lastAccessed": 1775133723596,
+      "lastAccessed": 1775522198356,
       "keyFiles": [
         "README.md"
       ]
@@ -122,21 +122,21 @@
       "path": "e2e-test",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775133723596,
+      "lastAccessed": 1775522198356,
       "keyFiles": []
     },
     "examples": {
       "path": "examples",
       "purpose": "Example code",
       "fileCount": 1,
-      "lastAccessed": 1775133723596,
+      "lastAccessed": 1775522198356,
       "keyFiles": []
     },
     "frontend": {
       "path": "frontend",
       "purpose": null,
       "fileCount": 27,
-      "lastAccessed": 1775133723598,
+      "lastAccessed": 1775522198356,
       "keyFiles": [
         "API_INTEGRATION.md",
         "Dockerfile",
@@ -148,19 +148,20 @@
     "migrations": {
       "path": "migrations",
       "purpose": "Database migrations",
-      "fileCount": 3,
-      "lastAccessed": 1775133723600,
+      "fileCount": 4,
+      "lastAccessed": 1775522198357,
       "keyFiles": [
         "20260312120000_add_credential_versioning.sql",
         "20260317000001_create_sandbox_tables.sql",
-        "20260402161446_create_privy_auth_tables.sql"
+        "20260402161446_create_privy_auth_tables.sql",
+        "20260403093000_add_sandbox_session_identity_columns.sql"
       ]
     },
     "scripts": {
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 5,
-      "lastAccessed": 1775133723602,
+      "lastAccessed": 1775522198357,
       "keyFiles": [
         "build-sgx-enclave.sh",
         "check_sgx_environment.sh",
@@ -173,7 +174,7 @@
       "path": "sdk-rust",
       "purpose": null,
       "fileCount": 5,
-      "lastAccessed": 1775133723602,
+      "lastAccessed": 1775522198357,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -185,7 +186,7 @@
       "path": "sdk-typescript",
       "purpose": null,
       "fileCount": 13,
-      "lastAccessed": 1775133723604,
+      "lastAccessed": 1775522198357,
       "keyFiles": [
         "EXAMPLES.md",
         "README.md",
@@ -198,7 +199,7 @@
       "path": "sgx-enclave",
       "purpose": null,
       "fileCount": 6,
-      "lastAccessed": 1775133723607,
+      "lastAccessed": 1775522198357,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -211,7 +212,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1775133723608,
+      "lastAccessed": 1775522198358,
       "keyFiles": [
         "config.rs",
         "lib.rs",
@@ -222,7 +223,7 @@
       "path": "target",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1775133723609,
+      "lastAccessed": 1775522198359,
       "keyFiles": [
         "CACHEDIR.TAG"
       ]
@@ -231,7 +232,7 @@
       "path": "tasks",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775133723609,
+      "lastAccessed": 1775522198359,
       "keyFiles": [
         "user-experience-gap-analysis.md"
       ]
@@ -240,7 +241,7 @@
       "path": "test-cases",
       "purpose": null,
       "fileCount": 7,
-      "lastAccessed": 1775133723610,
+      "lastAccessed": 1775522198360,
       "keyFiles": [
         "TC-001-sandbox-lifecycle.md",
         "TC-002-sandbox-isolation.md",
@@ -253,7 +254,7 @@
       "path": "testcases",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775133723610,
+      "lastAccessed": 1775522198360,
       "keyFiles": [
         "acceptance-queue.json"
       ]
@@ -262,7 +263,7 @@
       "path": "tests",
       "purpose": "Test files",
       "fileCount": 14,
-      "lastAccessed": 1775133723611,
+      "lastAccessed": 1775522198360,
       "keyFiles": [
         "cleanup_tests.rs",
         "connector_integration.rs",
@@ -275,7 +276,7 @@
       "path": "vault-service",
       "purpose": null,
       "fileCount": 5,
-      "lastAccessed": 1775133723611,
+      "lastAccessed": 1775522198360,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -287,7 +288,7 @@
       "path": "zentao",
       "purpose": null,
       "fileCount": 6,
-      "lastAccessed": 1775133723612,
+      "lastAccessed": 1775522198361,
       "keyFiles": [
         "18072.md",
         "18077.md",
@@ -298,7 +299,7 @@
       "path": "cli/src",
       "purpose": "Source code",
       "fileCount": 6,
-      "lastAccessed": 1775133723613,
+      "lastAccessed": 1775522198370,
       "keyFiles": [
         "cli.rs",
         "config.rs",
@@ -309,7 +310,7 @@
       "path": "cli/tests",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1775133723614,
+      "lastAccessed": 1775522198370,
       "keyFiles": [
         "integration_tests.rs"
       ]
@@ -318,7 +319,7 @@
       "path": "config/test",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1775133723614,
+      "lastAccessed": 1775522198370,
       "keyFiles": [
         "config.yaml"
       ]
@@ -327,14 +328,14 @@
       "path": "docker/config",
       "purpose": "Configuration files",
       "fileCount": 0,
-      "lastAccessed": 1775133723615,
+      "lastAccessed": 1775522198371,
       "keyFiles": []
     },
     "docker/scripts": {
       "path": "docker/scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 6,
-      "lastAccessed": 1775133723615,
+      "lastAccessed": 1775522198371,
       "keyFiles": [
         "healthcheck.sh",
         "init-immudb.sh",
@@ -345,7 +346,7 @@
       "path": "sdk-rust/docs",
       "purpose": "Documentation",
       "fileCount": 3,
-      "lastAccessed": 1775133723616,
+      "lastAccessed": 1775522198371,
       "keyFiles": [
         "API_REFERENCE.md",
         "EXAMPLES.md",
@@ -356,7 +357,7 @@
       "path": "sdk-rust/examples",
       "purpose": "Example code",
       "fileCount": 1,
-      "lastAccessed": 1775133723616,
+      "lastAccessed": 1775522198371,
       "keyFiles": [
         "test-sdk.rs"
       ]
@@ -365,7 +366,7 @@
       "path": "sdk-rust/src",
       "purpose": "Source code",
       "fileCount": 7,
-      "lastAccessed": 1775133723617,
+      "lastAccessed": 1775522198372,
       "keyFiles": [
         "audit.rs",
         "client.rs",
@@ -376,7 +377,7 @@
       "path": "sdk-typescript/dist",
       "purpose": "Distribution/build output",
       "fileCount": 4,
-      "lastAccessed": 1775133723617,
+      "lastAccessed": 1775522198372,
       "keyFiles": [
         "index.d.mts",
         "index.d.ts",
@@ -387,7 +388,7 @@
       "path": "sdk-typescript/docs",
       "purpose": "Documentation",
       "fileCount": 3,
-      "lastAccessed": 1775133723617,
+      "lastAccessed": 1775522198373,
       "keyFiles": [
         "API_REFERENCE.md",
         "EXAMPLES.md",
@@ -398,14 +399,14 @@
       "path": "sdk-typescript/node_modules",
       "purpose": "Dependencies",
       "fileCount": 1,
-      "lastAccessed": 1775133723618,
+      "lastAccessed": 1775522198375,
       "keyFiles": []
     },
     "sgx-enclave/src": {
       "path": "sgx-enclave/src",
       "purpose": "Source code",
       "fileCount": 2,
-      "lastAccessed": 1775133723619,
+      "lastAccessed": 1775522198375,
       "keyFiles": [
         "ecalls.rs",
         "lib.rs"
@@ -415,7 +416,7 @@
       "path": "src/api",
       "purpose": "API routes",
       "fileCount": 20,
-      "lastAccessed": 1775133723619,
+      "lastAccessed": 1775522198376,
       "keyFiles": [
         "attestation.rs",
         "audit.rs",
@@ -426,7 +427,7 @@
       "path": "src/bin",
       "purpose": "Executable scripts",
       "fileCount": 4,
-      "lastAccessed": 1775133723619,
+      "lastAccessed": 1775522198376,
       "keyFiles": [
         "db-verify.rs",
         "generate_test_token.rs",
@@ -437,7 +438,7 @@
       "path": "tests/api",
       "purpose": "API routes",
       "fileCount": 4,
-      "lastAccessed": 1775133723620,
+      "lastAccessed": 1775522198377,
       "keyFiles": [
         "attestation_tests.rs",
         "audit_tests.rs",
@@ -448,7 +449,7 @@
       "path": "vault-service/src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1775133723620,
+      "lastAccessed": 1775522198378,
       "keyFiles": [
         "alerting.rs",
         "config.rs",
@@ -459,7 +460,7 @@
       "path": "vault-service/tests",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1775133723620,
+      "lastAccessed": 1775522198378,
       "keyFiles": [
         "metrics_tests.rs"
       ]
@@ -468,7 +469,7 @@
       "path": "zentao/scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 2,
-      "lastAccessed": 1775133723621,
+      "lastAccessed": 1775522198379,
       "keyFiles": [
         "sync-zentao-bugs-from-md.sh",
         "update-my-bug-todo.sh"
@@ -478,8 +479,8 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 166,
-      "lastAccessed": 1775199601801,
+      "accessCount": 176,
+      "lastAccessed": 1775538486564,
       "type": "directory"
     },
     {
