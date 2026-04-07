@@ -541,24 +541,119 @@ async fn test_delete_credential_requires_write_or_admin() {
     assert_ne!(response.status(), StatusCode::FORBIDDEN);
 }
 
-/// 测试删除凭证缺少 scope
+/// 测试获取不存在的凭证应返回 404 而非 500
+/// 复现 BUG-18107: 查询凭证时，凭证ID不存在应该返回404，实际返回500
 #[tokio::test]
-async fn test_delete_credential_missing_scope() {
+async fn test_get_nonexistent_credential_returns_404() {
     let state = setup_test_state().await;
-    let token = create_test_token(
-        "tenant_123",
-        "user_456",
-        vec![TokenScope::CredentialRead], // 既没有 write 也没有 admin
-    );
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
 
     let app = test_router(state, token);
 
+    // 使用一个不存在的 UUID 查询凭证
     let request = Request::builder()
-        .method("DELETE")
-        .uri("/api/v1/credentials/test-id")
+        .method("GET")
+        .uri("/api/v1/credentials/00000000-0000-0000-0000-000000000000")
         .body(Body::empty())
         .unwrap();
 
     let response = app.oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 预期返回 404 Not Found，而非 500 Internal Server Error
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "BUG-18107: 凭证不存在时应返回 404，而不是 {:?}",
+        response.status()
+    );
+
+    // 验证错误响应体
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["error"], "not_found");
+    assert_eq!(body_json["message"], "凭证不存在");
+}
+
+/// 测试解密过期凭证应返回 422 而非 500
+/// 复现 BUG-18105: 解密凭证，凭证已过期应该返回422，实际返回500
+#[tokio::test]
+async fn test_decrypt_expired_credential_returns_422() {
+    let state = setup_test_state().await;
+    let tenant_id = TenantId::new("tenant_123");
+    let user_id = UserId::new("user_456");
+
+    // 创建一个已过期的凭证（过期时间为60秒前）
+    let expired_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .saturating_sub(60);
+
+    let expired_entry = state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: tenant_id.clone(),
+                user_id: user_id.clone(),
+                service_id: ServiceId::new("expired_service"),
+                credential_type: vault_service::models::CredentialType::ApiKey,
+                expires_at: Some(expired_at),
+            },
+            EncryptedPayload::new(
+                constants::PROTOCOL_VERSION,
+                constants::ALGORITHM_AES_256_GCM,
+                constants::KDF_HKDF_SHA256,
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                vec![0u8; 16],
+                vec![0u8; 32],
+            ),
+        )
+        .expect("创建过期凭证失败");
+
+    // 使用 decrypt scope 的 token
+    let token = create_test_token(
+        "tenant_123",
+        "user_456",
+        vec![
+            TokenScope::CredentialRead,
+            TokenScope::CredentialWrite,
+            TokenScope::CredentialDecrypt,
+        ],
+    );
+
+    let app = test_router(state, token);
+
+    // 请求解密过期凭证
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/credentials/{}/decrypt",
+            expired_entry.credential_id.as_str()
+        ))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            r#"{"reason": "test decrypt expired credential"}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // BUG-18105: 过期凭证应返回 422 Unprocessable Entity，而非 500 Internal Server Error
+    assert_eq!(
+        response.status(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "BUG-18105: 过期凭证解密应返回 422，而不是 {:?}",
+        response.status()
+    );
+
+    // 验证错误响应体
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["error"], "credential_expired");
 }

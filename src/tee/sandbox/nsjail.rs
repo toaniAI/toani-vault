@@ -8,11 +8,13 @@ use crate::tee::sandbox::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use time::OffsetDateTime;
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+
+static CGROUP_FALLBACK_WARNED: Once = Once::new();
 
 /// nsjail 沙箱
 #[allow(dead_code)]
@@ -235,15 +237,32 @@ impl NsjailSandbox {
 
     async fn setup_cgroup(&mut self) -> Result<(), SandboxError> {
         let cgroup_config = &self.config.sandbox.security.cgroup;
+        if !cgroup_config.enabled {
+            debug!("cgroup limits disabled for sandbox {}", self.id);
+            return Ok(());
+        }
+
+        if cgroup_config.version == crate::tee::sandbox::config::CgroupVersion::V2
+            && !cgroup_config
+                .cgroup_root
+                .join("cgroup.controllers")
+                .exists()
+        {
+            return self.handle_cgroup_setup_failure("cgroup v2 controllers unavailable");
+        }
+
         let cgroup_path = cgroup_config
             .cgroup_root
             .join("credbridge")
             .join("sandbox")
             .join(self.id.to_string());
 
-        tokio::fs::create_dir_all(&cgroup_path)
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::create_dir_all(&cgroup_path).await {
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to create cgroup directory {}: {e}",
+                cgroup_path.display()
+            ));
+        }
 
         // 设置资源限制
         let limits = &self.config.sandbox.resource_limits;
@@ -252,24 +271,52 @@ impl NsjailSandbox {
         let cpu_max_path = cgroup_path.join("cpu.max");
         let cpu_quota = limits.cpu_percent * 1000; // Convert to microseconds
         let cpu_max = format!("{cpu_quota} 100000");
-        tokio::fs::write(&cpu_max_path, cpu_max)
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::write(&cpu_max_path, cpu_max).await {
+            let _ = tokio::fs::remove_dir_all(&cgroup_path).await;
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to write {}: {e}",
+                cpu_max_path.display()
+            ));
+        }
 
         // 内存限制
         let memory_max_path = cgroup_path.join("memory.max");
         let memory_limit = limits.memory_limit_mb * 1024 * 1024;
-        tokio::fs::write(&memory_max_path, memory_limit.to_string())
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::write(&memory_max_path, memory_limit.to_string()).await {
+            let _ = tokio::fs::remove_dir_all(&cgroup_path).await;
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to write {}: {e}",
+                memory_max_path.display()
+            ));
+        }
 
         // PIDs 限制
         let pids_max_path = cgroup_path.join("pids.max");
-        tokio::fs::write(&pids_max_path, limits.max_pids.to_string())
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::write(&pids_max_path, limits.max_pids.to_string()).await {
+            let _ = tokio::fs::remove_dir_all(&cgroup_path).await;
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to write {}: {e}",
+                pids_max_path.display()
+            ));
+        }
 
         self.cgroup_path = Some(cgroup_path);
+        Ok(())
+    }
+
+    fn handle_cgroup_setup_failure(&self, details: impl Into<String>) -> Result<(), SandboxError> {
+        let details = details.into();
+
+        if self.config.sandbox.security.cgroup.required {
+            return Err(SandboxError::Security(SecurityError::Cgroup(details)));
+        }
+
+        CGROUP_FALLBACK_WARNED.call_once(|| {
+            warn!(
+                "cgroup setup unavailable; continuing without cgroup resource controls. Set CREDBRIDGE_SANDBOX_CGROUP_REQUIRED=true to fail closed."
+            );
+        });
+        debug!("Skipping cgroup setup for sandbox {}: {}", self.id, details);
         Ok(())
     }
 
@@ -436,6 +483,41 @@ mod tests {
 
         assert_eq!(stats.pid, 1234);
         assert_eq!(stats.memory_usage_bytes, 1048576);
+    }
+
+    #[tokio::test]
+    async fn test_setup_cgroup_skips_when_disabled() {
+        let mut config = create_test_config();
+        config.sandbox.security.cgroup.enabled = false;
+
+        let mut sandbox = NsjailSandbox::new(config);
+        sandbox.setup_cgroup().await.unwrap();
+
+        assert!(sandbox.cgroup_path.is_none());
+    }
+
+    #[test]
+    fn test_optional_cgroup_failure_does_not_error() {
+        let sandbox = NsjailSandbox::new(create_test_config());
+        sandbox
+            .handle_cgroup_setup_failure("permission denied")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_required_cgroup_failure_returns_error() {
+        let mut config = create_test_config();
+        config.sandbox.security.cgroup.required = true;
+
+        let sandbox = NsjailSandbox::new(config);
+        let error = sandbox
+            .handle_cgroup_setup_failure("permission denied")
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            SandboxError::Security(SecurityError::Cgroup(_))
+        ));
     }
 
     #[tokio::test]

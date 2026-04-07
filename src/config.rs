@@ -30,8 +30,12 @@ const INTEL_PCS_BASE_URL_PROD: &str = "https://api.trustedservices.intel.com/sgx
 const INTEL_PCS_BASE_URL_TEST: &str = "https://api.trustedservices.intel.com/sgx/certification/v4";
 const DEFAULT_TEE_DEBUG_MODE: bool = false;
 
-const DEFAULT_PRIVY_JWKS_URL: &str = "https://auth.privy.io/api/v1/sessions/jwks.json";
 const DEFAULT_PRIVY_API_URL: &str = "https://auth.privy.io/api/v1";
+
+/// 构建默认 JWKS URL（基于 app_id）
+fn default_jwks_url(app_id: &str) -> String {
+    format!("https://auth.privy.io/api/v1/apps/{app_id}/jwks.json")
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
@@ -242,12 +246,14 @@ impl PrivyConfig {
 
         // Mock 模式下，允许缺失关键配置
         if mock_enabled {
+            let app_id = env::var(PRIVY_APP_ID_ENV).unwrap_or_else(|_| "mock-app-id".to_string());
+            let jwks_url =
+                env::var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|_| default_jwks_url(&app_id));
             return Ok(Self {
-                app_id: env::var(PRIVY_APP_ID_ENV).unwrap_or_else(|_| "mock-app-id".to_string()),
+                app_id,
                 app_secret: env::var(PRIVY_APP_SECRET_ENV)
                     .unwrap_or_else(|_| "mock-secret".to_string()),
-                jwks_url: env::var(PRIVY_JWKS_URL_ENV)
-                    .unwrap_or_else(|_| DEFAULT_PRIVY_JWKS_URL.to_string()),
+                jwks_url,
                 api_url: env::var(PRIVY_API_URL_ENV)
                     .unwrap_or_else(|_| DEFAULT_PRIVY_API_URL.to_string()),
                 mock_enabled,
@@ -267,8 +273,8 @@ impl PrivyConfig {
             ))
         })?;
 
-        let jwks_url =
-            env::var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|_| DEFAULT_PRIVY_JWKS_URL.to_string());
+        // JWKS URL 默认为基于 app_id 构建的 URL，可通过环境变量覆盖
+        let jwks_url = env::var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|_| default_jwks_url(&app_id));
 
         let api_url =
             env::var(PRIVY_API_URL_ENV).unwrap_or_else(|_| DEFAULT_PRIVY_API_URL.to_string());

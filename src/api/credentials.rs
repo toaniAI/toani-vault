@@ -362,6 +362,7 @@ impl IntoResponse for ApiError {
             "invalid_request" => StatusCode::BAD_REQUEST,
             "unauthorized" => StatusCode::UNAUTHORIZED,
             "forbidden" => StatusCode::FORBIDDEN,
+            "credential_expired" => StatusCode::UNPROCESSABLE_ENTITY,
             "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -718,6 +719,11 @@ pub async fn decrypt_credential_endpoint(
         .get_credential(&credential_id, &tenant_id, &user_id)
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
+
+    // 检查凭证是否已过期
+    if entry.is_expired() {
+        return Err(ApiError::new("credential_expired", "凭证已过期"));
+    }
 
     let tee_snapshot = tee_runtime_snapshot(&state).await;
     let plaintext_bytes = match decrypt_credential_in_tee(&state, &entry).await {
