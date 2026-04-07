@@ -4,6 +4,8 @@ ARG SGX_SDK_VERSION=2.28.100.1
 ARG SGX_SDK_URL=https://download.01.org/intel-sgx/sgx-linux/2.28/distro/ubuntu22.04-server/sgx_linux_x64_sdk_2.28.100.1.bin
 ARG RUST_IMAGE=rust:1.88.0-slim-bookworm
 ARG UBUNTU_IMAGE=ubuntu:22.04
+ARG BASE_BUILDER_IMAGE=builder-base
+ARG BASE_RUNTIME_IMAGE=runtime-base
 
 FROM ${UBUNTU_IMAGE} AS sgxsdk
 
@@ -78,7 +80,6 @@ RUN set -eux; \
       sgx-aesm-service; \
     rm -rf /var/lib/apt/lists/*
 
-ARG BASE_BUILDER_IMAGE=builder-base
 FROM ${BASE_BUILDER_IMAGE} AS builder
 
 WORKDIR /app
@@ -108,7 +109,6 @@ RUN set -eu; \
     rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware --bin vault-service
 
-ARG BASE_RUNTIME_IMAGE=runtime-base
 FROM ${BASE_RUNTIME_IMAGE}
 
 COPY --from=builder /app/target/release/vault-service /app/vault-service
