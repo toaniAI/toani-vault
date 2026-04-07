@@ -243,18 +243,26 @@ steps:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - >-
-        sh -lc 'PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-}}";
-        PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-}}";
-        cat > .drone-runtime.values.yaml <<EOF
-        envs:
-          PRIVY_JWKS_URL: "https://auth.privy.io/api/v1/sessions/jwks.json"
-          PRIVY_API_URL: "https://auth.privy.io/api/v1"
-          PRIVY_MOCK_ENABLED: "false"
-        EOF
-        if [ -n "$PRIVY_APP_ID" ]; then echo "  PRIVY_APP_ID: \"$PRIVY_APP_ID\"" >> .drone-runtime.values.yaml; fi;
-        if [ -n "$PRIVY_APP_SECRET" ]; then echo "  PRIVY_APP_SECRET: \"$PRIVY_APP_SECRET\"" >> .drone-runtime.values.yaml; fi;
-        cat .drone-runtime.values.yaml'
+      - |
+        sh -eu -c '
+          PRIVY_APP_ID="$${PRIVY_APP_ID_RAW:-$${PRIVY_APP_ID_ALT:-}}"
+          PRIVY_APP_SECRET="$${PRIVY_APP_SECRET_RAW:-$${PRIVY_APP_SECRET_ALT:-}}"
+
+          {
+            printf "%s\n" "envs:"
+            printf "%s\n" "  PRIVY_JWKS_URL: \"https://auth.privy.io/api/v1/sessions/jwks.json\""
+            printf "%s\n" "  PRIVY_API_URL: \"https://auth.privy.io/api/v1\""
+            printf "%s\n" "  PRIVY_MOCK_ENABLED: \"false\""
+
+            if [ -n "$$PRIVY_APP_ID" ]; then
+              printf "  PRIVY_APP_ID: \"%s\"\n" "$$PRIVY_APP_ID"
+            fi
+
+            if [ -n "$$PRIVY_APP_SECRET" ]; then
+              printf "  PRIVY_APP_SECRET: \"%s\"\n" "$$PRIVY_APP_SECRET"
+            fi
+          } > .drone-runtime.values.yaml
+        '
       - helm upgrade --install credbridge dn/go -f .values.yaml -f .drone-runtime.values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
     when:
@@ -285,18 +293,26 @@ steps:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
       - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - >-
-        sh -lc 'PRIVY_APP_ID="${PRIVY_APP_ID_RAW:-${PRIVY_APP_ID_ALT:-}}";
-        PRIVY_APP_SECRET="${PRIVY_APP_SECRET_RAW:-${PRIVY_APP_SECRET_ALT:-}}";
-        cat > .drone-runtime.values.yaml <<EOF
-        envs:
-          PRIVY_JWKS_URL: "https://auth.privy.io/api/v1/sessions/jwks.json"
-          PRIVY_API_URL: "https://auth.privy.io/api/v1"
-          PRIVY_MOCK_ENABLED: "false"
-        EOF
-        if [ -n "$PRIVY_APP_ID" ]; then echo "  PRIVY_APP_ID: \"$PRIVY_APP_ID\"" >> .drone-runtime.values.yaml; fi;
-        if [ -n "$PRIVY_APP_SECRET" ]; then echo "  PRIVY_APP_SECRET: \"$PRIVY_APP_SECRET\"" >> .drone-runtime.values.yaml; fi;
-        cat .drone-runtime.values.yaml'
+      - |
+        sh -eu -c '
+          PRIVY_APP_ID="$${PRIVY_APP_ID_RAW:-$${PRIVY_APP_ID_ALT:-}}"
+          PRIVY_APP_SECRET="$${PRIVY_APP_SECRET_RAW:-$${PRIVY_APP_SECRET_ALT:-}}"
+
+          {
+            printf "%s\n" "envs:"
+            printf "%s\n" "  PRIVY_JWKS_URL: \"https://auth.privy.io/api/v1/sessions/jwks.json\""
+            printf "%s\n" "  PRIVY_API_URL: \"https://auth.privy.io/api/v1\""
+            printf "%s\n" "  PRIVY_MOCK_ENABLED: \"false\""
+
+            if [ -n "$$PRIVY_APP_ID" ]; then
+              printf "  PRIVY_APP_ID: \"%s\"\n" "$$PRIVY_APP_ID"
+            fi
+
+            if [ -n "$$PRIVY_APP_SECRET" ]; then
+              printf "  PRIVY_APP_SECRET: \"%s\"\n" "$$PRIVY_APP_SECRET"
+            fi
+          } > .drone-runtime.values.yaml
+        '
       - helm upgrade --install credbridge dn/go -f .test.values.yaml -f .drone-runtime.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
     when:
