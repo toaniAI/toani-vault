@@ -58,6 +58,8 @@ pub enum ErrorCode {
     Forbidden,
     /// 资源不存在
     NotFound,
+    /// 凭证不存在
+    CredentialNotFound,
     /// 资源冲突
     Conflict,
     /// 请求过于频繁
@@ -82,6 +84,7 @@ impl ErrorCode {
             ErrorCode::Unauthorized => "unauthorized",
             ErrorCode::Forbidden => "forbidden",
             ErrorCode::NotFound => "not_found",
+            ErrorCode::CredentialNotFound => "credential_not_found",
             ErrorCode::Conflict => "conflict",
             ErrorCode::RateLimited => "rate_limited",
             ErrorCode::InternalError => "internal_error",
@@ -99,6 +102,7 @@ impl ErrorCode {
             ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
             ErrorCode::Forbidden => StatusCode::FORBIDDEN,
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
+            ErrorCode::CredentialNotFound => StatusCode::NOT_FOUND,
             ErrorCode::Conflict => StatusCode::CONFLICT,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             ErrorCode::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
@@ -246,6 +250,7 @@ impl ErrorCode {
             "unauthorized" => Some(ErrorCode::Unauthorized),
             "forbidden" => Some(ErrorCode::Forbidden),
             "not_found" => Some(ErrorCode::NotFound),
+            "credential_not_found" => Some(ErrorCode::CredentialNotFound),
             "conflict" => Some(ErrorCode::Conflict),
             "rate_limited" => Some(ErrorCode::RateLimited),
             "internal_error" => Some(ErrorCode::InternalError),
@@ -327,6 +332,10 @@ mod tests {
         assert_eq!(ErrorCode::Unauthorized.to_string(), "unauthorized");
         assert_eq!(ErrorCode::Forbidden.to_string(), "forbidden");
         assert_eq!(ErrorCode::NotFound.to_string(), "not_found");
+        assert_eq!(
+            ErrorCode::CredentialNotFound.to_string(),
+            "credential_not_found"
+        );
         assert_eq!(ErrorCode::InternalError.to_string(), "internal_error");
     }
 
@@ -343,6 +352,10 @@ mod tests {
         assert_eq!(ErrorCode::Forbidden.http_status(), StatusCode::FORBIDDEN);
         assert_eq!(ErrorCode::NotFound.http_status(), StatusCode::NOT_FOUND);
         assert_eq!(
+            ErrorCode::CredentialNotFound.http_status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
             ErrorCode::InternalError.http_status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
@@ -357,6 +370,10 @@ mod tests {
         assert_eq!(
             ErrorCode::from_string("unauthorized"),
             Some(ErrorCode::Unauthorized)
+        );
+        assert_eq!(
+            ErrorCode::from_string("credential_not_found"),
+            Some(ErrorCode::CredentialNotFound)
         );
         assert_eq!(ErrorCode::from_string("unknown"), None);
     }

@@ -550,6 +550,7 @@ async fn initialize_app_state(
     let sandbox_state = initialize_sandbox_state(
         config,
         database_pool.as_ref().map(|pool| pool.pool().clone()),
+        Some(credential_state.vault.clone()),
     )
     .await
     .map_err(|e| std::io::Error::other(format!("Sandbox API 初始化失败，服务启动终止: {e}")))?;
@@ -602,6 +603,7 @@ async fn build_credential_vault(
 async fn initialize_sandbox_state(
     config: &ServerConfig,
     database_pool: Option<sqlx::PgPool>,
+    vault: Option<Arc<CredentialVault>>,
 ) -> Result<SandboxState, Box<dyn std::error::Error>> {
     use vault_service::tee::sandbox::config::SandboxConfig;
 
@@ -613,7 +615,7 @@ async fn initialize_sandbox_state(
     }
 
     let config = SandboxConfig::from_env();
-    let state = SandboxState::new(config, database_pool)
+    let state = SandboxState::new(config, database_pool, vault)
         .await
         .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 

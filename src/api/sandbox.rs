@@ -23,6 +23,8 @@ use crate::tee::sandbox::{
     session::SandboxSession,
     types::{OperationRequest, OperationType, SessionId, SessionRequest},
 };
+use crate::vault::models::{CredentialId, TenantId, UserId, VaultError};
+use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
     extract::{Path, State, WebSocketUpgrade},
@@ -47,6 +49,8 @@ pub struct SandboxState {
     pub config: SandboxConfig,
     /// 持久化仓储
     pub repository: Option<Arc<dyn SandboxRepository>>,
+    /// 凭证 Vault（用于创建会话前凭证存在性校验）
+    pub vault: Option<Arc<CredentialVault>>,
 }
 
 impl SandboxState {
@@ -54,6 +58,7 @@ impl SandboxState {
     pub async fn new(
         config: SandboxConfig,
         database_pool: Option<PgPool>,
+        vault: Option<Arc<CredentialVault>>,
     ) -> Result<Self, SandboxError> {
         let repository: Option<Arc<dyn SandboxRepository>> = database_pool.map(|pool| {
             Arc::new(PostgresSandboxRepository::new(pool)) as Arc<dyn SandboxRepository>
@@ -73,6 +78,7 @@ impl SandboxState {
             pool,
             config,
             repository,
+            vault,
         })
     }
 
@@ -82,6 +88,7 @@ impl SandboxState {
             pool,
             config,
             repository: None,
+            vault: None,
         }
     }
 }
@@ -294,6 +301,12 @@ pub async fn create_session(
         "Creating sandbox session for tenant: {}, user: {}",
         token.tenant_id, token.user_id
     );
+
+    if let Err(error) =
+        ensure_credential_exists(state.vault.as_ref(), &token, request.credential_id)
+    {
+        return map_sandbox_error(error);
+    }
 
     // 构建会话请求
     let session_request = SessionRequest {
@@ -849,6 +862,31 @@ async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Respo
     check_scope(token, TokenScope::CredentialDecrypt).await
 }
 
+fn ensure_credential_exists(
+    vault: Option<&Arc<CredentialVault>>,
+    token: &ValidatedToken,
+    credential_id: Uuid,
+) -> Result<(), SandboxError> {
+    let vault = vault.ok_or_else(|| {
+        SandboxError::Config("sandbox credential validation requires credential vault".to_string())
+    })?;
+
+    let credential_id_model = CredentialId::from_string(credential_id.to_string())
+        .map_err(|error| SandboxError::Other(format!("invalid credential id: {error}")))?;
+    let tenant_id = TenantId::new(token.tenant_id.clone());
+    let user_id = UserId::new(token.user_id.clone());
+
+    match vault.get_credential_metadata(&credential_id_model, &tenant_id, &user_id) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) | Err(VaultError::TenantIsolationViolation { .. }) => Err(SandboxError::Session(
+            crate::tee::sandbox::error::SessionError::credential_not_found(credential_id),
+        )),
+        Err(error) => Err(SandboxError::Other(format!(
+            "credential existence check failed: {error}"
+        ))),
+    }
+}
+
 /// 解析 UUID
 fn parse_uuid(s: &str) -> Uuid {
     Uuid::parse_str(s).unwrap_or_else(|_| Uuid::new_v4())
@@ -889,6 +927,11 @@ fn map_sandbox_error(error: SandboxError) -> Response {
             crate::tee::sandbox::error::SessionError::NotFound { .. } => {
                 (ErrorCode::NotFound, e.to_string(), StatusCode::NOT_FOUND)
             }
+            crate::tee::sandbox::error::SessionError::CredentialNotFound { .. } => (
+                ErrorCode::CredentialNotFound,
+                e.to_string(),
+                StatusCode::NOT_FOUND,
+            ),
             crate::tee::sandbox::error::SessionError::Expired { .. } => (
                 ErrorCode::InvalidRequest,
                 e.to_string(),
@@ -975,10 +1018,24 @@ mod tests {
     use super::*;
     use crate::api::middleware::{TokenScope, tests::create_mock_token};
     use crate::tee::sandbox::{SessionId, repository::SandboxOperationRecord};
+    use crate::vault::models::{CreateCredentialRequest, EncryptedPayload, ServiceId};
+    use crate::vault::storage::CredentialVault;
     use axum::body::to_bytes;
     use chrono::Utc;
     use serde_json::Value;
+    use std::sync::Arc;
     use uuid::Uuid;
+
+    fn create_test_payload() -> EncryptedPayload {
+        EncryptedPayload::new(
+            2,
+            "AES-256-GCM",
+            "HKDF-SHA-256",
+            vec![0; 12],
+            vec![1; 16],
+            vec![2; 32],
+        )
+    }
 
     #[test]
     fn test_parse_operation_type() {
@@ -1084,5 +1141,46 @@ mod tests {
         check_create_session_scopes(&token)
             .await
             .expect("token with sandbox:write + credential:decrypt should pass");
+    }
+
+    #[test]
+    fn test_ensure_credential_exists_returns_credential_not_found() {
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+        let vault = Arc::new(CredentialVault::new_in_memory());
+
+        let error = ensure_credential_exists(Some(&vault), &token, Uuid::new_v4())
+            .expect_err("missing credential should return credential_not_found");
+
+        assert!(matches!(
+            error,
+            SandboxError::Session(
+                crate::tee::sandbox::error::SessionError::CredentialNotFound { .. }
+            )
+        ));
+    }
+
+    #[test]
+    fn test_ensure_credential_exists_accepts_existing_credential() {
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+        let vault = Arc::new(CredentialVault::new_in_memory());
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new("tenant_123"),
+                    user_id: UserId::new("user_456"),
+                    service_id: ServiceId::new("svc-1"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: None,
+                },
+                create_test_payload(),
+            )
+            .expect("should create test credential");
+
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        ensure_credential_exists(Some(&vault), &token, credential_id)
+            .expect("existing credential should pass");
     }
 }
