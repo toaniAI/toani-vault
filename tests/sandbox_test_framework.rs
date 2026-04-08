@@ -1,4 +1,8 @@
 //! 沙箱功能集成测试框架
+#![allow(clippy::crate_in_macro_def)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::new_without_default)]
+#![allow(clippy::uninlined_format_args)]
 //!
 //! 此模块提供沙箱功能测试的辅助工具、mock 服务和测试 fixture
 //!

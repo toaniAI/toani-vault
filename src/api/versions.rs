@@ -24,8 +24,7 @@ pub async fn get_version_history(
     Path(id): Path<String>,
 ) -> Result<Json<VersionHistory>, ApiError> {
     // 验证 Scope: credential:read
-    require_scope(TokenScope::CredentialRead)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -71,8 +70,7 @@ pub async fn get_version_detail(
     Path((id, version)): Path<(String, u32)>,
 ) -> Result<Json<VersionDetail>, ApiError> {
     // 验证 Scope: credential:read
-    require_scope(TokenScope::CredentialRead)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -116,8 +114,7 @@ pub async fn rollback_credential(
     Json(request): Json<RollbackRequest>,
 ) -> Result<Json<RollbackResponse>, ApiError> {
     // 验证 Scope: credential:write
-    require_scope(TokenScope::CredentialWrite)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;

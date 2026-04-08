@@ -8,7 +8,10 @@
 //! - DELETE /api/v1/credentials/:id - 删除凭证
 
 use crate::api::audit::AuditStorage;
-use crate::api::middleware::{TokenScope, ValidatedToken, require_any_scope, require_scope};
+use crate::api::i18n::I18nMetadata;
+use crate::api::middleware::{
+    AuthError, TokenScope, ValidatedToken, require_any_scope, require_scope,
+};
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
 use crate::models::{CredentialMetadata, CredentialType};
@@ -341,11 +344,16 @@ impl AuditLogger for StorageAuditLogger {
 
 /// API 错误响应
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::result_large_err)]
 pub struct ApiError {
     pub error: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub i18n: Option<I18nMetadata>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub locale: String,
 }
 
 impl ApiError {
@@ -354,12 +362,25 @@ impl ApiError {
             error: error.into(),
             message: message.into(),
             details: None,
+            i18n: None,
+            locale: String::new(),
         }
     }
 
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
         self
+    }
+
+    /// 从 AuthError 创建 ApiError，保留 error code、message、i18n 和 locale
+    pub fn from_auth_error(auth_error: AuthError) -> Self {
+        Self {
+            error: auth_error.error,
+            message: auth_error.message,
+            details: None,
+            i18n: auth_error.i18n,
+            locale: auth_error.locale,
+        }
     }
 }
 
@@ -370,6 +391,7 @@ impl IntoResponse for ApiError {
             "invalid_request" => StatusCode::BAD_REQUEST,
             "unauthorized" => StatusCode::UNAUTHORIZED,
             "forbidden" => StatusCode::FORBIDDEN,
+            "insufficient_scope" => StatusCode::FORBIDDEN,
             "credential_expired" => StatusCode::UNPROCESSABLE_ENTITY,
             "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
@@ -431,6 +453,7 @@ pub struct CreateCredentialResponse {
     pub expires_at: Option<String>,
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_expires_at(expires_at: Option<u64>) -> Result<(), ApiError> {
     let Some(expires_at) = expires_at else {
         return Ok(());
@@ -462,8 +485,7 @@ pub async fn create_credential(
         payload.map_err(|e| ApiError::new("invalid_request", format!("请求体解析失败: {e}")))?;
 
     // 验证 Scope: credential:write
-    require_scope(TokenScope::CredentialWrite)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 
     validate_expires_at(request.expires_at)?;
 
@@ -583,6 +605,7 @@ pub struct ListCredentialsQuery {
     pub only_valid: Option<bool>,
 }
 
+#[allow(clippy::result_large_err)]
 fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
     match value {
         "username_password" => Ok(CredentialType::UsernamePassword),
@@ -608,8 +631,7 @@ pub async fn list_credentials(
     Query(query): Query<ListCredentialsQuery>,
 ) -> Result<Json<ListCredentialsResponse>, ApiError> {
     // 验证 Scope: credential:read
-    require_scope(TokenScope::CredentialRead)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
     let tenant_id = TenantId::new(&token.tenant_id);
     let user_id = UserId::new(&token.user_id);
@@ -664,8 +686,7 @@ pub async fn get_credential(
     Path(id): Path<String>,
 ) -> Result<Json<GetCredentialResponse>, ApiError> {
     // 验证 Scope: credential:read
-    require_scope(TokenScope::CredentialRead)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -723,8 +744,7 @@ pub async fn decrypt_credential_endpoint(
     Json(_request): Json<DecryptCredentialRequest>,
 ) -> Result<Json<DecryptCredentialResponse>, ApiError> {
     // 验证 Scope: credential:decrypt
-    require_scope(TokenScope::CredentialDecrypt)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialDecrypt)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -853,7 +873,7 @@ pub async fn delete_credential(
 ) -> Result<Json<DeleteCredentialResponse>, ApiError> {
     // 验证 Scope: credential:write 或 admin
     require_any_scope(vec![TokenScope::CredentialWrite, TokenScope::Admin])(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+        .map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -913,8 +933,7 @@ pub async fn update_credential(
     Json(request): Json<UpdateCredentialApiRequest>,
 ) -> Result<Json<UpdateCredentialApiResponse>, ApiError> {
     // 验证 Scope: credential:write
-    require_scope(TokenScope::CredentialWrite)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
