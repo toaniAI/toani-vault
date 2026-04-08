@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS external_identities (
     provider_profile JSONB,
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    mfa_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    mfa_verified_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(provider, provider_subject)

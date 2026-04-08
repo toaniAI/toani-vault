@@ -480,20 +480,20 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 249,
-      "lastAccessed": 1775615669534,
+      "accessCount": 253,
+      "lastAccessed": 1775617166712,
       "type": "directory"
     },
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 92,
-      "lastAccessed": 1775613069672,
+      "accessCount": 119,
+      "lastAccessed": 1775618400101,
       "type": "file"
     },
     {
       "path": "frontend/src/shared/i18n/messages.ts",
-      "accessCount": 46,
-      "lastAccessed": 1775615759186,
+      "accessCount": 47,
+      "lastAccessed": 1775617190176,
       "type": "directory"
     },
     {
@@ -510,8 +510,8 @@
     },
     {
       "path": "src/models/mod.rs",
-      "accessCount": 17,
-      "lastAccessed": 1775612501765,
+      "accessCount": 18,
+      "lastAccessed": 1775617166648,
       "type": "file"
     },
     {
