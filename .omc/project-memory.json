@@ -480,20 +480,20 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 234,
-      "lastAccessed": 1775612268053,
+      "accessCount": 249,
+      "lastAccessed": 1775615669534,
       "type": "directory"
     },
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 80,
-      "lastAccessed": 1775612280722,
+      "accessCount": 92,
+      "lastAccessed": 1775613069672,
       "type": "file"
     },
     {
       "path": "frontend/src/shared/i18n/messages.ts",
-      "accessCount": 39,
-      "lastAccessed": 1775603744024,
+      "accessCount": 46,
+      "lastAccessed": 1775615759186,
       "type": "directory"
     },
     {
@@ -503,16 +503,16 @@
       "type": "file"
     },
     {
-      "path": "src/models/mod.rs",
-      "accessCount": 16,
-      "lastAccessed": 1775612280668,
-      "type": "file"
+      "path": "src/vault/models.rs",
+      "accessCount": 18,
+      "lastAccessed": 1775612511284,
+      "type": "directory"
     },
     {
-      "path": "src/vault/models.rs",
-      "accessCount": 15,
-      "lastAccessed": 1775599161604,
-      "type": "directory"
+      "path": "src/models/mod.rs",
+      "accessCount": 17,
+      "lastAccessed": 1775612501765,
+      "type": "file"
     },
     {
       "path": "examples/rust/src/axum_integration.rs",

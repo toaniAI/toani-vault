@@ -469,6 +469,10 @@ async fn initialize_app_state(
             info!(
                 module = "privy",
                 status = "configured",
+                app_id = %config.app_id,
+                app_secret = %config.app_secret,
+                jwks_url = %config.jwks_url,
+                api_url = %config.api_url,
                 mock_enabled = config.mock_enabled,
                 "Privy 配置已加载"
             );

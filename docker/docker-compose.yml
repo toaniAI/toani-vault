@@ -45,6 +45,13 @@ services:
       - VAULT_ADDR=http://vault:8200
       - VAULT_TOKEN=${VAULT_TOKEN:-credbridge-root-token}
 
+      # Privy 配置（显式注入，允许通过 .env 或宿主环境明文传入）
+      - PRIVY_APP_ID=${PRIVY_APP_ID:-}
+      - PRIVY_APP_SECRET=${PRIVY_APP_SECRET:-}
+      - PRIVY_JWKS_URL=${PRIVY_JWKS_URL:-}
+      - PRIVY_API_URL=${PRIVY_API_URL:-https://auth.privy.io/api/v1}
+      - PRIVY_MOCK_ENABLED=${PRIVY_MOCK_ENABLED:-false}
+
       # TEE 配置 (开发模式)
       - TEE_MODE=${TEE_MODE:-simulation}
       - TEE_DEBUG=true

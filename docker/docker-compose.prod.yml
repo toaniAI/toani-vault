@@ -46,6 +46,13 @@ services:
       - RUST_LOG=info
       - RUST_BACKTRACE=0
 
+      # Privy 配置（显式注入，允许通过 .env 或宿主环境明文传入）
+      - PRIVY_APP_ID=${PRIVY_APP_ID:-}
+      - PRIVY_APP_SECRET=${PRIVY_APP_SECRET:-}
+      - PRIVY_JWKS_URL=${PRIVY_JWKS_URL:-}
+      - PRIVY_API_URL=${PRIVY_API_URL:-https://auth.privy.io/api/v1}
+      - PRIVY_MOCK_ENABLED=${PRIVY_MOCK_ENABLED:-false}
+
       # 数据库连接池配置
       - DATABASE_MAX_CONNECTIONS=20
       - DATABASE_MIN_CONNECTIONS=5

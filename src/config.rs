@@ -3,6 +3,8 @@
 use std::env;
 use std::fmt;
 
+use regex::Regex;
+
 pub const TEE_MODE_ENV: &str = "TEE_MODE";
 pub const TEE_DEBUG_ENV: &str = "TEE_DEBUG";
 pub const TEE_PCS_BASE_URL_ENV: &str = "TEE_PCS_BASE_URL";
@@ -35,6 +37,38 @@ const DEFAULT_PRIVY_API_URL: &str = "https://auth.privy.io/api/v1";
 /// 构建默认 JWKS URL（基于 app_id）
 fn default_jwks_url(app_id: &str) -> String {
     format!("https://auth.privy.io/api/v1/apps/{app_id}/jwks.json")
+}
+
+fn validate_privy_app_id(app_id: &str) -> Result<(), ConfigError> {
+    let app_id = app_id.trim();
+
+    if app_id.is_empty() {
+        return Err(ConfigError::InvalidValue(format!(
+            "{PRIVY_APP_ID_ENV} cannot be empty"
+        )));
+    }
+
+    let cuid_regex = Regex::new(r"^c[a-z0-9]{24}$").expect("valid privy app id regex");
+    if !cuid_regex.is_match(app_id) {
+        return Err(ConfigError::InvalidValue(format!(
+            "{PRIVY_APP_ID_ENV} must be a valid Privy app id (cuid), got `{app_id}`"
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_privy_url(env_var: &'static str, url: &str) -> Result<(), ConfigError> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| {
+        ConfigError::InvalidValue(format!("{env_var} must be an absolute URL: {error}"))
+    })?;
+
+    match parsed.scheme() {
+        "http" | "https" => Ok(()),
+        scheme => Err(ConfigError::InvalidValue(format!(
+            "{env_var} must use http or https, got `{scheme}`"
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,58 +273,70 @@ pub struct PrivyConfig {
 impl PrivyConfig {
     /// 从环境变量加载配置
     pub fn from_env() -> Result<Self, ConfigError> {
-        let mock_enabled = env::var(PRIVY_MOCK_ENABLED_ENV)
-            .ok()
+        Self::from_env_with(|name| env::var(name).ok())
+    }
+
+    pub fn from_env_with<F>(get_var: F) -> Result<Self, ConfigError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let mock_enabled = get_var(PRIVY_MOCK_ENABLED_ENV)
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
         // Mock 模式下，允许缺失关键配置
         if mock_enabled {
-            let app_id = env::var(PRIVY_APP_ID_ENV).unwrap_or_else(|_| "mock-app-id".to_string());
-            let jwks_url =
-                env::var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|_| default_jwks_url(&app_id));
+            let app_id = get_var(PRIVY_APP_ID_ENV).unwrap_or_else(|| "mock-app-id".to_string());
+            let jwks_url = get_var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|| default_jwks_url(&app_id));
+            let api_url =
+                get_var(PRIVY_API_URL_ENV).unwrap_or_else(|| DEFAULT_PRIVY_API_URL.to_string());
+
+            if app_id != "mock-app-id" {
+                validate_privy_app_id(&app_id)?;
+            }
+            validate_privy_url(PRIVY_JWKS_URL_ENV, &jwks_url)?;
+            validate_privy_url(PRIVY_API_URL_ENV, &api_url)?;
+
             return Ok(Self {
                 app_id,
-                app_secret: env::var(PRIVY_APP_SECRET_ENV)
-                    .unwrap_or_else(|_| "mock-secret".to_string()),
+                app_secret: get_var(PRIVY_APP_SECRET_ENV)
+                    .unwrap_or_else(|| "mock-secret".to_string()),
                 jwks_url,
-                api_url: env::var(PRIVY_API_URL_ENV)
-                    .unwrap_or_else(|_| DEFAULT_PRIVY_API_URL.to_string()),
+                api_url,
                 mock_enabled,
             });
         }
 
         // 非 Mock 模式下，关键配置必须存在
-        let app_id = env::var(PRIVY_APP_ID_ENV).map_err(|_| {
+        let app_id = get_var(PRIVY_APP_ID_ENV).ok_or_else(|| {
             ConfigError::MissingConfig(format!(
                 "{PRIVY_APP_ID_ENV} is required when {PRIVY_MOCK_ENABLED_ENV} is not set"
             ))
         })?;
 
-        let app_secret = env::var(PRIVY_APP_SECRET_ENV).map_err(|_| {
+        let app_secret = get_var(PRIVY_APP_SECRET_ENV).ok_or_else(|| {
             ConfigError::MissingConfig(format!(
                 "{PRIVY_APP_SECRET_ENV} is required when {PRIVY_MOCK_ENABLED_ENV} is not set"
             ))
         })?;
 
         // JWKS URL 默认为基于 app_id 构建的 URL，可通过环境变量覆盖
-        let jwks_url = env::var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|_| default_jwks_url(&app_id));
+        let jwks_url = get_var(PRIVY_JWKS_URL_ENV).unwrap_or_else(|| default_jwks_url(&app_id));
 
         let api_url =
-            env::var(PRIVY_API_URL_ENV).unwrap_or_else(|_| DEFAULT_PRIVY_API_URL.to_string());
+            get_var(PRIVY_API_URL_ENV).unwrap_or_else(|| DEFAULT_PRIVY_API_URL.to_string());
 
         // 验证配置值
-        if app_id.is_empty() {
-            return Err(ConfigError::InvalidValue(format!(
-                "{PRIVY_APP_ID_ENV} cannot be empty"
-            )));
-        }
+        validate_privy_app_id(&app_id)?;
 
         if app_secret.is_empty() {
             return Err(ConfigError::InvalidValue(format!(
                 "{PRIVY_APP_SECRET_ENV} cannot be empty"
             )));
         }
+
+        validate_privy_url(PRIVY_JWKS_URL_ENV, &jwks_url)?;
+        validate_privy_url(PRIVY_API_URL_ENV, &api_url)?;
 
         Ok(Self {
             app_id,
@@ -310,8 +356,10 @@ impl PrivyConfig {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigError, DEFAULT_SEALED_STORAGE_PATH, SEALED_STORAGE_PATH_ENV, TEE_DEBUG_ENV,
-        TEE_ENCLAVE_PATH_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig, TeeRuntimeMode,
+        ConfigError, DEFAULT_SEALED_STORAGE_PATH, PRIVY_API_URL_ENV, PRIVY_APP_ID_ENV,
+        PRIVY_APP_SECRET_ENV, PRIVY_JWKS_URL_ENV, PRIVY_MOCK_ENABLED_ENV, PrivyConfig,
+        SEALED_STORAGE_PATH_ENV, TEE_DEBUG_ENV, TEE_ENCLAVE_PATH_ENV, TEE_MODE_ENV,
+        TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig, TeeRuntimeMode,
     };
     use std::collections::HashMap;
 
@@ -393,5 +441,62 @@ mod tests {
         let error = TeeRuntimeConfig::from_env_with(|name| env.get(name).cloned()).unwrap_err();
 
         assert!(matches!(error, ConfigError::InvalidTeeMode(_)));
+    }
+
+    #[test]
+    fn privy_config_accepts_valid_real_credentials() {
+        let env = HashMap::from([
+            (PRIVY_APP_ID_ENV, "cmniaifov006t0cl1af6l5xqs".to_string()),
+            (PRIVY_APP_SECRET_ENV, "privy_app_secret_example".to_string()),
+        ]);
+
+        let config = PrivyConfig::from_env_with(|name| env.get(name).cloned()).unwrap();
+
+        assert_eq!(config.app_id, "cmniaifov006t0cl1af6l5xqs");
+        assert_eq!(
+            config.jwks_url,
+            "https://auth.privy.io/api/v1/apps/cmniaifov006t0cl1af6l5xqs/jwks.json"
+        );
+        assert_eq!(config.api_url, "https://auth.privy.io/api/v1");
+    }
+
+    #[test]
+    fn privy_config_rejects_invalid_app_id_format() {
+        let env = HashMap::from([
+            (PRIVY_APP_ID_ENV, "mock-app-id".to_string()),
+            (PRIVY_APP_SECRET_ENV, "privy_app_secret_example".to_string()),
+        ]);
+
+        let error = PrivyConfig::from_env_with(|name| env.get(name).cloned()).unwrap_err();
+
+        assert!(matches!(error, ConfigError::InvalidValue(_)));
+        assert!(error.to_string().contains(PRIVY_APP_ID_ENV));
+    }
+
+    #[test]
+    fn privy_config_rejects_invalid_jwks_url() {
+        let env = HashMap::from([
+            (PRIVY_APP_ID_ENV, "cmniaifov006t0cl1af6l5xqs".to_string()),
+            (PRIVY_APP_SECRET_ENV, "privy_app_secret_example".to_string()),
+            (PRIVY_JWKS_URL_ENV, "/jwks.json".to_string()),
+        ]);
+
+        let error = PrivyConfig::from_env_with(|name| env.get(name).cloned()).unwrap_err();
+
+        assert!(matches!(error, ConfigError::InvalidValue(_)));
+        assert!(error.to_string().contains(PRIVY_JWKS_URL_ENV));
+    }
+
+    #[test]
+    fn privy_config_rejects_invalid_api_url_in_mock_mode() {
+        let env = HashMap::from([
+            (PRIVY_MOCK_ENABLED_ENV, "true".to_string()),
+            (PRIVY_API_URL_ENV, "not-a-url".to_string()),
+        ]);
+
+        let error = PrivyConfig::from_env_with(|name| env.get(name).cloned()).unwrap_err();
+
+        assert!(matches!(error, ConfigError::InvalidValue(_)));
+        assert!(error.to_string().contains(PRIVY_API_URL_ENV));
     }
 }
