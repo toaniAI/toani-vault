@@ -370,6 +370,14 @@ pub trait TenantService: Send + Sync {
 
     /// 检查租户名称是否可用
     async fn is_name_available(&self, name: &str) -> Result<bool, TenantConfigError>;
+
+    /// 持久化或更新租户实体。
+    async fn upsert_tenant(&self, tenant: Tenant) -> Result<(), TenantConfigError> {
+        let _ = tenant;
+        Err(TenantConfigError::StorageError(
+            "Tenant upsert is not implemented".to_string(),
+        ))
+    }
 }
 
 /// 内存租户存储
@@ -513,6 +521,12 @@ impl TenantService for MemoryTenantStorage {
         Ok(!tenants
             .values()
             .any(|t| t.name == name && t.deleted_at.is_none()))
+    }
+
+    async fn upsert_tenant(&self, tenant: Tenant) -> Result<(), TenantConfigError> {
+        let mut tenants = self.tenants.write().await;
+        tenants.insert(tenant.id.to_string(), tenant);
+        Ok(())
     }
 }
 

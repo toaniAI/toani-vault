@@ -20,10 +20,10 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::State,
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, patch, post},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,9 +32,13 @@ use uuid::Uuid;
 
 use crate::api::audit::AuditStorage;
 use crate::api::i18n::{I18nParams, ResolvedLocale, set_content_language, translate};
-use crate::api::middleware::ValidatedToken;
+use crate::api::middleware::{TokenScope, ValidatedToken};
+use crate::api::response::{ApiErrorResponse, ApiSuccessResponse};
 use crate::audit::{AuditAction, AuditEntry, Outcome, RedactedParam};
-use crate::auth::{AuthError, AuthService, CreateUserRequest};
+use crate::auth::{
+    AuthError, AuthService, CreateUserRequest, ExternalIdentity, InviteeType, MembershipRole,
+    TenantInvitation, TenantMembership, User,
+};
 
 use super::token_blacklist::{TokenStore, create_token_store};
 
@@ -140,6 +144,8 @@ pub struct UserProfile {
     pub status: String,
     /// 是否已完成引导
     pub onboarding_completed: bool,
+    /// 默认租户 ID
+    pub default_tenant_id: Option<Uuid>,
     /// 外部身份列表
     pub identities: Vec<IdentityInfo>,
 }
@@ -207,8 +213,12 @@ pub struct CreateSessionResponse {
     pub user: UserProfile,
     /// 会话信息
     pub session: SessionInfo,
+    /// 全部活跃成员资格
+    pub memberships: Vec<MembershipInfo>,
+    /// 当前租户信息（可选）
+    pub current_tenant: Option<TenantInfo>,
     /// 当前成员资格（可选）
-    pub membership: Option<MembershipInfo>,
+    pub current_membership: Option<MembershipInfo>,
 }
 
 /// 获取当前用户响应
@@ -219,9 +229,132 @@ pub struct GetCurrentUserResponse {
     /// 当前租户信息（可选）
     pub current_tenant: Option<TenantInfo>,
     /// 当前成员资格（可选）
-    pub membership: Option<MembershipInfo>,
+    pub current_membership: Option<MembershipInfo>,
+    /// 全部活跃成员资格
+    pub memberships: Vec<MembershipInfo>,
     /// MFA 状态
     pub mfa_status: String,
+}
+
+/// 获取成员资格列表响应
+#[derive(Debug, Serialize)]
+pub struct MembershipsResponse {
+    /// 全部活跃成员资格
+    pub memberships: Vec<MembershipInfo>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendIdentityInfo {
+    pub provider: String,
+    pub subject: String,
+    pub wallet_address: Option<String>,
+    pub email: Option<String>,
+    pub is_verified: bool,
+    pub is_primary: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendUserProfile {
+    pub id: Uuid,
+    pub display_name: Option<String>,
+    pub status: String,
+    pub onboarding_completed: bool,
+    pub default_tenant_id: Option<Uuid>,
+    pub identities: Vec<FrontendIdentityInfo>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendMembershipInfo {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub status: String,
+    pub invited_by: Option<Uuid>,
+    pub joined_at: Option<String>,
+    pub source: String,
+    pub scopes: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendInvitationInfo {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub role: String,
+    pub invitee_type: String,
+    pub invitee_email: Option<String>,
+    pub invitee_wallet: Option<String>,
+    pub created_by: Uuid,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub consumed_by: Option<Uuid>,
+    pub status: String,
+    pub max_uses: i32,
+    pub use_count: i32,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendInvitationListItem {
+    pub invitation: FrontendInvitationInfo,
+    pub invite_token: String,
+    pub invite_url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendMemberListItem {
+    pub membership: FrontendMembershipInfo,
+    pub user: FrontendUserProfile,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendMemberListResponse {
+    pub members: Vec<FrontendMemberListItem>,
+    pub total: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateUserProfileRequest {
+    pub display_name: Option<String>,
+    pub default_tenant_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteOnboardingRequest {
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TenantScopedQuery {
+    pub tenant_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInvitationApiRequest {
+    pub tenant_id: Uuid,
+    pub role: MembershipRole,
+    pub invitee_type: InviteeType,
+    pub invitee_email: Option<String>,
+    pub invitee_wallet: Option<String>,
+    pub expires_in_hours: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMembershipRoleRequest {
+    pub role: MembershipRole,
 }
 
 /// 消费邀请请求
@@ -282,11 +415,6 @@ pub fn auth_routes() -> Router<AuthApiState> {
     Router::new()
         // 从 Privy Token 创建会话
         .route("/auth/session", post(create_session_handler))
-        // 消费邀请 Token
-        .route(
-            "/auth/invitations/consume",
-            post(consume_invitation_handler),
-        )
 }
 
 /// 创建受保护的认证路由（需要认证）
@@ -294,12 +422,41 @@ pub fn protected_auth_routes() -> Router<AuthApiState> {
     Router::new()
         // 获取当前用户信息
         .route("/auth/me", get(get_current_user_handler))
+        // 获取当前用户全部成员资格
+        .route("/auth/memberships", get(get_memberships_handler))
         // 注销（撤销会话）
         .route("/auth/logout", post(logout_handler))
         // 获取 MFA 状态
         .route("/auth/mfa-status", get(get_mfa_status_handler))
         // 同步 MFA 状态
         .route("/auth/mfa-status/sync", post(sync_mfa_status_handler))
+        // 当前用户资料
+        .route(
+            "/users/me",
+            get(get_current_user_self_handler)
+                .patch(update_current_user_handler)
+                .delete(delete_current_user_handler),
+        )
+        .route("/users/me/onboarding", post(complete_onboarding_handler))
+        .route("/members", get(list_members_handler))
+        .route(
+            "/members/:membership_id/role",
+            patch(update_member_role_handler),
+        )
+        .route("/members/:membership_id", delete(remove_member_handler))
+        .route(
+            "/invitations",
+            get(list_invitations_handler).post(create_invitation_handler),
+        )
+        .route(
+            "/invitations/:invitation_id/revoke",
+            post(revoke_invitation_handler),
+        )
+        .route("/invitations/consume", post(consume_invitation_handler))
+        .route(
+            "/auth/invitations/consume",
+            post(consume_invitation_handler),
+        )
 }
 
 // ============================================================================
@@ -371,6 +528,133 @@ fn auth_error_to_response(err: AuthError, locale: &ResolvedLocale) -> Response {
     );
 
     auth_error_response(status, error_code, locale, message_key, params)
+}
+
+fn map_user_profile(user: &User, identities: Vec<ExternalIdentity>) -> UserProfile {
+    UserProfile {
+        id: user.id,
+        display_name: user.display_name.clone(),
+        status: user.status.as_str().to_string(),
+        onboarding_completed: user.onboarding_completed,
+        default_tenant_id: user.default_tenant_id,
+        identities: identities
+            .into_iter()
+            .map(|i| IdentityInfo {
+                provider: i.provider.as_str().to_string(),
+                subject: i.provider_subject,
+                wallet_address: i.wallet_address,
+                email: i.email,
+                is_verified: i.is_verified,
+                is_primary: i.is_primary,
+            })
+            .collect(),
+    }
+}
+
+fn map_membership_info(membership: &TenantMembership) -> MembershipInfo {
+    MembershipInfo {
+        id: membership.id,
+        tenant_id: membership.tenant_id,
+        role: membership.role.as_str().to_string(),
+        status: membership.status.as_str().to_string(),
+        scopes: membership.scopes.clone(),
+        joined_at: membership.joined_at.map(|t| t.to_rfc3339()),
+    }
+}
+
+fn map_tenant_info(membership: &TenantMembership) -> TenantInfo {
+    TenantInfo {
+        id: membership.tenant_id,
+        name: None,
+    }
+}
+
+fn map_frontend_user_profile(
+    user: &User,
+    identities: Vec<ExternalIdentity>,
+) -> FrontendUserProfile {
+    FrontendUserProfile {
+        id: user.id,
+        display_name: user.display_name.clone(),
+        status: user.status.as_str().to_string(),
+        onboarding_completed: user.onboarding_completed,
+        default_tenant_id: user.default_tenant_id,
+        identities: identities
+            .into_iter()
+            .map(|identity| FrontendIdentityInfo {
+                provider: identity.provider.as_str().to_string(),
+                subject: identity.provider_subject,
+                wallet_address: identity.wallet_address,
+                email: identity.email,
+                is_verified: identity.is_verified,
+                is_primary: identity.is_primary,
+            })
+            .collect(),
+    }
+}
+
+fn map_frontend_membership_info(membership: &TenantMembership) -> FrontendMembershipInfo {
+    FrontendMembershipInfo {
+        id: membership.id,
+        tenant_id: membership.tenant_id,
+        user_id: membership.user_id,
+        role: membership.role.as_str().to_string(),
+        status: membership.status.as_str().to_string(),
+        invited_by: membership.invited_by,
+        joined_at: membership.joined_at.map(|value| value.to_rfc3339()),
+        source: membership.source.as_str().to_string(),
+        scopes: membership.scopes.clone(),
+        created_at: membership.created_at.to_rfc3339(),
+        updated_at: membership.updated_at.to_rfc3339(),
+    }
+}
+
+fn map_frontend_invitation_info(invitation: &TenantInvitation) -> FrontendInvitationInfo {
+    FrontendInvitationInfo {
+        id: invitation.id,
+        tenant_id: invitation.tenant_id,
+        role: invitation.role.as_str().to_string(),
+        invitee_type: invitation.invitee_type.as_str().to_string(),
+        invitee_email: invitation.invitee_email.clone(),
+        invitee_wallet: invitation.invitee_wallet.clone(),
+        created_by: invitation.created_by,
+        expires_at: invitation.expires_at.to_rfc3339(),
+        consumed_at: invitation.consumed_at.map(|value| value.to_rfc3339()),
+        consumed_by: invitation.consumed_by,
+        status: invitation.status.as_str().to_string(),
+        max_uses: invitation.max_uses,
+        use_count: invitation.use_count,
+        created_at: invitation.created_at.to_rfc3339(),
+    }
+}
+
+fn select_current_membership(
+    memberships: &[TenantMembership],
+    preferred_tenant_id: Option<Uuid>,
+    default_tenant_id: Option<Uuid>,
+) -> Option<&TenantMembership> {
+    preferred_tenant_id
+        .and_then(|tenant_id| memberships.iter().find(|m| m.tenant_id == tenant_id))
+        .or_else(|| {
+            default_tenant_id
+                .and_then(|tenant_id| memberships.iter().find(|m| m.tenant_id == tenant_id))
+        })
+        .or_else(|| memberships.first())
+}
+
+#[allow(clippy::result_large_err)]
+fn require_scopes(token: &ValidatedToken, scopes: &[TokenScope]) -> Result<(), ApiErrorResponse> {
+    if token.has_any_scope(scopes) {
+        return Ok(());
+    }
+
+    Err(ApiErrorResponse::forbidden("Insufficient permissions"))
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_token_user_id(token: &ValidatedToken) -> Result<Uuid, ApiErrorResponse> {
+    Uuid::parse_str(&token.user_id)
+        .map_err(|_| ApiErrorResponse::unauthorized("Invalid user id in session"))
 }
 
 // ============================================================================
@@ -445,7 +729,7 @@ pub async fn create_session_handler(
     };
 
     // 3. 处理邀请 Token（如果提供）
-    let membership = if let Some(invitation_token) = &request.invitation_token {
+    let invited_membership = if let Some(invitation_token) = &request.invitation_token {
         match state
             .auth_service
             .consume_invitation(invitation_token, user.id)
@@ -482,6 +766,19 @@ pub async fn create_session_handler(
         }
     };
 
+    let memberships = match state.auth_service.get_user_memberships(user.id).await {
+        Ok(items) => items,
+        Err(e) => return auth_error_to_response(e, &locale),
+    };
+
+    let current_membership = select_current_membership(
+        &memberships,
+        invited_membership
+            .as_ref()
+            .map(|membership| membership.tenant_id),
+        user.default_tenant_id,
+    );
+
     // 4. 创建会话
     let identity_id = identities.iter().find(|i| i.is_primary).map(|i| i.id);
     let create_request = CreateUserRequest {
@@ -506,29 +803,13 @@ pub async fn create_session_handler(
             Some(json!({
                 "session_id": session.id.to_string(),
                 "has_invitation": request.invitation_token.is_some(),
-                "membership_created": membership.is_some(),
+                "membership_created": invited_membership.is_some(),
             })),
         )
         .await;
 
     // 6. 构建响应
-    let user_profile = UserProfile {
-        id: user.id,
-        display_name: user.display_name,
-        status: user.status.as_str().to_string(),
-        onboarding_completed: user.onboarding_completed,
-        identities: identities
-            .into_iter()
-            .map(|i| IdentityInfo {
-                provider: i.provider.as_str().to_string(),
-                subject: i.provider_subject,
-                wallet_address: i.wallet_address,
-                email: i.email,
-                is_verified: i.is_verified,
-                is_primary: i.is_primary,
-            })
-            .collect(),
-    };
+    let user_profile = map_user_profile(&user, identities);
 
     let session_info = SessionInfo {
         id: session.id,
@@ -537,21 +818,18 @@ pub async fn create_session_handler(
         mfa_status: session.mfa_status.as_str().to_string(),
     };
 
-    let membership_info = membership.map(|m| MembershipInfo {
-        id: m.id,
-        tenant_id: m.tenant_id,
-        role: m.role.as_str().to_string(),
-        status: m.status.as_str().to_string(),
-        scopes: m.scopes,
-        joined_at: m.joined_at.map(|t| t.to_rfc3339()),
-    });
+    let memberships_info = memberships.iter().map(map_membership_info).collect();
+    let current_tenant = current_membership.map(map_tenant_info);
+    let current_membership_info = current_membership.map(map_membership_info);
 
     let mut response = (
         StatusCode::OK,
         Json(CreateSessionResponse {
             user: user_profile,
             session: session_info,
-            membership: membership_info,
+            memberships: memberships_info,
+            current_tenant,
+            current_membership: current_membership_info,
         }),
     )
         .into_response();
@@ -584,17 +862,15 @@ pub async fn get_current_user_handler(
         Err(e) => return auth_error_to_response(e, &locale),
     };
 
+    let memberships = match state.auth_service.get_user_memberships(user.id).await {
+        Ok(items) => items,
+        Err(e) => return auth_error_to_response(e, &locale),
+    };
+
     // 3. 获取当前租户的成员资格
     let tenant_id = Uuid::parse_str(&token.tenant_id).unwrap_or(Uuid::nil());
-    let membership = match state
-        .auth_service
-        .get_active_membership(user.id, tenant_id)
-        .await
-    {
-        Ok(Some(m)) => Some(m),
-        Ok(None) => None,
-        Err(_) => None,
-    };
+    let current_membership =
+        select_current_membership(&memberships, Some(tenant_id), user.default_tenant_id);
 
     // 4. 构建 MFA 状态（从会话信息获取，如果可用）
     let mfa_status = if let Some(_session_id_str) = token.metadata.get("session_id") {
@@ -606,45 +882,42 @@ pub async fn get_current_user_handler(
     };
 
     // 5. 构建响应
-    let user_profile = UserProfile {
-        id: user.id,
-        display_name: user.display_name,
-        status: user.status.as_str().to_string(),
-        onboarding_completed: user.onboarding_completed,
-        identities: identities
-            .into_iter()
-            .map(|i| IdentityInfo {
-                provider: i.provider.as_str().to_string(),
-                subject: i.provider_subject,
-                wallet_address: i.wallet_address,
-                email: i.email,
-                is_verified: i.is_verified,
-                is_primary: i.is_primary,
-            })
-            .collect(),
-    };
-
-    let current_tenant = membership.as_ref().map(|m| TenantInfo {
-        id: m.tenant_id,
-        name: None, // 需要从 TenantManager 获取
-    });
-
-    let membership_info = membership.map(|m| MembershipInfo {
-        id: m.id,
-        tenant_id: m.tenant_id,
-        role: m.role.as_str().to_string(),
-        status: m.status.as_str().to_string(),
-        scopes: m.scopes,
-        joined_at: m.joined_at.map(|t| t.to_rfc3339()),
-    });
+    let user_profile = map_user_profile(&user, identities);
+    let memberships_info = memberships.iter().map(map_membership_info).collect();
+    let current_tenant = current_membership.map(map_tenant_info);
+    let current_membership_info = current_membership.map(map_membership_info);
 
     let mut response = (
         StatusCode::OK,
         Json(GetCurrentUserResponse {
             user: user_profile,
             current_tenant,
-            membership: membership_info,
+            current_membership: current_membership_info,
+            memberships: memberships_info,
             mfa_status: mfa_status.to_string(),
+        }),
+    )
+        .into_response();
+    set_content_language(response.headers_mut(), locale.as_str());
+    response
+}
+
+/// 获取当前用户所有活跃成员资格
+pub async fn get_memberships_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    locale: ResolvedLocale,
+) -> Response {
+    let user_id = Uuid::parse_str(&token.user_id).unwrap_or(Uuid::nil());
+    let memberships = match state.auth_service.get_user_memberships(user_id).await {
+        Ok(items) => items,
+        Err(e) => return auth_error_to_response(e, &locale),
+    };
+
+    let mut response = (
+        StatusCode::OK,
+        Json(MembershipsResponse {
+            memberships: memberships.iter().map(map_membership_info).collect(),
         }),
     )
         .into_response();
@@ -871,6 +1144,339 @@ pub async fn sync_mfa_status_handler(
     resp
 }
 
+pub async fn get_current_user_self_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+) -> Result<ApiSuccessResponse<FrontendUserProfile>, ApiErrorResponse> {
+    let user_id = parse_token_user_id(&token)?;
+    let user = state
+        .auth_service
+        .get_user(user_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+    let identities = state
+        .auth_service
+        .get_user_identities(user_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(map_frontend_user_profile(
+        &user, identities,
+    )))
+}
+
+pub async fn update_current_user_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(request): Json<UpdateUserProfileRequest>,
+) -> Result<ApiSuccessResponse<serde_json::Value>, ApiErrorResponse> {
+    let user_id = parse_token_user_id(&token)?;
+    let user = state
+        .auth_service
+        .update_user(
+            user_id,
+            request.display_name,
+            request.default_tenant_id,
+            None,
+        )
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+    let identities = state
+        .auth_service
+        .get_user_identities(user_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(json!({
+        "user": map_frontend_user_profile(&user, identities)
+    })))
+}
+
+pub async fn delete_current_user_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+) -> Result<ApiSuccessResponse<serde_json::Value>, ApiErrorResponse> {
+    let user_id = parse_token_user_id(&token)?;
+    let deleted_user = state
+        .auth_service
+        .soft_delete_user(user_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(json!({
+        "userId": deleted_user.id,
+        "deletedAt": deleted_user.deleted_at.map(|value| value.to_rfc3339()),
+        "message": "User account deleted"
+    })))
+}
+
+pub async fn complete_onboarding_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(request): Json<CompleteOnboardingRequest>,
+) -> Result<ApiSuccessResponse<FrontendUserProfile>, ApiErrorResponse> {
+    let user_id = parse_token_user_id(&token)?;
+    let user = state
+        .auth_service
+        .update_user(user_id, request.display_name, None, Some(true))
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+    let identities = state
+        .auth_service
+        .get_user_identities(user_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(map_frontend_user_profile(
+        &user, identities,
+    )))
+}
+
+pub async fn list_members_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Query(query): Query<TenantScopedQuery>,
+) -> Result<ApiSuccessResponse<FrontendMemberListResponse>, ApiErrorResponse> {
+    require_scopes(
+        &token,
+        &[
+            TokenScope::MembersRead,
+            TokenScope::MembersWrite,
+            TokenScope::Admin,
+        ],
+    )?;
+
+    if token.membership_id.is_some() && token.tenant_id != query.tenant_id.to_string() {
+        return Err(ApiErrorResponse::forbidden(
+            "Cross-tenant member access is not allowed",
+        ));
+    }
+
+    let memberships = state
+        .auth_service
+        .get_tenant_memberships(query.tenant_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    let mut members = Vec::with_capacity(memberships.len());
+    for membership in memberships {
+        let user = state
+            .auth_service
+            .get_user(membership.user_id)
+            .await
+            .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+        let identities = state
+            .auth_service
+            .get_user_identities(membership.user_id)
+            .await
+            .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+        members.push(FrontendMemberListItem {
+            membership: map_frontend_membership_info(&membership),
+            user: map_frontend_user_profile(&user, identities),
+        });
+    }
+
+    Ok(ApiSuccessResponse::new(FrontendMemberListResponse {
+        total: members.len(),
+        members,
+    }))
+}
+
+pub async fn update_member_role_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(membership_id): Path<Uuid>,
+    Json(request): Json<UpdateMembershipRoleRequest>,
+) -> Result<ApiSuccessResponse<FrontendMembershipInfo>, ApiErrorResponse> {
+    require_scopes(
+        &token,
+        &[
+            TokenScope::MembersWrite,
+            TokenScope::UsersManage,
+            TokenScope::Admin,
+        ],
+    )?;
+
+    let current = state
+        .auth_service
+        .get_membership_by_id(membership_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Membership not found"))?;
+
+    if token.membership_id.is_some() && token.tenant_id != current.tenant_id.to_string() {
+        return Err(ApiErrorResponse::forbidden(
+            "Cross-tenant member updates are not allowed",
+        ));
+    }
+
+    let updated = state
+        .auth_service
+        .update_membership_role(membership_id, request.role)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(map_frontend_membership_info(
+        &updated,
+    )))
+}
+
+pub async fn remove_member_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(membership_id): Path<Uuid>,
+) -> Result<StatusCode, ApiErrorResponse> {
+    require_scopes(
+        &token,
+        &[
+            TokenScope::MembersWrite,
+            TokenScope::UsersManage,
+            TokenScope::Admin,
+        ],
+    )?;
+
+    let membership = state
+        .auth_service
+        .get_membership_by_id(membership_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Membership not found"))?;
+
+    if token.membership_id.is_some() && token.tenant_id != membership.tenant_id.to_string() {
+        return Err(ApiErrorResponse::forbidden(
+            "Cross-tenant member removal is not allowed",
+        ));
+    }
+
+    state
+        .auth_service
+        .remove_membership(membership_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn list_invitations_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Query(query): Query<TenantScopedQuery>,
+) -> Result<ApiSuccessResponse<Vec<FrontendInvitationListItem>>, ApiErrorResponse> {
+    require_scopes(
+        &token,
+        &[
+            TokenScope::InvitationsRead,
+            TokenScope::MembersInvite,
+            TokenScope::Admin,
+        ],
+    )?;
+
+    if token.membership_id.is_some() && token.tenant_id != query.tenant_id.to_string() {
+        return Err(ApiErrorResponse::forbidden(
+            "Cross-tenant invitation access is not allowed",
+        ));
+    }
+
+    let invitations = state
+        .auth_service
+        .get_tenant_invitations(query.tenant_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    let response = invitations
+        .into_iter()
+        .map(|invitation| FrontendInvitationListItem {
+            invitation: map_frontend_invitation_info(&invitation),
+            invite_token: String::new(),
+            invite_url: String::new(),
+        })
+        .collect();
+
+    Ok(ApiSuccessResponse::new(response))
+}
+
+pub async fn create_invitation_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(request): Json<CreateInvitationApiRequest>,
+) -> Result<ApiSuccessResponse<FrontendInvitationListItem>, ApiErrorResponse> {
+    require_scopes(
+        &token,
+        &[
+            TokenScope::MembersInvite,
+            TokenScope::InvitationsWrite,
+            TokenScope::Admin,
+        ],
+    )?;
+
+    if token.membership_id.is_some() && token.tenant_id != request.tenant_id.to_string() {
+        return Err(ApiErrorResponse::forbidden(
+            "Cross-tenant invitation creation is not allowed",
+        ));
+    }
+
+    let user_id = parse_token_user_id(&token)?;
+    let (invitation, invite_token) = state
+        .auth_service
+        .create_tenant_invitation(
+            request.tenant_id,
+            request.role,
+            request.invitee_type,
+            request.invitee_email,
+            request.invitee_wallet,
+            user_id,
+            request.expires_in_hours.unwrap_or(24),
+        )
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(FrontendInvitationListItem {
+        invite_url: format!("/accept-invitation?token={invite_token}"),
+        invite_token,
+        invitation: map_frontend_invitation_info(&invitation),
+    }))
+}
+
+pub async fn revoke_invitation_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(invitation_id): Path<Uuid>,
+) -> Result<ApiSuccessResponse<serde_json::Value>, ApiErrorResponse> {
+    require_scopes(
+        &token,
+        &[
+            TokenScope::InvitationsWrite,
+            TokenScope::MembersInvite,
+            TokenScope::Admin,
+        ],
+    )?;
+
+    let invitation = state
+        .auth_service
+        .get_invitation(invitation_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Invitation not found"))?;
+
+    if token.membership_id.is_some() && token.tenant_id != invitation.tenant_id.to_string() {
+        return Err(ApiErrorResponse::forbidden(
+            "Cross-tenant invitation revoke is not allowed",
+        ));
+    }
+
+    let revoked = state
+        .auth_service
+        .revoke_invitation(invitation_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(ApiSuccessResponse::new(json!({
+        "invitationId": revoked.id,
+        "status": revoked.status.as_str(),
+    })))
+}
+
 // ============================================================================
 // 测试
 // ============================================================================
@@ -886,6 +1492,7 @@ mod tests {
             display_name: Some("Test User".to_string()),
             status: "active".to_string(),
             onboarding_completed: false,
+            default_tenant_id: Some(Uuid::nil()),
             identities: vec![IdentityInfo {
                 provider: "privy".to_string(),
                 subject: "did:privy:test".to_string(),
@@ -899,6 +1506,7 @@ mod tests {
         let json = serde_json::to_string(&profile).unwrap();
         assert!(json.contains("Test User"));
         assert!(json.contains("privy"));
+        assert!(json.contains("default_tenant_id"));
     }
 
     #[test]
@@ -929,5 +1537,99 @@ mod tests {
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("member"));
         assert!(json.contains("credential:read"));
+    }
+
+    #[test]
+    fn test_frontend_user_profile_serialization_uses_camel_case() {
+        let profile = FrontendUserProfile {
+            id: Uuid::nil(),
+            display_name: Some("Frontend User".to_string()),
+            status: "active".to_string(),
+            onboarding_completed: true,
+            default_tenant_id: Some(Uuid::nil()),
+            identities: vec![FrontendIdentityInfo {
+                provider: "privy".to_string(),
+                subject: "did:privy:test".to_string(),
+                wallet_address: Some("0x1234".to_string()),
+                email: Some("user@example.com".to_string()),
+                is_verified: true,
+                is_primary: true,
+            }],
+        };
+
+        let json = serde_json::to_string(&profile).unwrap();
+        assert!(json.contains("displayName"));
+        assert!(json.contains("onboardingCompleted"));
+        assert!(json.contains("defaultTenantId"));
+        assert!(json.contains("walletAddress"));
+    }
+
+    #[test]
+    fn test_frontend_membership_serialization_uses_camel_case() {
+        let membership = FrontendMembershipInfo {
+            id: Uuid::nil(),
+            tenant_id: Uuid::nil(),
+            user_id: Uuid::nil(),
+            role: "owner".to_string(),
+            status: "active".to_string(),
+            invited_by: None,
+            joined_at: Some("2024-01-01T00:00:00Z".to_string()),
+            source: "owner_creation".to_string(),
+            scopes: vec!["members:read".to_string()],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        let json = serde_json::to_string(&membership).unwrap();
+        assert!(json.contains("tenantId"));
+        assert!(json.contains("userId"));
+        assert!(json.contains("joinedAt"));
+        assert!(json.contains("createdAt"));
+    }
+
+    fn make_membership(tenant_id: Uuid) -> TenantMembership {
+        let user_id = Uuid::now_v7();
+        let mut membership = TenantMembership::new_owner(tenant_id, user_id);
+        membership.scopes = vec!["tenant:read".to_string()];
+        membership
+    }
+
+    #[test]
+    fn test_select_current_membership_prefers_preferred_tenant() {
+        let preferred_tenant_id = Uuid::now_v7();
+        let default_tenant_id = Uuid::now_v7();
+        let memberships = vec![
+            make_membership(default_tenant_id),
+            make_membership(preferred_tenant_id),
+        ];
+
+        let selected = select_current_membership(
+            &memberships,
+            Some(preferred_tenant_id),
+            Some(default_tenant_id),
+        )
+        .expect("membership should be selected");
+
+        assert_eq!(selected.tenant_id, preferred_tenant_id);
+    }
+
+    #[test]
+    fn test_select_current_membership_falls_back_to_default_then_first() {
+        let first_tenant_id = Uuid::now_v7();
+        let default_tenant_id = Uuid::now_v7();
+        let memberships = vec![
+            make_membership(first_tenant_id),
+            make_membership(default_tenant_id),
+        ];
+
+        let selected_from_default =
+            select_current_membership(&memberships, Some(Uuid::now_v7()), Some(default_tenant_id))
+                .expect("default membership should be selected");
+        assert_eq!(selected_from_default.tenant_id, default_tenant_id);
+
+        let selected_from_first =
+            select_current_membership(&memberships, Some(Uuid::now_v7()), Some(Uuid::now_v7()))
+                .expect("first membership should be selected");
+        assert_eq!(selected_from_first.tenant_id, first_tenant_id);
     }
 }

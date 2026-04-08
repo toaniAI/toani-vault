@@ -116,6 +116,33 @@ pub trait AuthService: Send + Sync {
     /// 根据 ID 获取用户信息。
     async fn get_user(&self, user_id: Uuid) -> Result<User, AuthError>;
 
+    /// 更新用户资料。
+    async fn update_user(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        default_tenant_id: Option<Uuid>,
+        onboarding_completed: Option<bool>,
+    ) -> Result<User, AuthError> {
+        let _ = (
+            user_id,
+            display_name,
+            default_tenant_id,
+            onboarding_completed,
+        );
+        Err(AuthError::InternalError(
+            "update_user is not implemented".to_string(),
+        ))
+    }
+
+    /// 软删除用户。
+    async fn soft_delete_user(&self, user_id: Uuid) -> Result<User, AuthError> {
+        let _ = user_id;
+        Err(AuthError::InternalError(
+            "soft_delete_user is not implemented".to_string(),
+        ))
+    }
+
     /// 获取用户的所有外部身份
     ///
     /// 查询用户绑定的所有外部身份。
@@ -126,6 +153,101 @@ pub trait AuthService: Send + Sync {
     /// 查询用户的所有租户成员资格。
     async fn get_user_memberships(&self, user_id: Uuid)
     -> Result<Vec<TenantMembership>, AuthError>;
+
+    /// 获取租户成员列表。
+    async fn get_tenant_memberships(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantMembership>, AuthError> {
+        let _ = tenant_id;
+        Err(AuthError::InternalError(
+            "get_tenant_memberships is not implemented".to_string(),
+        ))
+    }
+
+    /// 获取租户邀请列表。
+    async fn get_tenant_invitations(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantInvitation>, AuthError> {
+        let _ = tenant_id;
+        Err(AuthError::InternalError(
+            "get_tenant_invitations is not implemented".to_string(),
+        ))
+    }
+
+    /// 根据成员资格 ID 查询成员资格。
+    async fn get_membership_by_id(
+        &self,
+        membership_id: Uuid,
+    ) -> Result<Option<TenantMembership>, AuthError> {
+        let _ = membership_id;
+        Err(AuthError::InternalError(
+            "get_membership_by_id is not implemented".to_string(),
+        ))
+    }
+
+    /// 更新成员角色。
+    async fn update_membership_role(
+        &self,
+        membership_id: Uuid,
+        role: MembershipRole,
+    ) -> Result<TenantMembership, AuthError> {
+        let _ = (membership_id, role);
+        Err(AuthError::InternalError(
+            "update_membership_role is not implemented".to_string(),
+        ))
+    }
+
+    /// 移除成员资格。
+    async fn remove_membership(&self, membership_id: Uuid) -> Result<(), AuthError> {
+        let _ = membership_id;
+        Err(AuthError::InternalError(
+            "remove_membership is not implemented".to_string(),
+        ))
+    }
+
+    /// 根据邀请 ID 查询邀请。
+    async fn get_invitation(
+        &self,
+        invitation_id: Uuid,
+    ) -> Result<Option<TenantInvitation>, AuthError> {
+        let _ = invitation_id;
+        Err(AuthError::InternalError(
+            "get_invitation is not implemented".to_string(),
+        ))
+    }
+
+    /// 根据原始邀请 token 查询邀请。
+    async fn get_invitation_by_token(
+        &self,
+        invitation_token: &str,
+    ) -> Result<Option<TenantInvitation>, AuthError> {
+        let _ = invitation_token;
+        Err(AuthError::InternalError(
+            "get_invitation_by_token is not implemented".to_string(),
+        ))
+    }
+
+    /// 撤销邀请。
+    async fn revoke_invitation(&self, invitation_id: Uuid) -> Result<TenantInvitation, AuthError> {
+        let _ = invitation_id;
+        Err(AuthError::InternalError(
+            "revoke_invitation is not implemented".to_string(),
+        ))
+    }
+
+    /// 为租户创建 owner membership。
+    async fn create_owner_membership(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<TenantMembership, AuthError> {
+        let _ = (tenant_id, user_id);
+        Err(AuthError::InternalError(
+            "create_owner_membership is not implemented".to_string(),
+        ))
+    }
 
     /// 同步 MFA 状态
     ///
@@ -468,7 +590,9 @@ impl AuthServiceImpl {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id, tenant_id, user_id, role, status, invited_by, joined_at,
-                      source, scopes, created_at, updated_at
+                      source,
+                      ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      created_at, updated_at
             "#,
         )
         .bind(membership.id)
@@ -787,13 +911,43 @@ impl AuthServiceImpl {
         let rows = sqlx::query_as::<_, TenantMembership>(
             r#"
             SELECT id, tenant_id, user_id, role, status, invited_by, joined_at,
-                   source, scopes, created_at, updated_at
+                   source,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   created_at, updated_at
             FROM tenant_memberships
             WHERE user_id = $1
             ORDER BY created_at DESC
             "#,
         )
         .bind(&user_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
+    }
+
+    async fn query_tenant_memberships(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantMembership>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let rows = sqlx::query_as::<_, TenantMembership>(
+            r#"
+            SELECT id, tenant_id, user_id, role, status, invited_by, joined_at,
+                   source,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   created_at, updated_at
+            FROM tenant_memberships
+            WHERE tenant_id = $1
+            ORDER BY created_at ASC
+            "#,
+        )
+        .bind(&tenant_id)
         .fetch_all(pool)
         .await
         .map_err(AuthError::DatabaseError)?;
@@ -815,13 +969,42 @@ impl AuthServiceImpl {
         let row = sqlx::query_as::<_, TenantMembership>(
             r#"
             SELECT id, tenant_id, user_id, role, status, invited_by, joined_at,
-                   source, scopes, created_at, updated_at
+                   source,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   created_at, updated_at
             FROM tenant_memberships
             WHERE user_id = $1 AND tenant_id = $2 AND status = 'active'
             "#,
         )
         .bind(&user_id)
         .bind(&tenant_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn query_membership_by_id(
+        &self,
+        membership_id: Uuid,
+    ) -> Result<Option<TenantMembership>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantMembership>(
+            r#"
+            SELECT id, tenant_id, user_id, role, status, invited_by, joined_at,
+                   source,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   created_at, updated_at
+            FROM tenant_memberships
+            WHERE id = $1
+            "#,
+        )
+        .bind(&membership_id)
         .fetch_optional(pool)
         .await
         .map_err(AuthError::DatabaseError)?;
@@ -854,6 +1037,33 @@ impl AuthServiceImpl {
         .map_err(AuthError::DatabaseError)?;
 
         Ok(row)
+    }
+
+    async fn query_tenant_invitations(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantInvitation>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let rows = sqlx::query_as::<_, TenantInvitation>(
+            r#"
+            SELECT id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                   token_hash, created_by, expires_at, consumed_at, consumed_by,
+                   status, max_uses, use_count, created_at, updated_at
+            FROM tenant_invitations
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(&tenant_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
     }
 
     /// 根据 Token 哈希查询会话
@@ -912,6 +1122,150 @@ impl AuthServiceImpl {
         .map_err(AuthError::DatabaseError)?;
 
         Ok(())
+    }
+
+    async fn update_user_record(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        default_tenant_id: Option<Option<Uuid>>,
+        onboarding_completed: Option<bool>,
+        deleted_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
+    ) -> Result<User, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let current_user = self
+            .query_user(user_id)
+            .await?
+            .ok_or(AuthError::UserNotFound(user_id))?;
+
+        let next_display_name = display_name.or(current_user.display_name);
+        let next_default_tenant_id = default_tenant_id.unwrap_or(current_user.default_tenant_id);
+        let next_onboarding_completed =
+            onboarding_completed.unwrap_or(current_user.onboarding_completed);
+        let next_deleted_at = deleted_at.unwrap_or(current_user.deleted_at);
+        let next_status = if next_deleted_at.is_some() {
+            super::models::UserStatus::PendingDeletion
+        } else {
+            current_user.status
+        };
+        let now = chrono::Utc::now();
+
+        let row = sqlx::query_as::<_, User>(
+            r#"
+            UPDATE users
+            SET status = $2,
+                display_name = $3,
+                default_tenant_id = $4,
+                onboarding_completed = $5,
+                deleted_at = $6,
+                updated_at = $7
+            WHERE id = $1
+            RETURNING id, status, display_name, default_tenant_id, onboarding_completed, deleted_at, created_at, updated_at
+            "#,
+        )
+        .bind(user_id)
+        .bind(next_status.as_str())
+        .bind(&next_display_name)
+        .bind(next_default_tenant_id)
+        .bind(next_onboarding_completed)
+        .bind(next_deleted_at)
+        .bind(now)
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn update_membership_record(
+        &self,
+        membership: &TenantMembership,
+    ) -> Result<TenantMembership, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantMembership>(
+            r#"
+            UPDATE tenant_memberships
+            SET role = $2,
+                status = $3,
+                joined_at = $4,
+                scopes = $5,
+                updated_at = $6
+            WHERE id = $1
+            RETURNING id, tenant_id, user_id, role, status, invited_by, joined_at,
+                      source,
+                      ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(membership.id)
+        .bind(membership.role.as_str())
+        .bind(membership.status.as_str())
+        .bind(membership.joined_at)
+        .bind(&membership.scopes)
+        .bind(membership.updated_at)
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn mark_membership_inactive(&self, membership_id: Uuid) -> Result<(), AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        sqlx::query(
+            r#"
+            UPDATE tenant_memberships
+            SET status = 'inactive',
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(membership_id)
+        .execute(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(())
+    }
+
+    async fn revoke_invitation_record(
+        &self,
+        invitation_id: Uuid,
+    ) -> Result<TenantInvitation, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantInvitation>(
+            r#"
+            UPDATE tenant_invitations
+            SET status = 'revoked',
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                      token_hash, created_by, expires_at, consumed_at, consumed_by,
+                      status, max_uses, use_count, created_at, updated_at
+            "#,
+        )
+        .bind(invitation_id)
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
     }
 
     /// 更新会话撤销状态
@@ -1459,6 +1813,33 @@ impl AuthService for AuthServiceImpl {
         Ok(user)
     }
 
+    async fn update_user(
+        &self,
+        user_id: Uuid,
+        display_name: Option<String>,
+        default_tenant_id: Option<Uuid>,
+        onboarding_completed: Option<bool>,
+    ) -> Result<User, AuthError> {
+        self.get_user(user_id).await?;
+
+        self.update_user_record(
+            user_id,
+            display_name,
+            default_tenant_id.map(Some),
+            onboarding_completed,
+            None,
+        )
+        .await
+    }
+
+    async fn soft_delete_user(&self, user_id: Uuid) -> Result<User, AuthError> {
+        let deleted_at = chrono::Utc::now();
+        self.get_user(user_id).await?;
+
+        self.update_user_record(user_id, None, None, None, Some(Some(deleted_at)))
+            .await
+    }
+
     async fn get_user_identities(&self, user_id: Uuid) -> Result<Vec<ExternalIdentity>, AuthError> {
         // 验证用户存在
         self.get_user(user_id).await?;
@@ -1483,6 +1864,129 @@ impl AuthService for AuthServiceImpl {
             .collect();
 
         Ok(active_memberships)
+    }
+
+    async fn get_tenant_memberships(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantMembership>, AuthError> {
+        let memberships = self.query_tenant_memberships(tenant_id).await?;
+        Ok(memberships
+            .into_iter()
+            .filter(|membership| membership.status.allows_access())
+            .collect())
+    }
+
+    async fn get_tenant_invitations(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantInvitation>, AuthError> {
+        self.query_tenant_invitations(tenant_id).await
+    }
+
+    async fn get_membership_by_id(
+        &self,
+        membership_id: Uuid,
+    ) -> Result<Option<TenantMembership>, AuthError> {
+        self.query_membership_by_id(membership_id).await
+    }
+
+    async fn update_membership_role(
+        &self,
+        membership_id: Uuid,
+        role: MembershipRole,
+    ) -> Result<TenantMembership, AuthError> {
+        let mut membership = self.query_membership_by_id(membership_id).await?.ok_or(
+            AuthError::MembershipNotFound {
+                user_id: Uuid::nil(),
+                tenant_id: Uuid::nil(),
+            },
+        )?;
+
+        membership.update_role(role);
+        self.update_membership_record(&membership).await
+    }
+
+    async fn remove_membership(&self, membership_id: Uuid) -> Result<(), AuthError> {
+        let membership = self.query_membership_by_id(membership_id).await?.ok_or(
+            AuthError::MembershipNotFound {
+                user_id: Uuid::nil(),
+                tenant_id: Uuid::nil(),
+            },
+        )?;
+
+        self.mark_membership_inactive(membership.id).await?;
+        Ok(())
+    }
+
+    async fn get_invitation(
+        &self,
+        invitation_id: Uuid,
+    ) -> Result<Option<TenantInvitation>, AuthError> {
+        self.query_invitation(invitation_id).await
+    }
+
+    async fn get_invitation_by_token(
+        &self,
+        invitation_token: &str,
+    ) -> Result<Option<TenantInvitation>, AuthError> {
+        let token_hash = Self::hash_token(invitation_token);
+        self.query_invitation_by_token_hash(&token_hash).await
+    }
+
+    async fn revoke_invitation(&self, invitation_id: Uuid) -> Result<TenantInvitation, AuthError> {
+        let invitation = self
+            .query_invitation(invitation_id)
+            .await?
+            .ok_or(AuthError::InvitationNotFound(invitation_id))?;
+
+        if invitation.status == InvitationStatus::Consumed {
+            return Err(AuthError::InvitationAlreadyConsumed(invitation_id));
+        }
+
+        if invitation.status == InvitationStatus::Revoked {
+            return Ok(invitation);
+        }
+
+        let revoked = self.revoke_invitation_record(invitation_id).await?;
+
+        self.audit_log(
+            AuthEventType::InvitationRevoked,
+            Some(revoked.created_by),
+            Some(serde_json::json!({
+                "invitation_id": revoked.id,
+                "tenant_id": revoked.tenant_id,
+            })),
+        )
+        .await?;
+
+        Ok(revoked)
+    }
+
+    async fn create_owner_membership(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<TenantMembership, AuthError> {
+        if let Some(existing) = self.get_active_membership(user_id, tenant_id).await? {
+            return Ok(existing);
+        }
+
+        let membership = TenantMembership::new_owner(tenant_id, user_id);
+        let created = self.create_membership_record(&membership).await?;
+
+        self.audit_log(
+            AuthEventType::MemberJoined,
+            Some(user_id),
+            Some(serde_json::json!({
+                "tenant_id": tenant_id,
+                "role": "owner",
+                "source": "owner_creation",
+            })),
+        )
+        .await?;
+
+        Ok(created)
     }
 
     async fn sync_mfa_status(
@@ -1557,26 +2061,7 @@ pub async fn create_owner_membership(
     tenant_id: Uuid,
     user_id: Uuid,
 ) -> Result<TenantMembership, AuthError> {
-    // 创建所有者成员资格
-    let membership = TenantMembership::new_owner(tenant_id, user_id);
-
-    // TODO: 实现数据库插入
-    // 当前返回实体
-
-    // 记录审计日志
-    service
-        .audit_log(
-            AuthEventType::MemberJoined,
-            Some(user_id),
-            Some(serde_json::json!({
-                "tenant_id": tenant_id,
-                "role": "owner",
-                "source": "owner_creation",
-            })),
-        )
-        .await?;
-
-    Ok(membership)
+    service.create_owner_membership(tenant_id, user_id).await
 }
 
 #[cfg(test)]

@@ -20,10 +20,10 @@
 //! - 激活/暂停/删除租户: `admin` scope
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -34,12 +34,14 @@ use crate::tenant::{
     TenantConfigError, TenantConfigStore, TenantId as TenantIdType, TenantManager, TenantService,
     TenantSettings,
 };
+use crate::{api::middleware::ValidatedToken, auth::AuthService};
 
 /// API 状态
 #[derive(Clone)]
 pub struct TenantApiState<S: TenantConfigStore + Clone + Send + Sync + 'static> {
     pub tenant_manager: Arc<TenantManager<S>>,
     pub tenant_service: Arc<dyn TenantService>,
+    pub auth_service: Option<Arc<dyn AuthService>>,
 }
 
 impl<S: TenantConfigStore + Clone + Send + Sync + 'static> TenantApiState<S> {
@@ -47,6 +49,7 @@ impl<S: TenantConfigStore + Clone + Send + Sync + 'static> TenantApiState<S> {
         Self {
             tenant_manager: Arc::new(tenant_manager),
             tenant_service,
+            auth_service: None,
         }
     }
 }
@@ -57,6 +60,13 @@ pub struct CreateTenantResponse {
     pub success: bool,
     pub data: TenantData,
     pub initialization: Vec<InitializationStepDto>,
+    pub meta: ResponseMeta,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetTenantResponse {
+    pub success: bool,
+    pub data: TenantData,
     pub meta: ResponseMeta,
 }
 
@@ -419,10 +429,115 @@ pub struct ErrorDetail {
 /// 创建租户处理器
 pub async fn create_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
-    Json(request): Json<CreateTenantRequest>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(mut request): Json<CreateTenantRequest>,
 ) -> Result<Json<CreateTenantResponse>, (StatusCode, Json<serde_json::Value>)> {
-    match state.tenant_manager.create_tenant(request, None).await {
+    let creator_user_id = uuid::Uuid::parse_str(&token.user_id).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "success": false,
+                "error": {
+                    "code": "INVALID_USER_ID",
+                    "message": "当前会话中的用户标识无效"
+                },
+                "meta": {
+                    "request_id": uuid::Uuid::now_v7().to_string(),
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            })),
+        )
+    })?;
+
+    request.owner_user_id = Some(creator_user_id);
+
+    match state
+        .tenant_manager
+        .create_tenant(request, Some(creator_user_id.to_string()))
+        .await
+    {
         Ok(result) => {
+            state
+                .tenant_service
+                .upsert_tenant(result.tenant.clone())
+                .await
+                .map_err(|error| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({
+                            "success": false,
+                            "error": {
+                                "code": "TENANT_PERSIST_FAILED",
+                                "message": format!("持久化租户信息失败: {error}")
+                            },
+                            "meta": {
+                                "request_id": uuid::Uuid::now_v7().to_string(),
+                                "timestamp": chrono::Utc::now().to_rfc3339()
+                            }
+                        })),
+                    )
+                })?;
+
+            if let Some(auth_service) = &state.auth_service {
+                let tenant_uuid =
+                    uuid::Uuid::parse_str(&result.tenant.id.to_string()).map_err(|_| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({
+                                "success": false,
+                                "error": {
+                                    "code": "INVALID_TENANT_ID",
+                                    "message": "新租户标识无效"
+                                },
+                                "meta": {
+                                    "request_id": uuid::Uuid::now_v7().to_string(),
+                                    "timestamp": chrono::Utc::now().to_rfc3339()
+                                }
+                            })),
+                        )
+                    })?;
+
+                auth_service
+                    .create_owner_membership(tenant_uuid, creator_user_id)
+                    .await
+                    .map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({
+                                "success": false,
+                                "error": {
+                                    "code": "OWNER_MEMBERSHIP_FAILED",
+                                    "message": format!("创建租户所有者成员资格失败: {e}")
+                                },
+                                "meta": {
+                                    "request_id": uuid::Uuid::now_v7().to_string(),
+                                    "timestamp": chrono::Utc::now().to_rfc3339()
+                                }
+                            })),
+                        )
+                    })?;
+
+                auth_service
+                    .update_user(creator_user_id, None, Some(tenant_uuid), None)
+                    .await
+                    .map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({
+                                "success": false,
+                                "error": {
+                                    "code": "USER_UPDATE_FAILED",
+                                    "message": format!("更新用户默认租户失败: {e}")
+                                },
+                                "meta": {
+                                    "request_id": uuid::Uuid::now_v7().to_string(),
+                                    "timestamp": chrono::Utc::now().to_rfc3339()
+                                }
+                            })),
+                        )
+                    })?;
+            }
+
             let response = CreateTenantResponse {
                 success: true,
                 data: TenantData::from(&result.tenant),
@@ -467,6 +582,53 @@ pub async fn create_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 
                 })),
             ))
         }
+    }
+}
+
+/// 获取租户配置处理器
+pub async fn get_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
+    State(state): State<TenantApiState<S>>,
+    Path(tenant_id): Path<String>,
+) -> Result<Json<GetTenantResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let tenant_id = TenantIdType::from(tenant_id);
+
+    match state.tenant_service.get_tenant(&tenant_id).await {
+        Ok(Some(tenant)) => Ok(Json(GetTenantResponse {
+            success: true,
+            data: TenantData::from(&tenant),
+            meta: ResponseMeta {
+                request_id: uuid::Uuid::now_v7().to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        })),
+        Ok(None) | Err(TenantConfigError::NotFound(_)) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "error": {
+                    "code": "TENANT_NOT_FOUND",
+                    "message": "租户不存在"
+                },
+                "meta": {
+                    "request_id": uuid::Uuid::now_v7().to_string(),
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            })),
+        )),
+        Err(_) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "获取租户失败"
+                },
+                "meta": {
+                    "request_id": uuid::Uuid::now_v7().to_string(),
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            })),
+        )),
     }
 }
 
@@ -845,12 +1007,15 @@ pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
             post(create_tenant_handler::<S>).get(list_tenants_handler::<S>),
         )
         .route(
+            "/tenants/:id",
+            get(get_tenant_handler::<S>).delete(delete_tenant_handler::<S>),
+        )
+        .route(
             "/tenants/:id/config",
             get(get_tenant_config_handler::<S>).put(update_tenant_config_handler::<S>),
         )
         .route("/tenants/:id/activate", post(activate_tenant_handler::<S>))
         .route("/tenants/:id/suspend", post(suspend_tenant_handler::<S>))
-        .route("/tenants/:id", delete(delete_tenant_handler::<S>))
 }
 
 #[cfg(test)]

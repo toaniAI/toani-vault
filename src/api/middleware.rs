@@ -40,6 +40,8 @@ use std::sync::Arc;
 use super::token_blacklist::TokenStore;
 use crate::auth::AuthService;
 
+const UNASSIGNED_TENANT_ID: &str = "00000000-0000-0000-0000-000000000000";
+
 /// Token Scope 定义
 ///
 /// 基于 MembershipRole 的权限范围
@@ -478,33 +480,40 @@ async fn validate_session_token(
     let membership = memberships
         .into_iter()
         .find(|membership| Some(membership.id) == session.active_membership_id)
-        .or(fallback_membership)
-        .ok_or_else(|| {
-            AuthError::new(
-                "invalid_token",
-                locale,
-                "errors.auth.invalid_token",
-                I18nParams::new(),
-            )
-        })?;
+        .or(fallback_membership);
 
     let mut metadata = HashMap::new();
     metadata.insert("session_id".to_string(), session.id.to_string());
-    metadata.insert("membership_id".to_string(), membership.id.to_string());
+
+    if let Some(membership) = membership {
+        metadata.insert("membership_id".to_string(), membership.id.to_string());
+
+        return Ok(ValidatedToken {
+            token_id: session.id.to_string(),
+            subject: format!("{}:{}", membership.tenant_id, session.user_id),
+            tenant_id: membership.tenant_id.to_string(),
+            user_id: session.user_id.to_string(),
+            expires_at: session.expires_at.timestamp() as u64,
+            scopes: membership
+                .scopes
+                .iter()
+                .filter_map(|scope| TokenScope::parse(scope))
+                .collect(),
+            issued_at: session.created_at.timestamp() as u64,
+            membership_id: Some(membership.id.to_string()),
+            metadata,
+        });
+    }
 
     Ok(ValidatedToken {
         token_id: session.id.to_string(),
-        subject: format!("{}:{}", membership.tenant_id, session.user_id),
-        tenant_id: membership.tenant_id.to_string(),
+        subject: format!("{UNASSIGNED_TENANT_ID}:{}", session.user_id),
+        tenant_id: UNASSIGNED_TENANT_ID.to_string(),
         user_id: session.user_id.to_string(),
         expires_at: session.expires_at.timestamp() as u64,
-        scopes: membership
-            .scopes
-            .iter()
-            .filter_map(|scope| TokenScope::parse(scope))
-            .collect(),
+        scopes: Vec::new(),
         issued_at: session.created_at.timestamp() as u64,
-        membership_id: Some(membership.id.to_string()),
+        membership_id: None,
         metadata,
     })
 }
@@ -766,6 +775,13 @@ pub fn require_any_scope(
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use uuid::Uuid;
+
+    use crate::auth::{
+        AuthError as ServiceAuthError, AuthService, AuthSession, CreateUserRequest,
+        ExternalIdentity, MembershipRole, MfaStatus, TenantInvitation, TenantMembership, User,
+    };
 
     /// 获取测试密钥
     pub fn get_test_key() -> Vec<u8> {
@@ -796,5 +812,160 @@ pub mod tests {
             membership_id: None,
             metadata: HashMap::new(),
         }
+    }
+
+    struct NoMembershipAuthService {
+        session: AuthSession,
+    }
+
+    #[async_trait]
+    impl AuthService for NoMembershipAuthService {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+        ) -> Result<User, ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn get_or_create_external_identity(
+            &self,
+            _user_id: Uuid,
+            _provider: crate::auth::IdentityProvider,
+            _provider_subject: &str,
+            _profile: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn create_tenant_invitation(
+            &self,
+            _tenant_id: Uuid,
+            _role: MembershipRole,
+            _invitee_type: crate::auth::InviteeType,
+            _invitee_email: Option<String>,
+            _invitee_wallet: Option<String>,
+            _created_by: Uuid,
+            _expires_hours: i64,
+        ) -> Result<(TenantInvitation, String), ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn consume_invitation(
+            &self,
+            _invitation_token: &str,
+            _user_id: Uuid,
+        ) -> Result<TenantMembership, ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn create_session(
+            &self,
+            _user_id: Uuid,
+            _identity_id: Option<Uuid>,
+            _request: CreateUserRequest,
+        ) -> Result<(AuthSession, String), ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn get_active_membership(
+            &self,
+            _user_id: Uuid,
+            _tenant_id: Uuid,
+        ) -> Result<Option<TenantMembership>, ServiceAuthError> {
+            Ok(None)
+        }
+
+        async fn audit_log(
+            &self,
+            _event_type: crate::auth::AuthEventType,
+            _user_id: Option<Uuid>,
+            _data: Option<serde_json::Value>,
+        ) -> Result<(), ServiceAuthError> {
+            Ok(())
+        }
+
+        async fn verify_session(
+            &self,
+            _session_token: &str,
+        ) -> Result<AuthSession, ServiceAuthError> {
+            Ok(self.session.clone())
+        }
+
+        async fn revoke_session(
+            &self,
+            _session_id: Uuid,
+            _reason: &str,
+        ) -> Result<(), ServiceAuthError> {
+            Ok(())
+        }
+
+        async fn get_user(&self, _user_id: Uuid) -> Result<User, ServiceAuthError> {
+            Ok(User::new())
+        }
+
+        async fn get_user_identities(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<ExternalIdentity>, ServiceAuthError> {
+            Ok(vec![])
+        }
+
+        async fn get_user_memberships(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<TenantMembership>, ServiceAuthError> {
+            Ok(vec![])
+        }
+
+        async fn sync_mfa_status(
+            &self,
+            _user_id: Uuid,
+            _privy_token: &str,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, ServiceAuthError> {
+            Ok(crate::auth::service::MfaStatusSnapshot::default())
+        }
+
+        async fn get_mfa_status(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, ServiceAuthError> {
+            Ok(crate::auth::service::MfaStatusSnapshot::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_session_token_without_membership_uses_unassigned_tenant() {
+        let user_id = Uuid::now_v7();
+        let session = AuthSession {
+            id: Uuid::now_v7(),
+            user_id,
+            session_token_hash: "ignored".to_string(),
+            identity_id: None,
+            active_membership_id: None,
+            mfa_status: MfaStatus::NotRequired,
+            mfa_verified_at: None,
+            user_agent: None,
+            ip_address: None,
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            last_active_at: chrono::Utc::now(),
+            revoked_at: None,
+            revoked_reason: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let auth_service: Arc<dyn AuthService> = Arc::new(NoMembershipAuthService { session });
+
+        let validated = validate_session_token("session-token", &auth_service, "en")
+            .await
+            .expect("session without membership should still validate");
+
+        assert_eq!(validated.user_id, user_id.to_string());
+        assert_eq!(validated.tenant_id, UNASSIGNED_TENANT_ID);
+        assert!(validated.membership_id.is_none());
+        assert!(validated.scopes.is_empty());
+        assert_eq!(
+            validated.metadata.get("session_id").map(String::as_str),
+            Some(validated.token_id.as_str())
+        );
     }
 }

@@ -699,17 +699,23 @@ impl TenantConfigStore for PostgresTenantConfigStore {
         let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
         let config_value = Self::serialize_config(config)?;
 
-        let result =
-            sqlx::query("UPDATE tenants SET config = $2, updated_at = NOW() WHERE id = $1")
-                .bind(tenant_uuid)
-                .bind(config_value)
-                .execute(self.db_pool.pool())
-                .await
-                .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
-
-        if result.rows_affected() == 0 {
-            return Err(TenantConfigError::NotFound(tenant_id.clone()));
-        }
+        sqlx::query(
+            r#"
+            INSERT INTO tenants (id, name, description, status, config)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (id) DO UPDATE
+            SET config = EXCLUDED.config,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(tenant_uuid)
+        .bind(tenant_id.as_str())
+        .bind("Autocreated tenant config row")
+        .bind("active")
+        .bind(config_value)
+        .execute(self.db_pool.pool())
+        .await
+        .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
 
         Ok(())
     }

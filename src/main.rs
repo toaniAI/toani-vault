@@ -738,6 +738,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     let tenant_api_state = TenantApiState {
         tenant_manager: Arc::new(tenant_manager),
         tenant_service,
+        auth_service: Some(app_state.auth_state.auth_service.clone()),
     };
     let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
