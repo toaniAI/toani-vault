@@ -613,13 +613,16 @@ fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
         "api_key" => Ok(CredentialType::ApiKey),
         "session_cookie" => Ok(CredentialType::SessionCookie),
         "kyc_document" => Ok(CredentialType::KycDocument),
+        "client_certificate" => Ok(CredentialType::ClientCertificate),
+        "ssh_key" => Ok(CredentialType::SshKey),
+        "database_connection" => Ok(CredentialType::DatabaseConnection),
         _ => Err(ApiError::new(
             "invalid_request",
             format!("不支持的凭证类型: {value}"),
         ).with_details(serde_json::json!({
             "field": "credential_type",
             "received": value,
-            "allowed": ["username_password", "oauth_refresh", "oauth_token", "o_auth_refresh", "api_key", "session_cookie", "kyc_document"]
+            "allowed": ["username_password", "oauth_refresh", "oauth_token", "o_auth_refresh", "api_key", "session_cookie", "kyc_document", "client_certificate", "ssh_key", "database_connection"]
         }))),
     }
 }

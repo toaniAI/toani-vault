@@ -24,6 +24,15 @@ pub enum CredentialType {
     /// KYC 文档
     #[serde(rename = "kyc_document")]
     KycDocument,
+    /// 客户端证书
+    #[serde(rename = "client_certificate")]
+    ClientCertificate,
+    /// SSH 密钥
+    #[serde(rename = "ssh_key")]
+    SshKey,
+    /// 数据库连接
+    #[serde(rename = "database_connection")]
+    DatabaseConnection,
 }
 
 impl CredentialType {
@@ -35,6 +44,9 @@ impl CredentialType {
             CredentialType::ApiKey => "api_key",
             CredentialType::SessionCookie => "session_cookie",
             CredentialType::KycDocument => "kyc_document",
+            CredentialType::ClientCertificate => "client_certificate",
+            CredentialType::SshKey => "ssh_key",
+            CredentialType::DatabaseConnection => "database_connection",
         }
     }
 }
@@ -122,5 +134,48 @@ mod tests {
             let parsed: CredentialType = serde_json::from_str(value).unwrap();
             assert_eq!(parsed, CredentialType::OAuthRefresh);
         }
+    }
+
+    #[test]
+    fn new_credential_types_serialize_correctly() {
+        // ClientCertificate
+        let json = serde_json::to_string(&CredentialType::ClientCertificate).unwrap();
+        assert_eq!(json, "\"client_certificate\"");
+
+        // SshKey
+        let json = serde_json::to_string(&CredentialType::SshKey).unwrap();
+        assert_eq!(json, "\"ssh_key\"");
+
+        // DatabaseConnection
+        let json = serde_json::to_string(&CredentialType::DatabaseConnection).unwrap();
+        assert_eq!(json, "\"database_connection\"");
+    }
+
+    #[test]
+    fn new_credential_types_deserialize_correctly() {
+        // ClientCertificate
+        let parsed: CredentialType = serde_json::from_str("\"client_certificate\"").unwrap();
+        assert_eq!(parsed, CredentialType::ClientCertificate);
+
+        // SshKey
+        let parsed: CredentialType = serde_json::from_str("\"ssh_key\"").unwrap();
+        assert_eq!(parsed, CredentialType::SshKey);
+
+        // DatabaseConnection
+        let parsed: CredentialType = serde_json::from_str("\"database_connection\"").unwrap();
+        assert_eq!(parsed, CredentialType::DatabaseConnection);
+    }
+
+    #[test]
+    fn new_credential_types_as_str_returns_correct_value() {
+        assert_eq!(
+            CredentialType::ClientCertificate.as_str(),
+            "client_certificate"
+        );
+        assert_eq!(CredentialType::SshKey.as_str(), "ssh_key");
+        assert_eq!(
+            CredentialType::DatabaseConnection.as_str(),
+            "database_connection"
+        );
     }
 }

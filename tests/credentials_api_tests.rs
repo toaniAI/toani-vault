@@ -222,7 +222,7 @@ async fn test_create_credential_rejects_invalid_credential_type() {
         .body(Body::from(
             serde_json::json!({
                 "service_id": "test_service",
-                "credential_type": "database_connection",
+                "credential_type": "invalid_credential_type_xyz",
                 "plaintext_data": {
                     "dsn": "postgres://user:pass@localhost:5432/app"
                 }
@@ -250,7 +250,7 @@ async fn test_create_credential_rejects_invalid_credential_type() {
     assert_eq!(json["details"]["field"].as_str(), Some("credential_type"));
     assert_eq!(
         json["details"]["received"].as_str(),
-        Some("database_connection")
+        Some("invalid_credential_type_xyz")
     );
 }
 
@@ -513,7 +513,7 @@ async fn test_list_credentials_rejects_unknown_credential_type() {
 
     let request = Request::builder()
         .method("GET")
-        .uri("/api/v1/credentials?credential_type=database_connection")
+        .uri("/api/v1/credentials?credential_type=invalid_credential_type_xyz")
         .body(Body::empty())
         .unwrap();
 
