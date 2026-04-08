@@ -1442,6 +1442,11 @@ impl sqlx::Type<Postgres> for UserStatus {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
     }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
 }
 
 impl<'r> sqlx::Decode<'r, Postgres> for UserStatus {
@@ -1468,6 +1473,11 @@ impl sqlx::Type<Postgres> for IdentityProvider {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
     }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
 }
 
 impl<'r> sqlx::Decode<'r, Postgres> for IdentityProvider {
@@ -1493,6 +1503,11 @@ impl<'q> sqlx::Encode<'q, Postgres> for IdentityProvider {
 impl sqlx::Type<Postgres> for MembershipRole {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
     }
 }
 
@@ -1532,6 +1547,11 @@ impl std::str::FromStr for MembershipStatus {
 impl sqlx::Type<Postgres> for MembershipStatus {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
     }
 }
 
@@ -1578,6 +1598,11 @@ impl sqlx::Type<Postgres> for MembershipSource {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
     }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
 }
 
 impl<'r> sqlx::Decode<'r, Postgres> for MembershipSource {
@@ -1622,6 +1647,11 @@ impl sqlx::Type<Postgres> for InviteeType {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
     }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
 }
 
 impl<'r> sqlx::Decode<'r, Postgres> for InviteeType {
@@ -1660,6 +1690,11 @@ impl std::str::FromStr for InvitationStatus {
 impl sqlx::Type<Postgres> for InvitationStatus {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
     }
 }
 
@@ -1704,6 +1739,11 @@ impl std::str::FromStr for MfaStatus {
 impl sqlx::Type<Postgres> for MfaStatus {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
     }
 }
 

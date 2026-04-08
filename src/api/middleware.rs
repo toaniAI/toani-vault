@@ -35,8 +35,10 @@ use super::i18n::{
     translate,
 };
 use serde_json::Value;
+use std::sync::Arc;
 
 use super::token_blacklist::TokenStore;
+use crate::auth::AuthService;
 
 /// Token Scope 定义
 ///
@@ -410,14 +412,13 @@ async fn validate_token(
     token: &str,
     token_store: &TokenStore,
     secret_key: &[u8],
+    auth_service: &Arc<dyn AuthService>,
     locale: &str,
 ) -> Result<ValidatedToken, AuthError> {
-    // 使用 pasetors 验证 v4.local Token
-    let validation_result = validate_paseto_token(token, secret_key, locale).map_err(|e| {
-        let mut params = I18nParams::new();
-        params.insert("reason".to_string(), Value::String(e));
-        AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
-    })?;
+    let validation_result = match validate_paseto_token(token, secret_key, locale) {
+        Ok(token) => token,
+        Err(_) => validate_session_token(token, auth_service, locale).await?,
+    };
 
     // 检查是否过期
     let now = SystemTime::now()
@@ -451,6 +452,61 @@ async fn validate_token(
     }
 
     Ok(validation_result)
+}
+
+async fn validate_session_token(
+    token: &str,
+    auth_service: &Arc<dyn AuthService>,
+    locale: &str,
+) -> Result<ValidatedToken, AuthError> {
+    let session = auth_service.verify_session(token).await.map_err(|err| {
+        let mut params = I18nParams::new();
+        params.insert("reason".to_string(), Value::String(err.to_string()));
+        AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+    })?;
+
+    let memberships = auth_service
+        .get_user_memberships(session.user_id)
+        .await
+        .map_err(|err| {
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(err.to_string()));
+            AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+        })?;
+
+    let fallback_membership = memberships.first().cloned();
+    let membership = memberships
+        .into_iter()
+        .find(|membership| Some(membership.id) == session.active_membership_id)
+        .or(fallback_membership)
+        .ok_or_else(|| {
+            AuthError::new(
+                "invalid_token",
+                locale,
+                "errors.auth.invalid_token",
+                I18nParams::new(),
+            )
+        })?;
+
+    let mut metadata = HashMap::new();
+    metadata.insert("session_id".to_string(), session.id.to_string());
+    metadata.insert("membership_id".to_string(), membership.id.to_string());
+
+    Ok(ValidatedToken {
+        token_id: session.id.to_string(),
+        subject: format!("{}:{}", membership.tenant_id, session.user_id),
+        tenant_id: membership.tenant_id.to_string(),
+        user_id: session.user_id.to_string(),
+        expires_at: session.expires_at.timestamp() as u64,
+        scopes: membership
+            .scopes
+            .iter()
+            .filter_map(|scope| TokenScope::parse(scope))
+            .collect(),
+        issued_at: session.created_at.timestamp() as u64,
+        membership_id: Some(membership.id.to_string()),
+        metadata,
+    })
 }
 
 /// 使用 pasetors 验证 Token
@@ -588,7 +644,11 @@ fn parse_subject(subject: &str, locale: &str) -> Result<(String, String), AuthEr
 
 /// Token 验证中间件
 pub async fn auth_middleware(
-    State((token_store, secret_key)): State<(TokenStore, Vec<u8>)>,
+    State((token_store, secret_key, auth_service)): State<(
+        TokenStore,
+        Vec<u8>,
+        Arc<dyn AuthService>,
+    )>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -600,11 +660,18 @@ pub async fn auth_middleware(
     };
 
     // 验证 Token
-    let validated_token =
-        match validate_token(&token, &token_store, &secret_key, &request_locale).await {
-            Ok(t) => t,
-            Err(e) => return e.into_response(),
-        };
+    let validated_token = match validate_token(
+        &token,
+        &token_store,
+        &secret_key,
+        &auth_service,
+        &request_locale,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(e) => return e.into_response(),
+    };
 
     // 将验证后的 Token 添加到请求扩展
     let context = RequestContext::from_validated_token(&validated_token)

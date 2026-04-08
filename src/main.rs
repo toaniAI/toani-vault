@@ -47,6 +47,7 @@ use vault_service::api::{
     sandbox::{SandboxState, sandbox_routes},
     tenant::{TenantApiState, tenant_routes},
     token_blacklist::{TokenStore, create_redis_token_store, create_token_store},
+    token_routes,
 };
 use vault_service::audit::{ImmuDbAuditStore, MemoryAuditStorage};
 use vault_service::config::{
@@ -740,10 +741,15 @@ fn build_api_routes(app_state: AppState) -> Router {
     };
     let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
+    let token_routes = token_routes();
 
     // 认证中间件层
     let auth_layer = axum::middleware::from_fn_with_state(
-        (token_store.clone(), secret_key.clone()),
+        (
+            token_store.clone(),
+            secret_key.clone(),
+            app_state.auth_state.auth_service.clone(),
+        ),
         auth_middleware,
     );
 
@@ -757,6 +763,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         .merge(tenant_routes)
         // 通知列表路由
         .merge(notifications_routes)
+        .merge(token_routes)
         // 认证用户信息与偏好
         .merge(protected_auth_routes)
         // locale 解析
@@ -774,8 +781,14 @@ fn build_api_routes(app_state: AppState) -> Router {
     };
 
     // 沙箱路由（需要认证）
-    let sandbox_auth_layer =
-        axum::middleware::from_fn_with_state((token_store, secret_key), auth_middleware);
+    let sandbox_auth_layer = axum::middleware::from_fn_with_state(
+        (
+            token_store,
+            secret_key,
+            app_state.auth_state.auth_service.clone(),
+        ),
+        auth_middleware,
+    );
     let sandbox_routes = sandbox_routes()
         .with_state(app_state.sandbox_state.clone())
         .layer(sandbox_auth_layer);

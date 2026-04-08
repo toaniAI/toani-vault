@@ -19,6 +19,7 @@ pub mod sandbox;
 pub mod tenant;
 pub mod tenant_middleware;
 pub mod token_blacklist;
+pub mod tokens;
 pub mod versions;
 pub mod websocket;
 
@@ -54,3 +55,4 @@ pub use tenant_middleware::{
     cross_tenant_check_middleware, tenant_isolation_middleware, validate_path_tenant_id,
     validate_query_tenant_id,
 };
+pub use tokens::token_routes;
