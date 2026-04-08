@@ -176,12 +176,8 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
-      PRIVY_APP_ID_RAW:
-        from_secret: privy-app-id
       PRIVY_APP_SECRET_RAW:
         from_secret: privy-app-secret
-      PRIVY_APP_ID_ALT:
-        from_secret: PRIVY_APP_ID
       PRIVY_APP_SECRET_ALT:
         from_secret: PRIVY_APP_SECRET
     commands:
@@ -190,7 +186,7 @@ steps:
       - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
       - |
         sh -eu -c '
-          PRIVY_APP_ID="$${PRIVY_APP_ID_RAW:-$${PRIVY_APP_ID_ALT:-}}"
+          PRIVY_APP_ID="cmniaifov006t0cl1af6l5xqs"
           PRIVY_APP_SECRET="$${PRIVY_APP_SECRET_RAW:-$${PRIVY_APP_SECRET_ALT:-}}"
 
           {
@@ -226,12 +222,8 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
-      PRIVY_APP_ID_RAW:
-        from_secret: privy-app-id
       PRIVY_APP_SECRET_RAW:
         from_secret: privy-app-secret
-      PRIVY_APP_ID_ALT:
-        from_secret: PRIVY_APP_ID
       PRIVY_APP_SECRET_ALT:
         from_secret: PRIVY_APP_SECRET
     commands:
@@ -240,7 +232,7 @@ steps:
       - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
       - |
         sh -eu -c '
-          PRIVY_APP_ID="$${PRIVY_APP_ID_RAW:-$${PRIVY_APP_ID_ALT:-}}"
+          PRIVY_APP_ID="cmniaifov006t0cl1af6l5xqs"
           PRIVY_APP_SECRET="$${PRIVY_APP_SECRET_RAW:-$${PRIVY_APP_SECRET_ALT:-}}"
 
           {
