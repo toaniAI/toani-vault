@@ -1432,7 +1432,7 @@ pub async fn create_invitation_handler(
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
 
     Ok(ApiSuccessResponse::new(FrontendInvitationListItem {
-        invite_url: format!("/accept-invitation?token={invite_token}"),
+        invite_url: format!("/invitation/accept?token={invite_token}"),
         invite_token,
         invitation: map_frontend_invitation_info(&invitation),
     }))
