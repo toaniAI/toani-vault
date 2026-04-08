@@ -135,18 +135,63 @@ impl JwksVerifier {
     ///
     /// 解析并验证 JWT 签名，返回解析后的声明。
     pub async fn verify(&self, token: &str) -> Result<PrivyClaims, AuthError> {
+        // [DIAGNOSTIC] 记录验证开始
+        tracing::info!(
+            target: "auth::jwks",
+            "[JWKS VERIFY START] Starting token verification, jwks_url={}",
+            self.config.jwks_url
+        );
+
         // 1. 解码头部获取 kid
-        let header = decode_header(token)
-            .map_err(|e| AuthError::InvalidPrivyToken(format!("Failed to decode header: {e}")))?;
+        let header = match decode_header(token) {
+            Ok(h) => {
+                tracing::info!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY] Token header decoded successfully, alg={:?}, kid={:?}",
+                    h.alg,
+                    h.kid
+                );
+                h
+            }
+            Err(e) => {
+                tracing::error!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY FAILED] Failed to decode token header: {}",
+                    e
+                );
+                return Err(AuthError::InvalidPrivyToken(format!(
+                    "Failed to decode header: {e}"
+                )));
+            }
+        };
 
         let kid = header.kid.ok_or_else(|| {
+            tracing::error!(target: "auth::jwks", "[JWKS VERIFY FAILED] Token missing 'kid' in header");
             AuthError::InvalidPrivyToken("Token missing 'kid' in header".to_string())
         })?;
 
         debug!("Verifying token with kid: {}", kid);
 
         // 2. 获取 JWKS
-        let jwks = self.fetch_jwks().await?;
+        tracing::info!(target: "auth::jwks", "[JWKS VERIFY] Fetching JWKS...");
+        let jwks = match self.fetch_jwks().await {
+            Ok(j) => {
+                tracing::info!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY] JWKS fetched successfully, {} keys available",
+                    j.keys.len()
+                );
+                j
+            }
+            Err(e) => {
+                tracing::error!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY FAILED] Failed to fetch JWKS: {:?}",
+                    e
+                );
+                return Err(e);
+            }
+        };
 
         // 3. 查找匹配的密钥
         let jwk = jwks
@@ -154,25 +199,64 @@ impl JwksVerifier {
             .into_iter()
             .find(|k| k.kid == kid)
             .ok_or_else(|| {
+                tracing::error!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY FAILED] No matching key found for kid: {}",
+                    kid
+                );
                 AuthError::PrivyJwksError(format!("No matching key found for kid: {kid}"))
             })?;
 
+        tracing::info!(
+            target: "auth::jwks",
+            "[JWKS VERIFY] Found matching key, kty={}, alg={}",
+            jwk.kty,
+            jwk.alg
+        );
+
         // 4. 创建解码密钥
         let decoding_key = self.create_decoding_key(&jwk)?;
+        tracing::info!(target: "auth::jwks", "[JWKS VERIFY] Decoding key created successfully");
 
         // 5. 验证 Token
         let mut validation = Validation::new(self.algorithm_from_str(&jwk.alg)?);
         validation.set_audience(&[&self.config.app_id]);
         validation.set_issuer(PRIVY_ALLOWED_ISSUERS);
 
-        let token_data = decode::<PrivyClaims>(token, &decoding_key, &validation).map_err(|e| {
-            match e.kind() {
-                jsonwebtoken::errors::ErrorKind::ExpiredSignature => AuthError::PrivyTokenExpired,
-                _ => {
-                    AuthError::PrivyTokenVerificationFailed(format!("Token validation failed: {e}"))
-                }
+        tracing::info!(
+            target: "auth::jwks",
+            "[JWKS VERIFY] Validating token with audience={}, allowed_issuers={:?}",
+            self.config.app_id,
+            PRIVY_ALLOWED_ISSUERS
+        );
+
+        let token_data = match decode::<PrivyClaims>(token, &decoding_key, &validation) {
+            Ok(td) => {
+                tracing::info!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY SUCCESS] Token validated successfully, sub={}, iss={}, aud={}",
+                    td.claims.sub,
+                    td.claims.iss,
+                    td.claims.aud
+                );
+                td
             }
-        })?;
+            Err(e) => {
+                tracing::error!(
+                    target: "auth::jwks",
+                    "[JWKS VERIFY FAILED] Token validation failed: {}",
+                    e
+                );
+                return Err(match e.kind() {
+                    jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                        AuthError::PrivyTokenExpired
+                    }
+                    _ => AuthError::PrivyTokenVerificationFailed(format!(
+                        "Token validation failed: {e}"
+                    )),
+                });
+            }
+        };
 
         info!(
             "Token verified successfully for did: {}",
@@ -184,27 +268,82 @@ impl JwksVerifier {
 
     /// 获取 JWKS（带缓存）
     async fn fetch_jwks(&self) -> Result<JwksResponse, AuthError> {
+        // [DIAGNOSTIC] 记录 JWKS 获取开始
+        tracing::info!(
+            target: "auth::jwks",
+            "[JWKS FETCH START] Fetching JWKS from {}",
+            self.config.jwks_url
+        );
+
         // 先尝试从缓存读取
         {
             let cached = self.cached_jwks.read().await;
             if let Some(ref cached_jwks) = *cached {
                 if !cached_jwks.is_expired(self.cache_ttl) {
                     debug!("Using cached JWKS");
+                    tracing::info!(
+                        target: "auth::jwks",
+                        "[JWKS FETCH] Using cached JWKS, cached_at={:?} ago",
+                        cached_jwks.cached_at.elapsed()
+                    );
                     return Ok(cached_jwks.jwks.clone());
+                } else {
+                    tracing::info!(
+                        target: "auth::jwks",
+                        "[JWKS FETCH] Cache expired, cached_at={:?} ago, ttl={:?}",
+                        cached_jwks.cached_at.elapsed(),
+                        self.cache_ttl
+                    );
                 }
+            } else {
+                tracing::info!(target: "auth::jwks", "[JWKS FETCH] Cache empty, fetching fresh");
             }
         }
 
         // 缓存未命中或过期，获取新的 JWKS
-        debug!("Fetching fresh JWKS from {}", self.config.jwks_url);
+        tracing::info!(
+            target: "auth::jwks",
+            "[JWKS FETCH] Sending HTTP GET to {}",
+            self.config.jwks_url
+        );
 
-        let response = self
+        let response = match self
             .http_client
             .get(&self.config.jwks_url)
             .timeout(Duration::from_secs(10))
             .send()
             .await
-            .map_err(|e| AuthError::PrivyJwksError(format!("Failed to fetch JWKS: {e}")))?;
+        {
+            Ok(r) => {
+                tracing::info!(
+                    target: "auth::jwks",
+                    "[JWKS FETCH] HTTP response received, status={}",
+                    r.status()
+                );
+                r
+            }
+            Err(e) => {
+                // 详细记录 HTTP 错误
+                let error_details = if e.is_timeout() {
+                    format!("Request timeout: {e}")
+                } else if e.is_connect() {
+                    format!("Connection error: {e}")
+                } else if e.is_request() {
+                    format!("Request error: {e}")
+                } else {
+                    format!("HTTP error: {e}")
+                };
+                tracing::error!(
+                    target: "auth::jwks",
+                    "[JWKS FETCH FAILED] Failed to fetch JWKS: {}, url={}",
+                    error_details,
+                    self.config.jwks_url
+                );
+                return Err(AuthError::PrivyJwksError(format!(
+                    "Failed to fetch JWKS: {e}"
+                )));
+            }
+        };
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -212,16 +351,43 @@ impl JwksVerifier {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::error!(
+                target: "auth::jwks",
+                "[JWKS FETCH FAILED] JWKS endpoint returned HTTP error: status={}, body={}",
+                status,
+                text
+            );
             return Err(AuthError::PrivyJwksError(format!(
                 "JWKS endpoint returned {status}: {text}"
             )));
         }
 
-        let jwks: JwksResponse = response.json().await.map_err(|e| {
-            AuthError::PrivyJwksError(format!("Failed to parse JWKS response: {e}"))
-        })?;
+        let jwks: JwksResponse = match response.json::<JwksResponse>().await {
+            Ok(j) => {
+                tracing::info!(
+                    target: "auth::jwks",
+                    "[JWKS FETCH] Successfully parsed JWKS response with {} keys",
+                    j.keys.len()
+                );
+                j
+            }
+            Err(e) => {
+                tracing::error!(
+                    target: "auth::jwks",
+                    "[JWKS FETCH FAILED] Failed to parse JWKS JSON: {}",
+                    e
+                );
+                return Err(AuthError::PrivyJwksError(format!(
+                    "Failed to parse JWKS response: {e}"
+                )));
+            }
+        };
 
         if jwks.keys.is_empty() {
+            tracing::error!(
+                target: "auth::jwks",
+                "[JWKS FETCH FAILED] JWKS response contains no keys"
+            );
             return Err(AuthError::PrivyJwksError(
                 "JWKS response contains no keys".to_string(),
             ));
@@ -236,6 +402,7 @@ impl JwksVerifier {
                 jwks: jwks.clone(),
                 cached_at: Instant::now(),
             });
+            tracing::info!(target: "auth::jwks", "[JWKS FETCH] Cache updated successfully");
         }
 
         Ok(jwks)

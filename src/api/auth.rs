@@ -390,14 +390,42 @@ pub async fn create_session_handler(
     locale: ResolvedLocale,
     Json(request): Json<CreateSessionRequest>,
 ) -> Response {
+    // [DIAGNOSTIC] 记录进入 session handler
+    let token_preview = if request.privy_access_token.len() > 20 {
+        format!("{}...", &request.privy_access_token[..20])
+    } else {
+        "[too short]".to_string()
+    };
+    tracing::info!(
+        target: "auth::session",
+        "[SESSION START] Creating session from Privy token: prefix={}, has_invitation={}, locale={}",
+        token_preview,
+        request.invitation_token.is_some(),
+        locale.as_str()
+    );
+
     // 1. 从 Privy Token 创建或获取用户
     let user = match state
         .auth_service
         .create_user_from_privy(&request.privy_access_token)
         .await
     {
-        Ok(u) => u,
+        Ok(u) => {
+            tracing::info!(
+                target: "auth::session",
+                "[SESSION STEP 1] User resolved: user_id={}, display_name={}",
+                u.id,
+                u.display_name.as_deref().unwrap_or("[none]")
+            );
+            u
+        }
         Err(e) => {
+            tracing::error!(
+                target: "auth::session",
+                "[SESSION FAILED] create_user_from_privy failed: error={:?}, http_status={}",
+                e,
+                e.http_status_code()
+            );
             state
                 .record_audit(
                     AuditAction::FailedAuth,

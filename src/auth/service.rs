@@ -283,20 +283,59 @@ impl AuthServiceImpl {
     ///
     /// 支持 Mock 模式和真实 JWKS 验证。
     async fn verify_privy_token(&self, token: &str) -> Result<PrivyAuthResponse, AuthError> {
+        // [DIAGNOSTIC] 记录验证开始
+        tracing::info!(
+            target: "auth::privy",
+            "[PRIVY VERIFY START] Starting token verification"
+        );
+
         // 检查是否启用 Mock 模式
         if let Some(ref config) = self.privy_config {
+            tracing::info!(
+                target: "auth::privy",
+                "[PRIVY CONFIG] mock_enabled={}, jwks_url={}",
+                config.mock_enabled,
+                config.jwks_url
+            );
             if config.mock_enabled {
+                tracing::info!(target: "auth::privy", "[PRIVY VERIFY] Using mock verification");
                 return self.mock_verify_privy_token(token);
             }
+        } else {
+            tracing::warn!(target: "auth::privy", "[PRIVY CONFIG MISSING] privy_config is None");
         }
 
         // 真实 JWKS 验证
+        tracing::info!(target: "auth::privy", "[PRIVY VERIFY] Using real JWKS verification");
+
         let verifier = self
             .jwks_verifier
             .as_ref()
-            .ok_or_else(|| AuthError::ConfigError("JWKS verifier not initialized".to_string()))?;
+            .ok_or_else(|| {
+                tracing::error!(target: "auth::privy", "[PRIVY VERIFY FAILED] JWKS verifier not initialized");
+                AuthError::ConfigError("JWKS verifier not initialized".to_string())
+            })?;
 
-        let claims = verifier.verify(token).await?;
+        tracing::info!(target: "auth::privy", "[PRIVY VERIFY] Calling JWKS verifier...");
+
+        let claims = match verifier.verify(token).await {
+            Ok(c) => {
+                tracing::info!(
+                    target: "auth::privy",
+                    "[PRIVY VERIFY SUCCESS] Token verified, did={}",
+                    c.sub
+                );
+                c
+            }
+            Err(e) => {
+                tracing::error!(
+                    target: "auth::privy",
+                    "[PRIVY VERIFY FAILED] JWKS verification error: {:?}",
+                    e
+                );
+                return Err(e);
+            }
+        };
 
         Ok(PrivyAuthResponse {
             did: claims.sub,
