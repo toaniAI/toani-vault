@@ -452,6 +452,7 @@ async fn handle_message(
                 operation_type: op_type,
                 description: description.clone(),
                 parameters,
+                resolved_parameters: HashMap::new(),
                 created_at: time::OffsetDateTime::now_utc(),
             };
 

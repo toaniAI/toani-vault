@@ -183,9 +183,44 @@ impl NsjailSandbox {
         self.process.as_ref().and_then(|p| p.id())
     }
 
+    /// 获取当前沙箱工作目录
+    pub fn working_dir(&self) -> PathBuf {
+        self.config.sandbox.working_dir.join(self.id.to_string())
+    }
+
     /// 设置凭证环境变量
     pub fn set_credential_env(&mut self, key: String, value: String) {
         self.credential_env.insert(key, value);
+    }
+
+    pub async fn spawn_scoped_process(
+        &self,
+        command: Vec<String>,
+        cwd: PathBuf,
+        env: HashMap<String, String>,
+    ) -> Result<Child, SandboxError> {
+        if command.is_empty() {
+            return Err(SandboxError::Process(
+                "scoped process command may not be empty".to_string(),
+            ));
+        }
+
+        let mut scoped_config = self.config.clone();
+        scoped_config.command = command;
+        scoped_config.cwd = cwd;
+        for (key, value) in env {
+            scoped_config.env.insert(key, value);
+        }
+
+        let mut cmd = Command::new(&scoped_config.sandbox.nsjail_path);
+        cmd.args(scoped_config.to_args())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped());
+
+        cmd.spawn().map_err(|error| {
+            SandboxError::Process(format!("failed to spawn scoped process: {error}"))
+        })
     }
 
     /// 获取沙箱统计信息
@@ -212,13 +247,22 @@ impl NsjailSandbox {
     pub async fn prepare_for_reuse(&mut self) -> Result<(), SandboxError> {
         // 清理会话状态，但保持进程运行
         self.credential_env.clear();
+        let work_dir = self.working_dir();
+        if work_dir.exists() {
+            tokio::fs::remove_dir_all(&work_dir)
+                .await
+                .map_err(SandboxError::Io)?;
+        }
+        tokio::fs::create_dir_all(&work_dir)
+            .await
+            .map_err(SandboxError::Io)?;
         Ok(())
     }
 
     // 私有辅助方法
 
     async fn prepare_working_dir(&self) -> Result<(), SandboxError> {
-        let work_dir = self.config.sandbox.working_dir.join(self.id.to_string());
+        let work_dir = self.working_dir();
         tokio::fs::create_dir_all(&work_dir)
             .await
             .map_err(SandboxError::Io)?;
@@ -226,7 +270,7 @@ impl NsjailSandbox {
     }
 
     async fn cleanup_working_dir(&self) -> Result<(), SandboxError> {
-        let work_dir = self.config.sandbox.working_dir.join(self.id.to_string());
+        let work_dir = self.working_dir();
         if work_dir.exists() {
             tokio::fs::remove_dir_all(&work_dir)
                 .await

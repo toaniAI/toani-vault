@@ -57,6 +57,7 @@
 //! }
 //! ```
 
+pub mod browser_runtime;
 pub mod config;
 pub mod credential_ns;
 pub mod error;

@@ -480,14 +480,14 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 254,
-      "lastAccessed": 1775627159057,
+      "accessCount": 255,
+      "lastAccessed": 1775634109455,
       "type": "directory"
     },
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 131,
-      "lastAccessed": 1775627350304,
+      "accessCount": 132,
+      "lastAccessed": 1775638371770,
       "type": "file"
     },
     {
@@ -504,14 +504,14 @@
     },
     {
       "path": "src/models/mod.rs",
-      "accessCount": 25,
-      "lastAccessed": 1775627242086,
+      "accessCount": 26,
+      "lastAccessed": 1775638412476,
       "type": "file"
     },
     {
       "path": "src/vault/models.rs",
-      "accessCount": 22,
-      "lastAccessed": 1775627606047,
+      "accessCount": 23,
+      "lastAccessed": 1775638431617,
       "type": "directory"
     },
     {

@@ -218,9 +218,9 @@ impl MembershipRole {
     /// # 映射规则（与 TokenScope::from_role 保持一致）
     /// | Role | Scopes |
     /// |------|--------|
-    /// | owner | admin, tenant:*, credential:*, audit:read, members:*, invitations:*, tokens:*, users:manage, roles:manage |
-    /// | admin | tenant:read/write/admin, credential:*, audit:read, members:*, invitations:*, tokens:*, users:manage |
-    /// | member | tenant:read, credential:read/write/decrypt, audit:read, tokens:read/write |
+    /// | owner | admin, tenant:*, credential:*, sandbox:*, audit:read, members:*, invitations:*, tokens:*, users:manage, roles:manage |
+    /// | admin | tenant:read/write/admin, credential:*, sandbox:*, audit:read, members:*, invitations:*, tokens:*, users:manage |
+    /// | member | tenant:read, credential:read/write/decrypt, sandbox:*, audit:read, tokens:read/write |
     /// | readonly | tenant:read, credential:read, tokens:read |
     pub fn default_scopes(&self) -> Vec<String> {
         match self {
@@ -234,6 +234,9 @@ impl MembershipRole {
                 "credential:decrypt".to_string(),
                 "credential:write".to_string(),
                 "credential:delete".to_string(),
+                "sandbox:read".to_string(),
+                "sandbox:write".to_string(),
+                "sandbox:execute".to_string(),
                 "audit:read".to_string(),
                 "members:read".to_string(),
                 "members:write".to_string(),
@@ -254,6 +257,9 @@ impl MembershipRole {
                 "credential:decrypt".to_string(),
                 "credential:write".to_string(),
                 "credential:delete".to_string(),
+                "sandbox:read".to_string(),
+                "sandbox:write".to_string(),
+                "sandbox:execute".to_string(),
                 "audit:read".to_string(),
                 "members:read".to_string(),
                 "members:write".to_string(),
@@ -270,6 +276,9 @@ impl MembershipRole {
                 "credential:read".to_string(),
                 "credential:decrypt".to_string(),
                 "credential:write".to_string(),
+                "sandbox:read".to_string(),
+                "sandbox:write".to_string(),
+                "sandbox:execute".to_string(),
                 "audit:read".to_string(),
                 "tokens:read".to_string(),
                 "tokens:write".to_string(),

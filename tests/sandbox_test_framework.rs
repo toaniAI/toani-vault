@@ -295,6 +295,7 @@ pub fn create_operation_request(op_type: OperationType, description: &str) -> Op
         operation_type: op_type,
         description: description.to_string(),
         parameters: HashMap::new(),
+        resolved_parameters: HashMap::new(),
         created_at: OffsetDateTime::now_utc(),
     }
 }
@@ -310,6 +311,7 @@ pub fn create_operation_request_with_params(
         operation_type: op_type,
         description: description.to_string(),
         parameters: params,
+        resolved_parameters: HashMap::new(),
         created_at: OffsetDateTime::now_utc(),
     }
 }
@@ -527,6 +529,7 @@ mod example_tests {
 
     #[tokio::test]
     async fn test_session_lifecycle() {
+        skip_if_no_nsjail!();
         let ctx = SandboxTestContext::new().await;
 
         // 创建会话
@@ -554,6 +557,7 @@ mod example_tests {
 
     #[tokio::test]
     async fn test_operation_execution() {
+        skip_if_no_nsjail!();
         let ctx = SandboxTestContext::new().await;
         let session = ctx.create_session().await;
 
@@ -578,6 +582,7 @@ mod example_tests {
 
     #[tokio::test]
     async fn test_concurrent_sessions() {
+        skip_if_no_nsjail!();
         let ctx = SandboxTestContext::new().await;
 
         // 创建多个会话

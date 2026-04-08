@@ -187,16 +187,13 @@ describe('SandboxService', () => {
       expect(result.operationId).toBe('op-123');
       expect(result.status).toBe(OperationStatus.Success);
       expect(client.post).toHaveBeenCalledWith(
-        '/sandbox/sessions/session-123/operations',
+        '/sandbox/sessions/session-123/execute',
         {
           operation_type: OperationType.Click,
-          selector: '#login-button',
-          value: undefined,
-          url: undefined,
-          script: undefined,
-          attribute: undefined,
-          timeout: undefined,
-          wait_condition: undefined,
+          description: OperationType.Click,
+          parameters: {
+            selector: '#login-button',
+          },
         },
         undefined
       );
@@ -220,11 +217,70 @@ describe('SandboxService', () => {
 
       expect(result.status).toBe(OperationStatus.Success);
       expect(client.post).toHaveBeenCalledWith(
-        '/sandbox/sessions/session-123/operations',
+        '/sandbox/sessions/session-123/execute',
         expect.objectContaining({
           operation_type: OperationType.Fill,
-          selector: '#username',
-          value: 'user@example.com',
+          parameters: {
+            selector: '#username',
+            value: 'user@example.com',
+          },
+        }),
+        undefined
+      );
+    });
+
+    it('应该支持凭证字段引用填充', async () => {
+      vi.spyOn(client, 'post').mockResolvedValue({
+        operationId: 'op-cred',
+        status: OperationStatus.Success,
+        result: null,
+        executionTimeMs: 80,
+      });
+
+      await service.executeOperation('session-123', {
+        operationType: OperationType.Fill,
+        selector: '#api-key',
+        value: { $credential: 'api_key' },
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        '/sandbox/sessions/session-123/execute',
+        expect.objectContaining({
+          parameters: {
+            selector: '#api-key',
+            value: { $credential: 'api_key' },
+          },
+        }),
+        undefined
+      );
+    });
+
+    it('应该传递脚本绑定', async () => {
+      vi.spyOn(client, 'post').mockResolvedValue({
+        operationId: 'op-script',
+        status: OperationStatus.Success,
+        result: null,
+        executionTimeMs: 120,
+      });
+
+      await service.executeScript(
+        'session-123',
+        'return await credbridge.fill("#password", "password");',
+        {
+          password: { $credential: 'password' },
+        }
+      );
+
+      expect(client.post).toHaveBeenCalledWith(
+        '/sandbox/sessions/session-123/execute',
+        expect.objectContaining({
+          operation_type: OperationType.ExecuteScript,
+          parameters: expect.objectContaining({
+            script: 'return await credbridge.fill("#password", "password");',
+            bindings: {
+              password: { $credential: 'password' },
+            },
+          }),
         }),
         undefined
       );

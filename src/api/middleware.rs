@@ -172,8 +172,8 @@ impl TokenScope {
     ///
     /// # 映射规则
     /// - **owner**: 所有权限（包含 Admin）
-    /// - **admin**: credential:*, tokens:*, audit:read, members:*, invitations:*
-    /// - **member**: credential:read, credential:write, tokens:read, tokens:write
+    /// - **admin**: credential:*, sandbox:*, tokens:*, audit:read, members:*, invitations:*
+    /// - **member**: credential:read/write/decrypt, sandbox:*, tokens:read, tokens:write
     /// - **readonly**: credential:read, tokens:read
     pub fn from_role(role: crate::auth::models::MembershipRole) -> Vec<TokenScope> {
         use crate::auth::models::MembershipRole;
@@ -188,6 +188,9 @@ impl TokenScope {
                 TokenScope::CredentialDecrypt,
                 TokenScope::CredentialWrite,
                 TokenScope::CredentialDelete,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxExecute,
                 TokenScope::AuditRead,
                 TokenScope::MembersRead,
                 TokenScope::MembersWrite,
@@ -208,6 +211,9 @@ impl TokenScope {
                 TokenScope::CredentialDecrypt,
                 TokenScope::CredentialWrite,
                 TokenScope::CredentialDelete,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxExecute,
                 TokenScope::AuditRead,
                 TokenScope::MembersRead,
                 TokenScope::MembersWrite,
@@ -224,6 +230,9 @@ impl TokenScope {
                 TokenScope::CredentialRead,
                 TokenScope::CredentialDecrypt,
                 TokenScope::CredentialWrite,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxExecute,
                 TokenScope::AuditRead,
                 TokenScope::TokensRead,
                 TokenScope::TokensWrite,

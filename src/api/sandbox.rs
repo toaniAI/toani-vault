@@ -15,6 +15,10 @@ use crate::api::context::{ApiContext, RequestContext};
 use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
 use crate::api::websocket::handle_socket;
+use crate::crypto::hkdf::KeyHierarchy;
+use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
+use crate::models::CredentialType;
+use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     config::SandboxConfig,
     error::SandboxError,
@@ -23,7 +27,7 @@ use crate::tee::sandbox::{
     session::SandboxSession,
     types::{OperationRequest, OperationType, SessionId, SessionRequest},
 };
-use crate::vault::models::{CredentialId, TenantId, UserId, VaultError};
+use crate::vault::models::{CredentialId, TenantId, UserId, VaultEntry, VaultError};
 use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
@@ -37,6 +41,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use time::OffsetDateTime;
+use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -51,6 +56,12 @@ pub struct SandboxState {
     pub repository: Option<Arc<dyn SandboxRepository>>,
     /// 凭证 Vault（用于创建会话前凭证存在性校验）
     pub vault: Option<Arc<CredentialVault>>,
+    /// 密钥层次结构（用于服务端受控解密）
+    pub key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
+    /// 共享 TEE Enclave
+    pub enclave: Option<SharedEnclave>,
+    /// 会话级凭证缓存
+    credential_cache: Arc<RwLock<HashMap<Uuid, SessionCredentialMaterial>>>,
 }
 
 impl SandboxState {
@@ -59,6 +70,8 @@ impl SandboxState {
         config: SandboxConfig,
         database_pool: Option<PgPool>,
         vault: Option<Arc<CredentialVault>>,
+        key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
+        enclave: Option<SharedEnclave>,
     ) -> Result<Self, SandboxError> {
         let repository: Option<Arc<dyn SandboxRepository>> = database_pool.map(|pool| {
             Arc::new(PostgresSandboxRepository::new(pool)) as Arc<dyn SandboxRepository>
@@ -79,6 +92,9 @@ impl SandboxState {
             config,
             repository,
             vault,
+            key_hierarchy,
+            enclave,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -89,8 +105,32 @@ impl SandboxState {
             config,
             repository: None,
             vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
+
+    async fn cached_credential(&self, session_id: Uuid) -> Option<SessionCredentialMaterial> {
+        self.credential_cache.read().await.get(&session_id).cloned()
+    }
+
+    async fn store_cached_credential(&self, session_id: Uuid, material: SessionCredentialMaterial) {
+        self.credential_cache
+            .write()
+            .await
+            .insert(session_id, material);
+    }
+
+    async fn clear_cached_credential(&self, session_id: Uuid) {
+        self.credential_cache.write().await.remove(&session_id);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SessionCredentialMaterial {
+    credential_type: CredentialType,
+    values: HashMap<String, String>,
 }
 
 // ==================== 请求/响应类型 ====================
@@ -517,12 +557,26 @@ pub async fn execute_operation(
         }
     };
 
+    let (mut audit_parameters, resolved_parameters) = match resolve_operation_parameters(
+        &state,
+        session.as_ref(),
+        &operation_type,
+        &request.parameters,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    redact_persisted_parameters(&operation_type, &request.parameters, &mut audit_parameters);
+
     // 构建操作请求
     let operation = OperationRequest {
         operation_id: Uuid::new_v4(),
         operation_type,
         description: request.description,
-        parameters: request.parameters,
+        parameters: audit_parameters,
+        resolved_parameters,
         created_at: OffsetDateTime::now_utc(),
     };
 
@@ -644,6 +698,7 @@ pub async fn close_session(
 
     match state.pool.release_session(session_id).await {
         Ok(_) => {
+            state.clear_cached_credential(id).await;
             let response = SessionActionResponse {
                 session_id: id,
                 success: true,
@@ -681,6 +736,7 @@ pub async fn take_screenshot(
         operation_type: OperationType::Screenshot,
         description: "Take screenshot".to_string(),
         parameters: HashMap::new(),
+        resolved_parameters: HashMap::new(),
         created_at: OffsetDateTime::now_utc(),
     };
 
@@ -746,6 +802,7 @@ pub async fn export_data(
         operation_type: OperationType::Export,
         description: "Export data".to_string(),
         parameters,
+        resolved_parameters: HashMap::new(),
         created_at: OffsetDateTime::now_utc(),
     };
 
@@ -865,6 +922,370 @@ async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Respo
     check_scope(token, TokenScope::CredentialDecrypt).await
 }
 
+async fn resolve_operation_parameters(
+    state: &SandboxState,
+    session: &dyn SandboxSession,
+    operation_type: &OperationType,
+    parameters: &HashMap<String, serde_json::Value>,
+) -> Result<
+    (
+        HashMap<String, serde_json::Value>,
+        HashMap<String, serde_json::Value>,
+    ),
+    Response,
+> {
+    let mut audit_parameters = HashMap::with_capacity(parameters.len());
+    let mut resolved_parameters = HashMap::with_capacity(parameters.len());
+
+    for (key, value) in parameters {
+        let (audit_value, resolved_value) =
+            resolve_parameter_value(state, session, operation_type, value).await?;
+        audit_parameters.insert(key.clone(), audit_value);
+        resolved_parameters.insert(key.clone(), resolved_value);
+    }
+
+    Ok((audit_parameters, resolved_parameters))
+}
+
+fn redact_persisted_parameters(
+    operation_type: &OperationType,
+    original_parameters: &HashMap<String, serde_json::Value>,
+    persisted_parameters: &mut HashMap<String, serde_json::Value>,
+) {
+    match operation_type {
+        OperationType::Fill => {
+            let is_sensitive = original_parameters
+                .get("sensitive")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or_else(|| {
+                    original_parameters
+                        .get("value")
+                        .and_then(|value| parse_credential_reference(value).ok().flatten())
+                        .is_some()
+                });
+
+            if is_sensitive
+                && let Some(value) = persisted_parameters.get_mut("value")
+                && value.is_string()
+            {
+                *value = serde_json::Value::String("[REDACTED]".to_string());
+            }
+        }
+        OperationType::ExecuteScript => {
+            if let Some(bindings) = persisted_parameters.get_mut("bindings") {
+                redact_nested_strings(bindings);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn redact_nested_strings(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(_) => {
+            *value = serde_json::Value::String("[REDACTED]".to_string());
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                redact_nested_strings(item);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for nested in map.values_mut() {
+                if nested
+                    .get("$credential")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+                {
+                    continue;
+                }
+                redact_nested_strings(nested);
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn resolve_parameter_value(
+    state: &SandboxState,
+    session: &dyn SandboxSession,
+    operation_type: &OperationType,
+    value: &serde_json::Value,
+) -> Result<(serde_json::Value, serde_json::Value), Response> {
+    if let Some(field) = parse_credential_reference(value)? {
+        let material = load_session_credential_material(state, session)
+            .await
+            .map_err(|error| map_sandbox_error(error).into_response())?;
+
+        let resolved = material.values.get(field).cloned().ok_or_else(|| {
+            ApiErrorResponse::invalid_request(format!(
+                "unsupported credential field reference: {field} for {}",
+                material.credential_type.as_str()
+            ))
+            .into_response()
+        })?;
+
+        return Ok((value.clone(), serde_json::Value::String(resolved)));
+    }
+
+    match value {
+        serde_json::Value::Array(values) => {
+            let mut audit_values = Vec::with_capacity(values.len());
+            let mut resolved_values = Vec::with_capacity(values.len());
+            for item in values {
+                let (audit_item, resolved_item) = Box::pin(resolve_parameter_value(
+                    state,
+                    session,
+                    operation_type,
+                    item,
+                ))
+                .await?;
+                audit_values.push(audit_item);
+                resolved_values.push(resolved_item);
+            }
+            Ok((
+                serde_json::Value::Array(audit_values),
+                serde_json::Value::Array(resolved_values),
+            ))
+        }
+        serde_json::Value::Object(map) => {
+            let mut audit_map = serde_json::Map::with_capacity(map.len());
+            let mut resolved_map = serde_json::Map::with_capacity(map.len());
+            for (key, item) in map {
+                let (audit_item, resolved_item) = Box::pin(resolve_parameter_value(
+                    state,
+                    session,
+                    operation_type,
+                    item,
+                ))
+                .await?;
+                audit_map.insert(key.clone(), audit_item);
+                resolved_map.insert(key.clone(), resolved_item);
+            }
+            Ok((
+                serde_json::Value::Object(audit_map),
+                serde_json::Value::Object(resolved_map),
+            ))
+        }
+        _ => Ok((value.clone(), value.clone())),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_credential_reference(value: &serde_json::Value) -> Result<Option<&str>, Response> {
+    let serde_json::Value::Object(map) = value else {
+        return Ok(None);
+    };
+
+    let Some(reference_value) = map.get("$credential") else {
+        return Ok(None);
+    };
+
+    if map.len() != 1 {
+        return Err(ApiErrorResponse::invalid_request(
+            "credential reference objects may only contain the $credential key",
+        )
+        .into_response());
+    }
+
+    let Some(field) = reference_value.as_str() else {
+        return Err(ApiErrorResponse::invalid_request(
+            "credential reference field must be a string",
+        )
+        .into_response());
+    };
+
+    if field.trim().is_empty() {
+        Err(
+            ApiErrorResponse::invalid_request("credential reference field must not be empty")
+                .into_response(),
+        )
+    } else {
+        Ok(Some(field))
+    }
+}
+
+async fn load_session_credential_material(
+    state: &SandboxState,
+    session: &dyn SandboxSession,
+) -> Result<SessionCredentialMaterial, SandboxError> {
+    let session_id: Uuid = session.id().into();
+    if let Some(material) = state.cached_credential(session_id).await {
+        return Ok(material);
+    }
+
+    let context = session.context();
+    let vault = state.vault.as_ref().ok_or_else(|| {
+        SandboxError::Config("sandbox credential resolution requires credential vault".to_string())
+    })?;
+    let credential_id_model = CredentialId::from_string(context.credential_id.to_string())
+        .map_err(|error| SandboxError::Other(format!("invalid credential id: {error}")))?;
+    let tenant_id = TenantId::new(context.tenant_id.to_string());
+    let user_id = UserId::new(context.user_id.to_string());
+
+    let entry = match vault.get_credential(&credential_id_model, &tenant_id, &user_id) {
+        Ok(Some(entry)) => entry,
+        Ok(None) | Err(VaultError::TenantIsolationViolation { .. }) => {
+            return Err(SandboxError::Session(
+                crate::tee::sandbox::error::SessionError::credential_not_found(
+                    context.credential_id,
+                ),
+            ));
+        }
+        Err(error) => {
+            return Err(SandboxError::Other(format!(
+                "failed to load credential for sandbox session: {error}"
+            )));
+        }
+    };
+
+    let material = decrypt_session_credential_material(state, &entry).await?;
+    state
+        .store_cached_credential(session_id, material.clone())
+        .await;
+
+    Ok(material)
+}
+
+async fn decrypt_session_credential_material(
+    state: &SandboxState,
+    entry: &VaultEntry,
+) -> Result<SessionCredentialMaterial, SandboxError> {
+    let plaintext = decrypt_vault_entry_in_sandbox(state, entry).await?;
+    let plaintext_data: serde_json::Value =
+        serde_json::from_slice(&plaintext).map_err(|error| {
+            SandboxError::Other(format!("credential plaintext is not valid JSON: {error}"))
+        })?;
+    let values = extract_supported_credential_fields(entry.credential_type, &plaintext_data)?;
+
+    Ok(SessionCredentialMaterial {
+        credential_type: entry.credential_type,
+        values,
+    })
+}
+
+fn extract_supported_credential_fields(
+    credential_type: CredentialType,
+    plaintext_data: &serde_json::Value,
+) -> Result<HashMap<String, String>, SandboxError> {
+    let object = plaintext_data.as_object().ok_or_else(|| {
+        SandboxError::Other(
+            "credential plaintext must be a JSON object for delegated sandbox use".to_string(),
+        )
+    })?;
+    let mut values = HashMap::new();
+    match credential_type {
+        CredentialType::UsernamePassword => {
+            for field in ["username", "password"] {
+                let value = object
+                    .get(field)
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| SandboxError::Other(format!("credential plaintext missing {field}")))?;
+                values.insert(field.to_string(), value.to_string());
+            }
+        }
+        CredentialType::ApiKey => {
+            let value = object
+                .get("api_key")
+                .or_else(|| object.get("key"))
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| SandboxError::Other("credential plaintext missing api_key".to_string()))?;
+            values.insert("api_key".to_string(), value.to_string());
+        }
+        CredentialType::SessionCookie => {
+            let value = object
+                .get("cookie")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| SandboxError::Other("credential plaintext missing cookie".to_string()))?;
+            values.insert("cookie".to_string(), value.to_string());
+            if let Some(name) = object.get("name").and_then(serde_json::Value::as_str) {
+                values.insert("name".to_string(), name.to_string());
+            }
+        }
+        CredentialType::OAuthRefresh => {
+            let value = object
+                .get("refresh_token")
+                .or_else(|| object.get("refreshToken"))
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| SandboxError::Other("credential plaintext missing refresh_token".to_string()))?;
+            values.insert("refresh_token".to_string(), value.to_string());
+        }
+        _ => {}
+    }
+
+    for (key, value) in object {
+        match value {
+            serde_json::Value::String(raw) => {
+                values.entry(key.clone()).or_insert_with(|| raw.clone());
+            }
+            serde_json::Value::Number(number) => {
+                values
+                    .entry(key.clone())
+                    .or_insert_with(|| number.to_string());
+            }
+            serde_json::Value::Bool(boolean) => {
+                values
+                    .entry(key.clone())
+                    .or_insert_with(|| boolean.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    if values.is_empty() {
+        return Err(SandboxError::Other(format!(
+            "sandbox credential delegation found no scalar fields for {}",
+            credential_type.as_str()
+        )));
+    }
+
+    Ok(values)
+}
+
+async fn decrypt_vault_entry_in_sandbox(
+    state: &SandboxState,
+    entry: &VaultEntry,
+) -> Result<Vec<u8>, SandboxError> {
+    let key_hierarchy = state.key_hierarchy.as_ref().ok_or_else(|| {
+        SandboxError::Config(
+            "sandbox credential resolution requires key hierarchy state".to_string(),
+        )
+    })?;
+    let blob = EncryptedBlob {
+        version: entry.encrypted_payload.version,
+        algorithm: entry.encrypted_payload.algorithm.clone(),
+        kdf: entry.encrypted_payload.kdf.clone(),
+        nonce: entry.encrypted_payload.nonce.clone(),
+        auth_tag: entry.encrypted_payload.auth_tag.clone(),
+        ciphertext: entry.encrypted_payload.ciphertext.clone(),
+        aad_hash: None,
+    };
+    let context = CredentialCryptoContext::new(
+        entry.tenant_id.as_str(),
+        entry.user_id.hash(),
+        entry.credential_id.as_str(),
+    );
+
+    if let Some(enclave) = &state.enclave {
+        let mut enclave = enclave.lock().await;
+        if enclave.is_running() {
+            return enclave
+                .decrypt_credential(
+                    entry.tenant_id.as_str(),
+                    entry.user_id.hash(),
+                    entry.credential_id.as_str(),
+                    &blob,
+                )
+                .map_err(|error| SandboxError::Other(format!("TEE decrypt failed: {error}")));
+        }
+    }
+
+    let hierarchy = key_hierarchy.read().await;
+    context
+        .decrypt_with_hierarchy(&hierarchy, &blob)
+        .map_err(|error| SandboxError::Other(format!("software decrypt failed: {error}")))
+}
+
 fn ensure_credential_exists(
     vault: Option<&Arc<CredentialVault>>,
     token: &ValidatedToken,
@@ -932,6 +1353,11 @@ fn map_operation_record(record: SandboxOperationRecord) -> OperationDetailRespon
 /// 将 SandboxError 映射为 API 响应
 fn map_sandbox_error(error: SandboxError) -> Response {
     let (code, message, status) = match &error {
+        SandboxError::Config(message) => (
+            ErrorCode::InvalidRequest,
+            message.clone(),
+            StatusCode::BAD_REQUEST,
+        ),
         SandboxError::Session(e) => match e {
             crate::tee::sandbox::error::SessionError::NotFound { .. } => {
                 (ErrorCode::NotFound, e.to_string(), StatusCode::NOT_FOUND)
@@ -963,6 +1389,27 @@ fn map_sandbox_error(error: SandboxError) -> Response {
             ),
         },
         SandboxError::Security(e) => (ErrorCode::Forbidden, e.to_string(), StatusCode::FORBIDDEN),
+        SandboxError::Timeout { .. } => (
+            ErrorCode::ServiceUnavailable,
+            error.to_string(),
+            StatusCode::GATEWAY_TIMEOUT,
+        ),
+        SandboxError::Other(message) if message.starts_with("invalid_request:") => (
+            ErrorCode::InvalidRequest,
+            message
+                .trim_start_matches("invalid_request:")
+                .trim()
+                .to_string(),
+            StatusCode::BAD_REQUEST,
+        ),
+        SandboxError::Other(message) if message.starts_with("selector_not_found:") => (
+            ErrorCode::InvalidRequest,
+            message
+                .trim_start_matches("selector_not_found:")
+                .trim()
+                .to_string(),
+            StatusCode::BAD_REQUEST,
+        ),
         _ => (
             ErrorCode::InternalError,
             error.to_string(),
@@ -1193,6 +1640,25 @@ mod tests {
             .expect("existing credential should pass");
     }
 
+    #[test]
+    fn test_parse_credential_reference_accepts_extended_fields() {
+        for field in ["api_key", "cookie", "refresh_token", "name"] {
+            let value = serde_json::json!({ "$credential": field });
+            assert_eq!(
+                parse_credential_reference(&value).unwrap(),
+                Some(field),
+                "field {field} should be accepted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_credential_reference_rejects_empty_field() {
+        let response = parse_credential_reference(&serde_json::json!({ "$credential": "" }))
+            .expect_err("empty field should fail");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
     #[tokio::test]
     async fn test_validate_create_session_credential_id_missing_returns_400_invalid_request() {
         let message = validate_create_session_credential_id(None)
@@ -1257,6 +1723,35 @@ mod tests {
         assert!(
             error.to_string().contains("original_intent"),
             "error should mention original_intent"
+        );
+    }
+
+    #[test]
+    fn test_extract_supported_credential_fields_keeps_scalar_api_key_payload_fields() {
+        let values = extract_supported_credential_fields(
+            CredentialType::ApiKey,
+            &serde_json::json!({ "api_key": "sk_live_123", "ignored": "x" }),
+        )
+        .expect("api key should be supported");
+
+        assert_eq!(
+            values.get("api_key").map(String::as_str),
+            Some("sk_live_123")
+        );
+        assert_eq!(values.get("ignored").map(String::as_str), Some("x"));
+    }
+
+    #[test]
+    fn test_extract_supported_credential_fields_supports_refresh_token() {
+        let values = extract_supported_credential_fields(
+            CredentialType::OAuthRefresh,
+            &serde_json::json!({ "refresh_token": "rt_123" }),
+        )
+        .expect("oauth refresh should be supported");
+
+        assert_eq!(
+            values.get("refresh_token").map(String::as_str),
+            Some("rt_123")
         );
     }
 }

@@ -129,17 +129,22 @@ export class SandboxService {
     request: ExecuteOperationRequest,
     options?: RequestOptions
   ): Promise<ExecuteOperationResponse> {
+    const parameters: Record<string, unknown> = {};
+    if (request.selector !== undefined) parameters.selector = request.selector;
+    if (request.value !== undefined) parameters.value = request.value;
+    if (request.url !== undefined) parameters.url = request.url;
+    if (request.script !== undefined) parameters.script = request.script;
+    if (request.bindings !== undefined) parameters.bindings = request.bindings;
+    if (request.attribute !== undefined) parameters.attribute = request.attribute;
+    if (request.timeout !== undefined) parameters.timeout_ms = request.timeout;
+    if (request.waitCondition !== undefined) parameters.wait_condition = request.waitCondition;
+
     return this.client.post<ExecuteOperationResponse>(
-      `/sandbox/sessions/${sessionId}/operations`,
+      `/sandbox/sessions/${sessionId}/execute`,
       {
         operation_type: request.operationType,
-        selector: request.selector,
-        value: request.value,
-        url: request.url,
-        script: request.script,
-        attribute: request.attribute,
-        timeout: request.timeout,
-        wait_condition: request.waitCondition,
+        description: request.description ?? request.operationType,
+        parameters,
       },
       options
     );
@@ -350,13 +355,13 @@ export class SandboxService {
    * @example
    * ```typescript
    * await sdk.sandbox.fill('session-123', '#username', 'user@example.com');
-   * await sdk.sandbox.fill('session-123', '#password', 'secret');
+   * await sdk.sandbox.fill('session-123', '#password', { $credential: 'password' });
    * ```
    */
   public async fill(
     sessionId: string,
     selector: string,
-    value: string,
+    value: ExecuteOperationRequest['value'],
     options?: RequestOptions
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
@@ -431,19 +436,23 @@ export class SandboxService {
    * @example
    * ```typescript
    * const result = await sdk.sandbox.executeScript('session-123', `
-   *   return document.title;
-   * `);
+   *   await credbridge.fill('#api-key', 'apiKey');
+   *   return await credbridge.getText('#status');
+   * `, {
+   *   apiKey: { $credential: 'api_key' },
+   * });
    * console.log('Title:', result.result);
    * ```
    */
   public async executeScript(
     sessionId: string,
     script: string,
+    bindings?: ExecuteOperationRequest['bindings'],
     options?: RequestOptions
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
-      { operationType: OperationType.ExecuteScript, script },
+      { operationType: OperationType.ExecuteScript, script, bindings },
       options
     );
   }

@@ -596,18 +596,22 @@ fn test_membership_default_scopes() {
     let owner_scopes = MembershipRole::Owner.default_scopes();
     assert!(owner_scopes.contains(&"tenant:delete".to_string()));
     assert!(owner_scopes.contains(&"members:invite".to_string()));
+    assert!(owner_scopes.contains(&"sandbox:execute".to_string()));
 
     let admin_scopes = MembershipRole::Admin.default_scopes();
     assert!(admin_scopes.contains(&"tenant:admin".to_string()));
     assert!(!admin_scopes.contains(&"tenant:delete".to_string()));
+    assert!(admin_scopes.contains(&"sandbox:write".to_string()));
 
     let member_scopes = MembershipRole::Member.default_scopes();
     assert!(member_scopes.contains(&"credential:read".to_string()));
     assert!(member_scopes.contains(&"credential:write".to_string()));
+    assert!(member_scopes.contains(&"sandbox:read".to_string()));
     assert!(!member_scopes.contains(&"members:invite".to_string()));
 
     let readonly_scopes = MembershipRole::Readonly.default_scopes();
     assert!(readonly_scopes.contains(&"credential:read".to_string()));
+    assert!(!readonly_scopes.contains(&"sandbox:read".to_string()));
     assert!(!readonly_scopes.contains(&"credential:write".to_string()));
 }
 

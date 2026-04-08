@@ -176,6 +176,29 @@ pub struct SessionRequest {
     pub metadata: Option<HashMap<String, String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialReference {
+    pub field: String,
+}
+
+impl CredentialReference {
+    pub fn from_value(value: &serde_json::Value) -> Option<Self> {
+        let object = value.as_object()?;
+        if object.len() != 1 {
+            return None;
+        }
+
+        let field = object.get("$credential")?.as_str()?.trim();
+        if field.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            field: field.to_string(),
+        })
+    }
+}
+
 /// 会话上下文
 #[derive(Debug, Clone)]
 pub struct SessionContext {
@@ -281,8 +304,26 @@ pub struct OperationRequest {
     pub description: String,
     /// 操作参数
     pub parameters: HashMap<String, serde_json::Value>,
+    /// 运行时解析后的参数
+    pub resolved_parameters: HashMap<String, serde_json::Value>,
     /// 创建时间
     pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedOperation {
+    pub parameters: HashMap<String, serde_json::Value>,
+    pub persisted_parameters: serde_json::Value,
+}
+
+impl OperationRequest {
+    pub fn effective_parameters(&self) -> &HashMap<String, serde_json::Value> {
+        if self.resolved_parameters.is_empty() {
+            &self.parameters
+        } else {
+            &self.resolved_parameters
+        }
+    }
 }
 
 /// 操作状态

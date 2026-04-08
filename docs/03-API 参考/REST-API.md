@@ -177,6 +177,28 @@ Authorization: Bearer <paseto_v4_local_token>
 }
 ```
 
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `service_id` | string | 是 | 服务标识 |
+| `credential_type` | string | 是 | 凭证类型，见下方枚举 |
+| `plaintext_data` | object | 是 | 明文凭证内容（将被加密） |
+| `expires_at` | u64 | 否 | 过期时间（Unix 时间戳秒） |
+
+**支持的凭证类型**:
+
+| 类型 | 说明 |
+|------|------|
+| `username_password` | 用户名密码 |
+| `oauth_token` / `oauth_refresh` | OAuth 刷新令牌 |
+| `api_key` | API 密钥 |
+| `session_cookie` | 会话 Cookie |
+| `kyc_document` | KYC 文档 |
+| `client_certificate` | 客户端证书 |
+| `ssh_key` | SSH 密钥 |
+| `database_connection` | 数据库连接 |
+
 **响应 (201 Created)**:
 ```json
 {
@@ -219,7 +241,9 @@ Authorization: Bearer <paseto_v4_local_token>
       "tenant_id": "tenant_123",
       "created_at": "1709990400Z",
       "expires_at": "1893456000Z",
-      "is_deleted": false
+      "is_deleted": false,
+      "version": 1,
+      "status": "active"
     }
   ],
   "total": 1
@@ -246,22 +270,12 @@ Authorization: Bearer <paseto_v4_local_token>
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "credential_type": "username_password",
-  "user_id_hash": "aBcDeFg...",
   "service_id": "schwab",
-  "tenant_id": "tenant_123",
+  "credential_type": "username_password",
   "created_at": "1709990400Z",
-  "updated_at": "1709990400Z",
   "expires_at": "1893456000Z",
   "is_deleted": false,
-  "encrypted_payload": {
-    "version": 2,
-    "algorithm": "AES-256-GCM",
-    "kdf": "HKDF-SHA-256",
-    "nonce": "base64_encoded_nonce",
-    "auth_tag": "base64_encoded_auth_tag",
-    "ciphertext": "base64_encoded_ciphertext"
-  }
+  "status": "active"
 }
 ```
 
@@ -322,6 +336,179 @@ Authorization: Bearer <paseto_v4_local_token>
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
   "deleted": true
+}
+```
+
+---
+
+### 更新凭证
+
+更新指定凭证的内容（创建新版本）。
+
+**Endpoint**: `PUT /api/v1/credentials/:id`
+
+**Scope**: `credential:write`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 凭证 ID (UUID v7) |
+
+**请求体**:
+```json
+{
+  "plaintext_data": {
+    "username": "user@example.com",
+    "password": "new_secret_password"
+  },
+  "change_reason": "密码定期更换"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `plaintext_data` | object | 是 | 新的明文凭证内容 |
+| `change_reason` | string | 否 | 变更原因（用于审计） |
+
+**响应 (200 OK)**:
+```json
+{
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "version": 2,
+  "service_id": "schwab",
+  "credential_type": "username_password",
+  "updated_at": "2024-03-01T12:00:00Z",
+  "previous_version": 1
+}
+```
+
+---
+
+### 获取凭证版本历史
+
+获取指定凭证的所有版本历史。
+
+**Endpoint**: `GET /api/v1/credentials/:id/versions`
+
+**Scope**: `credential:read`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 凭证 ID (UUID v7) |
+
+**响应 (200 OK)**:
+```json
+{
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "versions": [
+    {
+      "version": 2,
+      "created_at": "2024-03-01T12:00:00Z",
+      "change_reason": "密码定期更换"
+    },
+    {
+      "version": 1,
+      "created_at": "2024-01-15T10:30:00Z",
+      "change_reason": null
+    }
+  ]
+}
+```
+
+---
+
+### 获取指定版本详情
+
+获取凭证指定版本的详细信息。
+
+**Endpoint**: `GET /api/v1/credentials/:id/versions/:version`
+
+**Scope**: `credential:read`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 凭证 ID (UUID v7) |
+| `version` | u32 | 版本号 |
+
+**响应 (200 OK)**:
+```json
+{
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "version": 1,
+  "service_id": "schwab",
+  "credential_type": "username_password",
+  "created_at": "2024-01-15T10:30:00Z",
+  "change_reason": null
+}
+```
+
+---
+
+### 回滚凭证
+
+将凭证回滚到指定版本。
+
+**Endpoint**: `POST /api/v1/credentials/:id/rollback`
+
+**Scope**: `credential:write`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 凭证 ID (UUID v7) |
+
+**请求体**:
+```json
+{
+  "version": 1,
+  "reason": "新版本配置错误"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `version` | u32 | 是 | 目标版本号 |
+| `reason` | string | 否 | 回滚原因 |
+
+**响应 (200 OK)**:
+```json
+{
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "version": 3,
+  "service_id": "schwab",
+  "credential_type": "username_password",
+  "updated_at": "2024-03-01T12:00:00Z",
+  "rolled_back_from": 2,
+  "rolled_back_to": 1
+}
+```
+
+---
+
+## Token API
+
+### 获取 Token 统计
+
+获取当前活跃的 Token 数量统计。
+
+**Endpoint**: `GET /api/v1/tokens/stats`
+
+**Scope**: `admin`
+
+**响应 (200 OK)**:
+```json
+{
+  "active_tokens": 42
 }
 ```
 
@@ -649,14 +836,15 @@ Authorization: Bearer <paseto_v4_local_token>
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `start_time` | u64 | 否 | 开始时间戳（Unix 秒） |
-| `end_time` | u64 | 否 | 结束时间戳（Unix 秒） |
+| `start_time` | u64 | 否 | 开始时间戳（Unix 毫秒） |
+| `end_time` | u64 | 否 | 结束时间戳（Unix 毫秒） |
 | `action` | string | 否 | 操作类型过滤 |
 | `risk_tier` | string | 否 | 风险等级：Low/Medium/High/Critical |
 | `user_id_hash` | string | 否 | 用户 ID 哈希过滤 |
 | `outcome` | string | 否 | 结果：Success/Failure/Denied/Timeout/Aborted |
-| `limit` | u32 | 否 | 返回条数限制（默认 20，最大 100） |
-| `offset` | u32 | 否 | 分页偏移量（默认 0） |
+| `service` | string | 否 | 服务标识过滤 |
+| `page` | usize | 否 | 页码（从 1 开始，默认 1） |
+| `page_size` | usize | 否 | 每页数量（默认 20，最大 1000） |
 
 **支持的操作类型 (AuditAction)**:
 

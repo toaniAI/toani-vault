@@ -1,14 +1,17 @@
 //! 沙箱池管理
 
+use crate::crypto::hkdf::KeyHierarchy;
+use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     PoolStatus, SandboxHealth,
-    config::{NsjailConfig, SandboxConfig, SandboxPoolConfig},
+    config::{MountConfig, MountType, NsjailConfig, SandboxConfig, SandboxPoolConfig},
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, WarmNsjailInstance},
     repository::{NewSandboxSessionRecord, SandboxRepository, metadata_to_json, to_chrono_utc},
     session::{ActiveNsjailSession, SandboxSession},
     types::{SandboxId, SessionContext, SessionId, SessionRequest},
 };
+use crate::vault::storage::CredentialVault;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use time::{Duration, OffsetDateTime};
@@ -55,6 +58,12 @@ pub struct NsjailSandboxPool {
     cleanup_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
     /// 持久化仓储
     repository: Option<Arc<dyn SandboxRepository>>,
+    /// 凭证 Vault
+    vault: Option<Arc<CredentialVault>>,
+    /// 密钥层次
+    key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
+    /// 共享 TEE Enclave
+    enclave: Option<SharedEnclave>,
 }
 
 impl NsjailSandboxPool {
@@ -68,6 +77,16 @@ impl NsjailSandboxPool {
         config: SandboxConfig,
         repository: Option<Arc<dyn SandboxRepository>>,
     ) -> Self {
+        Self::new_with_dependencies(config, repository, None, None, None)
+    }
+
+    pub fn new_with_dependencies(
+        config: SandboxConfig,
+        repository: Option<Arc<dyn SandboxRepository>>,
+        vault: Option<Arc<CredentialVault>>,
+        key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
+        enclave: Option<SharedEnclave>,
+    ) -> Self {
         let pool_config = config.pool.clone();
 
         Self {
@@ -80,6 +99,9 @@ impl NsjailSandboxPool {
             status: Arc::new(RwLock::new(PoolStatus::Initializing)),
             cleanup_handle: Arc::new(RwLock::new(None)),
             repository,
+            vault,
+            key_hierarchy,
+            enclave,
         }
     }
 
@@ -173,11 +195,34 @@ impl NsjailSandboxPool {
 
     /// 创建 nsjail 配置
     fn create_nsjail_config(&self) -> NsjailConfig {
+        let mut sandbox = self.sandbox_config.clone();
+        let frontend_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("frontend");
+        if frontend_dir.exists()
+            && !sandbox
+                .security
+                .namespace
+                .mount_points
+                .iter()
+                .any(|mount| mount.src == frontend_dir)
+        {
+            sandbox.security.namespace.mount_points.push(MountConfig {
+                src: frontend_dir.clone(),
+                dst: frontend_dir,
+                mount_type: MountType::Bind,
+                read_only: true,
+            });
+        }
+
+        let mut env = std::collections::HashMap::new();
+        if let Some(path) = std::env::var_os("PATH") {
+            env.insert("PATH".to_string(), path.to_string_lossy().to_string());
+        }
+
         NsjailConfig {
-            sandbox: self.sandbox_config.clone(),
+            sandbox,
             command: vec!["sleep".to_string(), "3600".to_string()], // 长时间运行的占位命令
             cwd: std::path::PathBuf::from("/"),
-            env: std::collections::HashMap::new(),
+            env,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
@@ -443,11 +488,14 @@ impl SandboxPool for NsjailSandboxPool {
         // 创建会话
         let session_id = SessionId::new();
         let context = self.create_session_context(&request, session_id, sandbox.id);
-        let session = ActiveNsjailSession::new_with_repository(
+        let session = ActiveNsjailSession::new_with_dependencies(
             session_id,
             context.clone(),
             sandbox,
             self.repository.clone(),
+            self.vault.clone(),
+            self.key_hierarchy.clone(),
+            self.enclave.clone(),
         );
 
         if let Some(repository) = &self.repository {

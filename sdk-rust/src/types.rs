@@ -1060,6 +1060,12 @@ pub struct ExecuteSandboxOperationRequest {
     pub parameters: HashMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxCredentialReference {
+    #[serde(rename = "$credential")]
+    pub field: String,
+}
+
 /// 沙箱执行响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteSandboxOperationResponse {

@@ -25,6 +25,7 @@ use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::{self, TraceLayer};
 use tracing::{Level, info, warn};
+use vault_service::crypto::hkdf::KeyHierarchy;
 
 // CredBridge internal modules
 use vault_service::api::{
@@ -57,7 +58,7 @@ use vault_service::config::{
 };
 use vault_service::services::db::DatabasePool;
 use vault_service::tee::{
-    Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, StartupReadiness,
+    Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, SharedEnclave, StartupReadiness,
     TEE_HARDWARE_BUILD_ENABLED, validate_runtime_requirements,
 };
 use vault_service::tenant::{
@@ -556,6 +557,8 @@ async fn initialize_app_state(
         config,
         database_pool.as_ref().map(|pool| pool.pool().clone()),
         Some(credential_state.vault.clone()),
+        Some(credential_state.key_hierarchy.clone()),
+        Some(credential_state.enclave.clone()),
     )
     .await
     .map_err(|e| std::io::Error::other(format!("Sandbox API 初始化失败，服务启动终止: {e}")))?;
@@ -609,6 +612,8 @@ async fn initialize_sandbox_state(
     config: &ServerConfig,
     database_pool: Option<sqlx::PgPool>,
     vault: Option<Arc<CredentialVault>>,
+    key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
+    enclave: Option<SharedEnclave>,
 ) -> Result<SandboxState, Box<dyn std::error::Error>> {
     use vault_service::tee::sandbox::config::SandboxConfig;
 
@@ -620,7 +625,7 @@ async fn initialize_sandbox_state(
     }
 
     let config = SandboxConfig::from_env();
-    let state = SandboxState::new(config, database_pool, vault)
+    let state = SandboxState::new(config, database_pool, vault, key_hierarchy, enclave)
         .await
         .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 

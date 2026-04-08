@@ -533,11 +533,11 @@ export enum OperationType {
   /** 执行脚本 */
   ExecuteScript = 'execute_script',
   /** 等待元素 */
-  WaitForSelector = 'wait_for_selector',
+  WaitForSelector = 'wait',
   /** 截图 */
   Screenshot = 'screenshot',
   /** 导出数据 */
-  ExportData = 'export_data',
+  ExportData = 'export',
 }
 
 /** 操作状态 */
@@ -607,17 +607,27 @@ export interface SessionInfo {
 }
 
 /** 执行操作请求 */
+export type SandboxCredentialField = string;
+
+export interface SandboxCredentialReference {
+  $credential: SandboxCredentialField;
+}
+
 export interface ExecuteOperationRequest {
   /** 操作类型 */
   operationType: OperationType;
+  /** 操作描述 */
+  description?: string;
   /** 选择器（CSS选择器或XPath） */
   selector?: string;
   /** 输入值 */
-  value?: string;
+  value?: string | SandboxCredentialReference;
   /** URL（用于导航操作） */
   url?: string;
   /** 脚本（用于执行脚本操作） */
   script?: string;
+  /** 脚本绑定（支持 credential 引用） */
+  bindings?: Record<string, string | SandboxCredentialReference>;
   /** 属性名（用于获取属性操作） */
   attribute?: string;
   /** 超时时间（毫秒） */

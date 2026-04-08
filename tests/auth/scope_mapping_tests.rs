@@ -28,6 +28,9 @@ fn test_owner_role_scopes() {
     assert!(scopes.contains(&"credential:read".to_string()));
     assert!(scopes.contains(&"credential:write".to_string()));
     assert!(scopes.contains(&"credential:delete".to_string()));
+    assert!(scopes.contains(&"sandbox:read".to_string()));
+    assert!(scopes.contains(&"sandbox:write".to_string()));
+    assert!(scopes.contains(&"sandbox:execute".to_string()));
     assert!(scopes.contains(&"audit:read".to_string()));
     assert!(scopes.contains(&"members:read".to_string()));
     assert!(scopes.contains(&"members:write".to_string()));
@@ -37,7 +40,7 @@ fn test_owner_role_scopes() {
     assert!(scopes.contains(&"admin".to_string()));
 
     // 验证 scope 数量
-    assert_eq!(scopes.len(), 20);
+    assert_eq!(scopes.len(), 23);
 }
 
 #[test]
@@ -54,6 +57,9 @@ fn test_admin_role_scopes() {
     assert!(scopes.contains(&"credential:read".to_string()));
     assert!(scopes.contains(&"credential:write".to_string()));
     assert!(scopes.contains(&"credential:delete".to_string()));
+    assert!(scopes.contains(&"sandbox:read".to_string()));
+    assert!(scopes.contains(&"sandbox:write".to_string()));
+    assert!(scopes.contains(&"sandbox:execute".to_string()));
     assert!(scopes.contains(&"audit:read".to_string()));
     assert!(scopes.contains(&"members:read".to_string()));
     assert!(scopes.contains(&"members:write".to_string()));
@@ -62,7 +68,7 @@ fn test_admin_role_scopes() {
     assert!(scopes.contains(&"invitations:write".to_string()));
 
     // 验证 scope 数量
-    assert_eq!(scopes.len(), 17);
+    assert_eq!(scopes.len(), 20);
 }
 
 #[test]
@@ -78,6 +84,9 @@ fn test_member_role_scopes() {
 
     assert!(scopes.contains(&"credential:read".to_string()));
     assert!(scopes.contains(&"credential:write".to_string()));
+    assert!(scopes.contains(&"sandbox:read".to_string()));
+    assert!(scopes.contains(&"sandbox:write".to_string()));
+    assert!(scopes.contains(&"sandbox:execute".to_string()));
     assert!(!scopes.contains(&"credential:delete".to_string())); // Member 不能删除凭证
 
     assert!(scopes.contains(&"audit:read".to_string()));
@@ -88,7 +97,7 @@ fn test_member_role_scopes() {
     assert!(!scopes.contains(&"invitations:write".to_string()));
 
     // 验证 scope 数量
-    assert_eq!(scopes.len(), 7);
+    assert_eq!(scopes.len(), 10);
 }
 
 #[test]
@@ -103,6 +112,9 @@ fn test_readonly_role_scopes() {
     assert!(!scopes.contains(&"tenant:delete".to_string()));
 
     assert!(scopes.contains(&"credential:read".to_string()));
+    assert!(!scopes.contains(&"sandbox:read".to_string()));
+    assert!(!scopes.contains(&"sandbox:write".to_string()));
+    assert!(!scopes.contains(&"sandbox:execute".to_string()));
     assert!(!scopes.contains(&"credential:write".to_string()));
     assert!(!scopes.contains(&"credential:delete".to_string()));
 
