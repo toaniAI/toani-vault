@@ -72,6 +72,8 @@ pub struct CredentialMetadata {
     pub is_deleted: bool,
     /// 版本号
     pub version: u32,
+    /// 凭证状态 (active/expired/deleted)
+    pub status: String,
 }
 
 /// 加密凭证存储格式

@@ -479,6 +479,15 @@ impl VaultEntry {
 
     /// 获取元数据（不含加密载荷）
     pub fn metadata(&self) -> CredentialMetadata {
+        // 计算状态: deleted > expired > active
+        let status = if self.is_deleted {
+            "deleted".to_string()
+        } else if self.is_expired() {
+            "expired".to_string()
+        } else {
+            "active".to_string()
+        };
+
         CredentialMetadata {
             credential_id: self.credential_id.as_str().to_string(),
             credential_type: self.credential_type,
@@ -489,6 +498,7 @@ impl VaultEntry {
             expires_at: self.expires_at.map(timestamp_to_iso8601),
             is_deleted: self.is_deleted,
             version: self.version,
+            status,
         }
     }
 
@@ -776,6 +786,74 @@ mod tests {
         assert!(metadata.user_id_hash.contains("user") || !metadata.user_id_hash.is_empty());
         assert_eq!(metadata.credential_type, CredentialType::UsernamePassword);
         assert!(!metadata.is_deleted);
+    }
+
+    #[test]
+    fn test_metadata_status_active() {
+        // 未删除、未过期的凭证状态应为 active
+        let future_timestamp = current_timestamp() + 3600; // 1小时后过期
+        let entry = VaultEntry::new(
+            TenantId::new("tenant_123"),
+            UserId::new("user_456"),
+            ServiceId::new("service_789"),
+            CredentialType::ApiKey,
+            EncryptedPayload::default(),
+            Some(future_timestamp),
+        );
+
+        let metadata = entry.metadata();
+        assert_eq!(metadata.status, "active");
+    }
+
+    #[test]
+    fn test_metadata_status_expired() {
+        // 已过期但未删除的凭证状态应为 expired
+        let past_timestamp = current_timestamp() - 3600; // 1小时前过期
+        let entry = VaultEntry::new(
+            TenantId::new("tenant_123"),
+            UserId::new("user_456"),
+            ServiceId::new("service_789"),
+            CredentialType::ApiKey,
+            EncryptedPayload::default(),
+            Some(past_timestamp),
+        );
+
+        let metadata = entry.metadata();
+        assert_eq!(metadata.status, "expired");
+    }
+
+    #[test]
+    fn test_metadata_status_deleted() {
+        // 已删除的凭证状态应为 deleted（优先级高于 expired）
+        let past_timestamp = current_timestamp() - 3600;
+        let mut entry = VaultEntry::new(
+            TenantId::new("tenant_123"),
+            UserId::new("user_456"),
+            ServiceId::new("service_789"),
+            CredentialType::ApiKey,
+            EncryptedPayload::default(),
+            Some(past_timestamp),
+        );
+        entry.mark_deleted();
+
+        let metadata = entry.metadata();
+        assert_eq!(metadata.status, "deleted");
+    }
+
+    #[test]
+    fn test_metadata_status_no_expiration() {
+        // 无过期时间的凭证状态应为 active
+        let entry = VaultEntry::new(
+            TenantId::new("tenant_123"),
+            UserId::new("user_456"),
+            ServiceId::new("service_789"),
+            CredentialType::ApiKey,
+            EncryptedPayload::default(),
+            None, // 无过期时间
+        );
+
+        let metadata = entry.metadata();
+        assert_eq!(metadata.status, "active");
     }
 
     #[test]

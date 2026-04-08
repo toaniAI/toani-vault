@@ -627,6 +627,14 @@ fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
     }
 }
 
+/// 获取当前 Unix 时间戳（秒）
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time before Unix epoch")
+        .as_secs()
+}
+
 /// GET /api/v1/credentials - 获取凭证列表
 pub async fn list_credentials(
     State(state): State<AppState>,
@@ -680,6 +688,7 @@ pub struct GetCredentialResponse {
     pub created_at: String,
     pub expires_at: Option<String>,
     pub is_deleted: bool,
+    pub status: String,
 }
 
 /// GET /api/v1/credentials/:id - 获取凭证详情
@@ -712,6 +721,25 @@ pub async fn get_credential(
         "software_mode",
     );
 
+    // 计算状态 (deleted > expired > active)
+    let status = if metadata.is_deleted {
+        "deleted".to_string()
+    } else if metadata
+        .expires_at
+        .as_ref()
+        .map(|exp| {
+            chrono::DateTime::parse_from_rfc3339(exp)
+                .map(|dt| dt.timestamp() as u64)
+                .unwrap_or(0)
+                < current_timestamp()
+        })
+        .unwrap_or(false)
+    {
+        "expired".to_string()
+    } else {
+        "active".to_string()
+    };
+
     Ok(Json(GetCredentialResponse {
         credential_id: metadata.credential_id,
         service_id: metadata.service_id,
@@ -719,6 +747,7 @@ pub async fn get_credential(
         created_at: metadata.created_at,
         expires_at: metadata.expires_at,
         is_deleted: metadata.is_deleted,
+        status,
     }))
 }
 
