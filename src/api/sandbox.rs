@@ -1180,7 +1180,9 @@ fn extract_supported_credential_fields(
                 let value = object
                     .get(field)
                     .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| SandboxError::Other(format!("credential plaintext missing {field}")))?;
+                    .ok_or_else(|| {
+                        SandboxError::Other(format!("credential plaintext missing {field}"))
+                    })?;
                 values.insert(field.to_string(), value.to_string());
             }
         }
@@ -1189,14 +1191,18 @@ fn extract_supported_credential_fields(
                 .get("api_key")
                 .or_else(|| object.get("key"))
                 .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| SandboxError::Other("credential plaintext missing api_key".to_string()))?;
+                .ok_or_else(|| {
+                    SandboxError::Other("credential plaintext missing api_key".to_string())
+                })?;
             values.insert("api_key".to_string(), value.to_string());
         }
         CredentialType::SessionCookie => {
             let value = object
                 .get("cookie")
                 .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| SandboxError::Other("credential plaintext missing cookie".to_string()))?;
+                .ok_or_else(|| {
+                    SandboxError::Other("credential plaintext missing cookie".to_string())
+                })?;
             values.insert("cookie".to_string(), value.to_string());
             if let Some(name) = object.get("name").and_then(serde_json::Value::as_str) {
                 values.insert("name".to_string(), name.to_string());
@@ -1207,7 +1213,9 @@ fn extract_supported_credential_fields(
                 .get("refresh_token")
                 .or_else(|| object.get("refreshToken"))
                 .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| SandboxError::Other("credential plaintext missing refresh_token".to_string()))?;
+                .ok_or_else(|| {
+                    SandboxError::Other("credential plaintext missing refresh_token".to_string())
+                })?;
             values.insert("refresh_token".to_string(), value.to_string());
         }
         _ => {}

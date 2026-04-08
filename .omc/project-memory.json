@@ -480,8 +480,8 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 255,
-      "lastAccessed": 1775634109455,
+      "accessCount": 256,
+      "lastAccessed": 1775640456317,
       "type": "directory"
     },
     {

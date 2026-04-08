@@ -7,6 +7,7 @@
 - [健康检查 API](#健康检查-api)
 - [认证](#认证)
 - [凭证管理 API](#凭证管理-api)
+- [Token API](#token-api)
 - [沙箱会话 API](#沙箱会话-api)
 - [审计日志 API](#审计日志-api)
 - [错误处理](#错误处理)
@@ -155,6 +156,16 @@ Authorization: Bearer <paseto_v4_local_token>
 ---
 
 ## 凭证管理 API
+
+- [创建凭证](#创建凭证)
+- [获取凭证列表](#获取凭证列表)
+- [获取凭证详情](#获取凭证详情)
+- [解密凭证](#解密凭证)
+- [更新凭证](#更新凭证)
+- [删除凭证](#删除凭证)
+- [获取凭证版本历史](#获取凭证版本历史)
+- [获取指定版本详情](#获取指定版本详情)
+- [回滚凭证](#回滚凭证)
 
 ### 创建凭证
 
@@ -497,6 +508,8 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ## Token API
 
+- [获取 Token 统计](#获取-token-统计)
+
 ### 获取 Token 统计
 
 获取当前活跃的 Token 数量统计。
@@ -517,6 +530,17 @@ Authorization: Bearer <paseto_v4_local_token>
 ## 沙箱会话 API
 
 沙箱会话 API 提供 TEE 安全执行环境，用于安全地执行浏览器自动化操作。
+
+- [创建沙箱会话](#创建沙箱会话)
+- [列出沙箱会话](#列出沙箱会话)
+- [获取会话详情](#获取会话详情)
+- [执行操作](#执行操作)
+- [暂停会话](#暂停会话)
+- [恢复会话](#恢复会话)
+- [关闭会话](#关闭会话)
+- [截取屏幕截图](#截取屏幕截图)
+- [导出数据](#导出数据)
+- [获取沙箱统计](#获取沙箱统计)
 
 ### 创建沙箱会话
 
@@ -824,6 +848,11 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ## 审计日志 API
 
+- [查询审计日志](#查询审计日志)
+- [获取审计日志详情](#获取审计日志详情)
+- [导出审计日志](#导出审计日志)
+- [验证审计条目](#验证审计条目)
+
 ### 查询审计日志
 
 分页查询审计日志，支持多种过滤条件。
@@ -866,26 +895,26 @@ Authorization: Bearer <paseto_v4_local_token>
 **响应 (200 OK)**:
 ```json
 {
-  "entries": [
-    {
-      "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-      "user_id_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "timestamp": 1709990400000,
-      "session_id": "session_xyz789",
-      "service": "vault-service",
-      "action": "CredentialDecrypt",
-      "risk_tier": "High",
-      "outcome": "Success",
-      "tee_mrenclave": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-      "action_token_jti": "jti_abc123",
-      "chain_index": 42,
-      "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    }
-  ],
-  "total": 150,
-  "limit": 20,
-  "offset": 0,
-  "has_more": true
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+        "timestamp": 1709990400000,
+        "user_id_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "session_id": "session_xyz789",
+        "service": "vault-service",
+        "action": "CredentialDecrypt",
+        "risk_tier": "High",
+        "outcome": "Success",
+        "log_index": 42
+      }
+    ],
+    "total": 150,
+    "page": 1,
+    "page_size": 20,
+    "total_pages": 8
+  }
 }
 ```
 
@@ -925,10 +954,11 @@ Authorization: Bearer <paseto_v4_local_token>
 **响应 (200 OK)**:
 ```json
 {
-  "entry": {
+  "success": true,
+  "data": {
     "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-    "user_id_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "timestamp": 1709990400000,
+    "user_id_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "session_id": "session_xyz789",
     "service": "vault-service",
     "action": "CredentialDecrypt",
@@ -936,18 +966,18 @@ Authorization: Bearer <paseto_v4_local_token>
     "outcome": "Success",
     "tee_mrenclave": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
     "action_token_jti": "jti_abc123",
-    "chain_index": 42,
-    "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  },
-  "verification": {
-    "verified": true,
-    "signature_valid": true,
-    "chain_hash_valid": true,
-    "merkle_proof": [
-      "abc123...",
-      "def456..."
-    ],
-    "state_hash": "a1b2c3d4..."
+    "log_index": 42,
+    "content_hash": "a1b2c3d4...",
+    "previous_hash": "e5f6a7b8...",
+    "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "signer_fingerprint": "signer_fp...",
+    "proof": {
+      "inclusion_proof": ["abc123...", "def456..."],
+      "consistency_proof": [],
+      "tree_size": 100,
+      "root_hash": "root_hash...",
+      "transaction_id": 12345
+    }
   }
 }
 ```
@@ -975,10 +1005,11 @@ Authorization: Bearer <paseto_v4_local_token>
 **请求体**:
 ```json
 {
-  "start_time": 1704067200,
-  "end_time": 1706745600,
+  "start_time": 1704067200000,
+  "end_time": 1706745600000,
   "format": "json",
-  "include_verification": true
+  "user_id_hash": "e3b0c442...",
+  "action": "CredentialDecrypt"
 }
 ```
 
@@ -986,21 +1017,26 @@ Authorization: Bearer <paseto_v4_local_token>
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `start_time` | u64 | 否 | 开始时间戳（Unix 秒） |
-| `end_time` | u64 | 否 | 结束时间戳（Unix 秒） |
+| `start_time` | u64 | 否 | 开始时间戳（Unix 毫秒） |
+| `end_time` | u64 | 否 | 结束时间戳（Unix 毫秒） |
 | `format` | string | 否 | 导出格式：`json` 或 `csv`（默认 json） |
-| `include_verification` | bool | 否 | 是否包含验证签名（默认 false） |
+| `user_id_hash` | string | 否 | 用户 ID 哈希过滤 |
+| `action` | string | 否 | 操作类型过滤 |
+
+**注意**: 导出时间范围不能超过 90 天。
 
 **响应 (200 OK)**:
 ```json
 {
-  "format": "json",
-  "filename": "audit_export_20240301_120000.json",
-  "content": "base64_encoded_export_content",
-  "entry_count": 150,
-  "signature": "base64_encoded_signature",
-  "exported_at": "2024-03-01T12:00:00Z",
-  "expires_at": "2024-03-08T12:00:00Z"
+  "success": true,
+  "data": {
+    "export_id": "550e8400-e29b-41d4-a716-446655440001",
+    "format": "json",
+    "content": "eyJpZCI6IC4uLn0=...",
+    "integrity_hash": "a1b2c3d4e5f6...",
+    "count": 150,
+    "generated_at": 1709990400000
+  }
 }
 ```
 
@@ -1008,13 +1044,13 @@ Authorization: Bearer <paseto_v4_local_token>
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `format` | string | 导出格式 |
-| `filename` | string | 建议的文件名 |
-| `content` | string | Base64 编码的导出内容 |
-| `entry_count` | u64 | 导出的条目数量 |
-| `signature` | string | 导出内容的数字签名（可选） |
-| `exported_at` | string | 导出时间（ISO 8601） |
-| `expires_at` | string | 导出文件过期时间（ISO 8601） |
+| `success` | bool | 请求是否成功 |
+| `data.export_id` | string | 导出唯一标识 |
+| `data.format` | string | 导出格式：json 或 csv |
+| `data.content` | string | Base64 编码的导出内容 |
+| `data.integrity_hash` | string | 内容完整性哈希（SHA-256） |
+| `data.count` | u64 | 导出的条目数量 |
+| `data.generated_at` | u64 | 生成时间戳（毫秒） |
 
 **JSON 导出格式**:
 ```json
@@ -1058,8 +1094,8 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 **请求体**:
 ```json
 {
-  "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "include_proof": true
+  "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "log_index": 42
 }
 ```
 
@@ -1067,28 +1103,39 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `entry_id` | string | 是 | 审计条目 ID (UUID v7) |
-| `include_proof` | bool | 否 | 是否包含 Merkle Proof（默认 true） |
-| `chain_index` | u64 | 否 | 链索引（可选，用于直接索引验证） |
+| `id` | string | 可选 | 审计条目 ID (与 log_index 二选一) |
+| `log_index` | u64 | 可选 | 日志索引（优先于 ID） |
 
 **响应 (200 OK)**:
 ```json
 {
-  "verified": true,
-  "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "chain_index": 42,
-  "signature_valid": true,
-  "chain_hash_valid": true,
-  "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "state_hash": "a1b2c3d4e5f6...",
-  "verification_timestamp": "2024-03-01T12:00:00Z",
-  "proof": {
-    "inclusion_proof": [
-      "abc123...",
-      "def456..."
+  "success": true,
+  "status": "valid",
+  "data": {
+    "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "log_index": 42,
+    "verified": true,
+    "content_hash_match": true,
+    "signature_valid": true,
+    "merkle_proof_valid": true,
+    "details": [
+      {
+        "step": "内容哈希验证",
+        "passed": true,
+        "message": "哈希: a1b2c3d4..."
+      },
+      {
+        "step": "数字签名验证",
+        "passed": true,
+        "message": "签名者: signer_fp..."
+      },
+      {
+        "step": "Merkle Tree 验证",
+        "passed": true,
+        "message": "Merkle 根: e3b0c442..."
+      }
     ],
-    "transaction_id": 12345,
-    "root_hash": "a1b2c3d4e5f6..."
+    "verified_at": 1709990400000
   }
 }
 ```
@@ -1097,18 +1144,19 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `verified` | bool | 整体验证结果 |
-| `entry_id` | string | 验证的条目 ID |
-| `chain_index` | u64 | 链索引位置 |
-| `signature_valid` | bool | Ed25519 签名验证 |
-| `chain_hash_valid` | bool | 链式哈希验证 |
-| `merkle_root` | string | Merkle Tree 根哈希 |
-| `state_hash` | string | immudb 状态哈希 |
-| `verification_timestamp` | string | 验证时间（ISO 8601） |
-| `proof` | object | 验证证明详情 |
-| `proof.inclusion_proof` | array | Merkle Tree 包含证明路径 |
-| `proof.transaction_id` | u64 | immudb 事务 ID |
-| `proof.root_hash` | string | 验证时的根哈希 |
+| `success` | bool | 请求是否成功处理 |
+| `status` | string | 验证状态：`valid`/`invalid`/`not_found`/`error` |
+| `data.id` | string | 验证的条目 ID |
+| `data.log_index` | u64 | 日志索引位置 |
+| `data.verified` | bool | 整体验证结果 |
+| `data.content_hash_match` | bool | 内容哈希匹配结果 |
+| `data.signature_valid` | bool | Ed25519 签名验证结果 |
+| `data.merkle_proof_valid` | bool | Merkle Tree 验证结果 |
+| `data.details` | array | 验证详情列表 |
+| `data.details[].step` | string | 验证步骤名称 |
+| `data.details[].passed` | bool | 该步骤是否通过 |
+| `data.details[].message` | string | 步骤详情信息 |
+| `data.verified_at` | u64 | 验证时间戳（毫秒） |
 
 ---
 
@@ -1256,9 +1304,11 @@ API 版本通过 URL 路径前缀指定：
 
 ### 时间戳格式
 
-- 查询参数使用 **Unix 秒** (u64)
-- API 响应使用 **Unix 毫秒** (u64)
-- ISO 8601 格式用于导出元数据
+- **查询参数**: 根据端点不同，可能使用 Unix 秒 或 Unix 毫秒
+  - 审计查询：`start_time`/`end_time` 使用 **Unix 毫秒** (u64)
+  - 凭证创建：`expires_at` 使用 **Unix 秒** (u64)
+- **API 响应**: 时间戳使用 **ISO 8601** 格式字符串
+- 审计导出元数据使用 ISO 8601 格式
 
 ### ID 格式
 
@@ -1283,9 +1333,11 @@ API 版本通过 URL 路径前缀指定：
 - `Aborted` - 操作中止
 
 **CredentialType**:
-- `username_password`
-- `api_key`
-- `oauth_token`
-- `certificate`
-- `ssh_key`
-- `database_connection`
+- `username_password` - 用户名密码
+- `oauth_token` (别名: `oauth_refresh`, `o_auth_refresh`) - OAuth 刷新令牌
+- `api_key` - API 密钥
+- `session_cookie` - 会话 Cookie
+- `kyc_document` - KYC 文档
+- `client_certificate` - 客户端证书
+- `ssh_key` - SSH 密钥
+- `database_connection` - 数据库连接
