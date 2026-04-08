@@ -528,7 +528,7 @@ async fn validate_session_token(
 }
 
 /// 使用 pasetors 验证 Token
-fn validate_paseto_token(
+pub(crate) fn validate_paseto_token(
     token: &str,
     secret_key: &[u8],
     locale: &str,

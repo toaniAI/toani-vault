@@ -86,7 +86,7 @@ impl AuthApiState {
     }
 
     /// 记录审计日志
-    async fn record_audit(
+    pub(crate) async fn record_audit(
         &self,
         action: AuditAction,
         user_id: &str,
@@ -1429,7 +1429,12 @@ pub async fn create_invitation_handler(
             request.expires_in_hours.unwrap_or(24),
         )
         .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+        .map_err(|error| match error {
+            AuthError::DuplicatePendingInvitation { .. } => {
+                ApiErrorResponse::conflict(error.to_string())
+            }
+            _ => ApiErrorResponse::internal_error(error.to_string()),
+        })?;
 
     Ok(ApiSuccessResponse::new(FrontendInvitationListItem {
         invite_url: format!("/invitation/accept?token={invite_token}"),

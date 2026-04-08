@@ -480,8 +480,8 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 256,
-      "lastAccessed": 1775640456317,
+      "accessCount": 261,
+      "lastAccessed": 1775645793913,
       "type": "directory"
     },
     {
@@ -492,8 +492,8 @@
     },
     {
       "path": "frontend/src/shared/i18n/messages.ts",
-      "accessCount": 54,
-      "lastAccessed": 1775627253639,
+      "accessCount": 56,
+      "lastAccessed": 1775647362907,
       "type": "directory"
     },
     {

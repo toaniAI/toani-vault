@@ -1066,6 +1066,48 @@ impl AuthServiceImpl {
         Ok(rows)
     }
 
+    async fn find_active_invitation_for_invitee(
+        &self,
+        tenant_id: Uuid,
+        invitee_type: InviteeType,
+        invitee_email: Option<&str>,
+        invitee_wallet: Option<&str>,
+    ) -> Result<Option<TenantInvitation>, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, TenantInvitation>(
+            r#"
+            SELECT id, tenant_id, role, invitee_type, invitee_email, invitee_wallet,
+                   token_hash, created_by, expires_at, consumed_at, consumed_by,
+                   status, max_uses, use_count, created_at, updated_at
+            FROM tenant_invitations
+            WHERE tenant_id = $1
+              AND invitee_type = $2
+              AND status = 'pending'
+              AND expires_at > NOW()
+              AND (
+                    ($2 = 'email' AND invitee_email = $3)
+                 OR ($2 = 'wallet' AND invitee_wallet = $4)
+                 OR ($2 = 'any')
+              )
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(invitee_type.as_str())
+        .bind(invitee_email)
+        .bind(invitee_wallet)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
     /// 根据 Token 哈希查询会话
     async fn query_session_by_token_hash(
         &self,
@@ -1539,6 +1581,33 @@ impl AuthService for AuthServiceImpl {
             });
         }
 
+        let normalized_email = invitee_email
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase());
+        let normalized_wallet = invitee_wallet
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase());
+
+        if let Some(existing) = self
+            .find_active_invitation_for_invitee(
+                tenant_id,
+                invitee_type,
+                normalized_email.as_deref(),
+                normalized_wallet.as_deref(),
+            )
+            .await?
+        {
+            let invitee = normalized_email
+                .clone()
+                .or_else(|| normalized_wallet.clone())
+                .unwrap_or_else(|| existing.id.to_string());
+            return Err(AuthError::DuplicatePendingInvitation { tenant_id, invitee });
+        }
+
         // 2. 生成邀请 Token
         let invitation_token = Self::generate_secure_token()?;
         let token_hash = Self::hash_token(&invitation_token);
@@ -1548,14 +1617,14 @@ impl AuthService for AuthServiceImpl {
             InviteeType::Email => TenantInvitation::new_email_invitation(
                 tenant_id,
                 role,
-                invitee_email.unwrap_or_default(),
+                normalized_email.unwrap_or_default(),
                 created_by,
                 expires_hours,
             ),
             InviteeType::Wallet => TenantInvitation::new_wallet_invitation(
                 tenant_id,
                 role,
-                invitee_wallet.unwrap_or_default(),
+                normalized_wallet.unwrap_or_default(),
                 created_by,
                 expires_hours,
             ),

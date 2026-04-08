@@ -88,6 +88,10 @@ pub enum AuthError {
     #[error("邀请已撤销: {0}")]
     InvitationRevoked(Uuid),
 
+    /// 邀请已存在待处理记录
+    #[error("邀请已存在待处理记录: tenant={tenant_id}, invitee={invitee}")]
+    DuplicatePendingInvitation { tenant_id: Uuid, invitee: String },
+
     /// 无效的邀请 Token
     #[error("无效的邀请 Token")]
     InvalidInvitationToken,
@@ -188,6 +192,7 @@ impl AuthError {
             AuthError::ExternalIdentityAlreadyExists { .. } => 409,
             AuthError::MembershipAlreadyExists { .. } => 409,
             AuthError::InvitationAlreadyConsumed(_) => 409,
+            AuthError::DuplicatePendingInvitation { .. } => 409,
 
             AuthError::InvalidPrivyToken(_) => 401,
             AuthError::PrivyTokenExpired => 401,

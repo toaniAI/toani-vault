@@ -747,7 +747,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     };
     let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
-    let token_routes = token_routes();
+    let token_routes = token_routes(app_state.auth_state.clone());
 
     // 认证中间件层
     let auth_layer = axum::middleware::from_fn_with_state(
