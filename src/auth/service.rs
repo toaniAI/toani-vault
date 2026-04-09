@@ -569,6 +569,37 @@ impl AuthServiceImpl {
         Ok(row)
     }
 
+    /// 将现有外部身份重新绑定到新的用户记录
+    async fn rebind_external_identity_user(
+        &self,
+        identity_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<ExternalIdentity, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, ExternalIdentity>(
+            r#"
+            UPDATE external_identities
+            SET user_id = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, user_id, provider, provider_subject, wallet_address, email,
+                      provider_profile, is_verified, is_primary, mfa_verified, mfa_verified_at,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(identity_id)
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
     /// 创建成员资格记录
     async fn create_membership_record(
         &self,
@@ -1456,11 +1487,42 @@ impl AuthService for AuthServiceImpl {
 
         // 3. 如果外部身份已存在，返回关联用户
         if let Some(identity) = existing_identity {
-            let user = self
-                .query_user(identity.user_id)
-                .await?
-                .ok_or(AuthError::UserNotFound(identity.user_id))?;
-            return Ok(user);
+            if let Some(user) = self.query_user(identity.user_id).await? {
+                return Ok(user);
+            }
+
+            tracing::warn!(
+                target: "auth::session",
+                identity_id = %identity.id,
+                missing_user_id = %identity.user_id,
+                provider = %identity.provider.as_str(),
+                subject = %identity.provider_subject,
+                "External identity points to a missing user; recreating user and rebinding identity"
+            );
+
+            let mut recreated_user = User::new();
+            if let Some(name) = &privy_response.name {
+                recreated_user.display_name = Some(name.clone());
+            }
+
+            let recreated_user = self.create_user_record(&recreated_user).await?;
+            self.rebind_external_identity_user(identity.id, recreated_user.id)
+                .await?;
+
+            self.audit_log(
+                AuthEventType::UserCreated,
+                Some(recreated_user.id),
+                Some(serde_json::json!({
+                    "provider": "privy",
+                    "did": privy_response.did,
+                    "is_new_user": false,
+                    "recovered_identity_id": identity.id,
+                    "recovered_missing_user_id": identity.user_id,
+                })),
+            )
+            .await?;
+
+            return Ok(recreated_user);
         }
 
         // 4. 创建新用户
