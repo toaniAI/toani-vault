@@ -179,12 +179,38 @@ impl PostgresAuditStorageAdapter {
                 ON "{schema}".audit_logs (user_id_hash);
             "#
         );
+        let evolve_table_sql = format!(
+            r#"
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS log_index BIGINT;
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS entry_id VARCHAR(64);
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS service VARCHAR(64);
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS risk_tier VARCHAR(32);
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS outcome VARCHAR(32);
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS signed_entry JSONB;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cb_audit_logs_log_index
+                ON "{schema}".audit_logs (log_index)
+                WHERE log_index IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cb_audit_logs_entry_id
+                ON "{schema}".audit_logs (entry_id)
+                WHERE entry_id IS NOT NULL;
+            "#
+        );
 
         sqlx::query(&create_schema_sql)
             .execute(pool)
             .await
             .map_err(|error| RecorderError::StorageError(error.to_string()))?;
         for statement in create_table_sql.split(';') {
+            let statement = statement.trim();
+            if statement.is_empty() {
+                continue;
+            }
+            sqlx::query(statement)
+                .execute(pool)
+                .await
+                .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+        }
+        for statement in evolve_table_sql.split(';') {
             let statement = statement.trim();
             if statement.is_empty() {
                 continue;
@@ -202,8 +228,12 @@ impl PostgresAuditStorageAdapter {
         pool: &PgPool,
         schema: &str,
     ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
-        let sql =
-            format!(r#"SELECT signed_entry FROM "{schema}".audit_logs ORDER BY log_index ASC"#);
+        let sql = format!(
+            r#"SELECT signed_entry
+               FROM "{schema}".audit_logs
+               WHERE signed_entry IS NOT NULL
+               ORDER BY log_index ASC"#
+        );
         let rows = sqlx::query(&sql)
             .fetch_all(pool)
             .await
@@ -267,6 +297,7 @@ impl PostgresAuditStorageAdapter {
     }
 
     fn apply_filters<'a>(builder: &mut QueryBuilder<'a, sqlx::Postgres>, filter: &'a AuditFilter) {
+        builder.push(" AND signed_entry IS NOT NULL");
         if let Some(start_time) = filter.start_time {
             builder.push(" AND created_at >= to_timestamp(");
             builder.push_bind(start_time as f64 / 1000.0);
