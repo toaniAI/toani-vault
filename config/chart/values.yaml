@@ -1,7 +1,7 @@
 # 默认 values - 会被环境 specific values 覆盖
 project:
   name: credbridge
-  server: credbridge-backend
+  server: credbridge-go
 
 environment: dev
 namespace: suna
