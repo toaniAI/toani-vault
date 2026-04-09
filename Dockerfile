@@ -41,21 +41,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 先复制 manifest，尽量复用依赖缓存。
 COPY Cargo.toml Cargo.lock ./
-COPY cli/Cargo.toml ./cli/
 COPY sdk-rust/Cargo.toml ./sdk-rust/
 COPY vault-service/Cargo.toml ./vault-service/
 COPY examples/rust/Cargo.toml ./examples/rust/
 
-RUN mkdir -p src cli/src sdk-rust/src vault-service/src examples/rust/src
+RUN mkdir -p src sdk-rust/src vault-service/src examples/rust/src
 RUN printf 'fn main() {}\n' > src/main.rs
-RUN printf 'fn main() {}\n' > cli/src/main.rs
 RUN printf 'fn main() {}\n' > examples/rust/src/main.rs
 RUN printf 'pub fn placeholder() {}\n' > sdk-rust/src/lib.rs
 RUN printf 'pub fn placeholder() {}\n' > vault-service/src/lib.rs
 RUN cargo build --release || true
 
 COPY src ./src
-COPY cli ./cli
 COPY sdk-rust ./sdk-rust
 COPY vault-service ./vault-service
 COPY examples ./examples
@@ -71,7 +68,7 @@ RUN set -eu; \
     SKIP_SGX_CHECK=1 bash scripts/build-sgx-enclave.sh; \
     bash scripts/sign-sgx-enclave.sh; \
     rm -f /tmp/sgx-signing-key.pem
-RUN cargo build --release --features tee-hardware && cargo build --manifest-path cli/Cargo.toml --release
+RUN cargo build --release --features tee-hardware
 
 FROM ubuntu:22.04
 
