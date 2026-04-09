@@ -66,10 +66,10 @@ pub mod service;
 // 重新导出主要类型
 pub use error::AuthError;
 pub use models::{
-    AuthAuditLog, AuthEventType, AuthSession, CreateSessionRequest, CreateUserRequest,
-    ExternalIdentity, IdentityProvider, InvitationStatus, InviteeType, MembershipRole,
-    MembershipSource, MembershipStatus, MfaStatus, PrivyAuthResponse, TenantInvitation,
-    TenantMembership, User, UserStatus,
+    ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType, AuthAuditLog, AuthEventType, AuthSession,
+    CreateSessionRequest, CreateUserRequest, ExternalIdentity, IdentityProvider, InvitationStatus,
+    InviteeType, MembershipRole, MembershipSource, MembershipStatus, MfaStatus, PrivyAuthResponse,
+    ServiceAccount, ServiceAccountStatus, TenantInvitation, TenantMembership, User, UserStatus,
 };
 pub use privy::{JwksVerifier, PrivyClaims, PrivyCustomClaims};
 pub use service::{AuthService, AuthServiceImpl, create_owner_membership};

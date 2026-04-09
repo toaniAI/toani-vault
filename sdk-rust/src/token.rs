@@ -39,7 +39,9 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        CreateTokenRequest, CreateTokenResponse, CredBridgeError, CredBridgeErrorCode,
+        ApiTokenMetadata,
+        CreateAccessTokenResponse, CreateTokenRequest, CreateTokenResponse, CredBridgeError,
+        CredBridgeErrorCode,
         ListTokensResponse, RequestOptions, Result, RevokeTokenResponse, TokenInfo, TokenScope,
         TokenStatsResponse,
     },
@@ -287,6 +289,38 @@ impl TokenManager {
             .await
     }
 
+    /// 签发当前登录态对应的 API access token
+    pub async fn create_access_token(
+        &self,
+        scopes: Vec<String>,
+        expires_in: Option<u64>,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateAccessTokenResponse> {
+        let body = serde_json::json!({
+            "scopes": scopes,
+            "ttl_seconds": expires_in,
+        });
+
+        self.client
+            .post_with_options("/auth/access-token", body, options)
+            .await
+    }
+
+    /// 撤销指定 API access token
+    pub async fn revoke_access_token(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<RevokeTokenResponse> {
+        self.client
+            .post_with_options(
+                &format!("/tokens/{}/revoke", token_id.as_ref()),
+                serde_json::json!({}),
+                options,
+            )
+            .await
+    }
+
     /// 创建新 token
     pub async fn create(
         &self,
@@ -307,7 +341,19 @@ impl TokenManager {
 
     /// 列出 token
     pub async fn list(&self, options: Option<RequestOptions>) -> Result<ListTokensResponse> {
-        self.client.get_with_options("/tokens", options).await
+        let items: Vec<ApiTokenMetadata> = self.client.get_with_options("/tokens", options).await?;
+        Ok(ListTokensResponse { tokens: items })
+    }
+
+    /// 获取指定 token 元数据
+    pub async fn get(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<ApiTokenMetadata> {
+        self.client
+            .get_with_options(&format!("/tokens/{}", token_id.as_ref()), options)
+            .await
     }
 
     /// 获取 token 统计

@@ -600,6 +600,22 @@ impl CredBridgeClient {
         })?;
         self.request(Method::PATCH, path, Some(body), None).await
     }
+
+    /// PATCH 请求（带选项）
+    pub async fn patch_with_options<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: impl serde::Serialize,
+        options: Option<RequestOptions>,
+    ) -> Result<T> {
+        let body = serde_json::to_value(body).map_err(|e| {
+            CredBridgeError::new(
+                CredBridgeErrorCode::InvalidRequest,
+                format!("Failed to serialize request body: {}", e),
+            )
+        })?;
+        self.request(Method::PATCH, path, Some(body), options).await
+    }
 }
 
 #[cfg(test)]

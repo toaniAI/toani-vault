@@ -1,0 +1,1 @@
+{"error":"forbidden","i18n":{"key":"errors.api.forbidden"},"locale":"zh-CN","message":"Requested scopes must be a subset of the service account scope ceiling","success":false}

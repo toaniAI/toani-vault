@@ -562,6 +562,17 @@ pub struct CreateTokenResponse {
     pub expires_at: u64,
 }
 
+/// 创建 access token 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAccessTokenResponse {
+    pub access_token: String,
+    pub token_id: String,
+    pub token_type: String,
+    pub expires_at: u64,
+    pub expires_in: u64,
+    pub granted_scopes: Vec<String>,
+}
+
 /// Token 列表项
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenListItem {
@@ -577,8 +588,84 @@ pub struct TokenListItem {
 /// Token 列表响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListTokensResponse {
-    pub tokens: Vec<TokenListItem>,
-    pub total: usize,
+    pub tokens: Vec<ApiTokenMetadata>,
+}
+
+/// API token 元数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTokenMetadata {
+    pub token_id: String,
+    pub token_type: String,
+    pub subject_type: String,
+    pub subject_id: String,
+    pub tenant_id: String,
+    pub issued_from: String,
+    pub session_id: Option<String>,
+    pub membership_id: Option<String>,
+    pub display_name: Option<String>,
+    pub granted_scopes: Vec<String>,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+/// Service Account 信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAccountInfo {
+    pub id: String,
+    pub tenant_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub role: String,
+    pub scope_ceiling: Vec<String>,
+    pub status: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+/// 创建 Service Account 请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccountRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub scope_ceiling: Vec<String>,
+}
+
+/// 更新 Service Account 请求
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateServiceAccountRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub scope_ceiling: Option<Vec<String>>,
+}
+
+/// 创建 Service Account token 请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccountTokenRequest {
+    pub scopes: Vec<String>,
+    pub ttl_seconds: Option<u64>,
+    pub display_name: Option<String>,
+}
+
+/// 创建 Service Account token 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccountTokenResponse {
+    pub access_token: String,
+    pub token_id: String,
+    pub token_type: String,
+    pub subject_type: String,
+    pub issued_from: String,
+    pub display_name: Option<String>,
+    pub expires_in: u64,
+    pub scope: String,
+    pub granted_scopes: Vec<String>,
+    pub issued_at: u64,
+    pub expires_at: u64,
+    pub revoked_at: Option<String>,
 }
 
 /// Token 撤销响应

@@ -1,252 +1,86 @@
-# CredBridge CLI
+# @toani/vault-cli
 
-CredBridge 命令行管理工具
+Toani Vault npm CLI package.
 
-## 安装
+- Package: `@toani/vault-cli`
+- Executable: `toani`
 
-```bash
-cargo install --path cli
-```
-
-## 认证模式
-
-> **重要**: CLI 支持两种认证模式，请根据使用场景选择正确的方式。
-
-### 认证模式对比
-
-| 认证类型 | 适用场景 | 认证方式 |
-|---------|---------|---------|
-| **用户认证** | 最终用户访问 | Web 界面 Privy 钱包登录 |
-| **服务账户认证** | 自动化、CI/CD、后台服务 | Platform API Token (CLI) |
-
-### 用户认证 (Privy 钱包)
-
-用户认证通过 Web 界面完成：
-
-1. 访问 https://vault.toani.io
-2. 使用 Privy 钱包（MetaMask、Phantom 等）登录
-
-**CLI 不支持用户 Privy 钱包认证。**
-
-### 服务账户认证 (CLI)
-
-CLI 仅支持服务账户认证，适用于：
-
-- CI/CD 管道自动化
-- 管理脚本和运维工具
-- 跨系统集成
+## Install
 
 ```bash
-# 登录服务账户
-toani auth login --url https://vault.toani.io --token <platform-api-token> --service-account
+npm install -g @toani/vault-cli
 ```
 
-### 如何获取 Platform API Token
-
-1. 使用管理员账户登录 Web 界面
-2. 进入"开发者中心" > "API Tokens"
-3. 创建新的服务账户 Token
-
----
-
-## 快速开始
+## Configure
 
 ```bash
-# 登录到 CredBridge 服务
-credbridge auth login --url https://api.credbridge.io --token <your-token>
-
-# 查看登录状态
-credbridge auth status
-
-# 列出所有凭证
-credbridge credentials list
-
-# 创建新凭证
-credbridge credentials create --name "api-key" --type api_key --value "secret123"
+toani config init --url http://localhost:8080 --token <TOKEN>
 ```
 
-## 命令参考
+Config is stored at `~/.toani/config.json` with fields:
+- `baseUrl`
+- `token` (API Access Token)
+- `sessionToken` (Session Token)
+- `output` (`table` or `json`)
+- `timeout`
 
-### 认证 (auth)
+Token resolution priority:
+1. explicit `--token`
+2. `config.token`
+3. `config.sessionToken`
 
-| 命令 | 描述 |
-|------|------|
-| `credbridge auth login` | 登录到服务 |
-| `credbridge auth status` | 查看登录状态 |
-| `credbridge auth logout` | 注销 |
-
-### 凭证 (credentials)
-
-| 命令 | 描述 |
-|------|------|
-| `credbridge credentials list` | 列出凭证 |
-| `credbridge credentials get <id>` | 获取单个凭证 |
-| `credbridge credentials create` | 创建凭证 |
-| `credbridge credentials update <id>` | 更新凭证 |
-| `credbridge credentials delete <id>` | 删除凭证 |
-| `credbridge credentials decrypt <id>` | 解密凭证 |
-| `credbridge credentials versions <id>` | 查看版本历史 |
-| `credbridge credentials rollback <id> <version>` | 回滚版本 |
-
-**示例：**
+## Commands
 
 ```bash
-# 列出凭证（表格格式）
-credbridge credentials list
+toani auth login --url <URL> --token <TOKEN>
+toani auth status
+toani auth session --privy-access-token <PRIVY_TOKEN>
+toani auth access-token create --scope <scope1,scope2> [--ttl-seconds 900] [--store]
+toani auth access-token revoke --token-id <id>
+toani auth me
+toani auth memberships
+toani auth logout
 
-# 列出凭证（JSON 格式）
-credbridge --output json credentials list
+toani credentials list [--service-id <id>] [--credential-type <type>]
+toani credentials get <credentialId>
+toani credentials create --service-id <id> --credential-type <type> --data '{"k":"v"}'
+toani credentials delete <credentialId>
+toani credentials decrypt <credentialId> [--reason <text>]
 
-# 创建 API Key 凭证
-credbridge credentials create \
-  --name "production-api-key" \
-  --type api_key \
-  --value "sk-live-xxx"
+toani tokens create [--expires-in 3600] [--scope credential:read]
+toani tokens list
+toani tokens get <token-id>
+toani tokens verify [--token <token>]
+toani tokens stats
+toani tokens revoke [--token-id <id>]
 
-# 创建用户名密码凭证
-credbridge credentials create \
-  --name "db-credentials" \
-  --type username_password \
-  --value "secret-password" \
-  --metadata "username=admin"
+toani service-accounts create --name <name> --scope <scope1,scope2> [--description <text>]
+toani service-accounts list
+toani service-accounts get <id>
+toani service-accounts update <id> [--name <name>] [--description <text>] [--status <active|disabled|deleted>] [--scope <scope1,scope2>]
+toani service-accounts token create <service-account-id> --scope <scope1,scope2> [--ttl-seconds 3600] [--display-name <name>]
+toani service-accounts token list <service-account-id>
 
-# 解密凭证
-credbridge credentials decrypt <credential-id>
+toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
+toani sandbox list-sessions
+toani sandbox get-session <sessionId>
+toani sandbox terminate <sessionId>
+toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
+toani sandbox get-operation <operationId>
+toani sandbox stats
 
-# 删除凭证（带确认）
-credbridge credentials delete <credential-id>
+toani audit logs [--from <iso>] [--to <iso>] [--action <name>] [--service <name>] [--outcome <ok|error>] [--limit 50]
+toani audit export [--format json|csv] [--from <iso>] [--to <iso>]
+toani audit verify [--payload '{"log_id":"..."}']
 
-# 强制删除凭证
-credbridge credentials delete <credential-id> --force
+toani config show
+toani config set <key> <value>
+toani config get <key>
 ```
 
-### Token (tokens)
+## Notes
 
-| 命令 | 描述 |
-|------|------|
-| `credbridge tokens create` | 创建 Token |
-| `credbridge tokens list` | 列出 Token |
-| `credbridge tokens revoke <id>` | 撤销 Token |
-| `credbridge tokens verify` | 验证 Token |
-
-**示例：**
-
-```bash
-# 验证当前配置的 Token
-credbridge tokens verify
-
-# 撤销当前 Token
-credbridge tokens revoke
-```
-
-### 审计 (audit)
-
-| 命令 | 描述 |
-|------|------|
-| `credbridge audit logs` | 查询审计日志 |
-| `credbridge audit export <file>` | 导出审计日志 |
-| `credbridge audit verify` | 验证日志完整性 |
-
-### 沙箱 (sandbox)
-
-| 命令 | 描述 |
-|------|------|
-| `credbridge sandbox create-session` | 创建沙箱会话 |
-| `credbridge sandbox list-sessions` | 列出沙箱会话 |
-| `credbridge sandbox get-session <id>` | 获取会话详情 |
-| `credbridge sandbox terminate <id>` | 终止会话 |
-| `credbridge sandbox execute <session-id>` | 执行操作 |
-| `credbridge sandbox get-operation <id>` | 获取操作结果 |
-| `credbridge sandbox stats` | 查看沙箱统计 |
-
-### 配置 (config)
-
-| 命令 | 描述 |
-|------|------|
-| `credbridge config init` | 初始化配置 |
-| `credbridge config show` | 查看配置 |
-| `credbridge config set <key> <value>` | 设置配置项 |
-| `credbridge config get <key>` | 获取配置项 |
-
-**示例：**
-
-```bash
-# 交互式初始化配置
-credbridge config init
-
-# 使用参数初始化配置
-credbridge config init \
-  --url https://api.credbridge.io \
-  --token "v4.local.xxx"
-
-# 查看当前配置
-credbridge config show
-
-# 设置输出格式为 JSON
-credbridge config set output_format json
-
-# 设置超时时间
-credbridge config set timeout 60
-```
-
-## 全局选项
-
-| 选项 | 描述 |
-|------|------|
-| `-o, --output <format>` | 输出格式: table, json (默认: table) |
-| `-c, --config <path>` | 配置文件路径 |
-| `-v, --verbose` | 详细日志输出 |
-| `-h, --help` | 显示帮助信息 |
-| `-V, --version` | 显示版本信息 |
-
-## 环境变量
-
-| 变量 | 描述 |
-|------|------|
-| `CREDBRIDGE_URL` | 服务 URL |
-| `CREDBRIDGE_TOKEN` | API Token |
-| `HOME` | 配置目录 (默认: ~/.config/credbridge/) |
-
-## 配置示例
-
-```toml
-# ~/.config/credbridge/config.toml
-url = "https://api.credbridge.io"
-token = "v4.local.xxx"
-output_format = "table"
-timeout = 30
-```
-
-配置文件权限自动设置为 0600（仅用户可读写）。
-
-## 凭证类型
-
-支持的凭证类型：
-
-| 类型 | 说明 |
-|------|------|
-| `username_password` | 用户名密码 |
-| `api_key` | API 密钥 |
-| `oauth_refresh` | OAuth 刷新令牌 |
-| `session_cookie` | 会话 Cookie |
-| `kyc_document` | KYC 文档 |
-| `certificate` | 证书 |
-| `ssh_key` | SSH 密钥 |
-| `database_connection` | 数据库连接 |
-
-## 开发
-
-```bash
-# 编译
-cargo build
-
-# 运行测试
-cargo test
-
-# 发布构建
-cargo build --release
-```
-
-## 许可证
-
-MIT
+- `auth logout` only clears `sessionToken`; it does not clear `token`.
+- `auth access-token create --store` writes the created access token into `config.token` (default behavior).
+- `Privy Access Token` is only for exchanging `Session Token`.
+- `API Access Token` and `Service Account Token` are for API/CLI automation calls.

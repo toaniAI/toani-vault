@@ -36,6 +36,16 @@ pub mod tokens {
     pub const REVOKE: &str = "/tokens/:id/revoke";
 }
 
+/// Service Account 路由
+pub mod service_accounts {
+    pub const CREATE: &str = "/service-accounts";
+    pub const LIST: &str = "/service-accounts";
+    pub const GET: &str = "/service-accounts/:id";
+    pub const UPDATE: &str = "/service-accounts/:id";
+    pub const CREATE_TOKEN: &str = "/service-accounts/:id/tokens";
+    pub const LIST_TOKENS: &str = "/service-accounts/:id/tokens";
+}
+
 /// 审计日志路由
 pub mod audit {
     /// 查询审计日志列表

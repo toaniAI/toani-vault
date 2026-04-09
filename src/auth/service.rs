@@ -10,15 +10,16 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::error::AuthError;
 use super::models::{
-    AuthAuditLog, AuthEventType, AuthSession, CreateUserRequest, ExternalIdentity,
-    IdentityProvider, InvitationStatus, InviteeType, MembershipRole, PrivyAuthResponse,
-    TenantInvitation, TenantMembership, User,
+    ApiTokenMetadata, AuthAuditLog, AuthEventType, AuthSession, CreateUserRequest,
+    ExternalIdentity, IdentityProvider, InvitationStatus, InviteeType, MembershipRole,
+    PrivyAuthResponse, ServiceAccount, TenantInvitation, TenantMembership, User,
 };
 use crate::audit::AuditRecorder;
 use crate::auth::privy::JwksVerifier;
@@ -249,6 +250,93 @@ pub trait AuthService: Send + Sync {
         ))
     }
 
+    /// 创建 service account。
+    async fn create_service_account(
+        &self,
+        service_account: &ServiceAccount,
+    ) -> Result<ServiceAccount, AuthError> {
+        Ok(service_account.clone())
+    }
+
+    /// 列出租户下的全部 service accounts。
+    async fn list_service_accounts(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<ServiceAccount>, AuthError> {
+        let _ = tenant_id;
+        Ok(Vec::new())
+    }
+
+    /// 按 ID 获取 service account。
+    async fn get_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccount>, AuthError> {
+        let _ = service_account_id;
+        Ok(None)
+    }
+
+    /// 更新 service account。
+    async fn update_service_account(
+        &self,
+        service_account: &ServiceAccount,
+    ) -> Result<ServiceAccount, AuthError> {
+        Ok(service_account.clone())
+    }
+
+    /// 创建 API token 元数据记录。
+    async fn create_api_token_metadata(
+        &self,
+        metadata: &ApiTokenMetadata,
+    ) -> Result<ApiTokenMetadata, AuthError> {
+        Ok(metadata.clone())
+    }
+
+    /// 列出租户内 API token 元数据。
+    async fn list_api_tokens(&self, tenant_id: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+        let _ = tenant_id;
+        Ok(Vec::new())
+    }
+
+    /// 列出某个 service account 的 API token 元数据。
+    async fn list_service_account_api_tokens(
+        &self,
+        tenant_id: Uuid,
+        service_account_id: Uuid,
+    ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+        let _ = (tenant_id, service_account_id);
+        Ok(Vec::new())
+    }
+
+    /// 按 token ID 查询 API token 元数据。
+    async fn get_api_token_metadata(
+        &self,
+        token_id: &str,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        let _ = token_id;
+        Ok(None)
+    }
+
+    /// 标记 API token 已撤销。
+    async fn revoke_api_token_metadata(
+        &self,
+        token_id: &str,
+        revoked_at: DateTime<Utc>,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        let _ = (token_id, revoked_at);
+        Ok(None)
+    }
+
+    /// 更新 API token 最近使用时间。
+    async fn mark_api_token_used(
+        &self,
+        token_id: &str,
+        last_used_at: DateTime<Utc>,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        let _ = (token_id, last_used_at);
+        Ok(None)
+    }
+
     /// 同步 MFA 状态
     ///
     /// 从 Privy 获取用户的 MFA 状态并更新会话快照。
@@ -380,6 +468,12 @@ impl AuthServiceImpl {
     fn verify_token_hash(token: &str, expected_hash: &str) -> bool {
         let computed_hash = Self::hash_token(token);
         ct_compare(computed_hash.as_bytes(), expected_hash.as_bytes())
+    }
+
+    fn require_pool(&self) -> Result<&PgPool, AuthError> {
+        self.db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))
     }
 
     /// 将 MembershipRole 映射到 TokenScope 列表
@@ -756,6 +850,308 @@ impl AuthServiceImpl {
         Ok(row)
     }
 
+    async fn create_service_account_record(
+        &self,
+        service_account: &ServiceAccount,
+    ) -> Result<ServiceAccount, AuthError> {
+        let pool = self.require_pool()?;
+        let scope_ceiling = serde_json::to_value(&service_account.scope_ceiling)
+            .map_err(AuthError::SerializationError)?;
+
+        let row = sqlx::query_as::<_, ServiceAccount>(
+            r#"
+            INSERT INTO service_accounts (
+                id, tenant_id, name, description, role, scope_ceiling, status,
+                created_by, created_at, updated_at, deleted_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING id, tenant_id, name, description, role,
+                      ARRAY(SELECT jsonb_array_elements_text(scope_ceiling)) AS scope_ceiling,
+                      status, created_by, created_at, updated_at, deleted_at
+            "#,
+        )
+        .bind(service_account.id)
+        .bind(service_account.tenant_id)
+        .bind(&service_account.name)
+        .bind(&service_account.description)
+        .bind(&service_account.role)
+        .bind(&scope_ceiling)
+        .bind(service_account.status.as_str())
+        .bind(service_account.created_by)
+        .bind(service_account.created_at)
+        .bind(service_account.updated_at)
+        .bind(service_account.deleted_at)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db_err) = &e {
+                if db_err.constraint() == Some("uq_service_accounts_tenant_name") {
+                    return AuthError::ServiceAccountAlreadyExists {
+                        tenant_id: service_account.tenant_id,
+                        name: service_account.name.clone(),
+                    };
+                }
+            }
+            AuthError::DatabaseError(e)
+        })?;
+
+        Ok(row)
+    }
+
+    async fn list_service_account_records(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<ServiceAccount>, AuthError> {
+        let pool = self.require_pool()?;
+        let rows = sqlx::query_as::<_, ServiceAccount>(
+            r#"
+            SELECT id, tenant_id, name, description, role,
+                   ARRAY(SELECT jsonb_array_elements_text(scope_ceiling)) AS scope_ceiling,
+                   status, created_by, created_at, updated_at, deleted_at
+            FROM service_accounts
+            WHERE tenant_id = $1 AND deleted_at IS NULL
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(tenant_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
+    }
+
+    async fn query_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccount>, AuthError> {
+        let pool = self.require_pool()?;
+        let row = sqlx::query_as::<_, ServiceAccount>(
+            r#"
+            SELECT id, tenant_id, name, description, role,
+                   ARRAY(SELECT jsonb_array_elements_text(scope_ceiling)) AS scope_ceiling,
+                   status, created_by, created_at, updated_at, deleted_at
+            FROM service_accounts
+            WHERE id = $1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(service_account_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn update_service_account_record(
+        &self,
+        service_account: &ServiceAccount,
+    ) -> Result<ServiceAccount, AuthError> {
+        let pool = self.require_pool()?;
+        let scope_ceiling = serde_json::to_value(&service_account.scope_ceiling)
+            .map_err(AuthError::SerializationError)?;
+
+        let row = sqlx::query_as::<_, ServiceAccount>(
+            r#"
+            UPDATE service_accounts
+            SET name = $2,
+                description = $3,
+                role = $4,
+                scope_ceiling = $5,
+                status = $6,
+                updated_at = $7,
+                deleted_at = $8
+            WHERE id = $1
+            RETURNING id, tenant_id, name, description, role,
+                      ARRAY(SELECT jsonb_array_elements_text(scope_ceiling)) AS scope_ceiling,
+                      status, created_by, created_at, updated_at, deleted_at
+            "#,
+        )
+        .bind(service_account.id)
+        .bind(&service_account.name)
+        .bind(&service_account.description)
+        .bind(&service_account.role)
+        .bind(&scope_ceiling)
+        .bind(service_account.status.as_str())
+        .bind(service_account.updated_at)
+        .bind(service_account.deleted_at)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        row.ok_or(AuthError::ServiceAccountNotFound(service_account.id))
+    }
+
+    async fn create_api_token_metadata_record(
+        &self,
+        metadata: &ApiTokenMetadata,
+    ) -> Result<ApiTokenMetadata, AuthError> {
+        let pool = self.require_pool()?;
+        let scopes =
+            serde_json::to_value(&metadata.scopes).map_err(AuthError::SerializationError)?;
+
+        let row = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            INSERT INTO api_tokens (
+                id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                session_id, membership_id, display_name, scopes, expires_at,
+                revoked_at, created_at, last_used_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                      session_id, membership_id, display_name,
+                      ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      expires_at, revoked_at, created_at, last_used_at
+            "#,
+        )
+        .bind(&metadata.id)
+        .bind(metadata.token_type.as_str())
+        .bind(metadata.subject_type.as_str())
+        .bind(metadata.subject_id)
+        .bind(metadata.tenant_id)
+        .bind(&metadata.issued_from)
+        .bind(metadata.session_id)
+        .bind(metadata.membership_id)
+        .bind(&metadata.display_name)
+        .bind(&scopes)
+        .bind(metadata.expires_at)
+        .bind(metadata.revoked_at)
+        .bind(metadata.created_at)
+        .bind(metadata.last_used_at)
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn list_api_token_metadata_records(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+        let pool = self.require_pool()?;
+        let rows = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            SELECT id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, display_name,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   expires_at, revoked_at, created_at, last_used_at
+            FROM api_tokens
+            WHERE tenant_id = $1
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(tenant_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
+    }
+
+    async fn list_api_token_metadata_for_service_account(
+        &self,
+        tenant_id: Uuid,
+        service_account_id: Uuid,
+    ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+        let pool = self.require_pool()?;
+        let rows = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            SELECT id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, display_name,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   expires_at, revoked_at, created_at, last_used_at
+            FROM api_tokens
+            WHERE tenant_id = $1
+              AND subject_id = $2
+              AND subject_type = 'service_account'
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(service_account_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(rows)
+    }
+
+    async fn query_api_token_metadata(
+        &self,
+        token_id: &str,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        let pool = self.require_pool()?;
+        let row = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            SELECT id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, display_name,
+                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   expires_at, revoked_at, created_at, last_used_at
+            FROM api_tokens
+            WHERE id = $1
+            "#,
+        )
+        .bind(token_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn revoke_api_token_metadata_record(
+        &self,
+        token_id: &str,
+        revoked_at: DateTime<Utc>,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        let pool = self.require_pool()?;
+        let row = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            UPDATE api_tokens
+            SET revoked_at = $2
+            WHERE id = $1
+            RETURNING id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                      session_id, membership_id, display_name,
+                      ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      expires_at, revoked_at, created_at, last_used_at
+            "#,
+        )
+        .bind(token_id)
+        .bind(revoked_at)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn mark_api_token_used_record(
+        &self,
+        token_id: &str,
+        last_used_at: DateTime<Utc>,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        let pool = self.require_pool()?;
+        let row = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            UPDATE api_tokens
+            SET last_used_at = $2
+            WHERE id = $1
+            RETURNING id, token_type, subject_type, subject_id, tenant_id, issued_from,
+                      session_id, membership_id, display_name,
+                      ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      expires_at, revoked_at, created_at, last_used_at
+            "#,
+        )
+        .bind(token_id)
+        .bind(last_used_at)
+        .fetch_optional(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
     /// 创建审计日志记录
     async fn create_audit_log_record(&self, log: &AuthAuditLog) -> Result<(), AuthError> {
         let pool = self
@@ -784,7 +1180,7 @@ impl AuthServiceImpl {
         .bind(&log.user_id)
         .bind(&log.identity_id)
         .bind(&log.tenant_id)
-        .bind(&log.session_id) // Note: schema uses membership_id for session_id field
+        .bind(&log.membership_id)
         .bind(&log.invitation_id)
         .bind(&log.session_id)
         .bind(&event_data)
@@ -2118,6 +2514,79 @@ impl AuthService for AuthServiceImpl {
         .await?;
 
         Ok(created)
+    }
+
+    async fn create_service_account(
+        &self,
+        service_account: &ServiceAccount,
+    ) -> Result<ServiceAccount, AuthError> {
+        self.create_service_account_record(service_account).await
+    }
+
+    async fn list_service_accounts(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<ServiceAccount>, AuthError> {
+        self.list_service_account_records(tenant_id).await
+    }
+
+    async fn get_service_account(
+        &self,
+        service_account_id: Uuid,
+    ) -> Result<Option<ServiceAccount>, AuthError> {
+        self.query_service_account(service_account_id).await
+    }
+
+    async fn update_service_account(
+        &self,
+        service_account: &ServiceAccount,
+    ) -> Result<ServiceAccount, AuthError> {
+        self.update_service_account_record(service_account).await
+    }
+
+    async fn create_api_token_metadata(
+        &self,
+        metadata: &ApiTokenMetadata,
+    ) -> Result<ApiTokenMetadata, AuthError> {
+        self.create_api_token_metadata_record(metadata).await
+    }
+
+    async fn list_api_tokens(&self, tenant_id: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+        self.list_api_token_metadata_records(tenant_id).await
+    }
+
+    async fn list_service_account_api_tokens(
+        &self,
+        tenant_id: Uuid,
+        service_account_id: Uuid,
+    ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+        self.list_api_token_metadata_for_service_account(tenant_id, service_account_id)
+            .await
+    }
+
+    async fn get_api_token_metadata(
+        &self,
+        token_id: &str,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        self.query_api_token_metadata(token_id).await
+    }
+
+    async fn revoke_api_token_metadata(
+        &self,
+        token_id: &str,
+        revoked_at: DateTime<Utc>,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        self.revoke_api_token_metadata_record(token_id, revoked_at)
+            .await
+    }
+
+    async fn mark_api_token_used(
+        &self,
+        token_id: &str,
+        last_used_at: DateTime<Utc>,
+    ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+        self.mark_api_token_used_record(token_id, last_used_at)
+            .await
     }
 
     async fn sync_mfa_status(

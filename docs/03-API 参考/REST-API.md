@@ -508,7 +508,79 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ## Token API
 
+- [从 Session 创建 API Access Token](#从-session-创建-api-access-token)
+- [创建通用 Token](#创建通用-token)
+- [验证 Token](#验证-token)
+- [列出 Token 元数据](#列出-token-元数据)
+- [获取 Token 元数据详情](#获取-token-元数据详情)
+- [撤销 Token](#撤销-token)
 - [获取 Token 统计](#获取-token-统计)
+
+### 从 Session 创建 API Access Token
+
+**Endpoint**: `POST /api/v1/auth/access-token`
+
+**Scope**: `tokens:write` 或 `admin`
+
+**说明**:
+- 仅接受用户 Session bearer
+- 默认 TTL 为 `900s`
+- 响应会返回 `subject_type`、`issued_from`、`granted_scopes`
+
+### 创建通用 Token
+
+**Endpoint**: `POST /api/v1/tokens`
+
+**Scope**: `tokens:write` 或 `admin`
+
+**说明**:
+- 对 user bearer 行为与 `/auth/access-token` 等价
+- service account bearer 不允许再次签发下级 token
+
+### 验证 Token
+
+**Endpoint**: `POST /api/v1/tokens/verify`
+
+**Scope**: `tokens:read` 或 `tenant:admin` 或 `admin`
+
+### 列出 Token 元数据
+
+**Endpoint**: `GET /api/v1/tokens`
+
+**说明**:
+- 普通 user 仅可见自身 subject 的 token
+- admin/owner 可见当前 tenant 全部 token 元数据
+
+### 获取 Token 元数据详情
+
+**Endpoint**: `GET /api/v1/tokens/:token_id`
+
+**说明**:
+- 仅返回元数据，不返回明文 token
+
+### 撤销 Token
+
+**Endpoint**: `POST /api/v1/tokens/:token_id/revoke`
+
+**说明**:
+- bearer 可自撤销
+- admin/owner 可按 token_id 撤销当前 tenant 任意 token
+- 撤销同步更新 blacklist 与 `api_tokens.revoked_at`
+
+### Service Account API
+
+**Endpoints**:
+- `POST /api/v1/service-accounts`
+- `GET /api/v1/service-accounts`
+- `GET /api/v1/service-accounts/:id`
+- `PATCH /api/v1/service-accounts/:id`
+- `POST /api/v1/service-accounts/:id/tokens`
+- `GET /api/v1/service-accounts/:id/tokens`
+
+**说明**:
+- service account 是独立主体 (`subject_type=service_account`)
+- service account token 默认 TTL `3600s`
+- token scopes 必须是 `scope_ceiling` 子集
 
 ### 获取 Token 统计
 
@@ -521,7 +593,9 @@ Authorization: Bearer <paseto_v4_local_token>
 **响应 (200 OK)**:
 ```json
 {
-  "active_tokens": 42
+  "total_tokens": 42,
+  "active_tokens": 40,
+  "revoked_tokens": 2
 }
 ```
 

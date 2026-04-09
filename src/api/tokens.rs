@@ -1,36 +1,69 @@
+use chrono::{DateTime, Utc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     Extension, Json, Router,
-    extract::State,
+    extract::{Path, State},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use uuid::Uuid;
 
 use super::{
     auth::AuthApiState,
     middleware::{TokenScope, ValidatedToken, validate_paseto_token},
     response::ApiErrorResponse,
 };
-use crate::token::{PasetoToken, TokenClaims};
+use crate::audit::{AuditAction, Outcome};
+use crate::auth::{ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType};
+use crate::token::{
+    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, PasetoToken,
+    TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_ISSUED_FROM_SESSION,
+    TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER, TokenClaims,
+};
 
-const TOKEN_SECRET_KEY: [u8; 32] = [0u8; 32];
+pub(crate) const TOKEN_SECRET_KEY: [u8; 32] = [0u8; 32];
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CreateTokenRequest {
     pub scopes: Vec<String>,
-    pub expires_in: u64,
+    #[serde(default)]
+    pub expires_in: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CreatedTokenResponse {
     pub access_token: String,
     pub token_id: String,
     pub token_type: String,
+    pub subject_type: String,
+    pub issued_from: String,
+    pub display_name: Option<String>,
     pub expires_in: u64,
     pub scope: String,
+    pub granted_scopes: Vec<String>,
     pub issued_at: u64,
     pub expires_at: u64,
+    pub revoked_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TokenMetadataResponse {
+    pub token_id: String,
+    pub token_type: String,
+    pub subject_type: String,
+    pub subject_id: String,
+    pub tenant_id: String,
+    pub issued_from: String,
+    pub session_id: Option<String>,
+    pub membership_id: Option<String>,
+    pub display_name: Option<String>,
+    pub granted_scopes: Vec<String>,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,26 +79,56 @@ pub struct VerifyTokenResponse {
     pub tenant_id: Option<String>,
     pub scopes: Option<Vec<String>>,
     pub expires_at: Option<u64>,
+    pub subject_type: Option<String>,
+    pub issued_from: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TokenStatsResponse {
+    pub total_tokens: u64,
     pub active_tokens: u64,
+    pub revoked_tokens: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevokeTokenResponse {
+    pub revoked: bool,
+    pub token_id: String,
 }
 
 pub fn token_routes(state: AuthApiState) -> Router {
     Router::new()
-        .route("/tokens", post(create_token_handler))
+        .route(
+            "/tokens",
+            post(create_token_handler).get(list_tokens_handler),
+        )
+        .route("/tokens/:token_id", get(get_token_handler))
         .route("/tokens/verify", post(verify_token_handler))
         .route("/tokens/stats", get(get_token_stats_handler))
+        .route("/tokens/:token_id/revoke", post(revoke_token_handler))
         .with_state(state)
 }
 
-async fn create_token_handler(
-    State(_state): State<AuthApiState>,
+pub async fn create_token_handler(
+    State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateTokenRequest>,
 ) -> Result<Json<CreatedTokenResponse>, ApiErrorResponse> {
+    let created = issue_access_token_from_session(&state, &token, request).await?;
+    Ok(Json(created))
+}
+
+pub async fn issue_access_token_from_session(
+    state: &AuthApiState,
+    token: &ValidatedToken,
+    request: CreateTokenRequest,
+) -> Result<CreatedTokenResponse, ApiErrorResponse> {
+    if !token.is_user_subject() {
+        return Err(ApiErrorResponse::forbidden(
+            "Only user sessions can issue API access tokens",
+        ));
+    }
+
     if !token.has_any_scope(&[TokenScope::TokensWrite, TokenScope::Admin]) {
         return Err(ApiErrorResponse::forbidden(
             "Missing required scope: tokens:write",
@@ -93,34 +156,97 @@ async fn create_token_handler(
         ));
     }
 
-    let ttl_seconds = request.expires_in.max(1);
-    let scope_string = requested_scopes
+    let ttl_seconds = normalize_ttl(request.expires_in);
+    let granted_scopes = requested_scopes
         .iter()
         .map(TokenScope::as_str)
-        .collect::<Vec<_>>()
-        .join(" ");
-    let claims = TokenClaims::new(
-        format!("{}:{}", token.tenant_id, token.user_id),
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let scope_string = granted_scopes.join(" ");
+    let mut claims = TokenClaims::new(
+        token.subject.clone(),
         token.tenant_id.clone(),
         scope_string.clone(),
         false,
         ttl_seconds,
-    );
+    )
+    .with_subject_type(TOKEN_SUBJECT_TYPE_USER)
+    .with_issued_from(TOKEN_ISSUED_FROM_SESSION);
+
+    if let Some(membership_id) = token.membership_id() {
+        claims = claims.with_membership_id(membership_id);
+    }
+    if let Some(session_id) = token.session_id() {
+        claims = claims.with_session_id(session_id);
+    }
 
     let paseto_key = PasetoToken::key_from_bytes(&TOKEN_SECRET_KEY)
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
     let access_token = PasetoToken::sign(&claims, &paseto_key)
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+    let token_id = claims.jti.clone();
+    let metadata = ApiTokenMetadata::new(
+        token_id.clone(),
+        ApiTokenType::UserAccessToken,
+        ApiTokenSubjectType::User,
+        parse_uuid_str(&token.user_id, "user_id")?,
+        parse_uuid_str(&token.tenant_id, "tenant_id")?,
+        TOKEN_ISSUED_FROM_SESSION,
+        unix_to_datetime(claims.exp)?,
+    )
+    .with_scopes(granted_scopes.clone());
+    let metadata = if let Some(session_id) = token.session_id() {
+        metadata.with_session_id(parse_uuid_str(session_id, "session_id")?)
+    } else {
+        metadata
+    };
+    let metadata = if let Some(membership_id) = token.membership_id() {
+        metadata.with_membership_id(parse_uuid_str(membership_id, "membership_id")?)
+    } else {
+        metadata
+    };
 
-    Ok(Json(CreatedTokenResponse {
+    state
+        .auth_service
+        .create_api_token_metadata(&metadata)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    state
+        .record_audit(
+            AuditAction::TokenIssue,
+            &token.user_id,
+            Outcome::Success,
+            Some(json!({
+                "issued_from": TOKEN_ISSUED_FROM_SESSION,
+                "subject_type": TOKEN_SUBJECT_TYPE_USER,
+                "token_id": token_id,
+                "scopes": granted_scopes,
+                "expires_in": ttl_seconds,
+                "session_id": token.session_id(),
+                "membership_id": token.membership_id(),
+            })),
+        )
+        .await;
+
+    Ok(CreatedTokenResponse {
         access_token,
         token_id: claims.jti.clone(),
         token_type: "Bearer".to_string(),
+        subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+        issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+        display_name: None,
         expires_in: ttl_seconds,
         scope: scope_string,
+        granted_scopes: requested_scopes
+            .iter()
+            .map(TokenScope::as_str)
+            .map(str::to_string)
+            .collect(),
         issued_at: claims.iat.unwrap_or_else(unix_now),
         expires_at: claims.exp,
-    }))
+        revoked_at: None,
+    })
 }
 
 async fn verify_token_handler(
@@ -130,7 +256,7 @@ async fn verify_token_handler(
 ) -> Result<Json<VerifyTokenResponse>, ApiErrorResponse> {
     if !session_token.has_any_scope(&[
         TokenScope::TokensRead,
-        TokenScope::TokensWrite,
+        TokenScope::TenantAdmin,
         TokenScope::Admin,
     ]) {
         return Err(ApiErrorResponse::forbidden(
@@ -163,7 +289,40 @@ async fn verify_token_handler(
                     .collect(),
             ),
             expires_at: Some(validated.expires_at),
+            subject_type: Some(validated.subject_type),
+            issued_from: Some(validated.issued_from),
         }));
+    }
+
+    if let Some(metadata) = state
+        .auth_service
+        .get_api_token_metadata(&validated.token_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+    {
+        if metadata.tenant_id.to_string() != session_token.tenant_id || !metadata.is_active() {
+            return Ok(Json(VerifyTokenResponse {
+                valid: false,
+                token_id: Some(validated.token_id),
+                user_id: Some(validated.user_id),
+                tenant_id: Some(validated.tenant_id),
+                scopes: Some(
+                    validated
+                        .scopes
+                        .into_iter()
+                        .map(|scope| scope.as_str().to_string())
+                        .collect(),
+                ),
+                expires_at: Some(validated.expires_at),
+                subject_type: Some(validated.subject_type),
+                issued_from: Some(validated.issued_from),
+            }));
+        }
+
+        let _ = state
+            .auth_service
+            .mark_api_token_used(&metadata.id, Utc::now())
+            .await;
     }
 
     Ok(Json(VerifyTokenResponse {
@@ -179,11 +338,246 @@ async fn verify_token_handler(
                 .collect(),
         ),
         expires_at: Some(validated.expires_at),
+        subject_type: Some(validated.subject_type),
+        issued_from: Some(validated.issued_from),
     }))
 }
 
-async fn get_token_stats_handler() -> Json<TokenStatsResponse> {
-    Json(TokenStatsResponse { active_tokens: 0 })
+async fn revoke_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(token_id): Path<String>,
+) -> Result<Json<RevokeTokenResponse>, ApiErrorResponse> {
+    if token.session_id() == Some(token.token_id.as_str()) {
+        return Err(ApiErrorResponse::invalid_request(
+            "Session tokens must be revoked via /auth/logout",
+        ));
+    }
+
+    let is_self = token.token_id == token_id;
+    let can_revoke_others = token.has_any_scope(&[
+        TokenScope::TokensRevoke,
+        TokenScope::TenantAdmin,
+        TokenScope::Admin,
+    ]);
+
+    if !is_self && !can_revoke_others {
+        return Err(ApiErrorResponse::forbidden(
+            "Can only revoke the current token unless you have admin revoke permissions",
+        ));
+    }
+
+    let metadata = state
+        .auth_service
+        .get_api_token_metadata(&token_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    if let Some(ref item) = metadata
+        && item.tenant_id.to_string() != token.tenant_id
+    {
+        return Err(ApiErrorResponse::forbidden(
+            "Cannot revoke a token from another tenant",
+        ));
+    }
+
+    if !is_self && metadata.is_none() {
+        return Err(ApiErrorResponse::not_found("Token metadata not found"));
+    }
+
+    let ttl = metadata
+        .as_ref()
+        .and_then(|item| item.expires_at.timestamp().try_into().ok())
+        .unwrap_or(token.expires_at)
+        .saturating_sub(unix_now())
+        .max(1);
+    state
+        .token_store
+        .blacklist_token(&token_id, ttl)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    let revoked_at = Utc::now();
+    let metadata = state
+        .auth_service
+        .revoke_api_token_metadata(&token_id, revoked_at)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    let subject_type = metadata
+        .as_ref()
+        .map(|item| item.subject_type.as_str())
+        .unwrap_or(token.subject_type());
+    let issued_from = metadata
+        .as_ref()
+        .map(|item| item.issued_from.as_str())
+        .unwrap_or(token.issued_from());
+    let audit_user_id = if subject_type == TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT {
+        "service-account"
+    } else if is_self {
+        token.user_id.as_str()
+    } else {
+        "tenant-admin"
+    };
+
+    let audit_action = if issued_from == TOKEN_ISSUED_FROM_SERVICE_ACCOUNT {
+        "service_account_token_revoked"
+    } else {
+        "access_token_revoked"
+    };
+
+    state
+        .record_audit(
+            AuditAction::TokenRevoke,
+            audit_user_id,
+            Outcome::Success,
+            Some(json!({
+                "token_id": token_id,
+                "issued_from": issued_from,
+                "subject_type": subject_type,
+                "audit_event": audit_action,
+                "revoked_by": token.user_id,
+            })),
+        )
+        .await;
+
+    Ok(Json(RevokeTokenResponse {
+        revoked: true,
+        token_id,
+    }))
+}
+
+async fn list_tokens_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+) -> Result<Json<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
+    if !token.has_any_scope(&[
+        TokenScope::TokensRead,
+        TokenScope::Admin,
+        TokenScope::TenantAdmin,
+    ]) {
+        return Err(ApiErrorResponse::forbidden(
+            "Missing required scope: tokens:read",
+        ));
+    }
+
+    let tenant_id = parse_uuid_str(&token.tenant_id, "tenant_id")?;
+    let subject_id = parse_uuid_str(&token.user_id, "user_id")?;
+    let is_tenant_admin = token.has_any_scope(&[TokenScope::Admin, TokenScope::TenantAdmin]);
+
+    let items = state
+        .auth_service
+        .list_api_tokens(tenant_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    let items = items
+        .into_iter()
+        .filter(|item| {
+            if is_tenant_admin {
+                return true;
+            }
+
+            match item.subject_type {
+                ApiTokenSubjectType::User => item.subject_id == subject_id,
+                ApiTokenSubjectType::ServiceAccount => {
+                    token.is_service_account_subject() && item.subject_id == subject_id
+                }
+            }
+        })
+        .map(map_token_metadata)
+        .collect();
+
+    Ok(Json(items))
+}
+
+async fn get_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(token_id): Path<String>,
+) -> Result<Json<TokenMetadataResponse>, ApiErrorResponse> {
+    if !token.has_any_scope(&[
+        TokenScope::TokensRead,
+        TokenScope::Admin,
+        TokenScope::TenantAdmin,
+    ]) {
+        return Err(ApiErrorResponse::forbidden(
+            "Missing required scope: tokens:read",
+        ));
+    }
+
+    let subject_id = parse_uuid_str(&token.user_id, "user_id")?;
+    let is_tenant_admin = token.has_any_scope(&[TokenScope::Admin, TokenScope::TenantAdmin]);
+    let item = state
+        .auth_service
+        .get_api_token_metadata(&token_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Token metadata not found"))?;
+
+    if item.tenant_id.to_string() != token.tenant_id {
+        return Err(ApiErrorResponse::forbidden(
+            "Cannot access a token from another tenant",
+        ));
+    }
+
+    if !is_tenant_admin && item.subject_id != subject_id {
+        return Err(ApiErrorResponse::forbidden(
+            "Cannot access another subject's token",
+        ));
+    }
+
+    Ok(Json(map_token_metadata(item)))
+}
+
+async fn get_token_stats_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+) -> Result<Json<TokenStatsResponse>, ApiErrorResponse> {
+    if !token.has_any_scope(&[
+        TokenScope::TokensRead,
+        TokenScope::Admin,
+        TokenScope::TenantAdmin,
+    ]) {
+        return Err(ApiErrorResponse::forbidden(
+            "Missing required scope: tokens:read",
+        ));
+    }
+
+    let tenant_id = parse_uuid_str(&token.tenant_id, "tenant_id")?;
+    let subject_id = parse_uuid_str(&token.user_id, "user_id")?;
+    let is_tenant_admin = token.has_any_scope(&[TokenScope::Admin, TokenScope::TenantAdmin]);
+
+    let items = state
+        .auth_service
+        .list_api_tokens(tenant_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    let visible = items.into_iter().filter(|item| {
+        if is_tenant_admin {
+            return true;
+        }
+        item.subject_id == subject_id
+    });
+
+    let mut total_tokens = 0u64;
+    let mut active_tokens = 0u64;
+    let mut revoked_tokens = 0u64;
+    for item in visible {
+        total_tokens += 1;
+        if item.revoked_at.is_some() {
+            revoked_tokens += 1;
+        } else if item.is_active() {
+            active_tokens += 1;
+        }
+    }
+
+    Ok(Json(TokenStatsResponse {
+        total_tokens,
+        active_tokens,
+        revoked_tokens,
+    }))
 }
 
 fn invalid_token_response() -> VerifyTokenResponse {
@@ -194,6 +588,49 @@ fn invalid_token_response() -> VerifyTokenResponse {
         tenant_id: None,
         scopes: None,
         expires_at: None,
+        subject_type: None,
+        issued_from: None,
+    }
+}
+
+fn normalize_ttl(expires_in: Option<u64>) -> u64 {
+    expires_in
+        .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
+        .clamp(1, MAX_TOKEN_TTL_SECONDS)
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn parse_uuid_str(value: &str, field: &str) -> Result<Uuid, ApiErrorResponse> {
+    Uuid::parse_str(value)
+        .map_err(|_| ApiErrorResponse::internal_error(format!("Invalid UUID in {field}")))
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn unix_to_datetime(value: u64) -> Result<DateTime<Utc>, ApiErrorResponse> {
+    DateTime::<Utc>::from_timestamp(value as i64, 0)
+        .ok_or_else(|| ApiErrorResponse::internal_error("Invalid expiration timestamp"))
+}
+
+fn format_datetime(value: DateTime<Utc>) -> String {
+    value.to_rfc3339()
+}
+
+pub(crate) fn map_token_metadata(item: ApiTokenMetadata) -> TokenMetadataResponse {
+    TokenMetadataResponse {
+        token_id: item.id,
+        token_type: item.token_type.as_str().to_string(),
+        subject_type: item.subject_type.as_str().to_string(),
+        subject_id: item.subject_id.to_string(),
+        tenant_id: item.tenant_id.to_string(),
+        issued_from: item.issued_from,
+        session_id: item.session_id.map(|value| value.to_string()),
+        membership_id: item.membership_id.map(|value| value.to_string()),
+        display_name: item.display_name,
+        granted_scopes: item.scopes,
+        expires_at: format_datetime(item.expires_at),
+        revoked_at: item.revoked_at.map(format_datetime),
+        created_at: format_datetime(item.created_at),
+        last_used_at: item.last_used_at.map(format_datetime),
     }
 }
 
@@ -336,7 +773,21 @@ mod tests {
     }
 
     fn session_token(scopes: Vec<TokenScope>) -> ValidatedToken {
-        ValidatedToken::mock("tenant_123", "user_123", scopes)
+        let mut token = ValidatedToken::mock(
+            "00000000-0000-0000-0000-000000000123",
+            "00000000-0000-0000-0000-000000000456",
+            scopes,
+        );
+        token.metadata.insert(
+            "session_id".to_string(),
+            "00000000-0000-0000-0000-000000000789".to_string(),
+        );
+        token.metadata.insert(
+            "membership_id".to_string(),
+            "00000000-0000-0000-0000-000000000321".to_string(),
+        );
+        token.membership_id = Some("00000000-0000-0000-0000-000000000321".to_string());
+        token
     }
 
     #[tokio::test]
@@ -350,7 +801,7 @@ mod tests {
             ])),
             Json(CreateTokenRequest {
                 scopes: vec!["credential:read".to_string(), "audit:read".to_string()],
-                expires_in: 3600,
+                expires_in: Some(3600),
             }),
         )
         .await
@@ -360,6 +811,28 @@ mod tests {
         assert!(response.access_token.starts_with("v4.local."));
         assert_eq!(response.scope, "credential:read audit:read");
         assert_eq!(response.expires_in, 3600);
+        assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
+        assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_SESSION);
+    }
+
+    #[tokio::test]
+    async fn create_token_uses_default_ttl_when_not_provided() {
+        let response = create_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: None,
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert_eq!(response.expires_in, DEFAULT_TOKEN_TTL_SECONDS);
     }
 
     #[tokio::test]
@@ -373,7 +846,7 @@ mod tests {
             ])),
             Json(CreateTokenRequest {
                 scopes: vec!["credential:read".to_string()],
-                expires_in: 120,
+                expires_in: Some(120),
             }),
         )
         .await
@@ -392,10 +865,62 @@ mod tests {
         .0;
 
         assert!(verified.valid);
-        assert_eq!(verified.tenant_id.as_deref(), Some("tenant_123"));
+        assert_eq!(
+            verified.tenant_id.as_deref(),
+            Some("00000000-0000-0000-0000-000000000123")
+        );
+        assert_eq!(
+            verified.subject_type.as_deref(),
+            Some(TOKEN_SUBJECT_TYPE_USER)
+        );
+        assert_eq!(
+            verified.issued_from.as_deref(),
+            Some(TOKEN_ISSUED_FROM_SESSION)
+        );
         assert_eq!(
             verified.scopes.unwrap_or_default(),
             vec!["credential:read".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn revoke_token_blacklists_current_access_token() {
+        let state = test_state();
+        let created = create_token_handler(
+            State(state.clone()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::TokensRevoke,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(120),
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        let validated = validate_paseto_token(&created.access_token, &TOKEN_SECRET_KEY, "en")
+            .expect("created token should validate");
+
+        let response = revoke_token_handler(
+            State(state.clone()),
+            Extension(validated.clone()),
+            Path(validated.token_id.clone()),
+        )
+        .await
+        .expect("revoke should succeed")
+        .0;
+
+        assert!(response.revoked);
+        assert!(
+            state
+                .token_store
+                .is_blacklisted(&validated.token_id)
+                .await
+                .expect("blacklist lookup should succeed")
         );
     }
 }

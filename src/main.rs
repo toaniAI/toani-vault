@@ -43,6 +43,7 @@ use vault_service::api::{
     notifications::notifications_routes,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
+    service_account_routes,
     tenant::{TenantApiState, tenant_routes},
     token_blacklist::{TokenStore, create_redis_token_store},
     token_routes,
@@ -742,6 +743,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
     let token_routes = token_routes(app_state.auth_state.clone());
+    let service_account_routes = service_account_routes(app_state.auth_state.clone());
 
     // 认证中间件层
     let auth_layer = axum::middleware::from_fn_with_state(
@@ -764,6 +766,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         // 通知列表路由
         .merge(notifications_routes)
         .merge(token_routes)
+        .merge(service_account_routes)
         // 认证用户信息与偏好
         .merge(protected_auth_routes)
         // locale 解析

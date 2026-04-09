@@ -22,9 +22,9 @@
 1. 访问 https://vault.toani.io
 2. 点击"使用钱包登录"
 3. 通过 Privy 支持的钱包（如 MetaMask、Phantom）完成认证
-4. 认证成功后获得用户 Session Token
+4. 认证成功后获得用户 Session Token（仅表示登录态）
 
-**注意**: 用户 Privy 认证 Token 不应通过此 SDK 直接管理。
+**注意**: `Privy Access Token` 仅用于换取 `Session Token`，不是 API 调用 token。
 
 ### 服务账户认证 (Platform API Token)
 
@@ -189,6 +189,33 @@ let revoked = sdk.token().revoke(None).await?;
 if revoked {
     println!("Token revoked successfully");
 }
+
+// 列表/详情/按 ID 撤销
+let tokens = sdk.token().list(None).await?;
+if let Some(first) = tokens.tokens.first() {
+    let detail = sdk.token().get(&first.token_id, None).await?;
+    sdk.token().revoke_by_id(&detail.token_id, None).await?;
+}
+
+// Service Account
+let service_account = sdk.service_accounts().create(
+    toani_vault_sdk::CreateServiceAccountRequest {
+        name: "ci-bot".to_string(),
+        description: Some("automation".to_string()),
+        scope_ceiling: vec!["credential:read".to_string(), "tokens:read".to_string()],
+    },
+    None,
+).await?;
+
+let _service_account_token = sdk.service_accounts().create_token(
+    &service_account.id,
+    toani_vault_sdk::CreateServiceAccountTokenRequest {
+        scopes: vec!["credential:read".to_string()],
+        ttl_seconds: Some(3600),
+        display_name: Some("ci-job-token".to_string()),
+    },
+    None,
+).await?;
 ```
 
 ## 配置选项

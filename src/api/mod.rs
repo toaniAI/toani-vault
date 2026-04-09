@@ -16,6 +16,7 @@ pub mod rate_limit;
 pub mod response;
 pub mod routes;
 pub mod sandbox;
+pub mod service_accounts;
 pub mod tenant;
 pub mod tenant_middleware;
 pub mod token_blacklist;
@@ -50,6 +51,7 @@ pub use i18n::{LocaleResolverState, ResolvedLocale, locale_middleware};
 pub use middleware::{TokenScope, ValidatedToken};
 pub use notifications::notifications_routes;
 pub use sandbox::{SandboxState, sandbox_routes};
+pub use service_accounts::service_account_routes;
 pub use tenant::{TenantApiState, tenant_routes};
 pub use tenant_middleware::{
     RequestContextExt, TenantIsolationConfig, TenantIsolationState, TenantMiddlewareBuilder,

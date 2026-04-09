@@ -17,10 +17,30 @@ import {
   type ExportDataResponse,
   type ListSessionsResponse,
   type RequestOptions,
+  type SandboxOperationInfo,
+  type SandboxStats,
   SessionStatus,
   OperationType,
   OperationStatus,
 } from './types.js';
+
+interface SandboxOperationInfoApi {
+  operation_id: string;
+  session_id: string;
+  operation_type: string;
+  status: string;
+  started_at: string;
+  completed_at?: string;
+  execution_time_ms?: number;
+}
+
+interface SandboxStatsApi {
+  pool_status: string;
+  active_sessions: number;
+  warm_instances: number;
+  healthy: boolean;
+  error?: string;
+}
 
 /**
  * Sandbox 服务
@@ -59,6 +79,7 @@ export class SandboxService {
   ): Promise<CreateSessionResponse> {
     return this.client.post<CreateSessionResponse>('/sandbox/sessions', {
       service_id: request.serviceId,
+      original_intent: request.originalIntent,
       credential_id: request.credentialId,
       start_url: request.startUrl,
       viewport_width: request.viewportWidth,
@@ -287,6 +308,43 @@ export class SandboxService {
       },
       options
     );
+  }
+
+  /**
+   * 获取操作详情
+   */
+  public async getOperation(
+    operationId: string,
+    options?: RequestOptions
+  ): Promise<SandboxOperationInfo> {
+    const response = await this.client.get<SandboxOperationInfoApi>(
+      `/sandbox/operations/${operationId}`,
+      options
+    );
+
+    return {
+      operationId: response.operation_id,
+      sessionId: response.session_id,
+      operationType: response.operation_type,
+      status: response.status,
+      startedAt: response.started_at,
+      completedAt: response.completed_at,
+      executionTimeMs: response.execution_time_ms,
+    };
+  }
+
+  /**
+   * 获取 Sandbox 统计
+   */
+  public async getStats(options?: RequestOptions): Promise<SandboxStats> {
+    const response = await this.client.get<SandboxStatsApi>('/sandbox/stats', options);
+    return {
+      poolStatus: response.pool_status,
+      activeSessions: response.active_sessions,
+      warmInstances: response.warm_instances,
+      healthy: response.healthy,
+      error: response.error,
+    };
   }
 
   // ============================================================================

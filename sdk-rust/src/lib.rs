@@ -109,6 +109,7 @@ pub mod credentials;
 pub mod audit;
 pub mod sandbox;
 pub mod token;
+pub mod service_accounts;
 pub mod types;
 
 // 重新导出常用类型
@@ -116,20 +117,19 @@ pub use audit::AuditService;
 pub use client::CredBridgeClient;
 pub use credentials::CredentialsService;
 pub use sandbox::SandboxService;
+pub use service_accounts::ServiceAccountsService;
 pub use token::TokenManager;
 pub use types::{
     AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter, AuditLogsResponse,
-    AuditVerifyRequest, AuditVerifyResponse, CreateCredentialRequest,
-    CreateCredentialResponse, CreateSandboxSessionRequest, CreateSandboxSessionResponse,
-    CreateTokenResponse, CredBridgeConfig, CredBridgeError, CredBridgeErrorCode,
-    CredentialFilter, CredentialMetadata, CredentialType, DecryptCredentialRequest,
-    DecryptCredentialResponse, DeleteCredentialResponse, ExecuteSandboxOperationRequest,
-    ExecuteSandboxOperationResponse, GetCredentialResponse, ListCredentialsResponse,
-    ListTokensResponse, RequestOptions, Result, RollbackCredentialResponse,
-    SandboxOperationDetail, SandboxSessionActionResponse, SandboxSessionDetail,
-    SandboxSessionsResponse, SandboxStatsResponse, TokenInfo, TokenRefreshResult,
-    TokenScope, TokenStatsResponse, UpdateCredentialResponse, VersionDetail,
-    VersionHistory,
+    AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse, CreateCredentialRequest, CreateCredentialResponse,
+    CreateSandboxSessionRequest, CreateSandboxSessionResponse, CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
+    CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError, CredBridgeErrorCode,
+    CredentialFilter, CredentialMetadata, CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
+    DeleteCredentialResponse, ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse, GetCredentialResponse,
+    ListCredentialsResponse, ListTokensResponse, RequestOptions, Result, RollbackCredentialResponse,
+    SandboxOperationDetail, SandboxSessionActionResponse, SandboxSessionDetail, SandboxSessionsResponse,
+    SandboxStatsResponse, ServiceAccountInfo, TokenInfo, TokenRefreshResult, TokenScope, TokenStatsResponse,
+    UpdateCredentialResponse, UpdateServiceAccountRequest, VersionDetail, VersionHistory, ApiTokenMetadata,
 };
 
 /// SDK 版本
@@ -256,6 +256,11 @@ impl ToaniVaultSDK {
     /// ```
     pub fn token(&self) -> TokenManager {
         TokenManager::new(Arc::clone(&self.client))
+    }
+
+    /// 获取 Service Account 服务
+    pub fn service_accounts(&self) -> ServiceAccountsService {
+        ServiceAccountsService::new(Arc::clone(&self.client))
     }
 
     /// 获取审计日志服务

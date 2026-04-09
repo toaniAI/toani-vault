@@ -73,6 +73,28 @@ pub struct TokenClaims {
     /// MFA 验证状态
     #[serde(default)]
     pub mfa_verified: bool,
+
+    /// 主体类型，默认用户
+    #[serde(
+        default = "default_subject_type",
+        skip_serializing_if = "is_default_subject_type"
+    )]
+    pub subject_type: String,
+
+    /// 令牌来源，默认 session
+    #[serde(
+        default = "default_issued_from",
+        skip_serializing_if = "is_default_issued_from"
+    )]
+    pub issued_from: String,
+
+    /// 成员资格 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership_id: Option<String>,
+
+    /// 来源会话 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 impl TokenClaims {
@@ -108,6 +130,10 @@ impl TokenClaims {
             jti,
             scope: scope.into(),
             mfa_verified,
+            subject_type: default_subject_type(),
+            issued_from: default_issued_from(),
+            membership_id: None,
+            session_id: None,
         }
     }
 
@@ -219,6 +245,26 @@ impl TokenClaims {
         let my_scopes = self.scopes();
         scopes.iter().all(|s| my_scopes.contains(s))
     }
+
+    pub fn with_subject_type(mut self, subject_type: impl Into<String>) -> Self {
+        self.subject_type = subject_type.into();
+        self
+    }
+
+    pub fn with_issued_from(mut self, issued_from: impl Into<String>) -> Self {
+        self.issued_from = issued_from.into();
+        self
+    }
+
+    pub fn with_membership_id(mut self, membership_id: impl Into<String>) -> Self {
+        self.membership_id = Some(membership_id.into());
+        self
+    }
+
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
+    }
 }
 
 /// Scope 权限常量定义
@@ -251,6 +297,27 @@ pub const DEFAULT_TOKEN_TTL_SECONDS: u64 = 900;
 
 /// 最大 Token 有效期（24 小时）
 pub const MAX_TOKEN_TTL_SECONDS: u64 = 86400;
+
+pub const TOKEN_SUBJECT_TYPE_USER: &str = "user";
+pub const TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT: &str = "service_account";
+pub const TOKEN_ISSUED_FROM_SESSION: &str = "session";
+pub const TOKEN_ISSUED_FROM_SERVICE_ACCOUNT: &str = "service_account";
+
+fn default_subject_type() -> String {
+    TOKEN_SUBJECT_TYPE_USER.to_string()
+}
+
+fn is_default_subject_type(value: &str) -> bool {
+    value == TOKEN_SUBJECT_TYPE_USER
+}
+
+fn default_issued_from() -> String {
+    TOKEN_ISSUED_FROM_SESSION.to_string()
+}
+
+fn is_default_issued_from(value: &str) -> bool {
+    value == TOKEN_ISSUED_FROM_SESSION
+}
 
 /// 获取当前 Unix 时间戳（秒）
 fn current_timestamp() -> u64 {

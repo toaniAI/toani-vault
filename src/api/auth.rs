@@ -34,6 +34,7 @@ use crate::api::audit::AuditStorage;
 use crate::api::i18n::{I18nParams, ResolvedLocale, set_content_language, translate};
 use crate::api::middleware::{TokenScope, ValidatedToken};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse};
+use crate::api::tokens::{CreateTokenRequest, issue_access_token_from_session};
 use crate::audit::{AuditAction, AuditEntry, Outcome, RedactedParam};
 use crate::auth::{
     AuthError, AuthService, CreateUserRequest, ExternalIdentity, InviteeType, MembershipRole,
@@ -178,6 +179,29 @@ pub struct SessionInfo {
     pub expires_at: String,
     /// MFA 状态
     pub mfa_status: String,
+}
+
+/// 面向 API/CLI 的 access token 签发请求
+#[derive(Debug, Deserialize)]
+pub struct CreateAccessTokenRequest {
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub ttl_seconds: Option<u64>,
+}
+
+/// access token 响应
+#[derive(Debug, Serialize)]
+pub struct AccessTokenResponse {
+    pub access_token: String,
+    pub token_id: String,
+    pub token_type: String,
+    pub subject_type: String,
+    pub issued_from: String,
+    pub display_name: Option<String>,
+    pub expires_at: u64,
+    pub expires_in: u64,
+    pub granted_scopes: Vec<String>,
+    pub revoked_at: Option<String>,
 }
 
 /// 成员资格信息（响应）
@@ -420,6 +444,7 @@ pub fn auth_routes() -> Router<AuthApiState> {
 /// 创建受保护的认证路由（需要认证）
 pub fn protected_auth_routes() -> Router<AuthApiState> {
     Router::new()
+        .route("/auth/access-token", post(create_access_token_handler))
         // 获取当前用户信息
         .route("/auth/me", get(get_current_user_handler))
         // 获取当前用户全部成员资格
@@ -549,6 +574,30 @@ fn map_user_profile(user: &User, identities: Vec<ExternalIdentity>) -> UserProfi
             })
             .collect(),
     }
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_token_uuid(
+    token_value: &str,
+    field: &str,
+    locale: &ResolvedLocale,
+) -> Result<Uuid, Response> {
+    Uuid::parse_str(token_value).map_err(|_| {
+        auth_error_response(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            locale,
+            "errors.auth.invalid_token",
+            {
+                let mut params = I18nParams::new();
+                params.insert(
+                    "reason".to_string(),
+                    serde_json::Value::String(format!("invalid {field} in token")),
+                );
+                params
+            },
+        )
+    })
 }
 
 fn map_membership_info(membership: &TenantMembership) -> MembershipInfo {
@@ -837,6 +886,35 @@ pub async fn create_session_handler(
     response
 }
 
+pub async fn create_access_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(request): Json<CreateAccessTokenRequest>,
+) -> Result<ApiSuccessResponse<AccessTokenResponse>, ApiErrorResponse> {
+    let created = issue_access_token_from_session(
+        &state,
+        &token,
+        CreateTokenRequest {
+            scopes: request.scopes,
+            expires_in: request.ttl_seconds,
+        },
+    )
+    .await?;
+
+    Ok(ApiSuccessResponse::new(AccessTokenResponse {
+        access_token: created.access_token,
+        token_id: created.token_id,
+        token_type: created.token_type,
+        subject_type: created.subject_type,
+        issued_from: created.issued_from,
+        display_name: created.display_name,
+        expires_at: created.expires_at,
+        expires_in: created.expires_in,
+        granted_scopes: created.granted_scopes,
+        revoked_at: created.revoked_at,
+    }))
+}
+
 /// 获取当前用户处理器
 ///
 /// 返回当前用户的完整信息，包括：
@@ -849,8 +927,21 @@ pub async fn get_current_user_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
+    if token.is_service_account_subject() {
+        return auth_error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            &locale,
+            "errors.auth.insufficient_permissions",
+            I18nParams::new(),
+        );
+    }
+
     // 1. 获取用户信息
-    let user_id = Uuid::parse_str(&token.user_id).unwrap_or(Uuid::nil());
+    let user_id = match parse_token_uuid(&token.user_id, "user_id", &locale) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let user = match state.auth_service.get_user(user_id).await {
         Ok(u) => u,
         Err(e) => return auth_error_to_response(e, &locale),
@@ -868,7 +959,10 @@ pub async fn get_current_user_handler(
     };
 
     // 3. 获取当前租户的成员资格
-    let tenant_id = Uuid::parse_str(&token.tenant_id).unwrap_or(Uuid::nil());
+    let tenant_id = match parse_token_uuid(&token.tenant_id, "tenant_id", &locale) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let current_membership =
         select_current_membership(&memberships, Some(tenant_id), user.default_tenant_id);
 
@@ -908,7 +1002,20 @@ pub async fn get_memberships_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
-    let user_id = Uuid::parse_str(&token.user_id).unwrap_or(Uuid::nil());
+    if token.is_service_account_subject() {
+        return auth_error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            &locale,
+            "errors.auth.insufficient_permissions",
+            I18nParams::new(),
+        );
+    }
+
+    let user_id = match parse_token_uuid(&token.user_id, "user_id", &locale) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let memberships = match state.auth_service.get_user_memberships(user_id).await {
         Ok(items) => items,
         Err(e) => return auth_error_to_response(e, &locale),
@@ -933,13 +1040,30 @@ pub async fn logout_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
+    if token.is_service_account_subject() {
+        return auth_error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            &locale,
+            "errors.auth.insufficient_permissions",
+            I18nParams::new(),
+        );
+    }
+
     // 1. 获取会话 ID
     let session_id_str = token
         .metadata
         .get("session_id")
         .cloned()
         .unwrap_or_default();
-    let session_id = Uuid::parse_str(&session_id_str).unwrap_or(Uuid::nil());
+    let session_id = if session_id_str.is_empty() {
+        Uuid::nil()
+    } else {
+        match parse_token_uuid(&session_id_str, "session_id", &locale) {
+            Ok(value) => value,
+            Err(response) => return response,
+        }
+    };
 
     // 2. 撤销会话
     if session_id != Uuid::nil() {
@@ -1003,8 +1127,21 @@ pub async fn consume_invitation_handler(
     locale: ResolvedLocale,
     Json(request): Json<ConsumeInvitationRequest>,
 ) -> Response {
+    if token.is_service_account_subject() {
+        return auth_error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            &locale,
+            "errors.auth.insufficient_permissions",
+            I18nParams::new(),
+        );
+    }
+
     // 1. 解析用户 ID
-    let user_id = Uuid::parse_str(&token.user_id).unwrap_or(Uuid::nil());
+    let user_id = match parse_token_uuid(&token.user_id, "user_id", &locale) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
 
     // 2. 消费邀请
     let membership = match state
@@ -1065,8 +1202,21 @@ pub async fn get_mfa_status_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
+    if token.is_service_account_subject() {
+        return auth_error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            &locale,
+            "errors.auth.insufficient_permissions",
+            I18nParams::new(),
+        );
+    }
+
     // 1. 解析用户 ID
-    let user_id = Uuid::parse_str(&token.user_id).unwrap_or(Uuid::nil());
+    let user_id = match parse_token_uuid(&token.user_id, "user_id", &locale) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
 
     // 2. 获取 MFA 状态
     let mfa_status = match state.auth_service.get_mfa_status(user_id).await {
@@ -1104,8 +1254,21 @@ pub async fn sync_mfa_status_handler(
     locale: ResolvedLocale,
     Json(request): Json<SyncMfaStatusRequest>,
 ) -> Response {
+    if token.is_service_account_subject() {
+        return auth_error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            &locale,
+            "errors.auth.insufficient_permissions",
+            I18nParams::new(),
+        );
+    }
+
     // 1. 解析用户 ID
-    let user_id = Uuid::parse_str(&token.user_id).unwrap_or(Uuid::nil());
+    let user_id = match parse_token_uuid(&token.user_id, "user_id", &locale) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
 
     // 2. 同步 MFA 状态
     let mfa_status = match state

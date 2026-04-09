@@ -24,9 +24,9 @@ Toani Vault SDK - TypeScript client for secure credential management.
 1. 访问 https://vault.toani.io
 2. 点击"使用钱包登录"
 3. 通过 Privy 支持的钱包（如 MetaMask、Phantom）完成认证
-4. 认证成功后获得用户 Session Token
+4. 认证成功后获得用户 Session Token（仅表示登录态）
 
-**注意**: 用户 Privy 认证 Token 不应通过此 SDK 直接管理。
+**注意**: `Privy Access Token` 仅用于换取 `Session Token`，不是 API 调用 token。
 
 ### 服务账户认证 (Platform API Token)
 
@@ -60,6 +60,33 @@ Platform API Token 需通过管理界面或 API 创建：
 1. 使用管理员账户登录 Web 界面
 2. 进入"开发者中心" > "API Tokens"
 3. 创建新的服务账户 Token，设置所需权限范围
+
+## Token 与 Service Account API（新增）
+
+```typescript
+// 1) 用 Session Token 换 API Access Token（默认 900 秒）
+const issued = await sdk.auth.createAccessToken({
+  scopes: ['tokens:read', 'tokens:write'],
+  ttlSeconds: 900,
+});
+
+// 2) token 元数据列表/详情/按 ID 撤销
+const tokenList = await sdk.token.list();
+const tokenMeta = await sdk.token.get(tokenList[0].tokenId);
+await sdk.token.revokeById(tokenMeta.tokenId);
+
+// 3) Service Account 生命周期
+const sa = await sdk.serviceAccounts.create({
+  name: 'ci-bot',
+  scopeCeiling: ['credential:read', 'tokens:read'],
+});
+const saToken = await sdk.serviceAccounts.createToken(sa.id, {
+  scopes: ['credential:read'],
+  ttlSeconds: 3600,
+  displayName: 'ci-job-token',
+});
+const saTokenMetadata = await sdk.serviceAccounts.listTokens(sa.id);
+```
 
 ---
 

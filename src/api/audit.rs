@@ -164,6 +164,7 @@ impl PostgresAuditStorageAdapter {
                 log_index BIGINT PRIMARY KEY,
                 entry_id VARCHAR(64) NOT NULL UNIQUE,
                 event_type VARCHAR(64) NOT NULL,
+                event_data JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                 service VARCHAR(64) NOT NULL,
                 user_id_hash VARCHAR(128),
                 risk_tier VARCHAR(32) NOT NULL,
@@ -183,6 +184,8 @@ impl PostgresAuditStorageAdapter {
             r#"
             ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS log_index BIGINT;
             ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS entry_id VARCHAR(64);
+            ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS event_data JSONB;
+            ALTER TABLE "{schema}".audit_logs ALTER COLUMN event_data SET DEFAULT '{{}}'::jsonb;
             ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS service VARCHAR(64);
             ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS risk_tier VARCHAR(32);
             ALTER TABLE "{schema}".audit_logs ADD COLUMN IF NOT EXISTS outcome VARCHAR(32);
@@ -341,6 +344,8 @@ impl AuditStorage for PostgresAuditStorageAdapter {
 
         let signed_entry_json =
             serde_json::to_value(&signed_entry).map_err(|error| error.to_string())?;
+        let event_data_json =
+            serde_json::to_value(&signed_entry.entry).map_err(|error| error.to_string())?;
         let created_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
             signed_entry.entry.timestamp as i64,
         )
@@ -348,8 +353,8 @@ impl AuditStorage for PostgresAuditStorageAdapter {
         let sql = format!(
             r#"
             INSERT INTO "{schema}".audit_logs
-                (log_index, entry_id, event_type, service, user_id_hash, risk_tier, outcome, created_at, signed_entry)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                (log_index, entry_id, event_type, event_data, service, user_id_hash, risk_tier, outcome, created_at, signed_entry)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
             schema = self.schema
         );
@@ -358,6 +363,7 @@ impl AuditStorage for PostgresAuditStorageAdapter {
             .bind(i64::try_from(signed_entry.log_index).map_err(|error| error.to_string())?)
             .bind(&signed_entry.entry.id)
             .bind(signed_entry.entry.action.to_string())
+            .bind(event_data_json)
             .bind(&signed_entry.entry.service)
             .bind(&signed_entry.entry.user_id_hash)
             .bind(signed_entry.entry.risk_tier.to_string())
@@ -1269,6 +1275,8 @@ mod tests {
             issued_at: 1000,
             membership_id: None,
             metadata: std::collections::HashMap::new(),
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
         }
     }
 
@@ -1283,6 +1291,8 @@ mod tests {
             issued_at: 1000,
             membership_id: None,
             metadata: std::collections::HashMap::new(),
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
         }
     }
 
@@ -1310,6 +1320,8 @@ mod tests {
             issued_at: 1000,
             membership_id: None,
             metadata: std::collections::HashMap::new(),
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
         };
         assert!(!has_audit_permission(&no_scope_token));
     }

@@ -30,8 +30,11 @@
 
 // 导出核心类
 export { CredBridgeClient } from './client.js';
+export { AuthService } from './auth.js';
+export { AuditService } from './audit.js';
 export { CredentialsService } from './credentials.js';
 export { TokenManager } from './token.js';
+export { ServiceAccountsService } from './service-accounts.js';
 export { SandboxService } from './sandbox.js';
 export { SandboxWebSocketClient } from './websocket.js';
 
@@ -66,8 +69,13 @@ export {
 
   // Token 类型
   type TokenClaims,
+  type CreateTokenRequest,
+  type CreateTokenResponse,
   type TokenInfo,
+  type TokenMetadata,
+  type TokenRevokeByIdResponse,
   type TokenRefreshResult,
+  type TokenStatsResponse,
 
   // API 类型
   type ApiMeta,
@@ -88,6 +96,38 @@ export {
   type AuditLogEntry,
   type ListAuditLogsResponse,
   type AuditLogFilter,
+  type ListAuditLogsRequest,
+  type AuditLogItem,
+  type AuditLogsListResponse,
+  type AuditExportFormat,
+  type ExportAuditLogsRequest,
+  type AuditExportResult,
+  type VerifyAuditLogRequest,
+  type AuditVerificationDetail,
+  type VerifyAuditLogResult,
+
+  // Auth 类型
+  type AuthCreateSessionRequest,
+  type AuthCreateAccessTokenRequest,
+  type AuthCreateAccessTokenResponse,
+  type AuthIdentityInfo,
+  type AuthUserProfile,
+  type AuthSessionInfo,
+  type AuthMembershipInfo,
+  type AuthTenantInfo,
+  type AuthCreateSessionResponse,
+  type AuthMeResponse,
+  type AuthMembershipsResponse,
+  type AuthLogoutResponse,
+
+  // Service Account 类型
+  type ServiceAccountStatus,
+  type ServiceAccountInfo,
+  type CreateServiceAccountRequest,
+  type UpdateServiceAccountRequest,
+  type ServiceAccountTokenCreateRequest,
+  type ServiceAccountTokenCreateResponse,
+  type ServiceAccountTokenMetadata,
 
   // Sandbox 类型
   type CreateSessionRequest,
@@ -101,6 +141,8 @@ export {
   type ExportDataResponse,
   type ListSessionsResponse,
   type SandboxConfig,
+  type SandboxOperationInfo,
+  type SandboxStats,
 } from './types.js';
 
 // 重新导出 WebSocket 类型
@@ -127,9 +169,12 @@ export type {
 // 导出 WebSocket 状态枚举
 export { WebSocketState } from './websocket.js';
 
+import { AuthService } from './auth.js';
+import { AuditService } from './audit.js';
 import { CredBridgeClient } from './client.js';
 import { CredentialsService } from './credentials.js';
 import { TokenManager } from './token.js';
+import { ServiceAccountsService } from './service-accounts.js';
 import { SandboxService } from './sandbox.js';
 import type { CredBridgeConfig } from './types.js';
 
@@ -143,8 +188,14 @@ export class ToaniVaultSDK {
   public readonly client: CredBridgeClient;
   /** 凭证管理服务 */
   public readonly credentials: CredentialsService;
+  /** Auth 服务 */
+  public readonly auth: AuthService;
+  /** Audit 服务 */
+  public readonly audit: AuditService;
   /** Token 管理 */
   public readonly token: TokenManager;
+  /** Service Account 管理 */
+  public readonly serviceAccounts: ServiceAccountsService;
   /** Sandbox 服务 */
   public readonly sandbox: SandboxService;
 
@@ -183,7 +234,10 @@ export class ToaniVaultSDK {
     }
 
     this.credentials = new CredentialsService(this.client);
+    this.auth = new AuthService(this.client);
+    this.audit = new AuditService(this.client);
     this.token = new TokenManager(this.client);
+    this.serviceAccounts = new ServiceAccountsService(this.client);
     this.sandbox = new SandboxService(this.client);
   }
 

@@ -1195,6 +1195,249 @@ impl AuthSession {
 }
 
 // ============================================================================
+// Service Account 与 API Token 元数据
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceAccountStatus {
+    Active,
+    Inactive,
+}
+
+impl Default for ServiceAccountStatus {
+    fn default() -> Self {
+        Self::Active
+    }
+}
+
+impl ServiceAccountStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ServiceAccountStatus::Active => "active",
+            ServiceAccountStatus::Inactive => "inactive",
+        }
+    }
+
+    pub fn can_issue_tokens(&self) -> bool {
+        matches!(self, ServiceAccountStatus::Active)
+    }
+}
+
+impl std::fmt::Display for ServiceAccountStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ServiceAccountStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "active" => Ok(Self::Active),
+            "inactive" => Ok(Self::Inactive),
+            _ => Err(format!("Unknown service account status: {s}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ServiceAccount {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub role: String,
+    pub scope_ceiling: Vec<String>,
+    pub status: ServiceAccountStatus,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+impl ServiceAccount {
+    pub fn new(tenant_id: Uuid, name: impl Into<String>, created_by: Uuid) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::now_v7(),
+            tenant_id,
+            name: name.into(),
+            description: None,
+            role: "service_account".to_string(),
+            scope_ceiling: Vec::new(),
+            status: ServiceAccountStatus::Active,
+            created_by,
+            created_at: now,
+            updated_at: now,
+            deleted_at: None,
+        }
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub fn with_scope_ceiling(mut self, scopes: Vec<String>) -> Self {
+        self.scope_ceiling = scopes;
+        self
+    }
+
+    pub fn can_issue_tokens(&self) -> bool {
+        self.deleted_at.is_none() && self.status.can_issue_tokens()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiTokenType {
+    UserAccessToken,
+    ServiceAccountToken,
+}
+
+impl ApiTokenType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ApiTokenType::UserAccessToken => "user_access_token",
+            ApiTokenType::ServiceAccountToken => "service_account_token",
+        }
+    }
+}
+
+impl std::fmt::Display for ApiTokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ApiTokenType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "user_access_token" => Ok(Self::UserAccessToken),
+            "service_account_token" => Ok(Self::ServiceAccountToken),
+            _ => Err(format!("Unknown api token type: {s}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiTokenSubjectType {
+    User,
+    ServiceAccount,
+}
+
+impl ApiTokenSubjectType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ApiTokenSubjectType::User => "user",
+            ApiTokenSubjectType::ServiceAccount => "service_account",
+        }
+    }
+}
+
+impl std::fmt::Display for ApiTokenSubjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ApiTokenSubjectType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "user" => Ok(Self::User),
+            "service_account" => Ok(Self::ServiceAccount),
+            _ => Err(format!("Unknown api token subject type: {s}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ApiTokenMetadata {
+    pub id: String,
+    pub token_type: ApiTokenType,
+    pub subject_type: ApiTokenSubjectType,
+    pub subject_id: Uuid,
+    pub tenant_id: Uuid,
+    pub issued_from: String,
+    pub session_id: Option<Uuid>,
+    pub membership_id: Option<Uuid>,
+    pub display_name: Option<String>,
+    pub scopes: Vec<String>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+impl ApiTokenMetadata {
+    pub fn new(
+        id: impl Into<String>,
+        token_type: ApiTokenType,
+        subject_type: ApiTokenSubjectType,
+        subject_id: Uuid,
+        tenant_id: Uuid,
+        issued_from: impl Into<String>,
+        expires_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            token_type,
+            subject_type,
+            subject_id,
+            tenant_id,
+            issued_from: issued_from.into(),
+            session_id: None,
+            membership_id: None,
+            display_name: None,
+            scopes: Vec::new(),
+            expires_at,
+            revoked_at: None,
+            created_at: Utc::now(),
+            last_used_at: None,
+        }
+    }
+
+    pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
+        self.scopes = scopes;
+        self
+    }
+
+    pub fn with_display_name(mut self, display_name: impl Into<String>) -> Self {
+        self.display_name = Some(display_name.into());
+        self
+    }
+
+    pub fn with_session_id(mut self, session_id: Uuid) -> Self {
+        self.session_id = Some(session_id);
+        self
+    }
+
+    pub fn with_membership_id(mut self, membership_id: Uuid) -> Self {
+        self.membership_id = Some(membership_id);
+        self
+    }
+
+    pub fn revoke(&mut self, at: DateTime<Utc>) {
+        self.revoked_at = Some(at);
+    }
+
+    pub fn mark_used(&mut self, at: DateTime<Utc>) {
+        self.last_used_at = Some(at);
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.revoked_at.is_none() && self.expires_at > Utc::now()
+    }
+}
+
+// ============================================================================
 // 认证审计日志实体
 // ============================================================================
 
@@ -1282,6 +1525,9 @@ pub struct AuthAuditLog {
     /// 相关租户 ID（可选）
     pub tenant_id: Option<Uuid>,
 
+    /// 相关成员资格 ID（可选）
+    pub membership_id: Option<Uuid>,
+
     /// 相关身份 ID（可选）
     pub identity_id: Option<Uuid>,
 
@@ -1316,6 +1562,7 @@ impl AuthAuditLog {
             user_id: None,
             session_id: None,
             tenant_id: None,
+            membership_id: None,
             identity_id: None,
             invitation_id: None,
             details: None,
@@ -1342,6 +1589,12 @@ impl AuthAuditLog {
     /// 设置租户 ID
     pub fn with_tenant(mut self, tenant_id: Uuid) -> Self {
         self.tenant_id = Some(tenant_id);
+        self
+    }
+
+    /// 设置成员资格 ID
+    pub fn with_membership(mut self, membership_id: Uuid) -> Self {
+        self.membership_id = Some(membership_id);
         self
     }
 
@@ -1531,6 +1784,96 @@ impl<'r> sqlx::Decode<'r, Postgres> for MembershipRole {
 }
 
 impl<'q> sqlx::Encode<'q, Postgres> for MembershipRole {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl sqlx::Type<Postgres> for ServiceAccountStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for ServiceAccountStatus {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for ServiceAccountStatus {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl sqlx::Type<Postgres> for ApiTokenType {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for ApiTokenType {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for ApiTokenType {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        <&str as sqlx::Encode<Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl sqlx::Type<Postgres> for ApiTokenSubjectType {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("text")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == sqlx::postgres::PgTypeInfo::with_name("text")
+            || *ty == sqlx::postgres::PgTypeInfo::with_name("varchar")
+    }
+}
+
+impl<'r> sqlx::Decode<'r, Postgres> for ApiTokenSubjectType {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <&str as sqlx::Decode<Postgres>>::decode(value)?;
+        Self::from_str(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                as sqlx::error::BoxDynError
+        })
+    }
+}
+
+impl<'q> sqlx::Encode<'q, Postgres> for ApiTokenSubjectType {
     fn encode_by_ref(
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,
@@ -1881,5 +2224,34 @@ mod tests {
         assert!(log.success);
         assert!(log.user_id.is_some());
         assert!(log.ip_address.is_some());
+    }
+
+    #[test]
+    fn test_service_account_creation() {
+        let service_account = ServiceAccount::new(Uuid::nil(), "ci-bot", Uuid::nil())
+            .with_scope_ceiling(vec!["credential:read".to_string()]);
+        assert!(service_account.can_issue_tokens());
+        assert_eq!(service_account.role, "service_account");
+        assert_eq!(
+            service_account.scope_ceiling,
+            vec!["credential:read".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_api_token_metadata_lifecycle() {
+        let mut metadata = ApiTokenMetadata::new(
+            "token-123",
+            ApiTokenType::UserAccessToken,
+            ApiTokenSubjectType::User,
+            Uuid::nil(),
+            Uuid::nil(),
+            "session",
+            Utc::now() + chrono::Duration::minutes(15),
+        )
+        .with_scopes(vec!["credential:read".to_string()]);
+        assert!(metadata.is_active());
+        metadata.revoke(Utc::now());
+        assert!(!metadata.is_active());
     }
 }

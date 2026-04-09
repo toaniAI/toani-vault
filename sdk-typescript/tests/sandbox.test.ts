@@ -41,6 +41,7 @@ describe('SandboxService', () => {
 
       const result = await service.createSession({
         serviceId: 'schwab',
+        originalIntent: 'login flow',
         credentialId: 'cred-123',
         startUrl: 'https://www.schwab.com',
         viewportWidth: 1920,
@@ -51,6 +52,7 @@ describe('SandboxService', () => {
       expect(result.status).toBe(SessionStatus.Creating);
       expect(client.post).toHaveBeenCalledWith('/sandbox/sessions', {
         service_id: 'schwab',
+        original_intent: 'login flow',
         credential_id: 'cred-123',
         start_url: 'https://www.schwab.com',
         viewport_width: 1920,
@@ -72,6 +74,7 @@ describe('SandboxService', () => {
 
       await service.createSession({
         serviceId: 'stripe',
+        originalIntent: 'open dashboard',
         startUrl: 'https://dashboard.stripe.com',
         userAgent: 'CustomBot/1.0',
         timeout: 60000,
@@ -79,6 +82,7 @@ describe('SandboxService', () => {
 
       expect(client.post).toHaveBeenCalledWith('/sandbox/sessions', {
         service_id: 'stripe',
+        original_intent: 'open dashboard',
         credential_id: undefined,
         start_url: 'https://dashboard.stripe.com',
         viewport_width: undefined,
@@ -458,6 +462,45 @@ describe('SandboxService', () => {
         },
         undefined
       );
+    });
+  });
+
+  describe('后端新增接口', () => {
+    it('应该获取操作详情', async () => {
+      vi.spyOn(client, 'get').mockResolvedValue({
+        operation_id: 'op-123',
+        session_id: 'session-123',
+        operation_type: 'click',
+        status: 'success',
+        started_at: '2026-04-09T00:00:00Z',
+        completed_at: '2026-04-09T00:00:01Z',
+        execution_time_ms: 1000,
+      });
+
+      const result = await service.getOperation('op-123');
+
+      expect(result.operationId).toBe('op-123');
+      expect(result.sessionId).toBe('session-123');
+      expect(result.executionTimeMs).toBe(1000);
+      expect(client.get).toHaveBeenCalledWith('/sandbox/operations/op-123', undefined);
+    });
+
+    it('应该获取沙箱统计', async () => {
+      vi.spyOn(client, 'get').mockResolvedValue({
+        pool_status: 'ready',
+        active_sessions: 3,
+        warm_instances: 2,
+        healthy: true,
+        error: undefined,
+      });
+
+      const result = await service.getStats();
+
+      expect(result.poolStatus).toBe('ready');
+      expect(result.activeSessions).toBe(3);
+      expect(result.warmInstances).toBe(2);
+      expect(result.healthy).toBe(true);
+      expect(client.get).toHaveBeenCalledWith('/sandbox/stats', undefined);
     });
   });
 

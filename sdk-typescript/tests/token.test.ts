@@ -324,6 +324,11 @@ describe('TokenManager', () => {
 
       const isValid = await tokenManager.verify();
       expect(isValid).toBe(true);
+      expect(client.post).toHaveBeenCalledWith(
+        '/tokens/verify',
+        { token },
+        { skipRetry: true }
+      );
     });
 
     it('应该在 Token 无效时返回 false', async () => {
@@ -419,6 +424,63 @@ describe('TokenManager', () => {
       await expect(tokenManager.revoke()).rejects.toMatchObject({
         code: CredBridgeErrorCode.InvalidToken,
       });
+    });
+  });
+
+  describe('后端对齐方法', () => {
+    beforeEach(() => {
+      const token = createMockToken({
+        sub: 'tenant1:user1',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        iat: Math.floor(Date.now() / 1000),
+        jti: 'token123',
+        scope: 'credential:read',
+      });
+
+      client = new CredBridgeClient({
+        baseUrl: mockBaseUrl,
+        token,
+      });
+      tokenManager = new TokenManager(client);
+    });
+
+    it('应该创建新的平台 Token', async () => {
+      vi.spyOn(client, 'post').mockResolvedValue({
+        access_token: 'new-access-token',
+        token_id: 'new-token-id',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: 'credential:read',
+        issued_at: 1710000000,
+        expires_at: 1710003600,
+      });
+
+      const result = await tokenManager.create({
+        scopes: ['credential:read'],
+        expiresIn: 3600,
+      });
+
+      expect(result.accessToken).toBe('new-access-token');
+      expect(result.tokenId).toBe('new-token-id');
+      expect(client.post).toHaveBeenCalledWith(
+        '/tokens',
+        {
+          scopes: ['credential:read'],
+          expires_in: 3600,
+        },
+        undefined
+      );
+    });
+
+    it('应该获取 Token 统计', async () => {
+      vi.spyOn(client, 'get').mockResolvedValue({
+        active_tokens: 7,
+      });
+
+      const result = await tokenManager.stats();
+
+      expect(result.activeTokens).toBe(7);
+      expect(client.get).toHaveBeenCalledWith('/tokens/stats', undefined);
     });
   });
 

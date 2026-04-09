@@ -22,9 +22,14 @@
 
 import type { CredBridgeClient } from './client.js';
 import {
+  type CreateTokenRequest,
+  type CreateTokenResponse,
   type TokenInfo,
-  type TokenScope,
   type RequestOptions,
+  type TokenMetadata,
+  type TokenRevokeByIdResponse,
+  type TokenStatsResponse,
+  type TokenScope,
   CredBridgeError,
   CredBridgeErrorCode,
 } from './types.js';
@@ -32,22 +37,68 @@ import {
 /** Token 验证响应 */
 interface TokenVerifyResponse {
   valid: boolean;
-  claims?: {
-    jti: string;
-    sub: string;
-    exp: number;
-    iat: number;
-    scope: string;
-    tenant_id: string;
-    aud?: string;
-    iss?: string;
-  };
-  error?: string;
+  token_id?: string;
+  user_id?: string;
+  tenant_id?: string;
+  scopes?: string[];
+  expires_at?: number;
 }
 
 /** Token 撤销响应 */
 interface TokenRevokeResponse {
   revoked: boolean;
+}
+
+interface CreateTokenResponseApi {
+  access_token: string;
+  token_id: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+  issued_at: number;
+  expires_at: number;
+}
+
+interface TokenStatsResponseApi {
+  total_tokens?: number;
+  active_tokens: number;
+  revoked_tokens?: number;
+}
+
+interface TokenMetadataApi {
+  token_id: string;
+  token_type: string;
+  subject_type: string;
+  subject_id: string;
+  tenant_id: string;
+  issued_from: string;
+  session_id?: string | null;
+  membership_id?: string | null;
+  display_name?: string | null;
+  granted_scopes: string[];
+  expires_at: string;
+  revoked_at?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
+function mapTokenMetadata(value: TokenMetadataApi): TokenMetadata {
+  return {
+    tokenId: value.token_id,
+    tokenType: value.token_type,
+    subjectType: value.subject_type,
+    subjectId: value.subject_id,
+    tenantId: value.tenant_id,
+    issuedFrom: value.issued_from,
+    sessionId: value.session_id ?? undefined,
+    membershipId: value.membership_id ?? undefined,
+    displayName: value.display_name ?? undefined,
+    grantedScopes: value.granted_scopes,
+    expiresAt: value.expires_at,
+    revokedAt: value.revoked_at ?? undefined,
+    createdAt: value.created_at,
+    lastUsedAt: value.last_used_at ?? undefined,
+  };
 }
 
 /**
@@ -211,10 +262,62 @@ export class TokenManager {
   }
 
   /**
+   * 创建新的平台 Token
+   */
+  public async create(
+    request: CreateTokenRequest,
+    options?: RequestOptions
+  ): Promise<CreateTokenResponse> {
+    const response = await this.client.post<CreateTokenResponseApi>(
+      '/tokens',
+      {
+        scopes: request.scopes,
+        expires_in: request.expiresIn,
+      },
+      options
+    );
+
+    return {
+      accessToken: response.access_token,
+      tokenId: response.token_id,
+      tokenType: response.token_type,
+      expiresIn: response.expires_in,
+      scope: response.scope,
+      issuedAt: response.issued_at,
+      expiresAt: response.expires_at,
+    };
+  }
+
+  /**
+   * 获取 Token 统计
+   */
+  public async stats(options?: RequestOptions): Promise<TokenStatsResponse> {
+    const response = await this.client.get<TokenStatsResponseApi>('/tokens/stats', options);
+    return {
+      totalTokens: response.total_tokens,
+      activeTokens: response.active_tokens,
+      revokedTokens: response.revoked_tokens,
+    };
+  }
+
+  public async list(options?: RequestOptions): Promise<TokenMetadata[]> {
+    const response = await this.client.get<TokenMetadataApi[]>('/tokens', options);
+    return response.map(mapTokenMetadata);
+  }
+
+  public async get(tokenId: string, options?: RequestOptions): Promise<TokenMetadata> {
+    const response = await this.client.get<TokenMetadataApi>(`/tokens/${tokenId}`, options);
+    return mapTokenMetadata(response);
+  }
+
+  /**
    * 撤销当前 Token
    *
    * @param options - 请求选项
    * @returns 是否撤销成功
+   *
+   * @deprecated 该方法保留用于兼容旧版 `/tokens/{id}/revoke` 路由。
+   * 优先使用后端对齐的 `create`、`verify` 和 `stats`。
    *
    * @example
    * ```typescript
@@ -238,6 +341,22 @@ export class TokenManager {
     );
 
     return response.revoked;
+  }
+
+  public async revokeById(
+    tokenId: string,
+    options?: RequestOptions
+  ): Promise<TokenRevokeByIdResponse> {
+    const response = await this.client.post<TokenRevokeResponse>(
+      `/tokens/${tokenId}/revoke`,
+      {},
+      options
+    );
+
+    return {
+      revoked: response.revoked,
+      tokenId,
+    };
   }
 
   /**

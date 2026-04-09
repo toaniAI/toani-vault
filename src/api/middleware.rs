@@ -39,6 +39,9 @@ use std::sync::Arc;
 
 use super::token_blacklist::TokenStore;
 use crate::auth::AuthService;
+use crate::token::{
+    TOKEN_ISSUED_FROM_SESSION, TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER,
+};
 
 const UNASSIGNED_TENANT_ID: &str = "00000000-0000-0000-0000-000000000000";
 
@@ -278,6 +281,10 @@ pub struct ValidatedToken {
     pub membership_id: Option<String>,
     /// 额外元数据（如 session_id, identity_id 等）
     pub metadata: HashMap<String, String>,
+    /// 主体类型
+    pub subject_type: String,
+    /// 令牌来源
+    pub issued_from: String,
 }
 
 impl ValidatedToken {
@@ -310,6 +317,27 @@ impl ValidatedToken {
         self.metadata.get("session_id").map(|s| s.as_str())
     }
 
+    pub fn subject_type(&self) -> &str {
+        &self.subject_type
+    }
+
+    /// 获取当前主体 ID（user_id 或 service_account_id）
+    pub fn principal_id(&self) -> &str {
+        &self.user_id
+    }
+
+    pub fn issued_from(&self) -> &str {
+        &self.issued_from
+    }
+
+    pub fn is_user_subject(&self) -> bool {
+        self.subject_type == TOKEN_SUBJECT_TYPE_USER
+    }
+
+    pub fn is_service_account_subject(&self) -> bool {
+        self.subject_type == TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT
+    }
+
     /// 创建用于测试的模拟 Token
     #[cfg(test)]
     pub fn mock(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) -> Self {
@@ -330,6 +358,8 @@ impl ValidatedToken {
                 .as_secs(),
             membership_id: None,
             metadata: HashMap::new(),
+            subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
         }
     }
 }
@@ -462,6 +492,42 @@ async fn validate_token(
         ));
     }
 
+    if let Ok(Some(metadata)) = auth_service
+        .get_api_token_metadata(&validation_result.token_id)
+        .await
+    {
+        if metadata.revoked_at.is_some() {
+            return Err(AuthError::new(
+                "revoked_token",
+                locale,
+                "errors.auth.invalid_token",
+                I18nParams::new(),
+            ));
+        }
+
+        if metadata.expires_at.timestamp() as u64 <= now {
+            return Err(AuthError::new(
+                "expired_token",
+                locale,
+                "errors.auth.expired_token",
+                I18nParams::new(),
+            ));
+        }
+
+        if metadata.tenant_id.to_string() != validation_result.tenant_id {
+            return Err(AuthError::new(
+                "invalid_token",
+                locale,
+                "errors.auth.invalid_token",
+                I18nParams::new(),
+            ));
+        }
+
+        let _ = auth_service
+            .mark_api_token_used(&validation_result.token_id, chrono::Utc::now())
+            .await;
+    }
+
     Ok(validation_result)
 }
 
@@ -511,6 +577,8 @@ async fn validate_session_token(
             issued_at: session.created_at.timestamp() as u64,
             membership_id: Some(membership.id.to_string()),
             metadata,
+            subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
         });
     }
 
@@ -524,6 +592,8 @@ async fn validate_session_token(
         issued_at: session.created_at.timestamp() as u64,
         membership_id: None,
         metadata,
+        subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+        issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
     })
 }
 
@@ -609,6 +679,17 @@ pub(crate) fn validate_paseto_token(
         return Err("Token 缺少 scope 声明".to_string());
     }
 
+    let subject_type = claims
+        .get_claim("subject_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or(TOKEN_SUBJECT_TYPE_USER)
+        .to_string();
+    let issued_from = claims
+        .get_claim("issued_from")
+        .and_then(|v| v.as_str())
+        .unwrap_or(TOKEN_ISSUED_FROM_SESSION)
+        .to_string();
+
     // 解析租户 ID 和用户 ID
     let (tenant_id, user_id) = parse_subject(&subject, locale)
         .map_err(|e| format!("parse subject failed: {}", e.message))?;
@@ -643,6 +724,8 @@ pub(crate) fn validate_paseto_token(
         issued_at,
         membership_id,
         metadata,
+        subject_type,
+        issued_from,
     })
 }
 
@@ -820,6 +903,8 @@ pub mod tests {
                 .as_secs(),
             membership_id: None,
             metadata: HashMap::new(),
+            subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
         }
     }
 

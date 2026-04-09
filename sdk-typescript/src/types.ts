@@ -269,6 +269,157 @@ export interface TokenRefreshResult {
   expiresAt: number;
 }
 
+/** 创建 Token 请求 */
+export interface CreateTokenRequest {
+  /** 请求的权限范围 */
+  scopes: string[];
+  /** 过期时间（秒） */
+  expiresIn?: number;
+}
+
+/** 创建 Token 响应 */
+export interface CreateTokenResponse {
+  /** 访问令牌 */
+  accessToken: string;
+  /** Token ID */
+  tokenId: string;
+  /** Token 类型 */
+  tokenType: string;
+  /** 有效期（秒） */
+  expiresIn: number;
+  /** 空格分隔的 scope 字符串 */
+  scope: string;
+  /** 颁发时间 */
+  issuedAt: number;
+  /** 过期时间 */
+  expiresAt: number;
+}
+
+/** 创建 access token 请求 */
+export interface AuthCreateAccessTokenRequest {
+  /** 请求的权限范围 */
+  scopes: string[];
+  /** 过期时间（秒） */
+  ttlSeconds?: number;
+}
+
+/** 创建 access token 响应 */
+export interface AuthCreateAccessTokenResponse {
+  /** 访问令牌 */
+  accessToken: string;
+  /** Token ID */
+  tokenId: string;
+  /** Token 类型 */
+  tokenType: string;
+  /** 主体类型 */
+  subjectType?: string;
+  /** 签发来源 */
+  issuedFrom?: string;
+  /** 展示名称 */
+  displayName?: string;
+  /** 过期时间（Unix 时间戳） */
+  expiresAt: number;
+  /** 有效期（秒） */
+  expiresIn: number;
+  /** 已授予 scopes */
+  grantedScopes: string[];
+  /** 撤销时间 */
+  revokedAt?: string;
+}
+
+/** Token 统计响应 */
+export interface TokenStatsResponse {
+  /** Token 总数 */
+  totalTokens?: number;
+  /** 活跃 Token 数量 */
+  activeTokens: number;
+  /** 已撤销 Token 数量 */
+  revokedTokens?: number;
+}
+
+/** Token 元数据 */
+export interface TokenMetadata {
+  tokenId: string;
+  tokenType: string;
+  subjectType: string;
+  subjectId: string;
+  tenantId: string;
+  issuedFrom: string;
+  sessionId?: string;
+  membershipId?: string;
+  displayName?: string;
+  grantedScopes: string[];
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+/** Service Account 状态 */
+export type ServiceAccountStatus = 'active' | 'disabled' | 'deleted';
+
+/** Service Account 信息 */
+export interface ServiceAccountInfo {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  role: string;
+  scopeCeiling: string[];
+  status: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+
+/** 创建 Service Account 请求 */
+export interface CreateServiceAccountRequest {
+  name: string;
+  description?: string;
+  scopeCeiling: string[];
+}
+
+/** 更新 Service Account 请求 */
+export interface UpdateServiceAccountRequest {
+  name?: string;
+  description?: string;
+  status?: ServiceAccountStatus;
+  scopeCeiling?: string[];
+}
+
+/** Service Account token 创建请求 */
+export interface ServiceAccountTokenCreateRequest {
+  scopes: string[];
+  ttlSeconds?: number;
+  displayName?: string;
+}
+
+/** Service Account token 创建响应 */
+export interface ServiceAccountTokenCreateResponse {
+  accessToken: string;
+  tokenId: string;
+  tokenType: string;
+  subjectType: string;
+  issuedFrom: string;
+  displayName?: string;
+  expiresIn: number;
+  scope: string;
+  grantedScopes: string[];
+  issuedAt: number;
+  expiresAt: number;
+  revokedAt?: string;
+}
+
+/** Service Account token 元数据 */
+export type ServiceAccountTokenMetadata = TokenMetadata;
+
+/** 按 ID 撤销 token 响应 */
+export interface TokenRevokeByIdResponse {
+  revoked: boolean;
+  tokenId: string;
+}
+
 // ============================================================================
 // 错误类型
 // ============================================================================
@@ -500,6 +651,172 @@ export interface AuditLogFilter {
   success?: boolean;
 }
 
+/** 审计日志查询请求 */
+export interface ListAuditLogsRequest {
+  startTime?: number;
+  endTime?: number;
+  userIdHash?: string;
+  action?: string;
+  riskTier?: string;
+  outcome?: string;
+  service?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** 审计日志列表项 */
+export interface AuditLogItem {
+  id: string;
+  timestamp: number;
+  userIdHash: string;
+  sessionId: string;
+  service: string;
+  action: string;
+  riskTier: string;
+  outcome: string;
+  logIndex: number;
+}
+
+/** 审计日志列表响应 */
+export interface AuditLogsListResponse {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/** 审计导出格式 */
+export type AuditExportFormat = 'json' | 'csv';
+
+/** 导出审计日志请求 */
+export interface ExportAuditLogsRequest {
+  startTime?: number;
+  endTime?: number;
+  format?: AuditExportFormat;
+  userIdHash?: string;
+  action?: string;
+}
+
+/** 导出审计日志响应 */
+export interface AuditExportResult {
+  exportId: string;
+  format: AuditExportFormat;
+  content: string;
+  integrityHash: string;
+  count: number;
+  generatedAt: number;
+}
+
+/** 验证审计日志请求 */
+export interface VerifyAuditLogRequest {
+  id?: string;
+  logIndex?: number;
+}
+
+/** 审计验证详情 */
+export interface AuditVerificationDetail {
+  step: string;
+  passed: boolean;
+  message?: string;
+}
+
+/** 验证审计日志结果 */
+export interface VerifyAuditLogResult {
+  id: string;
+  logIndex: number;
+  verified: boolean;
+  contentHashMatch: boolean;
+  signatureValid: boolean;
+  merkleProofValid: boolean;
+  details: AuditVerificationDetail[];
+  verifiedAt: number;
+}
+
+// ============================================================================
+// Auth 类型
+// ============================================================================
+
+/** 创建会话请求 */
+export interface AuthCreateSessionRequest {
+  /** Privy Access Token */
+  privyAccessToken: string;
+  /** 邀请 Token（可选） */
+  invitationToken?: string;
+}
+
+/** Auth 身份信息 */
+export interface AuthIdentityInfo {
+  provider: string;
+  subject: string;
+  walletAddress?: string;
+  email?: string;
+  isVerified: boolean;
+  isPrimary: boolean;
+}
+
+/** Auth 用户信息 */
+export interface AuthUserProfile {
+  id: string;
+  displayName?: string;
+  status: string;
+  onboardingCompleted: boolean;
+  defaultTenantId?: string;
+  identities: AuthIdentityInfo[];
+}
+
+/** Auth 会话信息 */
+export interface AuthSessionInfo {
+  id: string;
+  sessionToken: string;
+  expiresAt: string;
+  mfaStatus: string;
+}
+
+/** Auth 成员资格信息 */
+export interface AuthMembershipInfo {
+  id: string;
+  tenantId: string;
+  role: string;
+  status: string;
+  scopes: string[];
+  joinedAt?: string;
+}
+
+/** Auth 租户信息 */
+export interface AuthTenantInfo {
+  id: string;
+  name?: string;
+}
+
+/** 创建会话响应 */
+export interface AuthCreateSessionResponse {
+  user: AuthUserProfile;
+  session: AuthSessionInfo;
+  memberships: AuthMembershipInfo[];
+  currentTenant?: AuthTenantInfo;
+  currentMembership?: AuthMembershipInfo;
+}
+
+/** 当前用户响应 */
+export interface AuthMeResponse {
+  user: AuthUserProfile;
+  currentTenant?: AuthTenantInfo;
+  currentMembership?: AuthMembershipInfo;
+  memberships: AuthMembershipInfo[];
+  mfaStatus: string;
+}
+
+/** 成员资格列表响应 */
+export interface AuthMembershipsResponse {
+  memberships: AuthMembershipInfo[];
+}
+
+/** 注销响应 */
+export interface AuthLogoutResponse {
+  success: boolean;
+}
+
 // ============================================================================
 // Sandbox 类型
 // ============================================================================
@@ -558,6 +875,8 @@ export enum OperationStatus {
 export interface CreateSessionRequest {
   /** 服务ID */
   serviceId: string;
+  /** 原始意图（后端必填） */
+  originalIntent: string;
   /** 凭证ID（可选） */
   credentialId?: string;
   /** 启动URL */
@@ -604,6 +923,26 @@ export interface SessionInfo {
   lastActivityAt?: string;
   /** 过期时间 */
   expiresAt?: string;
+}
+
+/** Sandbox 操作详情 */
+export interface SandboxOperationInfo {
+  operationId: string;
+  sessionId: string;
+  operationType: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  executionTimeMs?: number;
+}
+
+/** Sandbox 统计 */
+export interface SandboxStats {
+  poolStatus: string;
+  activeSessions: number;
+  warmInstances: number;
+  healthy: boolean;
+  error?: string;
 }
 
 /** 执行操作请求 */

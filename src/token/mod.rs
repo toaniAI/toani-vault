@@ -77,7 +77,9 @@ pub mod scope;
 
 // 公开导出 - Claims
 pub use claims::{
-    ClaimsError, DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, ScopeValidator, TokenClaims,
+    ClaimsError, DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, ScopeValidator,
+    TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_ISSUED_FROM_SESSION,
+    TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER, TokenClaims,
 };
 
 // 公开导出 - Scope 常量
@@ -112,6 +114,7 @@ pub use permission::{
 pub const TOKEN_VERSION: &str = "0.1.0";
 
 /// Token 验证结果
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum TokenValidationResult {
     /// 验证成功

@@ -1,0 +1,36 @@
+{
+  "name": "@toani/vault-cli",
+  "version": "0.1.0",
+  "description": "Toani Vault CLI",
+  "type": "module",
+  "bin": {
+    "toani": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "SKILL.md",
+    "SKILL-INSTALL.md",
+    "INTERFACE_BASELINE.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@toani/vault-sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^1.6.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "MIT"
+}

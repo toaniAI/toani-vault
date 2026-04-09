@@ -15,14 +15,26 @@
 
 ### 认证 API (Privy 钱包优先)
 - `POST /api/v1/auth/session` - 从 Privy Token 创建会话
+- `POST /api/v1/auth/access-token` - 从用户 Session 创建 API Access Token
 - `GET /api/v1/auth/me` - 获取当前用户信息
 - `POST /api/v1/auth/logout` - 注销会话
 - `POST /api/v1/auth/invitations/consume` - 消费邀请 Token
 
 ### Token 管理 API
-- `POST /api/v1/tokens` - 创建 Token
+- `POST /api/v1/tokens` - 通用创建 Token（user bearer 等价于 access-token 创建）
+- `GET /api/v1/tokens` - 列出租户内可见 token 元数据
+- `GET /api/v1/tokens/:id` - 获取 token 元数据详情
 - `POST /api/v1/tokens/verify` - 验证 Token
 - `POST /api/v1/tokens/:id/revoke` - 撤销 Token
+- `GET /api/v1/tokens/stats` - token 统计
+
+### Service Account API
+- `POST /api/v1/service-accounts` - 创建 Service Account
+- `GET /api/v1/service-accounts` - 列出 Service Account
+- `GET /api/v1/service-accounts/:id` - 获取 Service Account 详情
+- `PATCH /api/v1/service-accounts/:id` - 更新 Service Account
+- `POST /api/v1/service-accounts/:id/tokens` - 签发 Service Account Token
+- `GET /api/v1/service-accounts/:id/tokens` - 列出 Service Account Token 元数据
 
 ### 凭证管理 API
 - `POST /api/v1/credentials` - 创建凭证

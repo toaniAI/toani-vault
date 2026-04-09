@@ -108,6 +108,18 @@ pub enum AuthError {
     #[error("会话已撤销: {0}")]
     SessionRevoked(Uuid),
 
+    /// Service Account 未找到
+    #[error("service account 未找到: {0}")]
+    ServiceAccountNotFound(Uuid),
+
+    /// Service Account 已存在
+    #[error("service account 已存在: tenant={tenant_id}, name={name}")]
+    ServiceAccountAlreadyExists { tenant_id: Uuid, name: String },
+
+    /// API Token 元数据未找到
+    #[error("API token 元数据未找到: {0}")]
+    ApiTokenNotFound(String),
+
     /// MFA 验证失败
     #[error("MFA 验证失败")]
     MfaVerificationFailed,
@@ -187,12 +199,15 @@ impl AuthError {
             AuthError::MembershipNotFound { .. } => 404,
             AuthError::InvitationNotFound(_) => 404,
             AuthError::SessionNotFound(_) => 404,
+            AuthError::ServiceAccountNotFound(_) => 404,
+            AuthError::ApiTokenNotFound(_) => 404,
 
             AuthError::UserAlreadyExists { .. } => 409,
             AuthError::ExternalIdentityAlreadyExists { .. } => 409,
             AuthError::MembershipAlreadyExists { .. } => 409,
             AuthError::InvitationAlreadyConsumed(_) => 409,
             AuthError::DuplicatePendingInvitation { .. } => 409,
+            AuthError::ServiceAccountAlreadyExists { .. } => 409,
 
             AuthError::InvalidPrivyToken(_) => 401,
             AuthError::PrivyTokenExpired => 401,
