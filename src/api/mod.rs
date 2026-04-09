@@ -35,7 +35,8 @@ pub use attestation::{
     init_attestation_api,
 };
 pub use audit::{
-    AuditApiState, AuditStorage, ImmuDbAuditStorageAdapter, MemoryAuditStorageAdapter, audit_routes,
+    AuditApiState, AuditStorage, ImmuDbAuditStorageAdapter, MemoryAuditStorageAdapter,
+    PostgresAuditStorageAdapter, audit_routes,
 };
 pub use audit_models::*;
 pub use auth::{AuthApiState, auth_routes};

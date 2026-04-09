@@ -42,8 +42,8 @@ pub use config::{
 };
 pub use service::{
     CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, OwnerExternalIdentity,
-    TenantCreationError, TenantManager, TenantManagerBuilder, TenantProvisioningError,
-    TenantService, UpdateTenantRequest,
+    PostgresTenantStorage, TenantCreationError, TenantManager, TenantManagerBuilder,
+    TenantProvisioningError, TenantService, UpdateTenantRequest,
 };
 
 use chrono::{DateTime, Utc};

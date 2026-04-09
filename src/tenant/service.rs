@@ -48,6 +48,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -401,6 +403,74 @@ impl Default for MemoryTenantStorage {
     }
 }
 
+/// PostgreSQL 租户存储
+#[derive(Clone)]
+pub struct PostgresTenantStorage {
+    db_pool: crate::services::db::DatabasePool,
+    config_store: Arc<dyn TenantConfigStore>,
+}
+
+impl PostgresTenantStorage {
+    pub fn new(
+        db_pool: crate::services::db::DatabasePool,
+        config_store: Arc<dyn TenantConfigStore>,
+    ) -> Self {
+        Self {
+            db_pool,
+            config_store,
+        }
+    }
+
+    fn parse_tenant_uuid(tenant_id: &TenantId) -> Result<Uuid, TenantConfigError> {
+        Uuid::parse_str(tenant_id.as_str())
+            .map_err(|error| TenantConfigError::ValidationError(error.to_string()))
+    }
+
+    async fn hydrate_tenant(
+        &self,
+        row: sqlx::postgres::PgRow,
+    ) -> Result<Tenant, TenantConfigError> {
+        let tenant_id: Uuid = row
+            .try_get("id")
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        let status: String = row
+            .try_get("status")
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        let created_at = row
+            .try_get("created_at")
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        let updated_at = row
+            .try_get("updated_at")
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        let config = self
+            .config_store
+            .get_config(&TenantId::from(tenant_id.to_string()))
+            .await?;
+
+        Ok(Tenant {
+            id: TenantId::from(tenant_id.to_string()),
+            name: row
+                .try_get("name")
+                .map_err(|error| TenantConfigError::StorageError(error.to_string()))?,
+            status: match status.as_str() {
+                "active" => TenantStatus::Active,
+                "suspended" => TenantStatus::Suspended,
+                "deleted" => TenantStatus::Deleted,
+                "pending" => TenantStatus::Pending,
+                _ => {
+                    return Err(TenantConfigError::ValidationError(format!(
+                        "unknown tenant status: {status}"
+                    )));
+                }
+            },
+            created_at,
+            updated_at,
+            deleted_at: None,
+            config,
+        })
+    }
+}
+
 #[async_trait]
 impl TenantService for MemoryTenantStorage {
     async fn create_tenant(
@@ -526,6 +596,233 @@ impl TenantService for MemoryTenantStorage {
     async fn upsert_tenant(&self, tenant: Tenant) -> Result<(), TenantConfigError> {
         let mut tenants = self.tenants.write().await;
         tenants.insert(tenant.id.to_string(), tenant);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TenantService for PostgresTenantStorage {
+    async fn create_tenant(
+        &self,
+        request: CreateTenantRequest,
+        created_by: Option<String>,
+    ) -> Result<CreateTenantResult, TenantCreationError> {
+        request.validate()?;
+
+        if !self
+            .is_name_available(&request.name)
+            .await
+            .map_err(TenantCreationError::ConfigError)?
+        {
+            return Err(TenantCreationError::NameAlreadyExists(request.name));
+        }
+
+        let mut tenant = Tenant::new(&request.name);
+        let mut config = request.get_default_config();
+        if let Some(custom) = request.custom_config {
+            config.merge(custom, created_by.unwrap_or_default());
+        }
+        tenant.config = config.clone();
+        tenant.activate();
+
+        self.upsert_tenant(tenant.clone())
+            .await
+            .map_err(TenantCreationError::ConfigError)?;
+
+        Ok(CreateTenantResult {
+            tenant,
+            initialization_steps: Vec::new(),
+            created_at: Utc::now().to_rfc3339(),
+        })
+    }
+
+    async fn get_tenant(&self, tenant_id: &TenantId) -> Result<Option<Tenant>, TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        let row = sqlx::query(
+            "SELECT id, name, status, created_at, updated_at FROM tenants WHERE id = $1",
+        )
+        .bind(tenant_uuid)
+        .fetch_optional(self.db_pool.pool())
+        .await
+        .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        match row {
+            Some(row) => self.hydrate_tenant(row).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    async fn find_tenant_by_name(&self, name: &str) -> Result<Option<Tenant>, TenantConfigError> {
+        let row = sqlx::query(
+            "SELECT id, name, status, created_at, updated_at FROM tenants WHERE name = $1",
+        )
+        .bind(name)
+        .fetch_optional(self.db_pool.pool())
+        .await
+        .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        match row {
+            Some(row) => self.hydrate_tenant(row).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    async fn update_tenant(
+        &self,
+        tenant_id: &TenantId,
+        request: UpdateTenantRequest,
+        updated_by: Option<String>,
+    ) -> Result<Tenant, TenantConfigError> {
+        let existing = self
+            .get_tenant(tenant_id)
+            .await?
+            .ok_or_else(|| TenantConfigError::NotFound(tenant_id.clone()))?;
+
+        let next_name = request.name.unwrap_or(existing.name);
+        let next_status = request.status.unwrap_or(existing.status);
+
+        if let Some(config) = request.config {
+            let mut current_config = self.config_store.get_config(tenant_id).await?;
+            current_config.merge(config, updated_by.unwrap_or_default());
+            self.config_store
+                .save_config(tenant_id, &current_config)
+                .await?;
+        }
+
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        sqlx::query("UPDATE tenants SET name = $2, status = $3, updated_at = NOW() WHERE id = $1")
+            .bind(tenant_uuid)
+            .bind(&next_name)
+            .bind(next_status.to_string())
+            .execute(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        self.get_tenant(tenant_id)
+            .await?
+            .ok_or_else(|| TenantConfigError::NotFound(tenant_id.clone()))
+    }
+
+    async fn activate_tenant(
+        &self,
+        tenant_id: &TenantId,
+        _activated_by: Option<String>,
+    ) -> Result<Tenant, TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        sqlx::query("UPDATE tenants SET status = 'active', updated_at = NOW() WHERE id = $1")
+            .bind(tenant_uuid)
+            .execute(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        self.get_tenant(tenant_id)
+            .await?
+            .ok_or_else(|| TenantConfigError::NotFound(tenant_id.clone()))
+    }
+
+    async fn suspend_tenant(
+        &self,
+        tenant_id: &TenantId,
+        _reason: Option<String>,
+        _suspended_by: Option<String>,
+    ) -> Result<Tenant, TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        sqlx::query("UPDATE tenants SET status = 'suspended', updated_at = NOW() WHERE id = $1")
+            .bind(tenant_uuid)
+            .execute(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        self.get_tenant(tenant_id)
+            .await?
+            .ok_or_else(|| TenantConfigError::NotFound(tenant_id.clone()))
+    }
+
+    async fn delete_tenant(
+        &self,
+        tenant_id: &TenantId,
+        _deleted_by: Option<String>,
+    ) -> Result<(), TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
+        sqlx::query("UPDATE tenants SET status = 'deleted', updated_at = NOW() WHERE id = $1")
+            .bind(tenant_uuid)
+            .execute(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        Ok(())
+    }
+
+    async fn get_tenant_config(
+        &self,
+        tenant_id: &TenantId,
+    ) -> Result<TenantConfig, TenantConfigError> {
+        self.config_store.get_config(tenant_id).await
+    }
+
+    async fn update_tenant_config(
+        &self,
+        tenant_id: &TenantId,
+        config: PartialTenantConfig,
+        updated_by: Option<String>,
+    ) -> Result<TenantConfig, TenantConfigError> {
+        let current = self.config_store.get_config(tenant_id).await?;
+        let mut next = current;
+        next.merge(config, updated_by.unwrap_or_default());
+        self.config_store.save_config(tenant_id, &next).await?;
+        sqlx::query("UPDATE tenants SET updated_at = NOW() WHERE id = $1")
+            .bind(Self::parse_tenant_uuid(tenant_id)?)
+            .execute(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        Ok(next)
+    }
+
+    async fn list_tenants(&self) -> Result<Vec<Tenant>, TenantConfigError> {
+        let rows = sqlx::query("SELECT id, name, status, created_at, updated_at FROM tenants")
+            .fetch_all(self.db_pool.pool())
+            .await
+            .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        let mut tenants = Vec::with_capacity(rows.len());
+        for row in rows {
+            tenants.push(self.hydrate_tenant(row).await?);
+        }
+        Ok(tenants)
+    }
+
+    async fn is_name_available(&self, name: &str) -> Result<bool, TenantConfigError> {
+        let exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM tenants WHERE name = $1)")
+                .bind(name)
+                .fetch_one(self.db_pool.pool())
+                .await
+                .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+        Ok(!exists)
+    }
+
+    async fn upsert_tenant(&self, tenant: Tenant) -> Result<(), TenantConfigError> {
+        let tenant_uuid = Self::parse_tenant_uuid(&tenant.id)?;
+        let config_json = serde_json::to_value(&tenant.config)
+            .map_err(|error| TenantConfigError::SerializationError(error.to_string()))?;
+        sqlx::query(
+            r#"
+            INSERT INTO tenants (id, name, description, status, config, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                status = EXCLUDED.status,
+                config = EXCLUDED.config,
+                updated_at = EXCLUDED.updated_at
+            "#,
+        )
+        .bind(tenant_uuid)
+        .bind(&tenant.name)
+        .bind(Option::<String>::None)
+        .bind(tenant.status.to_string())
+        .bind(config_json)
+        .bind(tenant.created_at)
+        .bind(tenant.updated_at)
+        .execute(self.db_pool.pool())
+        .await
+        .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
         Ok(())
     }
 }

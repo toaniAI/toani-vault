@@ -25,14 +25,18 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ring::digest::{SHA256, digest};
 use ring::signature::{ED25519, UnparsedPublicKey};
+use sqlx::{PgPool, QueryBuilder, Row};
+use std::env;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::api::audit_models::*;
 use crate::api::middleware::{TokenScope, ValidatedToken};
 use crate::audit::immudb_store::AuditStorage as ImmuDbRecorderStorage;
 use crate::audit::{
-    AuditEntry, AuditFilter, ImmuDbAuditStore, MemoryAuditStorage, SignedAuditEntry,
-    VerificationProof,
+    AuditEntry, AuditFilter, AuditRecorder, ImmuDbAuditStore, MemoryAuditStorage, RecorderError,
+    SignedAuditEntry, SigningKeyPair, VerificationProof,
 };
 
 /// 审计 API 状态
@@ -83,6 +87,362 @@ pub trait AuditStorage: Send + Sync {
 
     /// 获取所有条目（用于导出）
     async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String>;
+}
+
+#[derive(Clone)]
+pub struct PostgresAuditStorageAdapter {
+    pool: PgPool,
+    schema: String,
+    recorder: Arc<tokio::sync::Mutex<AuditRecorder>>,
+    public_key: Vec<u8>,
+}
+
+impl std::fmt::Debug for PostgresAuditStorageAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PostgresAuditStorageAdapter")
+            .field("schema", &self.schema)
+            .field("pool", &"<PgPool>")
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PersistedSigningKey {
+    private_key: Vec<u8>,
+}
+
+impl PostgresAuditStorageAdapter {
+    pub async fn new(pool: PgPool) -> Result<Self, RecorderError> {
+        let schema = Self::schema_from_env()?;
+        Self::ensure_table(&pool, &schema).await?;
+
+        let signing_key = Self::load_or_create_signing_key(&schema)?;
+        let recorder = AuditRecorder::with_key(100_000, signing_key);
+        let existing_entries = Self::load_existing_entries(&pool, &schema).await?;
+        recorder.restore_entries(&existing_entries)?;
+        let public_key = recorder.public_key().to_vec();
+
+        Ok(Self {
+            pool,
+            schema,
+            recorder: Arc::new(tokio::sync::Mutex::new(recorder)),
+            public_key,
+        })
+    }
+
+    pub fn public_key(&self) -> &[u8] {
+        &self.public_key
+    }
+
+    fn schema_from_env() -> Result<String, RecorderError> {
+        const DEFAULT_SCHEMA: &str = "credbridge_vault";
+
+        let schema =
+            env::var("CREDBRIDGE_PG_SCHEMA").unwrap_or_else(|_| DEFAULT_SCHEMA.to_string());
+        if schema.is_empty() {
+            return Err(RecorderError::StorageError(
+                "CREDBRIDGE_PG_SCHEMA 不能为空".to_string(),
+            ));
+        }
+        if !schema
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(RecorderError::StorageError(format!(
+                "非法 PostgreSQL schema 名称: {schema}"
+            )));
+        }
+
+        Ok(schema)
+    }
+
+    async fn ensure_table(pool: &PgPool, schema: &str) -> Result<(), RecorderError> {
+        let create_schema_sql = format!(r#"CREATE SCHEMA IF NOT EXISTS "{schema}""#);
+        let create_table_sql = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS "{schema}".audit_logs (
+                log_index BIGINT PRIMARY KEY,
+                entry_id VARCHAR(64) NOT NULL UNIQUE,
+                event_type VARCHAR(64) NOT NULL,
+                service VARCHAR(64) NOT NULL,
+                user_id_hash VARCHAR(128),
+                risk_tier VARCHAR(32) NOT NULL,
+                outcome VARCHAR(32) NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                signed_entry JSONB NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cb_audit_logs_created_at
+                ON "{schema}".audit_logs (created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_cb_audit_logs_event_type
+                ON "{schema}".audit_logs (event_type);
+            CREATE INDEX IF NOT EXISTS idx_cb_audit_logs_user_id_hash
+                ON "{schema}".audit_logs (user_id_hash);
+            "#
+        );
+
+        sqlx::query(&create_schema_sql)
+            .execute(pool)
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+        for statement in create_table_sql.split(';') {
+            let statement = statement.trim();
+            if statement.is_empty() {
+                continue;
+            }
+            sqlx::query(statement)
+                .execute(pool)
+                .await
+                .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    async fn load_existing_entries(
+        pool: &PgPool,
+        schema: &str,
+    ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
+        let sql =
+            format!(r#"SELECT signed_entry FROM "{schema}".audit_logs ORDER BY log_index ASC"#);
+        let rows = sqlx::query(&sql)
+            .fetch_all(pool)
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                let value: serde_json::Value = row
+                    .try_get("signed_entry")
+                    .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+                serde_json::from_value(value)
+                    .map_err(|error| RecorderError::SerializationError(error.to_string()))
+            })
+            .collect()
+    }
+
+    fn signing_key_path(schema: &str) -> PathBuf {
+        if let Ok(path) = env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
+            && !path.is_empty()
+        {
+            return PathBuf::from(path);
+        }
+
+        let sealed_storage_path =
+            env::var("SEALED_STORAGE_PATH").unwrap_or_else(|_| ".sealed".to_string());
+        PathBuf::from(sealed_storage_path).join(format!("{schema}.audit-signing-key.json"))
+    }
+
+    fn load_or_create_signing_key(schema: &str) -> Result<SigningKeyPair, RecorderError> {
+        let path = Self::signing_key_path(schema);
+        if path.exists() {
+            let bytes = fs::read(&path).map_err(|error| {
+                RecorderError::StorageError(format!(
+                    "读取审计签名密钥失败 {}: {error}",
+                    path.display()
+                ))
+            })?;
+            let persisted: PersistedSigningKey = serde_json::from_slice(&bytes)
+                .map_err(|error| RecorderError::SerializationError(error.to_string()))?;
+            return SigningKeyPair::from_pkcs8(persisted.private_key);
+        }
+
+        let signing_key = SigningKeyPair::generate()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                RecorderError::StorageError(format!(
+                    "创建审计签名密钥目录失败 {}: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+        let payload = serde_json::to_vec(&PersistedSigningKey {
+            private_key: signing_key.private_key().to_vec(),
+        })
+        .map_err(|error| RecorderError::SerializationError(error.to_string()))?;
+        fs::write(&path, payload).map_err(|error| {
+            RecorderError::StorageError(format!("写入审计签名密钥失败 {}: {error}", path.display()))
+        })?;
+
+        Ok(signing_key)
+    }
+
+    fn apply_filters<'a>(builder: &mut QueryBuilder<'a, sqlx::Postgres>, filter: &'a AuditFilter) {
+        if let Some(start_time) = filter.start_time {
+            builder.push(" AND created_at >= to_timestamp(");
+            builder.push_bind(start_time as f64 / 1000.0);
+            builder.push(")");
+        }
+        if let Some(end_time) = filter.end_time {
+            builder.push(" AND created_at <= to_timestamp(");
+            builder.push_bind(end_time as f64 / 1000.0);
+            builder.push(")");
+        }
+        if let Some(ref user_id_hash) = filter.user_id_hash {
+            builder.push(" AND user_id_hash = ");
+            builder.push_bind(user_id_hash);
+        }
+        if let Some(action) = filter.action {
+            builder.push(" AND event_type = ");
+            builder.push_bind(action.to_string());
+        }
+        if let Some(risk_tier) = filter.risk_tier {
+            builder.push(" AND risk_tier = ");
+            builder.push_bind(risk_tier.to_string());
+        }
+        if let Some(outcome) = filter.outcome {
+            builder.push(" AND outcome = ");
+            builder.push_bind(outcome.to_string());
+        }
+        if let Some(ref service) = filter.service {
+            builder.push(" AND service = ");
+            builder.push_bind(service);
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditStorage for PostgresAuditStorageAdapter {
+    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, String> {
+        let signed_entry = {
+            let recorder = self.recorder.lock().await;
+            recorder.record(entry).map_err(|error| error.to_string())?
+        };
+
+        let signed_entry_json =
+            serde_json::to_value(&signed_entry).map_err(|error| error.to_string())?;
+        let created_at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
+            signed_entry.entry.timestamp as i64,
+        )
+        .ok_or_else(|| "invalid audit timestamp".to_string())?;
+        let sql = format!(
+            r#"
+            INSERT INTO "{schema}".audit_logs
+                (log_index, entry_id, event_type, service, user_id_hash, risk_tier, outcome, created_at, signed_entry)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            "#,
+            schema = self.schema
+        );
+
+        sqlx::query(&sql)
+            .bind(i64::try_from(signed_entry.log_index).map_err(|error| error.to_string())?)
+            .bind(&signed_entry.entry.id)
+            .bind(signed_entry.entry.action.to_string())
+            .bind(&signed_entry.entry.service)
+            .bind(&signed_entry.entry.user_id_hash)
+            .bind(signed_entry.entry.risk_tier.to_string())
+            .bind(signed_entry.entry.outcome.to_string())
+            .bind(created_at)
+            .bind(signed_entry_json)
+            .execute(&self.pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        Ok(signed_entry)
+    }
+
+    async fn query(
+        &self,
+        filter: AuditFilter,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<SignedAuditEntry>, u64), String> {
+        let mut count_builder = QueryBuilder::<sqlx::Postgres>::new(format!(
+            r#"SELECT COUNT(*) as count FROM "{}".audit_logs WHERE 1=1"#,
+            self.schema
+        ));
+        Self::apply_filters(&mut count_builder, &filter);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        let mut builder = QueryBuilder::<sqlx::Postgres>::new(format!(
+            r#"SELECT signed_entry FROM "{}".audit_logs WHERE 1=1"#,
+            self.schema
+        ));
+        Self::apply_filters(&mut builder, &filter);
+        builder.push(" ORDER BY created_at DESC, log_index DESC");
+        builder.push(" OFFSET ");
+        builder.push_bind(i64::try_from(offset).map_err(|error| error.to_string())?);
+        builder.push(" LIMIT ");
+        builder.push_bind(i64::try_from(limit).map_err(|error| error.to_string())?);
+
+        let rows = builder
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        let entries = rows
+            .into_iter()
+            .map(|row| {
+                let value: serde_json::Value = row.try_get("signed_entry")?;
+                serde_json::from_value(value).map_err(|error| sqlx::Error::Decode(Box::new(error)))
+            })
+            .collect::<Result<Vec<SignedAuditEntry>, sqlx::Error>>()
+            .map_err(|error| error.to_string())?;
+
+        Ok((entries, total as u64))
+    }
+
+    async fn get_by_id(&self, id: &str) -> Result<Option<SignedAuditEntry>, String> {
+        let sql = format!(
+            r#"SELECT signed_entry FROM "{}".audit_logs WHERE entry_id = $1"#,
+            self.schema
+        );
+        let row = sqlx::query(&sql)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        row.map(|row| {
+            let value: serde_json::Value = row.try_get("signed_entry")?;
+            serde_json::from_value(value).map_err(|error| sqlx::Error::Decode(Box::new(error)))
+        })
+        .transpose()
+        .map_err(|error| error.to_string())
+    }
+
+    async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String> {
+        let sql = format!(
+            r#"SELECT signed_entry FROM "{}".audit_logs WHERE log_index = $1"#,
+            self.schema
+        );
+        let row = sqlx::query(&sql)
+            .bind(i64::try_from(index).map_err(|error| error.to_string())?)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        row.map(|row| {
+            let value: serde_json::Value = row.try_get("signed_entry")?;
+            serde_json::from_value(value).map_err(|error| sqlx::Error::Decode(Box::new(error)))
+        })
+        .transpose()
+        .map_err(|error| error.to_string())
+    }
+
+    async fn get_verification_proof(
+        &self,
+        _index: u64,
+    ) -> Result<Option<VerificationProof>, String> {
+        Ok(None)
+    }
+
+    async fn verify_entry(&self, index: u64) -> Result<bool, String> {
+        if self.get_by_index(index).await?.is_none() {
+            return Ok(false);
+        }
+        let recorder = self.recorder.lock().await;
+        recorder.verify_chain().map_err(|error| error.to_string())
+    }
+
+    async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String> {
+        let (entries, _) = self.query(filter, 0, 100_000).await?;
+        Ok(entries)
+    }
 }
 
 /// 内存审计存储适配器
