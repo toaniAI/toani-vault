@@ -481,14 +481,14 @@
   "hotPaths": [
     {
       "path": "src",
-      "accessCount": 261,
-      "lastAccessed": 1775645793913,
+      "accessCount": 265,
+      "lastAccessed": 1775701113641,
       "type": "directory"
     },
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 132,
-      "lastAccessed": 1775638371770,
+      "accessCount": 134,
+      "lastAccessed": 1775701163906,
       "type": "file"
     },
     {
