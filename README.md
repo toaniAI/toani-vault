@@ -68,9 +68,16 @@ Primary implementation areas:
 
 Toani Vault provides a powerful CLI tool for operators and automation workflows.
 
+For the latest CLI install and usage details, see:
+- [CLI Install & Usage (npm)](cli/README.md)
+- [CLI Skill for AI Agents](cli/SKILL.md)
+
 ### Installation
 
 ```bash
+# Install from npm (recommended)
+npm install -g @toani/vault-cli@0.0.1
+
 # Install from source
 cargo install --path cli
 

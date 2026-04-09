@@ -66,9 +66,16 @@ L0: SGX Sealing Key
 
 Toani Vault 提供了功能强大的命令行工具，适用于运维人员和自动化工作流。
 
+CLI 最新安装与使用说明请优先参考：
+- [CLI 安装与使用（npm）](cli/README.md)
+- [面向 AI 代理的 CLI Skill](cli/SKILL.md)
+
 ### 安装
 
 ```bash
+# 从 npm 安装（推荐）
+npm install -g @toani/vault-cli@0.0.1
+
 # 从源码安装
 cargo install --path cli
 

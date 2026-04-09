@@ -7,7 +7,7 @@ const CONFIG_DIR = path.join(os.homedir(), '.toani');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULT_CONFIG: CliConfig = {
-  baseUrl: 'http://localhost:8080',
+  baseUrl: 'https://dev-credbridge.bitkinetic.com/',
   output: 'table',
   timeout: 30000,
 };
@@ -36,4 +36,3 @@ export function saveConfig(config: CliConfig): void {
   }
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
 }
-

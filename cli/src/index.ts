@@ -12,6 +12,8 @@ import {
 import { printResult } from './output/print.js';
 import type { OutputFormat } from './types/cli.js';
 
+const BASE_URL_ENV_KEYS = ['TOANI_BASE_URL', 'CREDBRIDGE_BASE_URL'] as const;
+
 function printHelp(): void {
   console.log(`toani - Toani Vault CLI
 
@@ -27,6 +29,16 @@ Groups:
   sandbox      create-session/list-sessions/get-session/terminate/execute/get-operation/stats
   audit        logs/export/verify
 `);
+}
+
+function resolveBaseUrlFromEnv(): string | undefined {
+  for (const key of BASE_URL_ENV_KEYS) {
+    const value = process.env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function parseGlobalArgs(argv: string[]): { rest: string[]; output?: OutputFormat; baseUrl?: string; token?: string } {
@@ -66,10 +78,11 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
+  const envBaseUrl = resolveBaseUrlFromEnv();
   const runtimeConfig = {
     ...config,
     output: globals.output ?? config.output,
-    baseUrl: globals.baseUrl ?? config.baseUrl,
+    baseUrl: globals.baseUrl ?? envBaseUrl ?? config.baseUrl,
     token: globals.token ?? config.token,
   };
 
@@ -101,7 +114,7 @@ async function main(): Promise<void> {
       return;
     case '--version':
     case '-v':
-      printResult({ name: '@toani/vault-cli', version: '0.1.0' }, runtimeConfig.output);
+      printResult({ name: '@toani/vault-cli', version: '0.0.1' }, runtimeConfig.output);
       return;
     default:
       throw new Error(`Unknown command group: ${group}`);

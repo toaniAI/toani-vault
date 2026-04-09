@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Node.js >= 22
-- npm login (for publishing or private install if needed)
+- npm login (for publish/private installs)
 
 ## Local Dev Install
 
@@ -12,13 +12,13 @@ cd /Users/yvan/AIWorkspace/credbridge/cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.1.0.tgz
+npm install -g ./toani-vault-cli-0.0.1.tgz
 ```
 
 ## Registry Install
 
 ```bash
-npm install -g @toani/vault-cli
+npm install -g @toani/vault-cli@0.0.1
 ```
 
 ## Smoke Checks
@@ -27,4 +27,11 @@ npm install -g @toani/vault-cli
 toani --help
 toani --version
 toani config show
+```
+
+## Recommended Base URL Setup
+
+```bash
+export TOANI_BASE_URL=https://dev-credbridge.bitkinetic.com/
+toani auth status
 ```

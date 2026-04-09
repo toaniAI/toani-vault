@@ -14,7 +14,7 @@ npm install -g @toani/vault-cli
 ## Configure
 
 ```bash
-toani config init --url http://localhost:8080 --token <TOKEN>
+toani config init --url https://dev-credbridge.bitkinetic.com/ --token <TOKEN>
 ```
 
 Config is stored at `~/.toani/config.json` with fields:
@@ -28,6 +28,13 @@ Token resolution priority:
 1. explicit `--token`
 2. `config.token`
 3. `config.sessionToken`
+
+Base URL resolution priority:
+1. explicit `--base-url`
+2. env `TOANI_BASE_URL`
+3. env `CREDBRIDGE_BASE_URL`
+4. `config.baseUrl`
+5. default `https://dev-credbridge.bitkinetic.com/`
 
 ## Commands
 
