@@ -504,8 +504,8 @@
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 33,
-      "lastAccessed": 1775836990362,
+      "accessCount": 35,
+      "lastAccessed": 1775838383040,
       "type": "file"
     },
     {
@@ -521,6 +521,18 @@
       "type": "file"
     },
     {
+      "path": "src",
+      "accessCount": 11,
+      "lastAccessed": 1775837986374,
+      "type": "directory"
+    },
+    {
+      "path": "src/main.rs",
+      "accessCount": 11,
+      "lastAccessed": 1775838002127,
+      "type": "file"
+    },
+    {
       "path": "frontend/src/app/router-components.tsx",
       "accessCount": 10,
       "lastAccessed": 1775828308206,
@@ -530,12 +542,6 @@
       "path": "frontend/src",
       "accessCount": 9,
       "lastAccessed": 1775828259845,
-      "type": "directory"
-    },
-    {
-      "path": "src",
-      "accessCount": 9,
-      "lastAccessed": 1775836799311,
       "type": "directory"
     },
     {
@@ -554,12 +560,6 @@
       "path": "zentao/18173.md",
       "accessCount": 6,
       "lastAccessed": 1775831009878,
-      "type": "file"
-    },
-    {
-      "path": "src/main.rs",
-      "accessCount": 6,
-      "lastAccessed": 1775836799391,
       "type": "file"
     },
     {
@@ -617,6 +617,12 @@
       "type": "file"
     },
     {
+      "path": "",
+      "accessCount": 3,
+      "lastAccessed": 1775838087067,
+      "type": "directory"
+    },
+    {
       "path": "CLAUDE.md",
       "accessCount": 2,
       "lastAccessed": 1775792805262,
@@ -663,12 +669,6 @@
       "accessCount": 2,
       "lastAccessed": 1775828324451,
       "type": "file"
-    },
-    {
-      "path": "",
-      "accessCount": 2,
-      "lastAccessed": 1775831673297,
-      "type": "directory"
     },
     {
       "path": "src/api",
