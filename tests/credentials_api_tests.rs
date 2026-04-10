@@ -781,7 +781,7 @@ async fn test_create_credential_missing_service_id_returns_400() {
     assert_eq!(json["error"].as_str(), Some("invalid_request"));
 }
 
-/// BUG-18098: 测试创建凭证时 service_id 为空字符串返回 400 + invalid_request
+/// BUG-18171: 测试创建凭证时 service_id 为空字符串返回 400 + invalid_request
 #[tokio::test]
 async fn test_create_credential_empty_service_id_returns_400() {
     let state = setup_test_state().await;
@@ -807,15 +807,23 @@ async fn test_create_credential_empty_service_id_returns_400() {
         .unwrap();
 
     let response = app.oneshot(request).await.unwrap();
-    let status = response.status();
+
+    // BUG-18171: 空字符串 service_id 应返回 400 Bad Request
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "BUG-18171: service_id 为空时应返回 400，而不是 {:?}",
+        response.status()
+    );
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let _json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-    // 空字符串是合法的字符串，应该进入后续流程（返回非403错误）
-    assert_ne!(status, StatusCode::FORBIDDEN);
+    // 验证错误码为 invalid_request
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(json["message"].as_str().unwrap().contains("service_id"));
 }
 
 /// BUG-18173: 测试获取凭证列表 page=0 返回 400 + invalid_request

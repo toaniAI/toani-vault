@@ -502,6 +502,18 @@ pub async fn create_credential(
     // 解析并验证 credential_type，无效时返回 400 invalid_request
     let credential_type = parse_credential_type(&request.credential_type)?;
 
+    // 验证 service_id 非空（空字符串或仅空白字符应返回 400）
+    if request.service_id.trim().is_empty() {
+        return Err(
+            ApiError::new("invalid_request", "service_id cannot be empty").with_details(
+                serde_json::json!({
+                    "field": "service_id",
+                    "received": request.service_id
+                }),
+            ),
+        );
+    }
+
     // 先创建 UserId 对象，用于加密和存储
     let user_id = UserId::new(&token.user_id);
     let tenant_id = TenantId::new(&token.tenant_id);
