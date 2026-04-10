@@ -498,15 +498,21 @@
   "hotPaths": [
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 39,
-      "lastAccessed": 1775832298028,
+      "accessCount": 44,
+      "lastAccessed": 1775833779682,
       "type": "file"
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 18,
-      "lastAccessed": 1775832980245,
+      "accessCount": 22,
+      "lastAccessed": 1775834461294,
       "type": "file"
+    },
+    {
+      "path": "tests/credentials_api_tests.rs",
+      "accessCount": 16,
+      "lastAccessed": 1775833805800,
+      "type": "directory"
     },
     {
       "path": "frontend/src/shared/api/client.ts",
@@ -539,12 +545,6 @@
       "type": "directory"
     },
     {
-      "path": "tests/credentials_api_tests.rs",
-      "accessCount": 7,
-      "lastAccessed": 1775831681674,
-      "type": "directory"
-    },
-    {
       "path": "src",
       "accessCount": 7,
       "lastAccessed": 1775831712116,
@@ -554,6 +554,12 @@
       "path": "zentao/18173.md",
       "accessCount": 6,
       "lastAccessed": 1775831009878,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18171.md",
+      "accessCount": 5,
+      "lastAccessed": 1775834450098,
       "type": "file"
     },
     {
