@@ -1,13 +1,43 @@
 # 我的 Bug 待处理清单
 
-- 生成时间: 2026-04-10 17:01:07 (Asia/Shanghai)
+- 生成时间: 2026-04-10 21:04:53 (Asia/Shanghai)
 - 禅道账号: jiangjiyu
 - 产品: zkMe (#25)
-- Bug 总数: 19
-- 数据来源: ZenTao API v1 `GET /products/25/bugs`，按 `assignedTo=jiangjiyu` 且 `status!=closed` 过滤
+- Bug 总数: 27
+- 数据来源: ZenTao API v1 `GET /bugs?product=25&page=<n>&limit=<m>`（自动分页拉取全量），按 `assignedTo=jiangjiyu`、`status!=closed`、`openedDate>=2026-01-01` 过滤
 - 维护方式: 将每条前面的 `[ ]` 改为 `[1]`表示给出验收标准，改为`[2]`表示已分析原因，改为`[3]`表示已经修复完成待验收，改为`[x]`表示验收通过。
 
 ## 清单
+
+- [ ] #18170 【Dashboard】仪表盘：token已过期，请求/credentials接口页面限制加载中
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: xiaomeishan | 指派时间: 2026-04-10T11:15:04Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18170.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18170
+
+- [ ] #18169 【AI自动化测试】详细健康检查: 响应缺少预期内容: status
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: xiaomeishan | 指派时间: 2026-04-10T09:43:52Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18169.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18169
+
+- [ ] #18168 【AI自动化测试】详细健康检查: 响应缺少预期内容: status
+  - 产品: zkMe | 状态: active | 严重程度: S1 | 优先级: P1
+  - 提出人: xiaomeishan | 指派时间: 2026-04-10T09:43:52Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18168.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18168
+
+- [ ] #18167 【AI自动化测试】健康检查: 响应缺少预期内容: status
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: xiaomeishan | 指派时间: 2026-04-10T09:43:52Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18167.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18167
+
+- [ ] #18166 【AI自动化测试】健康检查: 响应缺少预期内容: status
+  - 产品: zkMe | 状态: active | 严重程度: S1 | 优先级: P1
+  - 提出人: xiaomeishan | 指派时间: 2026-04-10T09:43:52Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18166.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18166
 
 - [ ] #18164 【Dashboard】个人资料:One-time token reveal下的token内容无法肉眼看清内容
   - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
@@ -122,3 +152,21 @@
   - 提出人: zhoushichuan | 指派时间: 2026-04-09T01:44:02Z
   - 详情页: https://zt.bitkinetic.com/bug-view-18140.html
   - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18140
+
+- [ ] #18096 【API】凭证管理: 前端凭证类型列表要新增会话 Cookie和KYC 文档
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-09T10:25:50Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18096.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18096
+
+- [ ] #18055 【Dashboard】仪表盘:进行了验证token的操作，今日访问也一直显示为 0
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-09T08:20:30Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18055.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18055
+
+- [ ] #18053 【Dashboard】凭证管理:今日访问的数量，被硬编码为 0了
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-09T08:15:44Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18053.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18053

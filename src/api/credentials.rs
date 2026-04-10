@@ -424,6 +424,7 @@ pub struct CreateCredentialApiRequest {
     /// 凭证类型（字符串形式，将在业务层验证）
     pub credential_type: String,
     /// 明文凭证内容（将被加密）
+    #[serde(alias = "value")]
     pub plaintext_data: serde_json::Value,
     /// 过期时间（Unix 时间戳，可选）
     pub expires_at: Option<u64>,
@@ -1218,5 +1219,20 @@ mod tests {
         assert!(validate_expires_at(Some(now)).is_err());
         assert!(validate_expires_at(Some(now + 1)).is_ok());
         assert!(validate_expires_at(None).is_ok());
+    }
+
+    #[test]
+    fn test_create_request_accepts_value_alias_for_plaintext_data() {
+        // BUG-18172: 自动化测试使用 "value" 字段代替 "plaintext_data"
+        let payload = json!({
+            "service_id": "api_tags_empty",
+            "credential_type": "api_key",
+            "value": "k1"
+        });
+
+        let parsed: CreateCredentialApiRequest = serde_json::from_value(payload).unwrap();
+        assert_eq!(parsed.service_id, "api_tags_empty");
+        assert_eq!(parsed.credential_type, "api_key");
+        assert_eq!(parsed.plaintext_data, json!("k1"));
     }
 }
