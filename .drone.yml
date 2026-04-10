@@ -209,6 +209,26 @@ steps:
       ref:
         - refs/heads/branch_dev
 
+  - name: notify-lark-deploy-dev
+    image: curlimages/curl:8.12.1
+    pull: if-not-exists
+    depends_on:
+      - deploy-dev
+    commands:
+      - |
+        cat > payload.json <<EOF
+        {
+          "msg_type": "text",
+          "content": {
+            "text": "部署\\nCredBridge dev 部署成功\\n仓库: ${DRONE_REPO}\\n分支: ${DRONE_BRANCH}\\n构建号: ${DRONE_BUILD_NUMBER}\\n提交: ${DRONE_COMMIT_SHA}\\n链接: ${DRONE_BUILD_LINK}"
+          }
+        }
+        EOF
+      - curl -fsSL -X POST -H 'Content-Type: application/json' --data @payload.json https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
+    when:
+      ref:
+        - refs/heads/branch_dev
+
   - name: deploy-test
     image: tttlkkkl/drone-helm:v6
     pull: if-not-exists
