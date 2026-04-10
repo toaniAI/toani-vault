@@ -7,6 +7,7 @@
 **Primary outcome:** After this work, the main service should persist all core business state that affects authentication, authorization, auditability, tenant behavior, and sandbox traceability.
 
 **Non-goals:**
+
 - Do not move developer-tool workspace state such as `.omx/`, automation memory files, or local CLI preferences into the application database.
 - Do not introduce new infrastructure beyond the storage systems already adopted by this repository.
 - Do not redesign the auth domain, tenant model, or sandbox domain from scratch. This plan assumes the current schema direction is correct and focuses on wiring and stabilization.
@@ -143,16 +144,16 @@ These are caches, warm pools, or active-process runtime internals that can be re
 
 ## Current State Inventory
 
-| Domain | Desired durable backend | Schema exists | Runtime writes durably today | Current gap |
-| --- | --- | --- | --- | --- |
-| Vault credentials | PostgreSQL or Vault | Yes | Yes, depending on backend selection | No major gap |
-| Token revocation / TTL state | Redis | Yes by implementation design | Yes where Redis store is used | Verify main auth path integration |
-| Auth users / identities / memberships / invitations / sessions | PostgreSQL | Yes | No, main boot path is in-memory | High |
-| Auth audit logs | PostgreSQL | Yes | No guaranteed durable path in main boot | High |
-| Audit ledger | immudb plus optional DB/query mirror | Yes for immudb path in code | No, main boot path uses in-memory audit | High |
-| Tenant config | PostgreSQL preferred | No dedicated table yet | No, in-memory only | Medium |
-| Sandbox sessions / operations | PostgreSQL | Yes | No, main runtime keeps them in-memory | High |
-| Developer tool state | Files | N/A | Yes | No change needed |
+| Domain                                                         | Desired durable backend              | Schema exists                | Runtime writes durably today            | Current gap                       |
+| -------------------------------------------------------------- | ------------------------------------ | ---------------------------- | --------------------------------------- | --------------------------------- |
+| Vault credentials                                              | PostgreSQL or Vault                  | Yes                          | Yes, depending on backend selection     | No major gap                      |
+| Token revocation / TTL state                                   | Redis                                | Yes by implementation design | Yes where Redis store is used           | Verify main auth path integration |
+| Auth users / identities / memberships / invitations / sessions | PostgreSQL                           | Yes                          | No, main boot path is in-memory         | High                              |
+| Auth audit logs                                                | PostgreSQL                           | Yes                          | No guaranteed durable path in main boot | High                              |
+| Audit ledger                                                   | immudb plus optional DB/query mirror | Yes for immudb path in code  | No, main boot path uses in-memory audit | High                              |
+| Tenant config                                                  | PostgreSQL preferred                 | No dedicated table yet       | No, in-memory only                      | Medium                            |
+| Sandbox sessions / operations                                  | PostgreSQL                           | Yes                          | No, main runtime keeps them in-memory   | High                              |
+| Developer tool state                                           | Files                                | N/A                          | Yes                                     | No change needed                  |
 
 ## Target Architecture
 

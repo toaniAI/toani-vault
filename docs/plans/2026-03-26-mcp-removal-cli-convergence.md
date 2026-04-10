@@ -19,6 +19,7 @@ AI Agent
 ```
 
 The main service becomes the only runtime that owns:
+
 - configuration and environment loading
 - storage backend initialization
 - TEE lifecycle and key hierarchy
@@ -28,6 +29,7 @@ The main service becomes the only runtime that owns:
 - credential CRUD and decrypt rules
 
 The CLI becomes the only AI-facing tool surface:
+
 - stable commands
 - stable machine-readable output
 - explicit exit codes
@@ -38,12 +40,14 @@ The standalone `mcp-server/` crate is removed.
 ## Why This Direction
 
 The current repository has two competing runtime entry points:
+
 - the main service in `src/main.rs`
 - the standalone MCP server in `mcp-server/src/main.rs`
 
 That split is acceptable only if MCP is a very thin adapter. It is not thin today.
 
 Current MCP code owns its own:
+
 - transport layer
 - token validation
 - session lifecycle
@@ -52,6 +56,7 @@ Current MCP code owns its own:
 - credential business operations
 
 Most importantly, the MCP server currently initializes its own in-memory runtime state through `McpServerState::new_in_memory()` in `mcp-server/src/lib.rs`, instead of reusing the main service runtime. That creates an architectural fork:
+
 - different initialization path
 - different storage assumptions
 - duplicated auth surface
@@ -65,12 +70,14 @@ Since the intended future interaction model is "AI uses CLI", the MCP layer no l
 ### Main service
 
 The main service starts in `src/main.rs` and owns the real application boot path:
+
 - config loading
 - app state initialization
 - Axum router assembly
 - HTTP serving
 
 Relevant files:
+
 - `src/main.rs`
 - `src/api/*`
 - `src/token/*`
@@ -84,6 +91,7 @@ Relevant files:
 The CLI already exists and already talks to the service through the Rust SDK.
 
 Relevant files:
+
 - `cli/src/main.rs`
 - `cli/src/cli.rs`
 - `cli/src/commands/auth.rs`
@@ -96,6 +104,7 @@ This is the correct AI integration direction, because the CLI is already an adap
 ### MCP server
 
 The standalone MCP implementation currently lives here:
+
 - `mcp-server/src/main.rs`
 - `mcp-server/src/lib.rs`
 - `mcp-server/src/handlers.rs`
@@ -109,6 +118,7 @@ This code currently mixes protocol concerns with business concerns.
 ### MCP token storage inside main library
 
 The main library also exposes MCP-specific token storage:
+
 - `src/mcp/mod.rs`
 - `src/mcp/token_storage.rs`
 
@@ -137,6 +147,7 @@ This module should be evaluated as part of the removal. If the token storage is 
 - service-side validation and error mapping
 
 Primary code areas:
+
 - `src/api/`
 - `src/services/`
 - `src/token/`
@@ -153,6 +164,7 @@ Primary code areas:
 - human-friendly wrappers over the SDK
 
 Primary code areas:
+
 - `cli/src/cli.rs`
 - `cli/src/commands/*`
 - `cli/src/output.rs`
@@ -166,6 +178,7 @@ Primary code areas:
 - structured error mapping
 
 Primary code area:
+
 - `sdk-rust/src/*`
 
 ### Delete entirely
@@ -174,6 +187,7 @@ Primary code area:
 - `docs/mcp-examples/`
 
 Likely delete or relocate:
+
 - `src/mcp/`
 
 ## Refactor Strategy
@@ -185,6 +199,7 @@ The refactor should be executed in this order.
 Define the CLI as the long-term agent surface.
 
 Required CLI principles:
+
 - every agent-relevant command supports `--json`
 - stdout is reserved for the result payload
 - stderr is reserved for diagnostics
@@ -192,6 +207,7 @@ Required CLI principles:
 - interactive prompts can be disabled or bypassed
 
 Required command families:
+
 - `credbridge auth ...`
 - `credbridge credentials list ...`
 - `credbridge credentials get ...`
@@ -204,6 +220,7 @@ Required command families:
 - `credbridge sandbox ...`
 
 Immediate gap to close:
+
 - token creation and token listing in `cli/src/commands/tokens.rs` are still unimplemented
 - credential update/version workflows in `cli/src/commands/credentials.rs` are still placeholders
 
@@ -212,6 +229,7 @@ Immediate gap to close:
 Audit all business behavior currently embedded in `mcp-server/src/tools.rs`.
 
 The following capabilities must exist only once, in the main service stack:
+
 - list credentials
 - get credential metadata
 - create credential
@@ -221,14 +239,17 @@ The following capabilities must exist only once, in the main service stack:
 - tee status retrieval
 
 Expected implementation direction:
+
 - keep HTTP handlers in `src/api/`
 - move reusable business orchestration into `src/services/`
 - ensure both HTTP handlers and future internal callers use the same service layer
 
 Recommended new module:
+
 - `src/services/credentials/`
 
 Recommended responsibilities for this module:
+
 - request validation beyond transport syntax
 - tenant/user scoping
 - authorization hooks
@@ -241,6 +262,7 @@ Do not move business logic into the CLI.
 ## Phase 3: Remove MCP-Specific Runtime Concepts
 
 Delete MCP runtime concerns that will no longer exist in the product:
+
 - tool schemas
 - JSON-RPC request dispatch
 - SSE session manager
@@ -249,6 +271,7 @@ Delete MCP runtime concerns that will no longer exist in the product:
 - stdio transport
 
 Files to remove:
+
 - `mcp-server/src/main.rs`
 - `mcp-server/src/lib.rs`
 - `mcp-server/src/handlers.rs`
@@ -266,13 +289,16 @@ Also clean product and developer docs that describe MCP setup.
 Review `src/mcp/mod.rs` and `src/mcp/token_storage.rs`.
 
 Decision rule:
+
 - if the code only exists to support MCP session/token workflows, delete it
 - if part of the code is generically useful for agent token storage, rename and move it under a neutral namespace such as `src/token/agent_storage.rs`
 
 Default recommendation:
+
 - delete the `src/mcp/` module unless a concrete non-MCP use case exists
 
 Also remove exports from:
+
 - `src/lib.rs`
 
 ## Phase 5: Strengthen the CLI as the Official Agent Interface
@@ -312,6 +338,7 @@ Avoid direct coupling from CLI into internal server modules.
 ## Phase 6: Remove Documentation and Build References
 
 Remove references to MCP from:
+
 - product docs
 - developer docs
 - user guides
@@ -319,6 +346,7 @@ Remove references to MCP from:
 - Docker or build scaffolding if present
 
 Known areas to review:
+
 - `docs/08-用户指南/USER_MANUAL.md`
 - `docs/design/mcp-sse-design.md`
 - `docs/mcp-examples/`
@@ -327,6 +355,7 @@ Known areas to review:
 - `Dockerfile`
 
 Also search for:
+
 - `CREDBRIDGE_MCP_`
 - `credbridge-mcp-server`
 - `mcp-server`
@@ -337,6 +366,7 @@ Also search for:
 ### Workstream A: Main service capability cleanup
 
 Files likely touched:
+
 - `src/main.rs`
 - `src/services/mod.rs`
 - `src/api/credentials/*`
@@ -346,11 +376,13 @@ Files likely touched:
 - `src/lib.rs`
 
 Outcome:
+
 - one canonical business path for credential and token operations
 
 ### Workstream B: CLI completion
 
 Files likely touched:
+
 - `cli/src/cli.rs`
 - `cli/src/main.rs`
 - `cli/src/commands/auth.rs`
@@ -361,16 +393,19 @@ Files likely touched:
 - `sdk-rust/src/*`
 
 Outcome:
+
 - CLI is sufficient for direct AI usage
 
 ### Workstream C: MCP deletion
 
 Files likely touched:
+
 - delete `mcp-server/`
 - remove `src/mcp/` or relocate any generic remnants
 - remove docs and examples
 
 Outcome:
+
 - repository no longer exposes MCP as a product surface
 
 ## Acceptance Criteria
@@ -425,6 +460,7 @@ cargo test
 Treat this as a convergence refactor, not a feature migration.
 
 The correct end state is:
+
 - one service runtime
 - one SDK transport path
 - one CLI tool surface for agents

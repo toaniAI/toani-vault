@@ -1,1 +1,10 @@
-{"valid":false,"token_id":"019d719b-306d-7b53-91ca-65250690b751","user_id":"019d719b-3059-7bb0-b4fa-d9e84f5d8787","tenant_id":"019d719b-2fc4-7593-9dd2-72c5f8adb090","scopes":["credential:read"],"expires_at":1775731089,"subject_type":"service_account","issued_from":"service_account"}
+{
+  "valid": false,
+  "token_id": "019d719b-306d-7b53-91ca-65250690b751",
+  "user_id": "019d719b-3059-7bb0-b4fa-d9e84f5d8787",
+  "tenant_id": "019d719b-2fc4-7593-9dd2-72c5f8adb090",
+  "scopes": ["credential:read"],
+  "expires_at": 1775731089,
+  "subject_type": "service_account",
+  "issued_from": "service_account"
+}

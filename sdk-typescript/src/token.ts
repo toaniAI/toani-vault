@@ -20,7 +20,7 @@
  * @module token
  */
 
-import type { CredBridgeClient } from './client.js';
+import type { CredBridgeClient } from "./client.js";
 import {
   type CreateTokenRequest,
   type CreateTokenResponse,
@@ -32,7 +32,7 @@ import {
   type TokenScope,
   CredBridgeError,
   CredBridgeErrorCode,
-} from './types.js';
+} from "./types.js";
 
 /** Token 验证响应 */
 interface TokenVerifyResponse {
@@ -245,9 +245,9 @@ export class TokenManager {
 
     try {
       const response = await this.client.post<TokenVerifyResponse>(
-        '/tokens/verify',
+        "/tokens/verify",
         { token },
-        { ...options, skipRetry: true }
+        { ...options, skipRetry: true },
       );
       return response.valid;
     } catch (error) {
@@ -266,15 +266,15 @@ export class TokenManager {
    */
   public async create(
     request: CreateTokenRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<CreateTokenResponse> {
     const response = await this.client.post<CreateTokenResponseApi>(
-      '/tokens',
+      "/tokens",
       {
         scopes: request.scopes,
         expires_in: request.expiresIn,
       },
-      options
+      options,
     );
 
     return {
@@ -292,7 +292,10 @@ export class TokenManager {
    * 获取 Token 统计
    */
   public async stats(options?: RequestOptions): Promise<TokenStatsResponse> {
-    const response = await this.client.get<TokenStatsResponseApi>('/tokens/stats', options);
+    const response = await this.client.get<TokenStatsResponseApi>(
+      "/tokens/stats",
+      options,
+    );
     return {
       totalTokens: response.total_tokens,
       activeTokens: response.active_tokens,
@@ -301,12 +304,21 @@ export class TokenManager {
   }
 
   public async list(options?: RequestOptions): Promise<TokenMetadata[]> {
-    const response = await this.client.get<TokenMetadataApi[]>('/tokens', options);
+    const response = await this.client.get<TokenMetadataApi[]>(
+      "/tokens",
+      options,
+    );
     return response.map(mapTokenMetadata);
   }
 
-  public async get(tokenId: string, options?: RequestOptions): Promise<TokenMetadata> {
-    const response = await this.client.get<TokenMetadataApi>(`/tokens/${tokenId}`, options);
+  public async get(
+    tokenId: string,
+    options?: RequestOptions,
+  ): Promise<TokenMetadata> {
+    const response = await this.client.get<TokenMetadataApi>(
+      `/tokens/${tokenId}`,
+      options,
+    );
     return mapTokenMetadata(response);
   }
 
@@ -330,14 +342,14 @@ export class TokenManager {
     if (!tokenInfo) {
       throw new CredBridgeError(
         CredBridgeErrorCode.InvalidToken,
-        'No token to revoke'
+        "No token to revoke",
       );
     }
 
     const response = await this.client.post<TokenRevokeResponse>(
       `/tokens/${tokenInfo.tokenId}/revoke`,
       {},
-      options
+      options,
     );
 
     return response.revoked;
@@ -345,12 +357,12 @@ export class TokenManager {
 
   public async revokeById(
     tokenId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<TokenRevokeByIdResponse> {
     const response = await this.client.post<TokenRevokeResponse>(
       `/tokens/${tokenId}/revoke`,
       {},
-      options
+      options,
     );
 
     return {
@@ -380,8 +392,10 @@ export class TokenManager {
     const tokenInfo = this.client.getTokenInfo();
     if (!tokenInfo) return false;
 
-    return tokenInfo.scopes.includes(scope as TokenScope) ||
-           tokenInfo.scopes.includes('admin' as TokenScope);
+    return (
+      tokenInfo.scopes.includes(scope as TokenScope) ||
+      tokenInfo.scopes.includes("admin" as TokenScope)
+    );
   }
 
   /**
@@ -398,7 +412,7 @@ export class TokenManager {
    * ```
    */
   public hasAnyScope(scopes: TokenScope[] | string[]): boolean {
-    return scopes.some(scope => this.hasScope(scope));
+    return scopes.some((scope) => this.hasScope(scope));
   }
 
   /**
@@ -415,7 +429,7 @@ export class TokenManager {
    * ```
    */
   public hasAllScopes(scopes: TokenScope[] | string[]): boolean {
-    return scopes.every(scope => this.hasScope(scope));
+    return scopes.every((scope) => this.hasScope(scope));
   }
 
   /**
@@ -494,7 +508,7 @@ export class TokenManager {
     const seconds = this.getRemainingTime();
 
     if (seconds === 0) {
-      return '已过期';
+      return "已过期";
     }
 
     if (seconds < 60) {

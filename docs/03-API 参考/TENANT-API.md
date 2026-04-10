@@ -15,10 +15,10 @@ CredBridge 采用 **Schema-per-Tenant + RLS** 的多租户隔离架构。每个�
 
 系统支持三种预设层级：
 
-| 层级 | 功能特点 | 配额限制 |
-|------|----------|----------|
-| **Free** | 基础加密、审计日志 | 100凭证, 3Token/用户, 100请求/分钟 |
-| **Pro** | +MFA, Webhook, 高级审计 | 10K凭证, 20Token/用户, 10K请求/分钟 |
+| 层级           | 功能特点                 | 配额限制                               |
+| -------------- | ------------------------ | -------------------------------------- |
+| **Free**       | 基础加密、审计日志       | 100凭证, 3Token/用户, 100请求/分钟     |
+| **Pro**        | +MFA, Webhook, 高级审计  | 10K凭证, 20Token/用户, 10K请求/分钟    |
 | **Enterprise** | +SSO, 自定义加密, 全功能 | 100K凭证, 100Token/用户, 100K请求/分钟 |
 
 ## API 端点
@@ -284,55 +284,55 @@ Authorization: Bearer {admin_token}
 
 ## 功能开关说明
 
-| 功能 | 描述 | 默认状态 |
-|------|------|----------|
-| `enable_credential_encryption` | 启用凭证加密 | ✅ |
-| `enable_audit_logging` | 启用审计日志 | ✅ |
-| `enable_token_revocation` | 启用 Token 撤销 | ✅ |
-| `enable_mfa` | 启用多因素认证 | ❌ |
-| `enable_remote_attestation` | 启用远程认证 | ❌ |
-| `enable_auto_rotation` | 启用凭证自动轮换 | ❌ |
-| `allow_cors` | 允许跨域请求 | ❌ |
-| `enable_ip_whitelist` | 启用 IP 白名单 | ❌ |
-| `enable_webhooks` | 启用 Webhook 通知 | ❌ |
-| `enable_sso` | 启用 SSO 集成 | ❌ |
-| `enable_custom_crypto` | 启用自定义加密策略 | ❌ |
-| `enable_advanced_audit` | 启用高级审计分析 | ❌ |
+| 功能                           | 描述               | 默认状态 |
+| ------------------------------ | ------------------ | -------- |
+| `enable_credential_encryption` | 启用凭证加密       | ✅       |
+| `enable_audit_logging`         | 启用审计日志       | ✅       |
+| `enable_token_revocation`      | 启用 Token 撤销    | ✅       |
+| `enable_mfa`                   | 启用多因素认证     | ❌       |
+| `enable_remote_attestation`    | 启用远程认证       | ❌       |
+| `enable_auto_rotation`         | 启用凭证自动轮换   | ❌       |
+| `allow_cors`                   | 允许跨域请求       | ❌       |
+| `enable_ip_whitelist`          | 启用 IP 白名单     | ❌       |
+| `enable_webhooks`              | 启用 Webhook 通知  | ❌       |
+| `enable_sso`                   | 启用 SSO 集成      | ❌       |
+| `enable_custom_crypto`         | 启用自定义加密策略 | ❌       |
+| `enable_advanced_audit`        | 启用高级审计分析   | ❌       |
 
 ## 配额限制说明
 
-| 配额 | 描述 | Free | Pro | Enterprise |
-|------|------|------|-----|------------|
-| `max_credentials` | 最大凭证数量 | 100 | 10,000 | 100,000 |
-| `max_tokens_per_user` | 每用户最大 Token 数 | 3 | 20 | 100 |
-| `max_requests_per_minute` | 每分钟最大请求数 | 100 | 10,000 | 100,000 |
-| `max_users` | 最大用户数 | 5 | 1,000 | 10,000 |
-| `max_connectors` | 最大服务连接器数 | 5 | 100 | 1,000 |
-| `max_webhooks` | 最大 Webhook 数 | 0 | 20 | 100 |
-| `storage_quota_mb` | 存储配额 (MB) | 100 | 10,240 | 102,400 |
-| `audit_retention_days` | 审计日志保留天数 | 7 | 90 | 365 |
-| `max_token_ttl_seconds` | Token 最大有效期 (秒) | 3,600 | 604,800 | 2,592,000 |
-| `max_batch_size` | 批量操作最大数量 | 10 | 500 | 1,000 |
+| 配额                      | 描述                  | Free  | Pro     | Enterprise |
+| ------------------------- | --------------------- | ----- | ------- | ---------- |
+| `max_credentials`         | 最大凭证数量          | 100   | 10,000  | 100,000    |
+| `max_tokens_per_user`     | 每用户最大 Token 数   | 3     | 20      | 100        |
+| `max_requests_per_minute` | 每分钟最大请求数      | 100   | 10,000  | 100,000    |
+| `max_users`               | 最大用户数            | 5     | 1,000   | 10,000     |
+| `max_connectors`          | 最大服务连接器数      | 5     | 100     | 1,000      |
+| `max_webhooks`            | 最大 Webhook 数       | 0     | 20      | 100        |
+| `storage_quota_mb`        | 存储配额 (MB)         | 100   | 10,240  | 102,400    |
+| `audit_retention_days`    | 审计日志保留天数      | 7     | 90      | 365        |
+| `max_token_ttl_seconds`   | Token 最大有效期 (秒) | 3,600 | 604,800 | 2,592,000  |
+| `max_batch_size`          | 批量操作最大数量      | 10    | 500     | 1,000      |
 
 ## 错误码
 
-| 错误码 | 描述 | HTTP 状态码 |
-|--------|------|-------------|
-| `TENANT_NOT_FOUND` | 租户不存在 | 404 |
-| `NAME_EXISTS` | 租户名称已被使用 | 400 |
-| `INVALID_NAME` | 无效的租户名称 | 400 |
-| `VALIDATION_ERROR` | 配置验证失败 | 400 |
-| `INTERNAL_ERROR` | 内部服务器错误 | 500 |
+| 错误码             | 描述             | HTTP 状态码 |
+| ------------------ | ---------------- | ----------- |
+| `TENANT_NOT_FOUND` | 租户不存在       | 404         |
+| `NAME_EXISTS`      | 租户名称已被使用 | 400         |
+| `INVALID_NAME`     | 无效的租户名称   | 400         |
+| `VALIDATION_ERROR` | 配置验证失败     | 400         |
+| `INTERNAL_ERROR`   | 内部服务器错误   | 500         |
 
 ## 权限控制
 
-| 操作 | 所需 Scope |
-|------|-----------|
-| 创建租户 | `admin` |
-| 查看租户配置 | `admin` 或租户成员 |
-| 更新租户配置 | `admin` 或 `tenant:admin` |
-| 激活/暂停/删除租户 | `admin` |
-| 列出租户 | `admin` |
+| 操作               | 所需 Scope                |
+| ------------------ | ------------------------- |
+| 创建租户           | `admin`                   |
+| 查看租户配置       | `admin` 或租户成员        |
+| 更新租户配置       | `admin` 或 `tenant:admin` |
+| 激活/暂停/删除租户 | `admin`                   |
+| 列出租户           | `admin`                   |
 
 ## 审计日志
 

@@ -4,7 +4,7 @@
  * 提供凭证的 CRUD 操作和解密功能
  */
 
-import type { CredBridgeClient } from './client.js';
+import type { CredBridgeClient } from "./client.js";
 import {
   type CreateCredentialRequest,
   type CreateCredentialResponse,
@@ -17,7 +17,7 @@ import {
   type CredentialFilter,
   CredentialType,
   type RequestOptions,
-} from './types.js';
+} from "./types.js";
 
 /**
  * 凭证管理服务
@@ -52,14 +52,18 @@ export class CredentialsService {
    */
   public async create(
     request: CreateCredentialRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<CreateCredentialResponse> {
-    return this.client.post<CreateCredentialResponse>('/credentials', {
-      service_id: request.serviceId,
-      credential_type: request.credentialType,
-      plaintext_data: request.plaintextData,
-      expires_at: request.expiresAt,
-    }, options);
+    return this.client.post<CreateCredentialResponse>(
+      "/credentials",
+      {
+        service_id: request.serviceId,
+        credential_type: request.credentialType,
+        plaintext_data: request.plaintextData,
+        expires_at: request.expiresAt,
+      },
+      options,
+    );
   }
 
   /**
@@ -87,14 +91,17 @@ export class CredentialsService {
     options?: {
       expiresAt?: number;
       requestOptions?: RequestOptions;
-    }
+    },
   ): Promise<CreateCredentialResponse> {
-    return this.create({
-      serviceId,
-      credentialType: CredentialType.UsernamePassword,
-      plaintextData: { username, password },
-      expiresAt: options?.expiresAt,
-    }, options?.requestOptions);
+    return this.create(
+      {
+        serviceId,
+        credentialType: CredentialType.UsernamePassword,
+        plaintextData: { username, password },
+        expiresAt: options?.expiresAt,
+      },
+      options?.requestOptions,
+    );
   }
 
   /**
@@ -123,19 +130,22 @@ export class CredentialsService {
     options?: {
       expiresAt?: number;
       requestOptions?: RequestOptions;
-    }
+    },
   ): Promise<CreateCredentialResponse> {
     const plaintextData: Record<string, string> = { apiKey };
     if (apiSecret) {
       plaintextData.apiSecret = apiSecret;
     }
 
-    return this.create({
-      serviceId,
-      credentialType: CredentialType.ApiKey,
-      plaintextData,
-      expiresAt: options?.expiresAt,
-    }, options?.requestOptions);
+    return this.create(
+      {
+        serviceId,
+        credentialType: CredentialType.ApiKey,
+        plaintextData,
+        expiresAt: options?.expiresAt,
+      },
+      options?.requestOptions,
+    );
   }
 
   /**
@@ -160,14 +170,17 @@ export class CredentialsService {
     options?: {
       expiresAt?: number;
       requestOptions?: RequestOptions;
-    }
+    },
   ): Promise<CreateCredentialResponse> {
-    return this.create({
-      serviceId,
-      credentialType: CredentialType.OAuthRefresh,
-      plaintextData: { refreshToken },
-      expiresAt: options?.expiresAt,
-    }, options?.requestOptions);
+    return this.create(
+      {
+        serviceId,
+        credentialType: CredentialType.OAuthRefresh,
+        plaintextData: { refreshToken },
+        expiresAt: options?.expiresAt,
+      },
+      options?.requestOptions,
+    );
   }
 
   /**
@@ -195,27 +208,30 @@ export class CredentialsService {
    */
   public async list(
     filter?: CredentialFilter,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<{ credentials: CredentialMetadata[]; total: number }> {
     // 构建查询参数
     const queryParams = new URLSearchParams();
     if (filter?.serviceId) {
-      queryParams.append('service_id', filter.serviceId);
+      queryParams.append("service_id", filter.serviceId);
     }
     if (filter?.credentialType) {
-      queryParams.append('credential_type', filter.credentialType);
+      queryParams.append("credential_type", filter.credentialType);
     }
     if (filter?.includeDeleted !== undefined) {
-      queryParams.append('include_deleted', String(filter.includeDeleted));
+      queryParams.append("include_deleted", String(filter.includeDeleted));
     }
     if (filter?.onlyValid !== undefined) {
-      queryParams.append('only_valid', String(filter.onlyValid));
+      queryParams.append("only_valid", String(filter.onlyValid));
     }
 
     const queryString = queryParams.toString();
-    const path = queryString ? `/credentials?${queryString}` : '/credentials';
+    const path = queryString ? `/credentials?${queryString}` : "/credentials";
 
-    const response = await this.client.get<ListCredentialsResponse>(path, options);
+    const response = await this.client.get<ListCredentialsResponse>(
+      path,
+      options,
+    );
     return { credentials: response.credentials, total: response.total };
   }
 
@@ -235,9 +251,12 @@ export class CredentialsService {
    */
   public async get(
     credentialId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<GetCredentialResponse> {
-    return this.client.get<GetCredentialResponse>(`/credentials/${credentialId}`, options);
+    return this.client.get<GetCredentialResponse>(
+      `/credentials/${credentialId}`,
+      options,
+    );
   }
 
   /**
@@ -261,13 +280,13 @@ export class CredentialsService {
   public async decrypt(
     credentialId: string,
     reason?: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<DecryptCredentialResponse> {
     const request: DecryptCredentialRequest = { reason };
     return this.client.post<DecryptCredentialResponse>(
       `/credentials/${credentialId}/decrypt`,
       request,
-      options
+      options,
     );
   }
 
@@ -288,9 +307,12 @@ export class CredentialsService {
    */
   public async delete(
     credentialId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<DeleteCredentialResponse> {
-    return this.client.delete<DeleteCredentialResponse>(`/credentials/${credentialId}`, options);
+    return this.client.delete<DeleteCredentialResponse>(
+      `/credentials/${credentialId}`,
+      options,
+    );
   }
 
   /**
@@ -307,7 +329,7 @@ export class CredentialsService {
    */
   public async getByService(
     serviceId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<{ credentials: CredentialMetadata[]; total: number }> {
     return this.list({ serviceId }, options);
   }
@@ -326,7 +348,7 @@ export class CredentialsService {
    */
   public async getByType(
     credentialType: CredentialType,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<{ credentials: CredentialMetadata[]; total: number }> {
     return this.list({ credentialType }, options);
   }
@@ -346,7 +368,7 @@ export class CredentialsService {
    */
   public async exists(
     credentialId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<boolean> {
     try {
       await this.get(credentialId, { ...options, skipRetry: true });

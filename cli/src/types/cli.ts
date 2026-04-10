@@ -1,4 +1,4 @@
-export type OutputFormat = 'json' | 'table';
+export type OutputFormat = "json" | "table";
 
 export interface CliProfile {
   baseUrl?: string;
@@ -19,7 +19,7 @@ export interface CliConfig {
   timeout: number;
   currentProfile?: string;
   profiles?: Record<string, CliProfile>;
-  credentialSource?: 'explicit' | 'automation' | 'env' | 'session' | 'none';
+  credentialSource?: "explicit" | "automation" | "env" | "session" | "none";
 }
 
 export interface ParsedOptions {

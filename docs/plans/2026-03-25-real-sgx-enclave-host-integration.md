@@ -13,12 +13,14 @@
 ## Current State Summary
 
 This repo already has:
+
 - Host-side hardware bootstrap plumbing in [`/Users/yvan/AIWorkspace/credbridge/src/tee/provider.rs`](/Users/yvan/AIWorkspace/credbridge/src/tee/provider.rs)
 - DCAP service orchestration in [`/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs`](/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs)
 - Host-side hardware backend adapters in [`/Users/yvan/AIWorkspace/credbridge/src/tee/hardware.rs`](/Users/yvan/AIWorkspace/credbridge/src/tee/hardware.rs)
 - A logical in-process enclave model in [`/Users/yvan/AIWorkspace/credbridge/src/tee/enclave.rs`](/Users/yvan/AIWorkspace/credbridge/src/tee/enclave.rs)
 
 This repo does **not** currently have:
+
 - A real enclave project
 - `.edl` files
 - ECALL/OCALL bindings
@@ -31,6 +33,7 @@ That missing enclave-side project is the hard blocker for “fully real SGX” c
 ## Decision Record
 
 Use a split architecture:
+
 - Host app remains the network-facing process and keeps Axum, DB, Vault, Redis, metrics, and orchestration.
 - New enclave project provides only the minimum trusted computing base:
   - `get_identity`
@@ -40,6 +43,7 @@ Use a split architecture:
 - Keep AES-GCM credential crypto and key hierarchy in host **for this phase** only if the business requirement accepts “hardware-rooted key derivation” rather than “all crypto executes inside enclave”. If product/security requires all credential crypto inside enclave, add follow-up ECALLs later.
 
 Recommended milestone boundary:
+
 - **Phase A:** real enclave load + real report + real sealing key + host-side DCAP quote + host-side verification
 - **Phase B:** move sealing and key derivation fully behind enclave ECALLs
 - **Phase C:** move encryption/decryption operations fully behind enclave ECALLs
@@ -47,6 +51,7 @@ Recommended milestone boundary:
 ## Workspace Layout To Add
 
 Create a new SGX subtree:
+
 - Create: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/Cargo.toml`
 - Create: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/Enclave.edl`
 - Create: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/src/lib.rs`
@@ -56,10 +61,12 @@ Create a new SGX subtree:
 - Create: `/Users/yvan/AIWorkspace/credbridge/scripts/build-sgx-enclave.sh`
 
 Create a host runtime bridge:
+
 - Create: `/Users/yvan/AIWorkspace/credbridge/src/tee/host_runtime.rs`
 - Create: `/Users/yvan/AIWorkspace/credbridge/src/tee/ffi_types.rs`
 
 Likely modify:
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/Cargo.toml`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/enclave.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/provider.rs`
@@ -73,6 +80,7 @@ Likely modify:
 ## Environment Contract
 
 Add or standardize these runtime inputs:
+
 - `TEE_MODE=hardware`
 - `TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so`
 - `TEE_SGX_DCAP_QL_LIB_PATH` optional
@@ -80,6 +88,7 @@ Add or standardize these runtime inputs:
 - `TEE_SGX_AESM_SOCKET` optional if runtime needs explicit socket path
 
 Remove as final-state dependencies for production:
+
 - `TEE_SGX_REPORT_B64`
 - `TEE_SGX_REPORT_HEX`
 - `TEE_SGX_REPORT_PATH`
@@ -92,6 +101,7 @@ These may remain as transitional debug fallbacks, but production `hardware` mode
 ## Task 1: Introduce the enclave subproject skeleton
 
 **Files:**
+
 - Create: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/Cargo.toml`
 - Create: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/Enclave.edl`
 - Create: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/src/lib.rs`
@@ -102,9 +112,11 @@ These may remain as transitional debug fallbacks, but production `hardware` mode
 **Step 1: Write the failing build integration check**
 
 Add a host-side test skeleton in:
+
 - Create: `/Users/yvan/AIWorkspace/credbridge/tests/tee/host_runtime_compile_tests.rs`
 
 Test intent:
+
 ```rust
 #[test]
 fn hardware_runtime_requires_enclave_artifact_path() {
@@ -116,11 +128,13 @@ fn hardware_runtime_requires_enclave_artifact_path() {
 **Step 2: Create the enclave project manifest**
 
 `sgx-enclave/Cargo.toml` should define:
+
 - `staticlib` or SGX-compatible enclave output form
 - dependencies for SGX trusted runtime
 - no host-only crates like Tokio, Axum, SQLx
 
 Minimum skeleton:
+
 ```toml
 [package]
 name = "credbridge-sgx-enclave"
@@ -135,11 +149,13 @@ crate-type = ["staticlib"]
 **Step 3: Define minimal EDL**
 
 `Enclave.edl` should export:
+
 - `ecall_get_identity`
 - `ecall_get_report`
 - `ecall_get_sealing_key`
 
 Pseudo-shape:
+
 ```c
 public sgx_status_t ecall_get_identity([out, size=32] uint8_t* mrenclave,
                                        [out, size=32] uint8_t* mrsigner);
@@ -156,6 +172,7 @@ public sgx_status_t ecall_get_sealing_key(uint32_t policy,
 **Step 5: Add README**
 
 Document:
+
 - enclave build requirements
 - signing step
 - artifact output path
@@ -164,11 +181,13 @@ Document:
 **Step 6: Run compile check**
 
 Run:
+
 ```bash
 cargo test --lib --tests --no-run
 ```
 
 Expected:
+
 - host still compiles
 - enclave project exists
 - no production behavior change yet
@@ -183,6 +202,7 @@ git commit -m "feat: add sgx enclave project skeleton"
 ## Task 2: Add host-side enclave runtime loader
 
 **Files:**
+
 - Create: `/Users/yvan/AIWorkspace/credbridge/src/tee/host_runtime.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/mod.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/Cargo.toml`
@@ -190,6 +210,7 @@ git commit -m "feat: add sgx enclave project skeleton"
 **Step 1: Write the failing unit tests**
 
 Add tests in `host_runtime.rs`:
+
 ```rust
 #[test]
 fn hardware_runtime_rejects_missing_enclave_path() {}
@@ -201,6 +222,7 @@ fn hardware_runtime_rejects_nonexistent_enclave_artifact() {}
 **Step 2: Add host runtime abstraction**
 
 Expose:
+
 ```rust
 pub struct SgxHostRuntime { /* enclave id / handle */ }
 
@@ -215,6 +237,7 @@ impl SgxHostRuntime {
 **Step 3: Add runtime error model**
 
 Include:
+
 - enclave load failed
 - ECALL failed
 - invalid return size
@@ -227,6 +250,7 @@ Expose host runtime under `crate::tee`.
 **Step 5: Run tests**
 
 Run:
+
 ```bash
 cargo test hardware_runtime_rejects_missing_enclave_path --lib -- --nocapture
 cargo test hardware_runtime_rejects_nonexistent_enclave_artifact --lib -- --nocapture
@@ -242,15 +266,18 @@ git commit -m "feat: add sgx host runtime loader abstraction"
 ## Task 3: Implement enclave-side identity and report ECALLs
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/src/ecalls.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/sgx-enclave/src/lib.rs`
 
 **Step 1: Write enclave-focused host integration tests**
 
 Add ignored hardware tests in:
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/tests/sgx_hardware_tests.rs`
 
 Tests:
+
 ```rust
 #[test]
 #[ignore]
@@ -264,6 +291,7 @@ fn test_real_enclave_report_generation() {}
 **Step 2: Implement `ecall_get_identity`**
 
 Inside enclave, return:
+
 - `MRENCLAVE`
 - `MRSIGNER`
 
@@ -275,12 +303,14 @@ Output must be the raw SGX report bytes expected by the host quote library bridg
 **Step 4: Validate return sizes**
 
 Host runtime must reject:
+
 - report not 432 bytes
 - identity arrays not 32 bytes
 
 **Step 5: Run hardware compile check**
 
 Run:
+
 ```bash
 cargo test --features tee-hardware --lib --tests --no-run
 ```
@@ -295,6 +325,7 @@ git commit -m "feat: add real enclave identity and report ecalls"
 ## Task 4: Replace hardware report injection with real runtime report generation
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/hardware.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/provider.rs`
@@ -304,6 +335,7 @@ git commit -m "feat: add real enclave identity and report ecalls"
 Add tests that assert hardware mode no longer accepts report injection in strict production mode.
 
 Example:
+
 ```rust
 #[test]
 fn hardware_mode_prefers_real_report_runtime_over_env_report() {}
@@ -312,6 +344,7 @@ fn hardware_mode_prefers_real_report_runtime_over_env_report() {}
 **Step 2: Change quote generation source of truth**
 
 `load_or_generate_hardware_quote()` should:
+
 1. request report from `SgxHostRuntime`
 2. call DCAP quote library FFI
 3. only fall back to env-based report paths when an explicit compatibility flag is set
@@ -323,6 +356,7 @@ fn hardware_mode_prefers_real_report_runtime_over_env_report() {}
 **Step 4: Tighten fail-closed behavior**
 
 In `TEE_MODE=hardware`:
+
 - if no enclave artifact path: fail
 - if runtime load fails: fail
 - if report generation fails: fail
@@ -331,6 +365,7 @@ In `TEE_MODE=hardware`:
 **Step 5: Run focused tests**
 
 Run:
+
 ```bash
 cargo test test_hardware_mode_quote_generation_fails_closed --test dcap_tests -- --nocapture
 cargo test test_sgx_hardware_availability --test sgx_hardware_tests -- --ignored --nocapture
@@ -346,6 +381,7 @@ git commit -m "feat: generate hardware quotes from real enclave reports"
 ## Task 5: Replace simulated sealing with enclave-backed sealing key retrieval
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/sealing.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/host_runtime.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/enclave.rs`
@@ -355,12 +391,14 @@ git commit -m "feat: generate hardware quotes from real enclave reports"
 Add tests that assert hardware sealing path no longer calls `simulate_egetkey`.
 
 Suggested test strategy:
+
 - unit test with mocked host runtime
 - ignored hardware test with real enclave
 
 **Step 2: Introduce runtime-backed `get_sealing_key`**
 
 `SealingService::get_sealing_key()` should:
+
 - in simulation mode: keep current simulated behavior
 - in hardware mode: call `SgxHostRuntime::get_sealing_key(policy)`
 
@@ -375,6 +413,7 @@ Do not source L0 from env root key in strict hardware mode once enclave-backed s
 **Step 5: Run tests**
 
 Run:
+
 ```bash
 cargo test test_seal_and_restore_master_key_closed_loop --lib -- --nocapture
 cargo test test_sgx_sealing_key_derivation --test sgx_hardware_tests -- --ignored --nocapture
@@ -390,12 +429,14 @@ git commit -m "feat: source hardware sealing keys from real sgx enclave"
 ## Task 6: Refactor host `Enclave` into a proxy over real runtime state
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/enclave.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/provider.rs`
 
 **Step 1: Add runtime handle field**
 
 Add:
+
 ```rust
 runtime: Option<Arc<SgxHostRuntime>>
 ```
@@ -403,6 +444,7 @@ runtime: Option<Arc<SgxHostRuntime>>
 **Step 2: Ensure initialization order**
 
 Initialization sequence in hardware mode must be:
+
 1. load signed enclave
 2. fetch identity
 3. fetch sealing key
@@ -416,6 +458,7 @@ Do not regress the existing simulation tests.
 **Step 4: Update debug/status output**
 
 Expose in `Debug`/metrics:
+
 - runtime loaded
 - enclave artifact path
 - root key source
@@ -423,6 +466,7 @@ Expose in `Debug`/metrics:
 **Step 5: Run tests**
 
 Run:
+
 ```bash
 cargo test test_enclave_lifecycle --lib -- --nocapture
 cargo test test_hardware_mode_fails_closed_without_provider --lib -- --nocapture
@@ -438,6 +482,7 @@ git commit -m "refactor: proxy host enclave state to real sgx runtime"
 ## Task 7: Promote hardware verification to strict production path
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/hardware.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/main.rs`
@@ -446,12 +491,14 @@ git commit -m "refactor: proxy host enclave state to real sgx runtime"
 **Step 1: Remove production dependence on quote verifier commands**
 
 Hardware mode should prefer:
+
 1. native DCAP verifier FFI
 2. explicit emergency command backend only when compatibility mode is enabled
 
 **Step 2: Update logs**
 
 Startup logs must state:
+
 - hardware feature enabled
 - enclave artifact loaded
 - report source = enclave
@@ -460,6 +507,7 @@ Startup logs must state:
 **Step 3: Update runtime snapshot / health**
 
 Status should distinguish:
+
 - no enclave artifact
 - enclave loaded but quote failed
 - quote generated but verification failed
@@ -468,6 +516,7 @@ Status should distinguish:
 **Step 4: Run tests**
 
 Run:
+
 ```bash
 cargo test test_get_attestation_status_endpoint --test attestation_api_tests -- --nocapture
 cargo test test_health_check_endpoint --test attestation_api_tests -- --nocapture
@@ -483,11 +532,13 @@ git commit -m "feat: promote real dcap verification to production hardware path"
 ## Task 8: Update SGX hardware integration tests to assert success, not placeholders
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/tests/sgx_hardware_tests.rs`
 
 **Step 1: Rewrite hardware tests**
 
 Replace old fail-closed placeholder expectations with real success-path assertions:
+
 - enclave loads
 - measurements are non-zero and stable
 - DCAP quote generation succeeds
@@ -497,12 +548,14 @@ Replace old fail-closed placeholder expectations with real success-path assertio
 **Step 2: Split tests**
 
 Keep:
+
 - success-path hardware tests
 - negative-path tests for missing artifact / missing libraries / bad collateral
 
 **Step 3: Add explicit prerequisites helper**
 
 Create a helper that checks:
+
 - `/dev/sgx_enclave`
 - `/dev/sgx_provision`
 - enclave artifact path
@@ -511,11 +564,13 @@ Create a helper that checks:
 **Step 4: Run hardware suite on SGX runner**
 
 Run:
+
 ```bash
 TEE_MODE=hardware cargo test --features tee-hardware --test sgx_hardware_tests -- --ignored --test-threads=1
 ```
 
 Expected:
+
 - success-path tests pass on SGX runner
 - fail fast with explicit prerequisite message otherwise
 
@@ -529,6 +584,7 @@ git commit -m "test: validate real sgx enclave hardware success path"
 ## Task 9: Tighten deployment and artifact pipeline
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/Dockerfile`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/.drone.yml`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/docker/*` as needed
@@ -538,18 +594,21 @@ git commit -m "test: validate real sgx enclave hardware success path"
 **Step 1: Produce enclave artifact during build**
 
 Build pipeline must generate and package:
+
 - host binary
 - signed enclave artifact
 
 **Step 2: Ensure runtime image carries both**
 
 Image should include:
+
 - `/app/vault-service`
 - `/app/credbridge_enclave.signed.so`
 
 **Step 3: Document runtime env**
 
 Document:
+
 - `TEE_ENCLAVE_PATH`
 - DCAP library mounting or image packaging
 - required SGX device nodes
@@ -557,6 +616,7 @@ Document:
 **Step 4: Validate image contract**
 
 Run:
+
 ```bash
 docker build -t credbridge-sgx-test .
 ```
@@ -571,6 +631,7 @@ git commit -m "build: package real sgx enclave artifact with host service"
 ## Task 10: Remove transitional compatibility backdoors
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/hardware.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/mod.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/main.rs`
@@ -578,6 +639,7 @@ git commit -m "build: package real sgx enclave artifact with host service"
 **Step 1: Reject env-injected report/root-key in strict production**
 
 In strict hardware production:
+
 - reject `TEE_SGX_ROOT_KEY_HEX`
 - reject `TEE_SGX_ROOT_KEY_PATH`
 - reject report injection env vars
@@ -585,6 +647,7 @@ In strict hardware production:
 **Step 2: Keep compatibility mode explicit**
 
 If compatibility fallback is still needed, gate it behind a separate env such as:
+
 ```text
 TEE_HARDWARE_COMPAT_ALLOW_EXTERNAL_MATERIALS=true
 ```
@@ -598,6 +661,7 @@ Add tests that ensure strict production rejects injected materials.
 **Step 4: Run full quality gate**
 
 Run:
+
 ```bash
 cargo fmt
 cargo clippy --tests -- -D warnings
@@ -615,6 +679,7 @@ git commit -m "chore: remove transitional hardware material injection backdoors"
 ## Definition of Done
 
 All of the following are true:
+
 - `TEE_MODE=hardware` uses a real signed SGX enclave artifact
 - host runtime loads enclave successfully
 - MRENCLAVE/MRSIGNER come from real enclave identity ECALLs
@@ -642,6 +707,7 @@ All of the following are true:
 ## Handoff Notes
 
 Recommended execution order:
+
 1. Task 1-3 first to make the enclave project real
 2. Task 4-6 to replace host mock paths
 3. Task 7-10 to harden and productionize

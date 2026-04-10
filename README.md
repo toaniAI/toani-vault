@@ -80,6 +80,7 @@ Primary implementation areas:
 Toani Vault provides a powerful CLI tool for operators and automation workflows.
 
 For the latest CLI install and usage details, see:
+
 - [CLI Install & Usage (npm)](cli/README.md)
 - [CLI Skill for AI Agents](cli/SKILL.md)
 
@@ -87,7 +88,7 @@ For the latest CLI install and usage details, see:
 
 ```bash
 # Install from npm (recommended)
-npm install -g @toani/vault-cli@0.0.1
+npm install -g @toani/vault-cli@0.0.2
 
 # Install from source
 cargo install --path cli
@@ -116,26 +117,27 @@ toani credentials list
 
 #### Authentication (`auth`)
 
-| Command | Description |
-|---------|-------------|
-| `toani auth login --url <url> --token <token>` | Login to Toani Vault service |
-| `toani auth status` | Check login status |
-| `toani auth logout` | Logout and remove local config |
+| Command                                        | Description                    |
+| ---------------------------------------------- | ------------------------------ |
+| `toani auth login --url <url> --token <token>` | Login to Toani Vault service   |
+| `toani auth status`                            | Check login status             |
+| `toani auth logout`                            | Logout and remove local config |
 
 #### Credential Management (`credentials`)
 
-| Command | Description |
-|---------|-------------|
-| `toani credentials list` | List all credentials |
-| `toani credentials get <id>` | Get credential details |
-| `toani credentials create` | Create a new credential |
-| `toani credentials update <id>` | Update existing credential |
-| `toani credentials delete <id>` | Delete a credential |
-| `toani credentials decrypt <id>` | Decrypt and view credential value |
-| `toani credentials versions <id>` | List version history |
-| `toani credentials rollback <id> <version>` | Rollback to specific version |
+| Command                                     | Description                       |
+| ------------------------------------------- | --------------------------------- |
+| `toani credentials list`                    | List all credentials              |
+| `toani credentials get <id>`                | Get credential details            |
+| `toani credentials create`                  | Create a new credential           |
+| `toani credentials update <id>`             | Update existing credential        |
+| `toani credentials delete <id>`             | Delete a credential               |
+| `toani credentials decrypt <id>`            | Decrypt and view credential value |
+| `toani credentials versions <id>`           | List version history              |
+| `toani credentials rollback <id> <version>` | Rollback to specific version      |
 
 **Credential Types Supported:**
+
 - `api_key` - API keys
 - `username_password` - Username/password pairs
 - `oauth_refresh` - OAuth refresh tokens
@@ -183,12 +185,12 @@ toani credentials rollback <credential-id> 3
 
 #### Token Management (`tokens`)
 
-| Command | Description |
-|---------|-------------|
+| Command                             | Description             |
+| ----------------------------------- | ----------------------- |
 | `toani tokens create --name <name>` | Create new access token |
-| `toani tokens list` | List all tokens |
-| `toani tokens revoke <id>` | Revoke a token |
-| `toani tokens verify [token]` | Verify token validity |
+| `toani tokens list`                 | List all tokens         |
+| `toani tokens revoke <id>`          | Revoke a token          |
+| `toani tokens verify [token]`       | Verify token validity   |
 
 **Examples:**
 
@@ -210,15 +212,15 @@ toani tokens verify "v4.local.xxx"
 
 Execute credential-consuming operations in isolated TEE sandbox sessions.
 
-| Command | Description |
-|---------|-------------|
-| `toani sandbox create-session --credential-id <id> --original-intent <desc>` | Create sandbox session |
-| `toani sandbox list-sessions` | List active sessions |
-| `toani sandbox get-session <id>` | Get session details |
-| `toani sandbox terminate <id>` | Terminate session |
-| `toani sandbox execute <session-id> --operation-type <type>` | Execute operation |
-| `toani sandbox get-operation <operation-id>` | Get operation result |
-| `toani sandbox stats` | View sandbox statistics |
+| Command                                                                      | Description             |
+| ---------------------------------------------------------------------------- | ----------------------- |
+| `toani sandbox create-session --credential-id <id> --original-intent <desc>` | Create sandbox session  |
+| `toani sandbox list-sessions`                                                | List active sessions    |
+| `toani sandbox get-session <id>`                                             | Get session details     |
+| `toani sandbox terminate <id>`                                               | Terminate session       |
+| `toani sandbox execute <session-id> --operation-type <type>`                 | Execute operation       |
+| `toani sandbox get-operation <operation-id>`                                 | Get operation result    |
+| `toani sandbox stats`                                                        | View sandbox statistics |
 
 **Examples:**
 
@@ -239,11 +241,11 @@ toani sandbox stats
 
 #### Audit Logs (`audit`)
 
-| Command | Description |
-|---------|-------------|
-| `toani audit logs` | Query audit logs |
-| `toani audit export <file>` | Export audit logs |
-| `toani audit verify` | Verify audit log integrity |
+| Command                     | Description                |
+| --------------------------- | -------------------------- |
+| `toani audit logs`          | Query audit logs           |
+| `toani audit export <file>` | Export audit logs          |
+| `toani audit verify`        | Verify audit log integrity |
 
 **Examples:**
 
@@ -269,14 +271,15 @@ toani audit verify
 
 #### Configuration (`config`)
 
-| Command | Description |
-|---------|-------------|
-| `toani config init` | Initialize configuration |
-| `toani config show` | Display current configuration |
-| `toani config set <key> <value>` | Set configuration value |
-| `toani config get <key>` | Get configuration value |
+| Command                          | Description                   |
+| -------------------------------- | ----------------------------- |
+| `toani config init`              | Initialize configuration      |
+| `toani config show`              | Display current configuration |
+| `toani config set <key> <value>` | Set configuration value       |
+| `toani config get <key>`         | Get configuration value       |
 
 **Configuration Keys:**
+
 - `url` - Toani Vault service URL
 - `token` - API authentication token
 - `output_format` - Output format: `table` or `json`
@@ -305,21 +308,21 @@ toani config show
 
 ### Global Options
 
-| Option | Description |
-|--------|-------------|
+| Option                  | Description                                       |
+| ----------------------- | ------------------------------------------------- |
 | `-o, --output <format>` | Output format: `table` or `json` (default: table) |
-| `-c, --config <path>` | Custom configuration file path |
-| `-v, --verbose` | Enable verbose logging |
-| `-h, --help` | Show help information |
-| `-V, --version` | Show version information |
+| `-c, --config <path>`   | Custom configuration file path                    |
+| `-v, --verbose`         | Enable verbose logging                            |
+| `-h, --help`            | Show help information                             |
+| `-V, --version`         | Show version information                          |
 
 ### Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `CREDBRIDGE_URL` | Service URL override |
-| `CREDBRIDGE_TOKEN` | API token override |
-| `HOME` | Configuration directory (default: `~/.config/credbridge/`) |
+| Variable           | Description                                                |
+| ------------------ | ---------------------------------------------------------- |
+| `CREDBRIDGE_URL`   | Service URL override                                       |
+| `CREDBRIDGE_TOKEN` | API token override                                         |
+| `HOME`             | Configuration directory (default: `~/.config/credbridge/`) |
 
 ### Configuration File
 

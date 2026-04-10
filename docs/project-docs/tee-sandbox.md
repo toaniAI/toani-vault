@@ -75,6 +75,7 @@ pub enum EnclaveState {
 ```
 
 **主要功能**:
+
 - 初始化/终止 Enclave
 - 加密/解密凭证
 - 密钥生命周期管理
@@ -95,6 +96,7 @@ pub struct ProtectedKeyMaterial {
 ```
 
 **安全特性**:
+
 - TTL 缓存（默认 5 分钟）
 - 自动 Zeroize 清理
 - Enclave 重启后密钥恢复
@@ -116,6 +118,7 @@ pub enum KeyLifecycle {
 ```
 
 **清理策略**:
+
 - 定期自动清理
 - 手动触发清理
 - 紧急密钥吊销
@@ -138,6 +141,7 @@ pub enum SealPolicy {
 ```
 
 **使用场景**:
+
 - 凭证加密存储
 - 配置数据保护
 - 审计日志加密
@@ -161,6 +165,7 @@ pub struct Quote {
 ```
 
 **认证流程**:
+
 1. Verifier 生成随机挑战
 2. Enclave 生成 Quote (包含挑战哈希)
 3. Verifier 验证 Quote 签名
@@ -185,6 +190,7 @@ pub struct DcapAttestationReport {
 ```
 
 **支持的证书服务**:
+
 - Intel PCS (Production Cert Service)
 - Intel PCS (Testing)
 
@@ -221,6 +227,7 @@ pub enum SandboxStatus {
 ### 沙箱 API
 
 **创建会话**:
+
 ```json
 POST /api/v1/sandbox/sessions
 {
@@ -234,13 +241,14 @@ POST /api/v1/sandbox/sessions
 
 **请求字段说明**:
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `credential_id` | UUID | 是 | 凭证ID，用于在沙箱中安全访问凭证 |
-| `original_intent` | string | 是 | 原始意图描述，用于审计和AI审核，最大500字符 |
-| `metadata` | object | 否 | 可选的会话元数据 |
+| 字段              | 类型   | 必填 | 说明                                        |
+| ----------------- | ------ | ---- | ------------------------------------------- |
+| `credential_id`   | UUID   | 是   | 凭证ID，用于在沙箱中安全访问凭证            |
+| `original_intent` | string | 是   | 原始意图描述，用于审计和AI审核，最大500字符 |
+| `metadata`        | object | 否   | 可选的会话元数据                            |
 
 **执行操作**:
+
 ```json
 POST /api/v1/sandbox/sessions/{id}/execute
 {
@@ -253,6 +261,7 @@ POST /api/v1/sandbox/sessions/{id}/execute
 ```
 
 **关闭会话**:
+
 ```
 DELETE /api/v1/sandbox/sessions/{id}
 ```
@@ -291,12 +300,12 @@ DELETE /api/v1/sandbox/sessions/{id}
 
 ## TEE 类型支持
 
-| TEE 类型 | 支持状态 | 远程认证 | 密封存储 |
-|----------|----------|----------|----------|
-| Intel SGX | ✅ 完整支持 | ✅ 支持 | ✅ 支持 |
-| AMD SEV-SNP | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
-| AWS Nitro | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
-| ARM TrustZone | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
+| TEE 类型                           | 支持状态        | 远程认证  | 密封存储    |
+| ---------------------------------- | --------------- | --------- | ----------- |
+| Intel SGX                          | ✅ 完整支持     | ✅ 支持   | ✅ 支持     |
+| AMD SEV-SNP                        | 🔜 计划支持     | 🔜 计划   | 🔜 计划     |
+| AWS Nitro                          | 🔜 计划支持     | 🔜 计划   | 🔜 计划     |
+| ARM TrustZone                      | 🔜 计划支持     | 🔜 计划   | 🔜 计划     |
 | Simulation (`TEE_MODE=simulation`) | ✅ 显式模拟测试 | ❌ 不支持 | ⚠️ 模拟实现 |
 
 ---
@@ -460,17 +469,20 @@ KEY_TTL_SECONDS=300
 ### 常见问题
 
 **Enclave 初始化失败**:
+
 - 检查 SGX 驱动是否加载: `ls /dev/sgx*`
 - 检查 Enclave 文件路径是否正确
 - 检查文件权限
 - 若只需 simulation-safe 调试，请显式设置 `TEE_MODE=simulation`
 
 **远程认证失败**:
+
 - 检查网络连接 (Intel PCS)
 - 检查 PCK 证书缓存
 - 验证 TCB 级别
 
 **密钥解密失败**:
+
 - 检查密封策略匹配
 - 验证 Enclave 测量值
 - 检查密钥版本
@@ -493,4 +505,4 @@ ls -la /var/lib/credbridge/sealed/
 
 ---
 
-*本文档由 BMAD document-project 工作流自动生成*
+_本文档由 BMAD document-project 工作流自动生成_

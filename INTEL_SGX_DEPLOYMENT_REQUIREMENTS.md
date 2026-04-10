@@ -42,35 +42,35 @@ CredBridge 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭�
 
 ### 2.1 CPU 要求
 
-| 要求项 | 最低配置 | 推荐配置 | 验证方法 |
-|--------|---------|---------|---------|
-| CPU 型号 | Intel 第 6 代酷睿 | Intel 第 10 代酷睿或更新 | `cat /proc/cpuinfo` |
-| SGX 支持 | SGX1 | SGX1 + SGX2 | `grep -E "sgx|sgx_lc" /proc/cpuinfo` |
-| FLC 支持 | 必需 | 必需 | `grep sgx_lc /proc/cpuinfo` |
-| 虚拟化 | VT-x 启用 | VT-x + VT-d 启用 | BIOS 设置 |
+| 要求项   | 最低配置          | 推荐配置                 | 验证方法                    |
+| -------- | ----------------- | ------------------------ | --------------------------- | ---------------------- |
+| CPU 型号 | Intel 第 6 代酷睿 | Intel 第 10 代酷睿或更新 | `cat /proc/cpuinfo`         |
+| SGX 支持 | SGX1              | SGX1 + SGX2              | `grep -E "sgx               | sgx_lc" /proc/cpuinfo` |
+| FLC 支持 | 必需              | 必需                     | `grep sgx_lc /proc/cpuinfo` |
+| 虚拟化   | VT-x 启用         | VT-x + VT-d 启用         | BIOS 设置                   |
 
 ### 2.2 内存要求
 
-| 要求项 | 最低配置 | 推荐配置 | 说明 |
-|--------|---------|---------|------|
-| 系统内存 | 4GB | 8GB+ | 包含 EPC 内存开销 |
-| EPC 内存 | 64MB | 128MB+ | Enclave 页面缓存，BIOS 中分配 |
-| Swap | 2GB | 4GB+ | 防止内存溢出 |
+| 要求项   | 最低配置 | 推荐配置 | 说明                          |
+| -------- | -------- | -------- | ----------------------------- |
+| 系统内存 | 4GB      | 8GB+     | 包含 EPC 内存开销             |
+| EPC 内存 | 64MB     | 128MB+   | Enclave 页面缓存，BIOS 中分配 |
+| Swap     | 2GB      | 4GB+     | 防止内存溢出                  |
 
 ### 2.3 存储要求
 
-| 要求项 | 要求 | 说明 |
-|--------|------|------|
-| 系统盘 | 50GB+ SSD | 包含应用和依赖 |
+| 要求项 | 要求         | 说明                   |
+| ------ | ------------ | ---------------------- |
+| 系统盘 | 50GB+ SSD    | 包含应用和依赖         |
 | 数据盘 | 根据业务需求 | 持久化数据（建议加密） |
 
 ### 2.4 网络要求
 
-| 要求项 | 要求 | 说明 |
-|--------|------|------|
-| 外网访问 | 必需 | 访问 Intel PCS 证书服务 (https://api.trustedservices.intel.com) |
-| 防火墙 | 开放 443 端口 | HTTPS 出站流量 |
-| 代理 | 如有需要配置 | 某些企业环境需要代理访问 Intel |
+| 要求项   | 要求          | 说明                                                            |
+| -------- | ------------- | --------------------------------------------------------------- |
+| 外网访问 | 必需          | 访问 Intel PCS 证书服务 (https://api.trustedservices.intel.com) |
+| 防火墙   | 开放 443 端口 | HTTPS 出站流量                                                  |
+| 代理     | 如有需要配置  | 某些企业环境需要代理访问 Intel                                  |
 
 ---
 
@@ -81,17 +81,20 @@ CredBridge 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭�
 **重要**: 以下设置需要在服务器 BIOS/UEFI 中配置，需要重启服务器。
 
 1. **进入 BIOS 设置**
+
    ```
    重启服务器，在启动时按 Del/F2/F10 键进入 BIOS
    ```
 
 2. **启用虚拟化技术**
+
    ```
    Advanced → CPU Configuration → Intel Virtualization Technology: Enabled
    Advanced → System Agent Configuration → VT-d: Enabled (如果可用)
    ```
 
 3. **启用 SGX**
+
    ```
    Advanced → CPU Configuration → Intel SGX: Enabled
    或
@@ -99,6 +102,7 @@ CredBridge 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭�
    ```
 
 4. **配置 SGX 控制**
+
    ```
    Advanced → CPU Configuration → SGX Control: Software Controlled
    或
@@ -106,12 +110,14 @@ CredBridge 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭�
    ```
 
 5. **分配 EPC 内存**
+
    ```
    Advanced → CPU Configuration → SGX EPC Size: 128MB (或最大值)
    注意：某些 BIOS 自动分配，无需手动设置
    ```
 
 6. **启用 FLC (Flexible Launch Control)**
+
    ```
    Advanced → CPU Configuration → Flexible Launch Control: Enabled
    ```
@@ -138,13 +144,13 @@ grep -E "sgx|sgx_lc" /proc/cpuinfo
 
 ### 4.1 支持的操作系统
 
-| 操作系统 | 版本 | 内核版本 | 推荐度 |
-|---------|------|---------|--------|
-| Ubuntu Server | 22.04 LTS | 5.15+ | ★★★★★ |
-| Ubuntu Server | 20.04 LTS | 5.11+ | ★★★★☆ |
-| CentOS Stream | 9 | 5.14+ | ★★★★☆ |
-| RHEL | 9.x | 5.14+ | ★★★★☆ |
-| Debian | 11+ | 5.10+ | ★★★☆☆ |
+| 操作系统      | 版本      | 内核版本 | 推荐度 |
+| ------------- | --------- | -------- | ------ |
+| Ubuntu Server | 22.04 LTS | 5.15+    | ★★★★★  |
+| Ubuntu Server | 20.04 LTS | 5.11+    | ★★★★☆  |
+| CentOS Stream | 9         | 5.14+    | ★★★★☆  |
+| RHEL          | 9.x       | 5.14+    | ★★★★☆  |
+| Debian        | 11+       | 5.10+    | ★★★☆☆  |
 
 **推荐**: Ubuntu Server 22.04 LTS（最佳兼容性和文档支持）
 
@@ -706,10 +712,10 @@ sudo apt install nginx
 server {
     listen 443 ssl;
     server_name credbridge.example.com;
-    
+
     ssl_certificate /etc/ssl/certs/credbridge.crt;
     ssl_certificate_key /etc/ssl/private/credbridge.key;
-    
+
     location / {
         proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
@@ -788,11 +794,13 @@ sudo systemctl restart credbridge
 #### 问题 1: SGX 设备节点不存在
 
 **症状**:
+
 ```
 Error: SGX device not found
 ```
 
 **解决方案**:
+
 ```bash
 # 检查驱动
 lsmod | grep sgx
@@ -807,11 +815,13 @@ sudo modprobe intel_sgx
 #### 问题 2: AESM 服务失败
 
 **症状**:
+
 ```
 Error: AESM service not responding
 ```
 
 **解决方案**:
+
 ```bash
 # 重启服务
 sudo systemctl restart aesmd
@@ -826,11 +836,13 @@ ldconfig -p | grep sgx
 #### 问题 3: Quote 生成失败
 
 **症状**:
+
 ```
 Error: Quote generation failed
 ```
 
 **解决方案**:
+
 ```bash
 # 检查 DCAP 库
 ldd /opt/credbridge/vault-service | grep sgx
@@ -844,11 +856,13 @@ cat /sys/devices/system/cpu/sgx/epc_size
 #### 问题 4: 无法访问 Intel PCS
 
 **症状**:
+
 ```
 Error: Failed to connect to Intel PCS
 ```
 
 **解决方案**:
+
 ```bash
 # 检查网络
 curl -I https://api.trustedservices.intel.com
@@ -977,10 +991,10 @@ tar czf diagnosis.tar.gz ~/credbridge_diagnosis
 ## 附录 B: 版本兼容性
 
 | CredBridge 版本 | Intel SGX Driver | DCAP Library | 最低内核 |
-|----------------|------------------|--------------|---------|
-| 0.1.x | 2.11+ | 1.15+ | 5.11 |
-| 0.2.x | 2.20+ | 1.18+ | 5.14 |
-| 最新 | 2.24+ | 1.20+ | 5.15 |
+| --------------- | ---------------- | ------------ | -------- |
+| 0.1.x           | 2.11+            | 1.15+        | 5.11     |
+| 0.2.x           | 2.20+            | 1.18+        | 5.14     |
+| 最新            | 2.24+            | 1.20+        | 5.15     |
 
 ---
 

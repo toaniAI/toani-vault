@@ -13,11 +13,13 @@
 ### Task 1: Backend auth session shape
 
 **Files:**
+
 - Modify: `src/api/auth.rs`
 - Modify: `src/api/middleware.rs`
 - Test: `src/api/auth.rs`
 
 **Steps:**
+
 1. Add backend response structs for `memberships`, `current_tenant`, and `current_membership`, and add `default_tenant_id` to `UserProfile`.
 2. Extract shared mapping helpers for user profile, membership info, and tenant selection fallback.
 3. Update `POST /auth/session` to fetch all active memberships, prioritize invitation/default/first fallback, and return the new shape.
@@ -28,6 +30,7 @@
 ### Task 2: Frontend auth normalization and store
 
 **Files:**
+
 - Modify: `frontend/src/shared/api/authSession.ts`
 - Modify: `frontend/src/shared/stores/authStore.ts`
 - Modify: `frontend/src/shared/api/types.ts`
@@ -36,6 +39,7 @@
 - Test: `frontend/src/shared/api/auth.test.mjs`
 
 **Steps:**
+
 1. Expand raw auth response types to accept `memberships[]`, `current_tenant`, and `current_membership`.
 2. Normalize full backend membership arrays and compute `activeMembership` as a derived value only.
 3. Update the auth store so `setSession` validates or derives `currentTenantId` from explicit input, `defaultTenantId`, or first membership.
@@ -45,6 +49,7 @@
 ### Task 3: Frontend tenant API and query invalidation
 
 **Files:**
+
 - Modify: `frontend/src/shared/api/auth-hooks.ts`
 - Modify: `frontend/src/shared/api/auth-services.ts`
 - Modify: `frontend/src/shared/api/hooks.ts`
@@ -52,6 +57,7 @@
 - Add: `frontend/src/shared/api/tenant.ts`
 
 **Steps:**
+
 1. Add a dedicated tenant API client for create/get/config/update operations.
 2. Standardize tenant-aware query keys for memberships, tenant, tenant-config, members, and invitations.
 3. Add hooks for `useMemberships`, `useTenant`, `useTenantConfig`, `useCreateTenant`, and `useSwitchTenant`.
@@ -61,12 +67,14 @@
 ### Task 4: Routes, guards, and layout
 
 **Files:**
+
 - Modify: `frontend/src/app/router-components.tsx`
 - Modify: `frontend/src/app/Layout.tsx`
 - Modify: `frontend/src/app/router.tsx`
 - Add: `frontend/src/features/tenants/pages/TenantsPage.tsx`
 
 **Steps:**
+
 1. Add a tenant-aware route guard for pages that require a valid current tenant and tenant-level permissions.
 2. Update public-route redirects to send onboarding-complete users with zero memberships to `/tenants`.
 3. Add the `/tenants` route and sidebar navigation entry.
@@ -76,6 +84,7 @@
 ### Task 5: Tenant-scoped pages
 
 **Files:**
+
 - Modify: `frontend/src/features/tenants/pages/UsersPage.tsx`
 - Modify: `frontend/src/features/tenants/pages/SettingsPage.tsx`
 - Modify: `frontend/src/features/auth/pages/ProfilePage.tsx`
@@ -84,6 +93,7 @@
 - Modify: `frontend/src/features/auth/pages/InvitationAcceptPage.tsx`
 
 **Steps:**
+
 1. Refactor `UsersPage` to require `currentTenantId`, show tenant context in the header, and rely on current membership role/scopes instead of member-list inference for page access.
 2. Refactor `SettingsPage` into a current-tenant page and load tenant config.
 3. Expand `ProfilePage` to show all memberships and support setting the default tenant through profile update.
@@ -93,10 +103,12 @@
 ### Task 6: Verification
 
 **Files:**
+
 - Test: `tests/` auth-related coverage if needed
 - Test: `frontend/src/**/*.test.ts`
 
 **Steps:**
+
 1. Run targeted frontend tests for auth normalization and tenant-aware behavior.
 2. Run targeted Rust tests for auth response selection logic.
 3. Run `cargo fmt`.

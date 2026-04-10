@@ -4,7 +4,7 @@
  * 提供 TEE 安全沙箱中的浏览器自动化功能
  */
 
-import type { CredBridgeClient } from './client.js';
+import type { CredBridgeClient } from "./client.js";
 import {
   type CreateSessionRequest,
   type CreateSessionResponse,
@@ -22,7 +22,7 @@ import {
   SessionStatus,
   OperationType,
   OperationStatus,
-} from './types.js';
+} from "./types.js";
 
 interface SandboxOperationInfoApi {
   operation_id: string;
@@ -75,18 +75,22 @@ export class SandboxService {
    */
   public async createSession(
     request: CreateSessionRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<CreateSessionResponse> {
-    return this.client.post<CreateSessionResponse>('/sandbox/sessions', {
-      service_id: request.serviceId,
-      original_intent: request.originalIntent,
-      credential_id: request.credentialId,
-      start_url: request.startUrl,
-      viewport_width: request.viewportWidth,
-      viewport_height: request.viewportHeight,
-      user_agent: request.userAgent,
-      timeout: request.timeout,
-    }, options);
+    return this.client.post<CreateSessionResponse>(
+      "/sandbox/sessions",
+      {
+        service_id: request.serviceId,
+        original_intent: request.originalIntent,
+        credential_id: request.credentialId,
+        start_url: request.startUrl,
+        viewport_width: request.viewportWidth,
+        viewport_height: request.viewportHeight,
+        user_agent: request.userAgent,
+        timeout: request.timeout,
+      },
+      options,
+    );
   }
 
   /**
@@ -102,9 +106,12 @@ export class SandboxService {
    * ```
    */
   public async listSessions(
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<{ sessions: SessionInfo[]; total: number }> {
-    const response = await this.client.get<ListSessionsResponse>('/sandbox/sessions', options);
+    const response = await this.client.get<ListSessionsResponse>(
+      "/sandbox/sessions",
+      options,
+    );
     return { sessions: response.sessions, total: response.total };
   }
 
@@ -124,9 +131,12 @@ export class SandboxService {
    */
   public async getSession(
     sessionId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<SessionInfo> {
-    return this.client.get<SessionInfo>(`/sandbox/sessions/${sessionId}`, options);
+    return this.client.get<SessionInfo>(
+      `/sandbox/sessions/${sessionId}`,
+      options,
+    );
   }
 
   /**
@@ -148,7 +158,7 @@ export class SandboxService {
   public async executeOperation(
     sessionId: string,
     request: ExecuteOperationRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     const parameters: Record<string, unknown> = {};
     if (request.selector !== undefined) parameters.selector = request.selector;
@@ -156,9 +166,11 @@ export class SandboxService {
     if (request.url !== undefined) parameters.url = request.url;
     if (request.script !== undefined) parameters.script = request.script;
     if (request.bindings !== undefined) parameters.bindings = request.bindings;
-    if (request.attribute !== undefined) parameters.attribute = request.attribute;
+    if (request.attribute !== undefined)
+      parameters.attribute = request.attribute;
     if (request.timeout !== undefined) parameters.timeout_ms = request.timeout;
-    if (request.waitCondition !== undefined) parameters.wait_condition = request.waitCondition;
+    if (request.waitCondition !== undefined)
+      parameters.wait_condition = request.waitCondition;
 
     return this.client.post<ExecuteOperationResponse>(
       `/sandbox/sessions/${sessionId}/execute`,
@@ -167,7 +179,7 @@ export class SandboxService {
         description: request.description ?? request.operationType,
         parameters,
       },
-      options
+      options,
     );
   }
 
@@ -186,9 +198,13 @@ export class SandboxService {
    */
   public async pauseSession(
     sessionId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<SessionInfo> {
-    return this.client.post<SessionInfo>(`/sandbox/sessions/${sessionId}/pause`, {}, options);
+    return this.client.post<SessionInfo>(
+      `/sandbox/sessions/${sessionId}/pause`,
+      {},
+      options,
+    );
   }
 
   /**
@@ -206,9 +222,13 @@ export class SandboxService {
    */
   public async resumeSession(
     sessionId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<SessionInfo> {
-    return this.client.post<SessionInfo>(`/sandbox/sessions/${sessionId}/resume`, {}, options);
+    return this.client.post<SessionInfo>(
+      `/sandbox/sessions/${sessionId}/resume`,
+      {},
+      options,
+    );
   }
 
   /**
@@ -226,11 +246,11 @@ export class SandboxService {
    */
   public async closeSession(
     sessionId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<{ sessionId: string; closed: boolean }> {
     return this.client.delete<{ sessionId: string; closed: boolean }>(
       `/sandbox/sessions/${sessionId}`,
-      options
+      options,
     );
   }
 
@@ -259,7 +279,7 @@ export class SandboxService {
   public async takeScreenshot(
     sessionId: string,
     options?: ScreenshotOptions,
-    requestOptions?: RequestOptions
+    requestOptions?: RequestOptions,
   ): Promise<ScreenshotResponse> {
     return this.client.post<ScreenshotResponse>(
       `/sandbox/sessions/${sessionId}/screenshot`,
@@ -270,7 +290,7 @@ export class SandboxService {
         quality: options?.quality,
         clip: options?.clip,
       },
-      requestOptions
+      requestOptions,
     );
   }
 
@@ -288,8 +308,8 @@ export class SandboxService {
    *   format: 'json',
    *   selector: '.data-table',
    *   extractionRules: [
-     *     { name: 'symbol', selector: '.symbol' },
-     *     { name: 'price', selector: '.price' },
+   *     { name: 'symbol', selector: '.symbol' },
+   *     { name: 'price', selector: '.price' },
    *   ],
    * });
    * ```
@@ -297,7 +317,7 @@ export class SandboxService {
   public async exportData(
     sessionId: string,
     request: ExportDataRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ExportDataResponse> {
     return this.client.post<ExportDataResponse>(
       `/sandbox/sessions/${sessionId}/export`,
@@ -306,7 +326,7 @@ export class SandboxService {
         selector: request.selector,
         extraction_rules: request.extractionRules,
       },
-      options
+      options,
     );
   }
 
@@ -315,11 +335,11 @@ export class SandboxService {
    */
   public async getOperation(
     operationId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<SandboxOperationInfo> {
     const response = await this.client.get<SandboxOperationInfoApi>(
       `/sandbox/operations/${operationId}`,
-      options
+      options,
     );
 
     return {
@@ -337,7 +357,10 @@ export class SandboxService {
    * 获取 Sandbox 统计
    */
   public async getStats(options?: RequestOptions): Promise<SandboxStats> {
-    const response = await this.client.get<SandboxStatsApi>('/sandbox/stats', options);
+    const response = await this.client.get<SandboxStatsApi>(
+      "/sandbox/stats",
+      options,
+    );
     return {
       poolStatus: response.pool_status,
       activeSessions: response.active_sessions,
@@ -367,12 +390,12 @@ export class SandboxService {
   public async navigate(
     sessionId: string,
     url: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
       { operationType: OperationType.Navigate, url },
-      options
+      options,
     );
   }
 
@@ -392,12 +415,12 @@ export class SandboxService {
   public async click(
     sessionId: string,
     selector: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
       { operationType: OperationType.Click, selector },
-      options
+      options,
     );
   }
 
@@ -419,13 +442,13 @@ export class SandboxService {
   public async fill(
     sessionId: string,
     selector: string,
-    value: ExecuteOperationRequest['value'],
-    options?: RequestOptions
+    value: ExecuteOperationRequest["value"],
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
       { operationType: OperationType.Fill, selector, value },
-      options
+      options,
     );
   }
 
@@ -446,12 +469,12 @@ export class SandboxService {
   public async getText(
     sessionId: string,
     selector: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
       { operationType: OperationType.GetText, selector },
-      options
+      options,
     );
   }
 
@@ -474,12 +497,12 @@ export class SandboxService {
     sessionId: string,
     selector: string,
     attribute: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
       { operationType: OperationType.GetAttribute, selector, attribute },
-      options
+      options,
     );
   }
 
@@ -505,13 +528,13 @@ export class SandboxService {
   public async executeScript(
     sessionId: string,
     script: string,
-    bindings?: ExecuteOperationRequest['bindings'],
-    options?: RequestOptions
+    bindings?: ExecuteOperationRequest["bindings"],
+    options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
     return this.executeOperation(
       sessionId,
       { operationType: OperationType.ExecuteScript, script, bindings },
-      options
+      options,
     );
   }
 
@@ -533,7 +556,7 @@ export class SandboxService {
   public async waitForSelector(
     sessionId: string,
     selector: string,
-    options?: RequestOptions & { timeout?: number; visible?: boolean }
+    options?: RequestOptions & { timeout?: number; visible?: boolean },
   ): Promise<ExecuteOperationResponse> {
     const { timeout, visible, ...requestOptions } = options || {};
     return this.executeOperation(
@@ -544,7 +567,7 @@ export class SandboxService {
         timeout,
         waitCondition: visible !== undefined ? { visible } : undefined,
       },
-      requestOptions
+      requestOptions,
     );
   }
 
@@ -563,7 +586,7 @@ export class SandboxService {
    */
   public async exists(
     sessionId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<boolean> {
     try {
       await this.getSession(sessionId, { ...options, skipRetry: true });
@@ -596,7 +619,7 @@ export class SandboxService {
       timeout?: number;
       interval?: number;
       requestOptions?: RequestOptions;
-    }
+    },
   ): Promise<SessionInfo> {
     const timeout = options?.timeout ?? 30000;
     const interval = options?.interval ?? 1000;
@@ -607,7 +630,7 @@ export class SandboxService {
       if (session.status === status) {
         return session;
       }
-      await new Promise(resolve => setTimeout(resolve, interval));
+      await new Promise((resolve) => setTimeout(resolve, interval));
     }
 
     throw new Error(`Timeout waiting for session status: ${status}`);

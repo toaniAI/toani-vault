@@ -7,18 +7,23 @@
 ## 安装手段
 
 - Registry 安装（推荐）：
+
 ```bash
-npm install -g @toani/vault-cli@0.0.1
+npm install -g @toani/vault-cli@0.0.2
 ```
+
 - 本地源码安装（用于开发/调试）：
+
 ```bash
 cd /Users/yvan/AIWorkspace/credbridge/cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.1.tgz
+npm install -g ./toani-vault-cli-0.0.2.tgz
 ```
+
 - 先决条件：
+
 ```bash
 node -v   # >= 22
 npm -v
@@ -56,6 +61,7 @@ npm -v
 - `config.sessionToken`
 
 - 初始化建议：
+
 ```bash
 toani config init --url https://dev-credbridge.bitkinetic.com/ --token <API_ACCESS_TOKEN>
 toani auth status
@@ -68,12 +74,14 @@ toani auth status
 ## 最佳使用案例
 
 - 案例 1：CI/CD 中按环境切换地址，不落盘改配置
+
 ```bash
 export TOANI_BASE_URL=https://dev-credbridge.bitkinetic.com/
 toani --output json credentials list --service-id svc_xxx
 ```
 
 - 案例 2：最小步骤创建并验证服务账号 token
+
 ```bash
 toani service-accounts create --name bot-ci --scope credential:read,credential:write
 toani service-accounts token create <service-account-id> --scope credential:read --ttl-seconds 3600
@@ -81,6 +89,7 @@ toani tokens verify --token <TOKEN>
 ```
 
 - 案例 3：审计导出与校验闭环
+
 ```bash
 toani audit logs --from 2026-04-01T00:00:00Z --to 2026-04-09T00:00:00Z --limit 200
 toani audit export --format json --from 2026-04-01T00:00:00Z --to 2026-04-09T00:00:00Z

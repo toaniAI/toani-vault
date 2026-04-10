@@ -1,15 +1,15 @@
-import { ToaniVaultSDK } from '@toani/vault-sdk';
-import type { CliConfig, ParsedOptions } from '../types/cli.js';
-import { fail } from '../output/print.js';
+import { ToaniVaultSDK } from "../../../sdk-typescript/src/index.ts";
+import type { CliConfig, ParsedOptions } from "../types/cli.js";
+import { fail } from "../output/print.js";
 
 export function parseOptions(argv: string[]): ParsedOptions {
   const options: ParsedOptions = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
-    if (token.startsWith('--')) {
+    if (token.startsWith("--")) {
       const key = token.slice(2);
       const next = argv[i + 1];
-      if (!next || next.startsWith('--')) {
+      if (!next || next.startsWith("--")) {
         options[key] = true;
       } else {
         options[key] = next;
@@ -33,18 +33,21 @@ export function createSdk(config: CliConfig): ToaniVaultSDK {
 export function requireArg(
   options: ParsedOptions,
   key: string,
-  message?: string
+  message?: string,
 ): string {
   const value = options[key];
-  if (typeof value !== 'string' || value.length === 0) {
+  if (typeof value !== "string" || value.length === 0) {
     fail(message ?? `Missing required option --${key}`);
   }
   return value;
 }
 
-export function parseJsonOption(options: ParsedOptions, key: string): Record<string, unknown> {
+export function parseJsonOption(
+  options: ParsedOptions,
+  key: string,
+): Record<string, unknown> {
   const raw = options[key];
-  if (typeof raw !== 'string') {
+  if (typeof raw !== "string") {
     fail(`Missing required option --${key}`);
   }
   try {

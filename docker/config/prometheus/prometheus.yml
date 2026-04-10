@@ -2,8 +2,8 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: 'credbridge'
-    replica: '{{.ExternalURL}}'
+    cluster: "credbridge"
+    replica: "{{.ExternalURL}}"
 
 # 告警规则文件
 rule_files:
@@ -19,25 +19,25 @@ alerting:
 # 抓取配置
 scrape_configs:
   # Prometheus 自身监控
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ["localhost:9090"]
 
   # CredBridge Vault Service
-  - job_name: 'vault-service'
+  - job_name: "vault-service"
     static_configs:
-      - targets: ['vault-service:8080']
-    metrics_path: '/metrics'
+      - targets: ["vault-service:8080"]
+    metrics_path: "/metrics"
     scrape_interval: 15s
     scrape_timeout: 10s
 
   # HashiCorp Vault
-  - job_name: 'vault'
+  - job_name: "vault"
     static_configs:
-      - targets: ['vault:8200']
-    metrics_path: '/v1/sys/metrics'
+      - targets: ["vault:8200"]
+    metrics_path: "/v1/sys/metrics"
     params:
-      format: ['prometheus']
+      format: ["prometheus"]
     scrape_interval: 15s
     scrape_timeout: 10s
 

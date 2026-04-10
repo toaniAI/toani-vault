@@ -29,14 +29,14 @@
  */
 
 // 导出核心类
-export { CredBridgeClient } from './client.js';
-export { AuthService } from './auth.js';
-export { AuditService } from './audit.js';
-export { CredentialsService } from './credentials.js';
-export { TokenManager } from './token.js';
-export { ServiceAccountsService } from './service-accounts.js';
-export { SandboxService } from './sandbox.js';
-export { SandboxWebSocketClient } from './websocket.js';
+export { CredBridgeClient } from "./client.js";
+export { AuthService } from "./auth.js";
+export { AuditService } from "./audit.js";
+export { CredentialsService } from "./credentials.js";
+export { TokenManager } from "./token.js";
+export { ServiceAccountsService } from "./service-accounts.js";
+export { SandboxService } from "./sandbox.js";
+export { SandboxWebSocketClient } from "./websocket.js";
 
 // 导出所有类型
 export {
@@ -146,7 +146,7 @@ export {
   type SandboxConfig,
   type SandboxOperationInfo,
   type SandboxStats,
-} from './types.js';
+} from "./types.js";
 
 // 重新导出 WebSocket 类型
 export type {
@@ -167,19 +167,19 @@ export type {
   ExecuteOperationOptions,
   ExecuteOperationResult,
   ScreenshotResult,
-} from './websocket.js';
+} from "./websocket.js";
 
 // 导出 WebSocket 状态枚举
-export { WebSocketState } from './websocket.js';
+export { WebSocketState } from "./websocket.js";
 
-import { AuthService } from './auth.js';
-import { AuditService } from './audit.js';
-import { CredBridgeClient } from './client.js';
-import { CredentialsService } from './credentials.js';
-import { TokenManager } from './token.js';
-import { ServiceAccountsService } from './service-accounts.js';
-import { SandboxService } from './sandbox.js';
-import type { CredBridgeConfig } from './types.js';
+import { AuthService } from "./auth.js";
+import { AuditService } from "./audit.js";
+import { CredBridgeClient } from "./client.js";
+import { CredentialsService } from "./credentials.js";
+import { TokenManager } from "./token.js";
+import { ServiceAccountsService } from "./service-accounts.js";
+import { SandboxService } from "./sandbox.js";
+import type { CredBridgeConfig } from "./types.js";
 
 /**
  * Toani Vault SDK 主类
@@ -232,7 +232,7 @@ export class ToaniVaultSDK {
       this.client = config;
     } else {
       // 动态导入 client.ts 以避免循环依赖
-      const { CredBridgeClient } = require('./client.js');
+      const { CredBridgeClient } = require("./client.js");
       this.client = new CredBridgeClient(config);
     }
 
@@ -264,7 +264,7 @@ export class ToaniVaultSDK {
    * 获取 SDK 版本
    */
   public static get version(): string {
-    return '0.1.0';
+    return "0.1.0";
   }
 
   /**
@@ -282,19 +282,19 @@ export class ToaniVaultSDK {
       const health = await this.client.get<{
         status: string;
         version?: string;
-      }>('/health');
+      }>("/health");
 
       return {
         compatible: true,
         sdkVersion: ToaniVaultSDK.version,
         apiVersion: health.version,
-        message: 'SDK is compatible with the API',
+        message: "SDK is compatible with the API",
       };
     } catch (error) {
       return {
         compatible: false,
         sdkVersion: ToaniVaultSDK.version,
-        message: `Failed to check API compatibility: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: `Failed to check API compatibility: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }

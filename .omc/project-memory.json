@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1775699347274,
+  "lastScanned": 1775792411359,
   "projectRoot": "/Users/yvan/AIWorkspace/credbridge",
   "techStack": {
     "languages": [
@@ -57,7 +57,7 @@
       "path": "_bmad",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1775699347260,
+      "lastAccessed": 1775792411333,
       "keyFiles": [
         "config.yaml",
         "state.json"
@@ -67,7 +67,7 @@
       "path": "_bmad-output",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1775699347260,
+      "lastAccessed": 1775792411334,
       "keyFiles": [
         "project-context.md"
       ]
@@ -76,32 +76,34 @@
       "path": "automations",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1775699347261,
+      "lastAccessed": 1775792411335,
       "keyFiles": []
     },
     "cli": {
       "path": "cli",
       "purpose": null,
-      "fileCount": 3,
-      "lastAccessed": 1775699347261,
+      "fileCount": 6,
+      "lastAccessed": 1775792411336,
       "keyFiles": [
-        "Cargo.lock",
-        "Cargo.toml",
-        "README.md"
+        "INTERFACE_BASELINE.md",
+        "README.md",
+        "SKILL-INSTALL.md",
+        "SKILL.md",
+        "package.json"
       ]
     },
     "config": {
       "path": "config",
       "purpose": "Configuration files",
       "fileCount": 1,
-      "lastAccessed": 1775699347261,
+      "lastAccessed": 1775792411338,
       "keyFiles": []
     },
     "docker": {
       "path": "docker",
       "purpose": null,
       "fileCount": 6,
-      "lastAccessed": 1775699347261,
+      "lastAccessed": 1775792411339,
       "keyFiles": [
         "Dockerfile",
         "README.md",
@@ -113,7 +115,7 @@
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 2,
-      "lastAccessed": 1775699347261,
+      "lastAccessed": 1775792411340,
       "keyFiles": [
         "README.md"
       ]
@@ -122,21 +124,21 @@
       "path": "e2e-test",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775699347262,
+      "lastAccessed": 1775792411341,
       "keyFiles": []
     },
     "examples": {
       "path": "examples",
       "purpose": "Example code",
       "fileCount": 1,
-      "lastAccessed": 1775699347262,
+      "lastAccessed": 1775792411341,
       "keyFiles": []
     },
     "frontend": {
       "path": "frontend",
       "purpose": null,
       "fileCount": 27,
-      "lastAccessed": 1775699347262,
+      "lastAccessed": 1775792411342,
       "keyFiles": [
         "API_INTEGRATION.md",
         "Dockerfile",
@@ -148,8 +150,8 @@
     "migrations": {
       "path": "migrations",
       "purpose": "Database migrations",
-      "fileCount": 5,
-      "lastAccessed": 1775699347262,
+      "fileCount": 7,
+      "lastAccessed": 1775792411343,
       "keyFiles": [
         "20260312120000_add_credential_versioning.sql",
         "20260317000001_create_sandbox_tables.sql",
@@ -162,7 +164,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 5,
-      "lastAccessed": 1775699347263,
+      "lastAccessed": 1775792411343,
       "keyFiles": [
         "build-sgx-enclave.sh",
         "check_sgx_environment.sh",
@@ -175,7 +177,7 @@
       "path": "sdk-rust",
       "purpose": null,
       "fileCount": 5,
-      "lastAccessed": 1775699347263,
+      "lastAccessed": 1775792411344,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -187,7 +189,7 @@
       "path": "sdk-typescript",
       "purpose": null,
       "fileCount": 13,
-      "lastAccessed": 1775699347263,
+      "lastAccessed": 1775792411345,
       "keyFiles": [
         "EXAMPLES.md",
         "README.md",
@@ -200,7 +202,7 @@
       "path": "sgx-enclave",
       "purpose": null,
       "fileCount": 6,
-      "lastAccessed": 1775699347263,
+      "lastAccessed": 1775792411346,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -213,7 +215,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1775699347263,
+      "lastAccessed": 1775792411348,
       "keyFiles": [
         "config.rs",
         "lib.rs",
@@ -224,7 +226,7 @@
       "path": "target",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1775699347264,
+      "lastAccessed": 1775792411348,
       "keyFiles": [
         "CACHEDIR.TAG"
       ]
@@ -233,7 +235,7 @@
       "path": "tasks",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775699347264,
+      "lastAccessed": 1775792411349,
       "keyFiles": [
         "user-experience-gap-analysis.md"
       ]
@@ -242,7 +244,7 @@
       "path": "test-cases",
       "purpose": null,
       "fileCount": 7,
-      "lastAccessed": 1775699347264,
+      "lastAccessed": 1775792411349,
       "keyFiles": [
         "TC-001-sandbox-lifecycle.md",
         "TC-002-sandbox-isolation.md",
@@ -255,7 +257,7 @@
       "path": "testcases",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775699347264,
+      "lastAccessed": 1775792411349,
       "keyFiles": [
         "acceptance-queue.json"
       ]
@@ -264,7 +266,7 @@
       "path": "tests",
       "purpose": "Test files",
       "fileCount": 16,
-      "lastAccessed": 1775699347265,
+      "lastAccessed": 1775792411349,
       "keyFiles": [
         "SANDBOX_TEST_PLAN.md",
         "cleanup_tests.rs",
@@ -277,7 +279,7 @@
       "path": "tmp",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1775699347265,
+      "lastAccessed": 1775792411349,
       "keyFiles": [
         "audit-report-18125.md"
       ]
@@ -286,7 +288,7 @@
       "path": "vault-service",
       "purpose": null,
       "fileCount": 5,
-      "lastAccessed": 1775699347265,
+      "lastAccessed": 1775792411350,
       "keyFiles": [
         "Cargo.lock",
         "Cargo.toml",
@@ -298,7 +300,7 @@
       "path": "zentao",
       "purpose": null,
       "fileCount": 17,
-      "lastAccessed": 1775699347265,
+      "lastAccessed": 1775792411350,
       "keyFiles": [
         "18072.md",
         "18077.md",
@@ -307,31 +309,46 @@
         "inbox-18094.md"
       ]
     },
+    "cli/dist": {
+      "path": "cli/dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 2,
+      "lastAccessed": 1775792411350,
+      "keyFiles": [
+        "index.d.ts",
+        "index.js"
+      ]
+    },
+    "cli/node_modules": {
+      "path": "cli/node_modules",
+      "purpose": "Dependencies",
+      "fileCount": 1,
+      "lastAccessed": 1775792411351,
+      "keyFiles": []
+    },
     "cli/src": {
       "path": "cli/src",
       "purpose": "Source code",
-      "fileCount": 6,
-      "lastAccessed": 1775699347265,
+      "fileCount": 1,
+      "lastAccessed": 1775792411351,
       "keyFiles": [
-        "cli.rs",
-        "config.rs",
-        "i18n.rs"
+        "index.ts"
       ]
     },
     "cli/tests": {
       "path": "cli/tests",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1775699347265,
+      "lastAccessed": 1775792411351,
       "keyFiles": [
-        "integration_tests.rs"
+        "common.test.ts"
       ]
     },
     "config/test": {
       "path": "config/test",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1775699347266,
+      "lastAccessed": 1775792411351,
       "keyFiles": [
         "config.yaml"
       ]
@@ -340,14 +357,14 @@
       "path": "docker/config",
       "purpose": "Configuration files",
       "fileCount": 0,
-      "lastAccessed": 1775699347266,
+      "lastAccessed": 1775792411352,
       "keyFiles": []
     },
     "docker/scripts": {
       "path": "docker/scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 6,
-      "lastAccessed": 1775699347266,
+      "lastAccessed": 1775792411352,
       "keyFiles": [
         "healthcheck.sh",
         "init-immudb.sh",
@@ -358,7 +375,7 @@
       "path": "sdk-rust/docs",
       "purpose": "Documentation",
       "fileCount": 3,
-      "lastAccessed": 1775699347267,
+      "lastAccessed": 1775792411353,
       "keyFiles": [
         "API_REFERENCE.md",
         "EXAMPLES.md",
@@ -369,7 +386,7 @@
       "path": "sdk-rust/examples",
       "purpose": "Example code",
       "fileCount": 1,
-      "lastAccessed": 1775699347267,
+      "lastAccessed": 1775792411354,
       "keyFiles": [
         "test-sdk.rs"
       ]
@@ -377,8 +394,8 @@
     "sdk-rust/src": {
       "path": "sdk-rust/src",
       "purpose": "Source code",
-      "fileCount": 7,
-      "lastAccessed": 1775699347267,
+      "fileCount": 8,
+      "lastAccessed": 1775792411354,
       "keyFiles": [
         "audit.rs",
         "client.rs",
@@ -389,7 +406,7 @@
       "path": "sdk-typescript/dist",
       "purpose": "Distribution/build output",
       "fileCount": 4,
-      "lastAccessed": 1775699347267,
+      "lastAccessed": 1775792411354,
       "keyFiles": [
         "index.d.mts",
         "index.d.ts",
@@ -400,7 +417,7 @@
       "path": "sdk-typescript/docs",
       "purpose": "Documentation",
       "fileCount": 3,
-      "lastAccessed": 1775699347267,
+      "lastAccessed": 1775792411354,
       "keyFiles": [
         "API_REFERENCE.md",
         "EXAMPLES.md",
@@ -411,14 +428,14 @@
       "path": "sdk-typescript/node_modules",
       "purpose": "Dependencies",
       "fileCount": 1,
-      "lastAccessed": 1775699347269,
+      "lastAccessed": 1775792411355,
       "keyFiles": []
     },
     "sgx-enclave/src": {
       "path": "sgx-enclave/src",
       "purpose": "Source code",
       "fileCount": 2,
-      "lastAccessed": 1775699347269,
+      "lastAccessed": 1775792411355,
       "keyFiles": [
         "ecalls.rs",
         "lib.rs"
@@ -427,8 +444,8 @@
     "src/api": {
       "path": "src/api",
       "purpose": "API routes",
-      "fileCount": 21,
-      "lastAccessed": 1775699347270,
+      "fileCount": 23,
+      "lastAccessed": 1775792411356,
       "keyFiles": [
         "attestation.rs",
         "audit.rs",
@@ -439,7 +456,7 @@
       "path": "src/bin",
       "purpose": "Executable scripts",
       "fileCount": 4,
-      "lastAccessed": 1775699347270,
+      "lastAccessed": 1775792411356,
       "keyFiles": [
         "db-verify.rs",
         "generate_test_token.rs",
@@ -450,7 +467,7 @@
       "path": "tests/api",
       "purpose": "API routes",
       "fileCount": 4,
-      "lastAccessed": 1775699347271,
+      "lastAccessed": 1775792411356,
       "keyFiles": [
         "attestation_tests.rs",
         "audit_tests.rs",
@@ -461,7 +478,7 @@
       "path": "vault-service/src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1775699347271,
+      "lastAccessed": 1775792411357,
       "keyFiles": [
         "alerting.rs",
         "config.rs",
@@ -472,7 +489,7 @@
       "path": "vault-service/tests",
       "purpose": "Test files",
       "fileCount": 1,
-      "lastAccessed": 1775699347271,
+      "lastAccessed": 1775792411357,
       "keyFiles": [
         "metrics_tests.rs"
       ]
@@ -480,304 +497,58 @@
   },
   "hotPaths": [
     {
-      "path": "src",
-      "accessCount": 272,
-      "lastAccessed": 1775732033922,
-      "type": "directory"
-    },
-    {
-      "path": "src/api/credentials.rs",
-      "accessCount": 134,
-      "lastAccessed": 1775701163906,
-      "type": "file"
-    },
-    {
-      "path": "frontend/src/shared/i18n/messages.ts",
-      "accessCount": 56,
-      "lastAccessed": 1775647362907,
-      "type": "directory"
-    },
-    {
-      "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
-      "accessCount": 28,
-      "lastAccessed": 1775125596912,
-      "type": "file"
-    },
-    {
-      "path": "src/models/mod.rs",
-      "accessCount": 26,
-      "lastAccessed": 1775638412476,
-      "type": "file"
-    },
-    {
-      "path": "src/vault/models.rs",
-      "accessCount": 23,
-      "lastAccessed": 1775638431617,
-      "type": "directory"
-    },
-    {
-      "path": "examples/rust/src/axum_integration.rs",
-      "accessCount": 9,
-      "lastAccessed": 1775097811651,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/src/lib.rs",
-      "accessCount": 8,
-      "lastAccessed": 1775099983917,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript",
-      "accessCount": 7,
-      "lastAccessed": 1775097178061,
-      "type": "directory"
-    },
-    {
-      "path": "examples/rust/src/token_management.rs",
-      "accessCount": 7,
-      "lastAccessed": 1775097716492,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/src/index.ts",
-      "accessCount": 6,
-      "lastAccessed": 1775095877946,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/docs/EXAMPLES.md",
-      "accessCount": 6,
-      "lastAccessed": 1775096633538,
-      "type": "file"
-    },
-    {
-      "path": "examples/rust/src/basic_usage.rs",
-      "accessCount": 6,
-      "lastAccessed": 1775097657042,
-      "type": "file"
-    },
-    {
-      "path": "examples/rust/src/batch_operations.rs",
-      "accessCount": 6,
-      "lastAccessed": 1775097678537,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/docs/EXAMPLES.md",
-      "accessCount": 6,
-      "lastAccessed": 1775099745229,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/README.md",
-      "accessCount": 6,
-      "lastAccessed": 1775123636027,
-      "type": "file"
-    },
-    {
-      "path": "examples/rust/README.md",
-      "accessCount": 5,
-      "lastAccessed": 1775097831261,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/tests/client_tests.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775099450160,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/EXAMPLES.md",
-      "accessCount": 5,
-      "lastAccessed": 1775547793417,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/test-sdk.js",
-      "accessCount": 4,
-      "lastAccessed": 1775096633605,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/debug-sdk2.ts",
-      "accessCount": 4,
-      "lastAccessed": 1775096633643,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/package-lock.json",
-      "accessCount": 4,
-      "lastAccessed": 1775097162371,
-      "type": "file"
-    },
-    {
-      "path": "examples/rust/src/error_handling.rs",
-      "accessCount": 4,
-      "lastAccessed": 1775097703452,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/README.md",
-      "accessCount": 4,
-      "lastAccessed": 1775123595684,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/package.json",
-      "accessCount": 4,
-      "lastAccessed": 1775547804744,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/README.md",
-      "accessCount": 4,
-      "lastAccessed": 1775547804809,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/package.json",
-      "accessCount": 3,
-      "lastAccessed": 1775095741160,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/express-integration.ts",
-      "accessCount": 3,
-      "lastAccessed": 1775097008652,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/error-handling.ts",
-      "accessCount": 3,
-      "lastAccessed": 1775097008705,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/debug-sdk2.ts",
-      "accessCount": 3,
-      "lastAccessed": 1775097008722,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/debug-sdk.ts",
-      "accessCount": 3,
-      "lastAccessed": 1775097008757,
-      "type": "file"
-    },
-    {
-      "path": "examples/rust/src/main.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775097593840,
-      "type": "file"
-    },
-    {
-      "path": "examples/rust/Cargo.toml",
-      "accessCount": 3,
-      "lastAccessed": 1775097862364,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/examples/test-sdk.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775099518180,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/Cargo.toml",
-      "accessCount": 3,
-      "lastAccessed": 1775099851670,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/basic-usage.ts",
-      "accessCount": 3,
-      "lastAccessed": 1775547804800,
-      "type": "file"
-    },
-    {
-      "path": "sdk-typescript/docs/QUICKSTART.md",
+      "path": "CLAUDE.md",
       "accessCount": 2,
-      "lastAccessed": 1775096081958,
+      "lastAccessed": 1775792805262,
       "type": "file"
     },
     {
-      "path": "examples/typescript/batch-operations.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775096996187,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/token-management.ts",
-      "accessCount": 2,
-      "lastAccessed": 1775096996503,
-      "type": "file"
-    },
-    {
-      "path": "examples/typescript/run-examples.sh",
-      "accessCount": 2,
-      "lastAccessed": 1775097102613,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/EXAMPLES.md",
-      "accessCount": 2,
-      "lastAccessed": 1775097755774,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/docs/QUICKSTART.md",
-      "accessCount": 2,
-      "lastAccessed": 1775097977016,
-      "type": "file"
-    },
-    {
-      "path": "sdk-rust/docs/API_REFERENCE.md",
-      "accessCount": 2,
-      "lastAccessed": 1775097977268,
-      "type": "file"
-    },
-    {
-      "path": "src/models",
-      "accessCount": 2,
-      "lastAccessed": 1775602757533,
-      "type": "directory"
-    },
-    {
-      "path": ".claude/skills/bmad-quick-dev/workflow.md",
+      "path": "Cargo.toml",
       "accessCount": 1,
-      "lastAccessed": 1775095556182,
+      "lastAccessed": 1775792510617,
       "type": "file"
     },
     {
-      "path": "_bmad-output/implementation-artifacts/tech-spec-toani-vault-sdk-rename-and-deprecate.md",
+      "path": "README.md",
       "accessCount": 1,
-      "lastAccessed": 1775095557324,
+      "lastAccessed": 1775792510784,
       "type": "file"
     },
     {
-      "path": ".claude/skills/bmad-quick-dev/steps/step-01-mode-detection.md",
+      "path": ".claude/CLAUDE.md",
       "accessCount": 1,
-      "lastAccessed": 1775095565571,
+      "lastAccessed": 1775792524484,
       "type": "file"
     },
     {
-      "path": ".claude/skills/bmad-quick-dev/steps/step-03-execute.md",
+      "path": "frontend/package.json",
       "accessCount": 1,
-      "lastAccessed": 1775095645995,
+      "lastAccessed": 1775792524629,
       "type": "file"
     },
     {
-      "path": "sdk-typescript/src/types.ts",
+      "path": "API.md",
       "accessCount": 1,
-      "lastAccessed": 1775096214693,
+      "lastAccessed": 1775792524726,
       "type": "file"
     },
     {
-      "path": "sdk-typescript",
+      "path": "docker/docker-compose.yml",
       "accessCount": 1,
-      "lastAccessed": 1775096588278,
-      "type": "directory"
+      "lastAccessed": 1775792570666,
+      "type": "file"
+    },
+    {
+      "path": ".claude/rules/react-coding-standards.md",
+      "accessCount": 1,
+      "lastAccessed": 1775792579837,
+      "type": "file"
+    },
+    {
+      "path": ".claude/rules/rust-coding-standards.md",
+      "accessCount": 1,
+      "lastAccessed": 1775792579895,
+      "type": "file"
     }
   ],
   "userDirectives": []

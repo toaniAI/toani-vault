@@ -2,18 +2,19 @@
  * CredBridge SDK 凭证服务测试
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CredentialsService } from '../src/credentials.js';
-import { CredBridgeClient } from '../src/client.js';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { CredentialsService } from "../src/credentials.js";
+import { CredBridgeClient } from "../src/client.js";
 import {
   CredentialType,
   CredBridgeError,
   CredBridgeErrorCode,
-} from '../src/types.js';
+} from "../src/types.js";
 
-describe('CredentialsService', () => {
-  const mockBaseUrl = 'https://vault.credbridge.io';
-  const mockToken = 'v4.local.eyJzdWIiOiJ0ZW5hbnQxOnVzZXIxIiwiZXhwIjoxNzA0MDY3MjAwLCJpYXQiOjE3MDQwNjM2MDAsImp0aSI6InRva2VuMTIzIiwic2NvcGUiOiJjcmVkZW50aWFsOnJlYWQgY3JlZGVudGlhbDp3cml0ZSJ9.signature';
+describe("CredentialsService", () => {
+  const mockBaseUrl = "https://vault.credbridge.io";
+  const mockToken =
+    "v4.local.eyJzdWIiOiJ0ZW5hbnQxOnVzZXIxIiwiZXhwIjoxNzA0MDY3MjAwLCJpYXQiOjE3MDQwNjM2MDAsImp0aSI6InRva2VuMTIzIiwic2NvcGUiOiJjcmVkZW50aWFsOnJlYWQgY3JlZGVudGlhbDp3cml0ZSJ9.signature";
 
   let client: CredBridgeClient;
   let service: CredentialsService;
@@ -27,242 +28,259 @@ describe('CredentialsService', () => {
     vi.resetAllMocks();
   });
 
-  describe('创建凭证', () => {
-    it('应该成功创建凭证', async () => {
+  describe("创建凭证", () => {
+    it("应该成功创建凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'username_password',
-        createdAt: '1704067200',
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "username_password",
+        createdAt: "1704067200",
       };
 
-      vi.spyOn(client, 'post').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
       const result = await service.create({
-        serviceId: 'schwab',
+        serviceId: "schwab",
         credentialType: CredentialType.UsernamePassword,
         plaintextData: {
-          username: 'user@example.com',
-          password: 'secret',
+          username: "user@example.com",
+          password: "secret",
         },
       });
 
-      expect(result.credentialId).toBe('cred-123');
-      expect(result.serviceId).toBe('schwab');
-      expect(client.post).toHaveBeenCalledWith('/credentials', {
-        service_id: 'schwab',
-        credential_type: CredentialType.UsernamePassword,
-        plaintext_data: {
-          username: 'user@example.com',
-          password: 'secret',
+      expect(result.credentialId).toBe("cred-123");
+      expect(result.serviceId).toBe("schwab");
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "schwab",
+          credential_type: CredentialType.UsernamePassword,
+          plaintext_data: {
+            username: "user@example.com",
+            password: "secret",
+          },
+          expires_at: undefined,
         },
-        expires_at: undefined,
-      }, undefined);
+        undefined,
+      );
     });
 
-    it('应该支持过期时间', async () => {
+    it("应该支持过期时间", async () => {
       const mockResponse = {
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'username_password',
-        createdAt: '1704067200',
-        expiresAt: '1706659200',
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "username_password",
+        createdAt: "1704067200",
+        expiresAt: "1706659200",
       };
 
-      vi.spyOn(client, 'post').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
       const expiresAt = Math.floor(Date.now() / 1000) + 86400 * 30; // 30天后
       await service.create({
-        serviceId: 'schwab',
+        serviceId: "schwab",
         credentialType: CredentialType.UsernamePassword,
-        plaintextData: { username: 'test', password: 'pass' },
+        plaintextData: { username: "test", password: "pass" },
         expiresAt,
       });
 
       expect(client.post).toHaveBeenCalledWith(
-        '/credentials',
+        "/credentials",
         expect.objectContaining({
           expires_at: expiresAt,
         }),
-        undefined
+        undefined,
       );
     });
   });
 
-  describe('快捷创建方法', () => {
-    it('createUsernamePassword 应该正确创建凭证', async () => {
+  describe("快捷创建方法", () => {
+    it("createUsernamePassword 应该正确创建凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'username_password',
-        createdAt: '1704067200',
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "username_password",
+        createdAt: "1704067200",
       };
 
-      vi.spyOn(client, 'post').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
       const result = await service.createUsernamePassword(
-        'schwab',
-        'user@example.com',
-        'secret'
+        "schwab",
+        "user@example.com",
+        "secret",
       );
 
-      expect(result.credentialId).toBe('cred-123');
-      expect(client.post).toHaveBeenCalledWith('/credentials', {
-        service_id: 'schwab',
-        credential_type: CredentialType.UsernamePassword,
-        plaintext_data: {
-          username: 'user@example.com',
-          password: 'secret',
+      expect(result.credentialId).toBe("cred-123");
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "schwab",
+          credential_type: CredentialType.UsernamePassword,
+          plaintext_data: {
+            username: "user@example.com",
+            password: "secret",
+          },
+          expires_at: undefined,
         },
-        expires_at: undefined,
-      }, undefined);
+        undefined,
+      );
     });
 
-    it('createApiKey 应该正确创建凭证', async () => {
+    it("createApiKey 应该正确创建凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-456',
-        serviceId: 'stripe',
-        credentialType: 'api_key',
-        createdAt: '1704067200',
+        credentialId: "cred-456",
+        serviceId: "stripe",
+        credentialType: "api_key",
+        createdAt: "1704067200",
       };
 
-      vi.spyOn(client, 'post').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
       const result = await service.createApiKey(
-        'stripe',
-        'sk_live_...',
-        'secret_key'
+        "stripe",
+        "sk_live_...",
+        "secret_key",
       );
 
-      expect(result.credentialType).toBe('api_key');
-      expect(client.post).toHaveBeenCalledWith('/credentials', {
-        service_id: 'stripe',
-        credential_type: CredentialType.ApiKey,
-        plaintext_data: {
-          apiKey: 'sk_live_...',
-          apiSecret: 'secret_key',
+      expect(result.credentialType).toBe("api_key");
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "stripe",
+          credential_type: CredentialType.ApiKey,
+          plaintext_data: {
+            apiKey: "sk_live_...",
+            apiSecret: "secret_key",
+          },
+          expires_at: undefined,
         },
-        expires_at: undefined,
-      }, undefined);
+        undefined,
+      );
     });
 
-    it('createApiKey 应该支持不带 secret', async () => {
-      vi.spyOn(client, 'post').mockResolvedValue({
-        credentialId: 'cred-789',
-        serviceId: 'openai',
-        credentialType: 'api_key',
-        createdAt: '1704067200',
+    it("createApiKey 应该支持不带 secret", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        credentialId: "cred-789",
+        serviceId: "openai",
+        credentialType: "api_key",
+        createdAt: "1704067200",
       });
 
-      await service.createApiKey('openai', 'sk-...');
+      await service.createApiKey("openai", "sk-...");
 
-      expect(client.post).toHaveBeenCalledWith('/credentials', {
-        service_id: 'openai',
-        credential_type: CredentialType.ApiKey,
-        plaintext_data: {
-          apiKey: 'sk-...',
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "openai",
+          credential_type: CredentialType.ApiKey,
+          plaintext_data: {
+            apiKey: "sk-...",
+          },
+          expires_at: undefined,
         },
-        expires_at: undefined,
-      }, undefined);
+        undefined,
+      );
     });
 
-    it('createOAuthRefresh 应该正确创建凭证', async () => {
+    it("createOAuthRefresh 应该正确创建凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-abc',
-        serviceId: 'google',
-        credentialType: 'oauth_refresh',
-        createdAt: '1704067200',
+        credentialId: "cred-abc",
+        serviceId: "google",
+        credentialType: "oauth_refresh",
+        createdAt: "1704067200",
       };
 
-      vi.spyOn(client, 'post').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
-      const result = await service.createOAuthRefresh(
-        'google',
-        '1//0d...'
-      );
+      const result = await service.createOAuthRefresh("google", "1//0d...");
 
-      expect(result.credentialType).toBe('oauth_refresh');
-      expect(client.post).toHaveBeenCalledWith('/credentials', {
-        service_id: 'google',
-        credential_type: CredentialType.OAuthRefresh,
-        plaintext_data: {
-          refreshToken: '1//0d...',
+      expect(result.credentialType).toBe("oauth_refresh");
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "google",
+          credential_type: CredentialType.OAuthRefresh,
+          plaintext_data: {
+            refreshToken: "1//0d...",
+          },
+          expires_at: undefined,
         },
-        expires_at: undefined,
-      }, undefined);
+        undefined,
+      );
     });
   });
 
-  describe('获取凭证列表', () => {
-    it('应该获取凭证列表', async () => {
+  describe("获取凭证列表", () => {
+    it("应该获取凭证列表", async () => {
       const mockResponse = {
         credentials: [
           {
-            credentialId: 'cred-1',
-            credentialType: 'username_password',
-            userIdHash: 'hash123',
-            serviceId: 'schwab',
-            tenantId: 'tenant1',
-            createdAt: '1704067200Z',
+            credentialId: "cred-1",
+            credentialType: "username_password",
+            userIdHash: "hash123",
+            serviceId: "schwab",
+            tenantId: "tenant1",
+            createdAt: "1704067200Z",
             isDeleted: false,
           },
           {
-            credentialId: 'cred-2',
-            credentialType: 'api_key',
-            userIdHash: 'hash123',
-            serviceId: 'stripe',
-            tenantId: 'tenant1',
-            createdAt: '1704067200Z',
+            credentialId: "cred-2",
+            credentialType: "api_key",
+            userIdHash: "hash123",
+            serviceId: "stripe",
+            tenantId: "tenant1",
+            createdAt: "1704067200Z",
             isDeleted: false,
           },
         ],
         total: 2,
       };
 
-      vi.spyOn(client, 'get').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "get").mockResolvedValue(mockResponse);
 
       const result = await service.list();
 
       expect(result.credentials).toHaveLength(2);
       expect(result.total).toBe(2);
-      expect(client.get).toHaveBeenCalledWith('/credentials', undefined);
+      expect(client.get).toHaveBeenCalledWith("/credentials", undefined);
     });
 
-    it('应该支持过滤条件', async () => {
-      vi.spyOn(client, 'get').mockResolvedValue({
+    it("应该支持过滤条件", async () => {
+      vi.spyOn(client, "get").mockResolvedValue({
         credentials: [],
         total: 0,
       });
 
       await service.list({
-        serviceId: 'schwab',
+        serviceId: "schwab",
         credentialType: CredentialType.UsernamePassword,
         includeDeleted: false,
         onlyValid: true,
       });
 
       expect(client.get).toHaveBeenCalledWith(
-        '/credentials?service_id=schwab&credential_type=username_password&include_deleted=false&only_valid=true',
-        undefined
+        "/credentials?service_id=schwab&credential_type=username_password&include_deleted=false&only_valid=true",
+        undefined,
       );
     });
 
-    it('应该支持按服务过滤', async () => {
-      vi.spyOn(client, 'get').mockResolvedValue({
+    it("应该支持按服务过滤", async () => {
+      vi.spyOn(client, "get").mockResolvedValue({
         credentials: [],
         total: 0,
       });
 
-      await service.getByService('schwab');
+      await service.getByService("schwab");
 
       expect(client.get).toHaveBeenCalledWith(
-        '/credentials?service_id=schwab',
-        undefined
+        "/credentials?service_id=schwab",
+        undefined,
       );
     });
 
-    it('应该支持按类型过滤', async () => {
-      vi.spyOn(client, 'get').mockResolvedValue({
+    it("应该支持按类型过滤", async () => {
+      vi.spyOn(client, "get").mockResolvedValue({
         credentials: [],
         total: 0,
       });
@@ -270,127 +288,133 @@ describe('CredentialsService', () => {
       await service.getByType(CredentialType.ApiKey);
 
       expect(client.get).toHaveBeenCalledWith(
-        '/credentials?credential_type=api_key',
-        undefined
+        "/credentials?credential_type=api_key",
+        undefined,
       );
     });
   });
 
-  describe('获取凭证详情', () => {
-    it('应该获取单个凭证', async () => {
+  describe("获取凭证详情", () => {
+    it("应该获取单个凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'username_password',
-        createdAt: '1704067200',
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "username_password",
+        createdAt: "1704067200",
         isDeleted: false,
       };
 
-      vi.spyOn(client, 'get').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "get").mockResolvedValue(mockResponse);
 
-      const result = await service.get('cred-123');
+      const result = await service.get("cred-123");
 
-      expect(result.credentialId).toBe('cred-123');
-      expect(client.get).toHaveBeenCalledWith('/credentials/cred-123', undefined);
+      expect(result.credentialId).toBe("cred-123");
+      expect(client.get).toHaveBeenCalledWith(
+        "/credentials/cred-123",
+        undefined,
+      );
     });
 
-    it('应该在凭证不存在时抛出错误', async () => {
+    it("应该在凭证不存在时抛出错误", async () => {
       const error = new CredBridgeError(
         CredBridgeErrorCode.NotFound,
-        'Credential not found',
-        404
+        "Credential not found",
+        404,
       );
 
-      vi.spyOn(client, 'get').mockRejectedValue(error);
+      vi.spyOn(client, "get").mockRejectedValue(error);
 
-      await expect(service.get('nonexistent')).rejects.toThrow(CredBridgeError);
+      await expect(service.get("nonexistent")).rejects.toThrow(CredBridgeError);
     });
   });
 
-  describe('解密凭证', () => {
-    it('应该解密凭证', async () => {
+  describe("解密凭证", () => {
+    it("应该解密凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'username_password',
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "username_password",
         plaintextData: {
-          username: 'user@example.com',
-          password: 'secret',
+          username: "user@example.com",
+          password: "secret",
         },
       };
 
-      vi.spyOn(client, 'post').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
-      const result = await service.decrypt('cred-123', '用户登录操作');
+      const result = await service.decrypt("cred-123", "用户登录操作");
 
-      expect(result.plaintextData.username).toBe('user@example.com');
-      expect(result.plaintextData.password).toBe('secret');
+      expect(result.plaintextData.username).toBe("user@example.com");
+      expect(result.plaintextData.password).toBe("secret");
       expect(client.post).toHaveBeenCalledWith(
-        '/credentials/cred-123/decrypt',
-        { reason: '用户登录操作' },
-        undefined
+        "/credentials/cred-123/decrypt",
+        { reason: "用户登录操作" },
+        undefined,
       );
     });
 
-    it('应该支持不带理由的解密', async () => {
-      vi.spyOn(client, 'post').mockResolvedValue({
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'api_key',
-        plaintext_data: { apiKey: 'sk-...' },
+    it("应该支持不带理由的解密", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "api_key",
+        plaintext_data: { apiKey: "sk-..." },
       });
 
-      await service.decrypt('cred-123');
+      await service.decrypt("cred-123");
 
       expect(client.post).toHaveBeenCalledWith(
-        '/credentials/cred-123/decrypt',
+        "/credentials/cred-123/decrypt",
         { reason: undefined },
-        undefined
+        undefined,
       );
     });
   });
 
-  describe('删除凭证', () => {
-    it('应该删除凭证', async () => {
+  describe("删除凭证", () => {
+    it("应该删除凭证", async () => {
       const mockResponse = {
-        credentialId: 'cred-123',
+        credentialId: "cred-123",
         deleted: true,
       };
 
-      vi.spyOn(client, 'delete').mockResolvedValue(mockResponse);
+      vi.spyOn(client, "delete").mockResolvedValue(mockResponse);
 
-      const result = await service.delete('cred-123');
+      const result = await service.delete("cred-123");
 
       expect(result.deleted).toBe(true);
-      expect(client.delete).toHaveBeenCalledWith('/credentials/cred-123', undefined);
+      expect(client.delete).toHaveBeenCalledWith(
+        "/credentials/cred-123",
+        undefined,
+      );
     });
   });
 
-  describe('检查凭证存在性', () => {
-    it('应该在凭证存在时返回 true', async () => {
-      vi.spyOn(client, 'get').mockResolvedValue({
-        credentialId: 'cred-123',
-        serviceId: 'schwab',
-        credentialType: 'username_password',
-        createdAt: '1704067200',
+  describe("检查凭证存在性", () => {
+    it("应该在凭证存在时返回 true", async () => {
+      vi.spyOn(client, "get").mockResolvedValue({
+        credentialId: "cred-123",
+        serviceId: "schwab",
+        credentialType: "username_password",
+        createdAt: "1704067200",
         isDeleted: false,
       });
 
-      const exists = await service.exists('cred-123');
+      const exists = await service.exists("cred-123");
 
       expect(exists).toBe(true);
     });
 
-    it('应该在凭证不存在时返回 false', async () => {
+    it("应该在凭证不存在时返回 false", async () => {
       const error = new CredBridgeError(
         CredBridgeErrorCode.NotFound,
-        'Credential not found',
-        404
+        "Credential not found",
+        404,
       );
 
-      vi.spyOn(client, 'get').mockRejectedValue(error);
+      vi.spyOn(client, "get").mockRejectedValue(error);
 
-      const exists = await service.exists('nonexistent');
+      const exists = await service.exists("nonexistent");
 
       expect(exists).toBe(false);
     });

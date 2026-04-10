@@ -14,6 +14,7 @@
 Connector 框架为 CredBridge 提供统一的外部服务集成接口，使第三方服务能够通过标准化方式与 CredBridge 交互。
 
 **核心目标：**
+
 - 统一的接口抽象，屏蔽不同外部服务的实现差异
 - 健壮的生命周期管理（初始化、执行、清理）
 - 完善的错误处理和参数验证机制
@@ -22,13 +23,13 @@ Connector 框架为 CredBridge 提供统一的外部服务集成接口，使第�
 
 ### 1.2 使用场景
 
-| 场景 | 描述 | 示例 |
-|------|------|------|
-| 外部凭证源 | 从第三方服务同步凭证 | AWS Secrets Manager, HashiCorp Vault |
-| 身份提供商 | 验证用户身份 | Okta, Auth0, Azure AD |
-| 审计日志导出 | 将审计日志发送到外部系统 | Splunk, Datadog, ELK |
-| 通知服务 | 发送安全告警 | Slack, PagerDuty, Email |
-| 合规检查 | 执行合规性验证 | SOC2 检查，策略 enforcement |
+| 场景         | 描述                     | 示例                                 |
+| ------------ | ------------------------ | ------------------------------------ |
+| 外部凭证源   | 从第三方服务同步凭证     | AWS Secrets Manager, HashiCorp Vault |
+| 身份提供商   | 验证用户身份             | Okta, Auth0, Azure AD                |
+| 审计日志导出 | 将审计日志发送到外部系统 | Splunk, Datadog, ELK                 |
+| 通知服务     | 发送安全告警             | Slack, PagerDuty, Email              |
+| 合规检查     | 执行合规性验证           | SOC2 检查，策略 enforcement          |
 
 ### 1.3 架构位置
 
@@ -105,14 +106,14 @@ Connector 框架为 CredBridge 提供统一的外部服务集成接口，使第�
 
 ### 2.2 组件职责
 
-| 组件 | 职责 | 线程安全 |
-|------|------|----------|
-| `Connector` Trait | 定义连接器接口和生命周期 | N/A (Trait) |
-| `ConnectorRegistry` | 全局连接器注册表 | 是 (`Arc<RwLock<>>`) |
-| `ValidatedParams` | 验证后的参数封装 | 是 (`Clone`) |
-| `ValidationError` | 参数验证错误详情 | 是 (`Clone`) |
-| `ConnectorError` | 统一错误类型 | 是 (`Clone`) |
-| `ConnectorResult<T>` | 统一返回类型 | N/A (Type Alias) |
+| 组件                 | 职责                     | 线程安全             |
+| -------------------- | ------------------------ | -------------------- |
+| `Connector` Trait    | 定义连接器接口和生命周期 | N/A (Trait)          |
+| `ConnectorRegistry`  | 全局连接器注册表         | 是 (`Arc<RwLock<>>`) |
+| `ValidatedParams`    | 验证后的参数封装         | 是 (`Clone`)         |
+| `ValidationError`    | 参数验证错误详情         | 是 (`Clone`)         |
+| `ConnectorError`     | 统一错误类型             | 是 (`Clone`)         |
+| `ConnectorResult<T>` | 统一返回类型             | N/A (Type Alias)     |
 
 ---
 
@@ -467,15 +468,15 @@ impl From<tokio::time::error::Elapsed> for ConnectorError {
 
 ### 5.4 错误恢复策略
 
-| 错误类型 | 是否可恢复 | 恢复策略 |
-|----------|------------|----------|
-| `Validation` | 是 | 修正参数后重试 |
-| `Timeout` | 是 | 增加超时时间后重试 |
-| `Execution` (临时) | 是 | 指数退避重试 |
-| `Execution` (永久) | 否 | 记录错误，返回用户 |
-| `NotFound` | 否 | 检查 connector 名称 |
-| `Config` | 否 | 修正配置 |
-| `Internal` | 视情况 | 记录日志，可能需要重启 |
+| 错误类型           | 是否可恢复 | 恢复策略               |
+| ------------------ | ---------- | ---------------------- |
+| `Validation`       | 是         | 修正参数后重试         |
+| `Timeout`          | 是         | 增加超时时间后重试     |
+| `Execution` (临时) | 是         | 指数退避重试           |
+| `Execution` (永久) | 否         | 记录错误，返回用户     |
+| `NotFound`         | 否         | 检查 connector 名称    |
+| `Config`           | 否         | 修正配置               |
+| `Internal`         | 视情况     | 记录日志，可能需要重启 |
 
 ---
 
@@ -803,15 +804,15 @@ async fn test_full_connector_lifecycle() {
 
 框架可扩展的预定义验证规则：
 
-| 规则 | 描述 |
-|------|------|
-| `RequiredRule` | 检查字段是否存在 |
-| `TypeRule` | 检查字段类型 |
-| `MinLengthRule` | 最小字符串长度 |
-| `MaxLengthRule` | 最大字符串长度 |
-| `PatternRule` | 正则表达式匹配 |
-| `EnumRule` | 枚举值检查 |
-| `RangeRule` | 数值范围检查 |
+| 规则            | 描述             |
+| --------------- | ---------------- |
+| `RequiredRule`  | 检查字段是否存在 |
+| `TypeRule`      | 检查字段类型     |
+| `MinLengthRule` | 最小字符串长度   |
+| `MaxLengthRule` | 最大字符串长度   |
+| `PatternRule`   | 正则表达式匹配   |
+| `EnumRule`      | 枚举值检查       |
+| `RangeRule`     | 数值范围检查     |
 
 ### 8.2 Connector 模板
 

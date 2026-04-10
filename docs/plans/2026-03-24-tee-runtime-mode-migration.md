@@ -93,6 +93,7 @@ pub enum TeeRuntimeMode {
 ### Task 1: 建立统一的 TEE 运行模式配置源
 
 **Files:**
+
 - Modify: `src/config.rs` 或当前环境配置定义文件（若 TEE 配置已分散，新增集中配置模块）
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/main.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/.env.example`
@@ -125,6 +126,7 @@ impl TeeRuntimeMode {
 **Step 2: 将 `TEE_MODE` 变成唯一真值来源**
 
 要求：
+
 - 程序启动时统一读取 `TEE_MODE`
 - 缺失时给出明确默认策略
 - 推荐默认值：生产部署模板写 `hardware`，本地开发模板可保留 `simulation` 注释示例，但不要再通过 `Environment::Development` 推导
@@ -132,16 +134,19 @@ impl TeeRuntimeMode {
 **Step 3: 删除隐式推导逻辑**
 
 替换当前逻辑：
+
 - `/Users/yvan/AIWorkspace/credbridge/src/main.rs:437` 不再使用 `config.environment == Environment::Development`
 
 **Step 4: 修正初始化模板**
 
 将以下位置从“写死 simulation”改为“显式可配置”：
+
 - `/Users/yvan/AIWorkspace/credbridge/.env.example:51`
 - `/Users/yvan/AIWorkspace/credbridge/docker/docker-compose.yml:43`
 - `/Users/yvan/AIWorkspace/credbridge/docker/scripts/init.sh:166`
 
 **Acceptance:**
+
 - `TEE_MODE` 是唯一入口
 - 无任何运行时路径再根据 `Development` 自动启用 simulation
 - 配置非法时进程启动失败并输出清晰错误
@@ -151,6 +156,7 @@ impl TeeRuntimeMode {
 ### Task 2: 重构 TEE 探测逻辑为真实硬件探测
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/mod.rs`
 - Optional: 新增 `src/tee/detection.rs`
 - Optional: 新增对应测试文件
@@ -158,14 +164,17 @@ impl TeeRuntimeMode {
 **Step 1: 移除固定返回 `Simulation` 的实现**
 
 当前问题位置：
+
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/mod.rs:138`
 
 目标：
+
 - `detect_tee()` 基于平台能力、设备文件、驱动或 SGX 依赖结果返回真实值
 
 **Step 2: 明确探测语义**
 
 建议区分：
+
 - “配置请求的模式”
 - “底层探测到的能力”
 
@@ -185,6 +194,7 @@ pub struct TeeCapabilities {
 如果 `requested_mode == Hardware` 但探测结果非硬件可用，则返回初始化错误。
 
 **Acceptance:**
+
 - `detect_tee()` 不再固定返回 `Simulation`
 - hardware 模式在无 SGX/无驱动/无设备时直接失败
 - simulation 模式仍可在无硬件环境正常启动
@@ -194,6 +204,7 @@ pub struct TeeCapabilities {
 ### Task 3: 统一 Attestation API 初始化链路
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/api/attestation.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/main.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/vault-service/src/api/attestation.rs`
@@ -213,11 +224,13 @@ pub struct TeeRuntimeConfig {
 **Step 2: 调整初始化映射规则**
 
 当前链路问题：
+
 - `/Users/yvan/AIWorkspace/credbridge/src/api/attestation.rs:967`
 - `/Users/yvan/AIWorkspace/credbridge/src/api/attestation.rs:981`
 - `/Users/yvan/AIWorkspace/credbridge/src/api/attestation.rs:999`
 
 目标：
+
 - `debug_mode` 与 `TEE_MODE` 解耦
 - PCS URL 由环境或模式显式配置，而非简单 `simulation => TEST / hardware => PROD`
 - `allow_simulation(...)` 只在 `mode == Simulation` 时开启
@@ -225,15 +238,18 @@ pub struct TeeRuntimeConfig {
 **Step 3: 修正外部 API 响应语义**
 
 `vault-service` 中：
+
 - `/Users/yvan/AIWorkspace/credbridge/vault-service/src/api/attestation.rs:230`
 - `/Users/yvan/AIWorkspace/credbridge/vault-service/src/api/attestation.rs:275`
 
 要求：
+
 - simulation 模式才返回 `QuoteStatus::Simulated`
 - hardware 模式必须返回真实硬件状态或显式错误
 - 不允许“请求的是 hardware，但悄悄给 simulated quote”
 
 **Acceptance:**
+
 - API 初始化全链路共享同一 TEE 运行模式
 - hardware 模式不会返回 simulated 状态
 - debug 配置不会隐式触发 simulation
@@ -243,6 +259,7 @@ pub struct TeeRuntimeConfig {
 ### Task 4: 收紧 DCAP 和 Quote 生成/验证逻辑
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/quote.rs`
 - Optional: 增补硬件 runner 所需配置说明
@@ -250,11 +267,13 @@ pub struct TeeRuntimeConfig {
 **Step 1: 区分 simulation 快路径与 hardware 真路径**
 
 当前 simulation 旁路点：
+
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs:499`
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs:900`
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/dcap.rs:929`
 
 要求：
+
 - simulation：允许模拟 Quote 与跳过验证
 - hardware：必须进入真实 Quote 生成、真实签名验证、真实证书链验证
 
@@ -265,11 +284,13 @@ pub struct TeeRuntimeConfig {
 **Step 3: 统一日志语义**
 
 日志必须能区分：
+
 - `requested_mode=hardware, effective_mode=hardware`
 - `requested_mode=simulation, effective_mode=simulation`
 - 禁止出现 `requested_mode=hardware, effective_mode=simulation` 这种无声降级
 
 **Acceptance:**
+
 - hardware 模式下不存在验证旁路
 - 未完成的硬件实现通过显式错误暴露
 - simulation 与 hardware 的日志、指标、状态字段可清晰区分
@@ -279,6 +300,7 @@ pub struct TeeRuntimeConfig {
 ### Task 5: 收紧 AttestationService 的 simulation 旁路
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/attestation.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/tee/challenge.rs`
 - Modify: 相关调用点测试
@@ -286,23 +308,27 @@ pub struct TeeRuntimeConfig {
 **Step 1: 将 `allow_simulation` 语义限定到显式 simulation 模式**
 
 当前风险位置：
+
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/attestation.rs:736`
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/attestation.rs:866`
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/attestation.rs:909`
 - `/Users/yvan/AIWorkspace/credbridge/src/tee/attestation.rs:938`
 
 要求：
+
 - `allow_simulation` 不再是散落的业务开关
 - 由统一 `TeeRuntimeMode` 决定是否允许模拟校验旁路
 
 **Step 2: 让硬件模式严格要求白名单和公钥材料**
 
 在 `hardware` 模式下：
+
 - 白名单为空不能放行
 - 验证者公钥缺失不能放行
 - 非零签名未经真实验证不能放行
 
 **Acceptance:**
+
 - `allow_simulation(true)` 只能出现在 simulation 测试或 simulation 初始化分支中
 - hardware 模式下所有测量值/签名校验都 fail-closed
 
@@ -311,6 +337,7 @@ pub struct TeeRuntimeConfig {
 ### Task 6: 处理密钥层级中的 simulation 根密钥
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/src/crypto/keys.rs`
 - Optional: `/Users/yvan/AIWorkspace/credbridge/src/crypto/mod.rs`
 - Optional: 相关单元测试
@@ -318,10 +345,12 @@ pub struct TeeRuntimeConfig {
 **Step 1: 明确保留策略**
 
 当前实现：
+
 - `/Users/yvan/AIWorkspace/credbridge/src/crypto/keys.rs:35`
 - `/Users/yvan/AIWorkspace/credbridge/src/crypto/keys.rs:62`
 
 建议：
+
 - 保留 `Simulation` 根密钥来源，但限制为显式 simulation 模式或测试专用
 - 在 hardware 模式下，任何试图创建 `for_simulation()` 的路径都应报错
 
@@ -330,6 +359,7 @@ pub struct TeeRuntimeConfig {
 建议所有关键日志/指标暴露 `root_key_source`，便于识别是否仍在使用 simulation L0。
 
 **Acceptance:**
+
 - simulation L0 不会在 hardware 模式下被使用
 - 运行日志/状态接口可识别当前密钥根来源
 
@@ -338,6 +368,7 @@ pub struct TeeRuntimeConfig {
 ### Task 7: 测试分层与命名整理
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/tests/api/attestation_tests.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/tests/tee_attestation_tests.rs`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/tests/tee/dcap_tests.rs`
@@ -347,12 +378,14 @@ pub struct TeeRuntimeConfig {
 **Step 1: 给 simulation 测试显式标注模式**
 
 例如：
+
 - 测试名包含 `simulation`
 - 测试初始化明确写 `TEE_MODE=simulation` 或等价配置
 
 **Step 2: 给 hardware 测试显式标注前置条件**
 
 例如：
+
 - 需要 SGX 设备
 - 需要 AESM/DCAP 服务
 - 需要专用 runner
@@ -360,10 +393,12 @@ pub struct TeeRuntimeConfig {
 **Step 3: CI 分层**
 
 建议拆为：
+
 - `cargo test` 默认跑 simulation-safe 单元/集成测试
 - SGX runner / staging 跑 hardware 测试套件
 
 **Acceptance:**
+
 - 测试名称与初始化方式能直接看出运行模式
 - 普通 CI 不会误把 simulation 测试当成硬件验收
 
@@ -372,6 +407,7 @@ pub struct TeeRuntimeConfig {
 ### Task 8: 更新运维、API、开发文档
 
 **Files:**
+
 - Modify: `/Users/yvan/AIWorkspace/credbridge/README.md`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/API.md`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/docs/03-API 参考/REST-API.md`
@@ -383,10 +419,12 @@ pub struct TeeRuntimeConfig {
 **Step 1: 统一表述**
 
 把以下旧表述替换掉：
+
 - “开发环境默认 simulation”
 - “Development 环境自动走模拟模式”
 
 改为：
+
 - “通过 `TEE_MODE` 显式选择 `hardware` 或 `simulation`”
 - “推荐生产/staging 使用 `hardware`，本地开发视需要显式使用 `simulation`”
 
@@ -407,6 +445,7 @@ TEE_DEBUG=true
 如果状态接口继续输出 `simulation_mode` 或 `Simulated`，需要同步文档并说明仅在显式 simulation 下出现。
 
 **Acceptance:**
+
 - 所有对外文档都反映“统一开关 + 双模式”设计
 - 不再存在“默认 simulation”误导性描述
 

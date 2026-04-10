@@ -11,29 +11,29 @@
 /** 凭证类型 */
 export enum CredentialType {
   /** 用户名密码 */
-  UsernamePassword = 'username_password',
+  UsernamePassword = "username_password",
   /** OAuth 刷新令牌 */
-  OAuthRefresh = 'oauth_refresh',
+  OAuthRefresh = "oauth_refresh",
   /** API 密钥 */
-  ApiKey = 'api_key',
+  ApiKey = "api_key",
   /** 会话 Cookie */
-  SessionCookie = 'session_cookie',
+  SessionCookie = "session_cookie",
   /** KYC 文档 */
-  KycDocument = 'kyc_document',
+  KycDocument = "kyc_document",
 }
 
 /** Token Scope 权限 */
 export enum TokenScope {
   /** 凭证读取权限 */
-  CredentialRead = 'credential:read',
+  CredentialRead = "credential:read",
   /** 凭证解密权限 */
-  CredentialDecrypt = 'credential:decrypt',
+  CredentialDecrypt = "credential:decrypt",
   /** 凭证写入权限 */
-  CredentialWrite = 'credential:write',
+  CredentialWrite = "credential:write",
   /** 审计日志读取权限 */
-  AuditRead = 'audit:read',
+  AuditRead = "audit:read",
   /** 管理员权限 */
-  Admin = 'admin',
+  Admin = "admin",
 }
 
 // ============================================================================
@@ -356,7 +356,7 @@ export interface TokenMetadata {
 }
 
 /** Service Account 状态 */
-export type ServiceAccountStatus = 'active' | 'disabled' | 'deleted';
+export type ServiceAccountStatus = "active" | "disabled" | "deleted";
 
 /** Service Account 信息 */
 export interface ServiceAccountInfo {
@@ -427,37 +427,37 @@ export interface TokenRevokeByIdResponse {
 /** SDK 错误码 */
 export enum CredBridgeErrorCode {
   /** 未知错误 */
-  Unknown = 'unknown',
+  Unknown = "unknown",
   /** 网络错误 */
-  NetworkError = 'network_error',
+  NetworkError = "network_error",
   /** 请求超时 */
-  Timeout = 'timeout',
+  Timeout = "timeout",
   /** 未授权 */
-  Unauthorized = 'unauthorized',
+  Unauthorized = "unauthorized",
   /** 禁止访问 */
-  Forbidden = 'forbidden',
+  Forbidden = "forbidden",
   /** 凭证未找到 */
-  NotFound = 'not_found',
+  NotFound = "not_found",
   /** 无效的请求 */
-  InvalidRequest = 'invalid_request',
+  InvalidRequest = "invalid_request",
   /** 服务器内部错误 */
-  InternalError = 'internal_error',
+  InternalError = "internal_error",
   /** Token 过期 */
-  TokenExpired = 'token_expired',
+  TokenExpired = "token_expired",
   /** Token 无效 */
-  InvalidToken = 'invalid_token',
+  InvalidToken = "invalid_token",
   /** Token 已被撤销 */
-  TokenRevoked = 'token_revoked',
+  TokenRevoked = "token_revoked",
   /** 权限不足 */
-  InsufficientScope = 'insufficient_scope',
+  InsufficientScope = "insufficient_scope",
   /** 租户隔离违规 */
-  TenantIsolationViolation = 'tenant_isolation_violation',
+  TenantIsolationViolation = "tenant_isolation_violation",
   /** 凭证已过期 */
-  CredentialExpired = 'credential_expired',
+  CredentialExpired = "credential_expired",
   /** 解密失败 */
-  DecryptionFailed = 'decryption_failed',
+  DecryptionFailed = "decryption_failed",
   /** 加密失败 */
-  EncryptionFailed = 'encryption_failed',
+  EncryptionFailed = "encryption_failed",
 }
 
 /** SDK 错误 */
@@ -476,10 +476,10 @@ export class CredBridgeError extends Error {
     message: string,
     statusCode?: number,
     details?: Record<string, unknown>,
-    requestId?: string
+    requestId?: string,
   ) {
     super(message);
-    this.name = 'CredBridgeError';
+    this.name = "CredBridgeError";
     this.code = code;
     this.statusCode = statusCode;
     this.details = details;
@@ -491,23 +491,29 @@ export class CredBridgeError extends Error {
 
   /** 是否为网络错误 */
   public isNetworkError(): boolean {
-    return this.code === CredBridgeErrorCode.NetworkError ||
-           this.code === CredBridgeErrorCode.Timeout;
+    return (
+      this.code === CredBridgeErrorCode.NetworkError ||
+      this.code === CredBridgeErrorCode.Timeout
+    );
   }
 
   /** 是否为认证错误 */
   public isAuthError(): boolean {
-    return this.code === CredBridgeErrorCode.Unauthorized ||
-           this.code === CredBridgeErrorCode.InvalidToken ||
-           this.code === CredBridgeErrorCode.TokenExpired ||
-           this.code === CredBridgeErrorCode.TokenRevoked;
+    return (
+      this.code === CredBridgeErrorCode.Unauthorized ||
+      this.code === CredBridgeErrorCode.InvalidToken ||
+      this.code === CredBridgeErrorCode.TokenExpired ||
+      this.code === CredBridgeErrorCode.TokenRevoked
+    );
   }
 
   /** 是否可重试 */
   public isRetryable(): boolean {
-    return this.isNetworkError() ||
-           this.code === CredBridgeErrorCode.InternalError ||
-           this.statusCode === 429; // Rate limited
+    return (
+      this.isNetworkError() ||
+      this.code === CredBridgeErrorCode.InternalError ||
+      this.statusCode === 429
+    ); // Rate limited
   }
 }
 
@@ -574,7 +580,7 @@ export interface PaginationParams {
   /** 排序字段 */
   sortBy?: string;
   /** 排序方向 */
-  sortOrder?: 'asc' | 'desc';
+  sortOrder?: "asc" | "desc";
 }
 
 // ============================================================================
@@ -584,17 +590,17 @@ export interface PaginationParams {
 /** SDK 事件类型 */
 export enum SdkEventType {
   /** Token 即将过期 */
-  TokenExpiring = 'token_expiring',
+  TokenExpiring = "token_expiring",
   /** Token 已刷新 */
-  TokenRefreshed = 'token_refreshed',
+  TokenRefreshed = "token_refreshed",
   /** 请求开始 */
-  RequestStart = 'request_start',
+  RequestStart = "request_start",
   /** 请求成功 */
-  RequestSuccess = 'request_success',
+  RequestSuccess = "request_success",
   /** 请求失败 */
-  RequestError = 'request_error',
+  RequestError = "request_error",
   /** 重试 */
-  Retry = 'retry',
+  Retry = "retry",
 }
 
 /** SDK 事件 */
@@ -687,7 +693,7 @@ export interface AuditLogsListResponse {
 }
 
 /** 审计导出格式 */
-export type AuditExportFormat = 'json' | 'csv';
+export type AuditExportFormat = "json" | "csv";
 
 /** 导出审计日志请求 */
 export interface ExportAuditLogsRequest {
@@ -847,7 +853,7 @@ export interface AuthCreateAutomationTokenRequest {
   description?: string;
   scopes: string[];
   ttlSeconds?: number;
-  createdVia?: 'profile_dashboard' | 'cli' | 'sdk';
+  createdVia?: "profile_dashboard" | "cli" | "sdk";
 }
 
 export interface AuthCreateAutomationTokenResponse {
@@ -863,51 +869,51 @@ export interface AuthCreateAutomationTokenResponse {
 /** Session 状态 */
 export enum SessionStatus {
   /** 正在创建 */
-  Creating = 'creating',
+  Creating = "creating",
   /** 运行中 */
-  Running = 'running',
+  Running = "running",
   /** 已暂停 */
-  Paused = 'paused',
+  Paused = "paused",
   /** 已关闭 */
-  Closed = 'closed',
+  Closed = "closed",
   /** 错误状态 */
-  Error = 'error',
+  Error = "error",
 }
 
 /** 操作类型 */
 export enum OperationType {
   /** 导航到URL */
-  Navigate = 'navigate',
+  Navigate = "navigate",
   /** 点击元素 */
-  Click = 'click',
+  Click = "click",
   /** 填充表单 */
-  Fill = 'fill',
+  Fill = "fill",
   /** 获取文本 */
-  GetText = 'get_text',
+  GetText = "get_text",
   /** 获取元素属性 */
-  GetAttribute = 'get_attribute',
+  GetAttribute = "get_attribute",
   /** 执行脚本 */
-  ExecuteScript = 'execute_script',
+  ExecuteScript = "execute_script",
   /** 等待元素 */
-  WaitForSelector = 'wait',
+  WaitForSelector = "wait",
   /** 截图 */
-  Screenshot = 'screenshot',
+  Screenshot = "screenshot",
   /** 导出数据 */
-  ExportData = 'export',
+  ExportData = "export",
 }
 
 /** 操作状态 */
 export enum OperationStatus {
   /** 待执行 */
-  Pending = 'pending',
+  Pending = "pending",
   /** 执行中 */
-  Running = 'running',
+  Running = "running",
   /** 成功 */
-  Success = 'success',
+  Success = "success",
   /** 失败 */
-  Failed = 'failed',
+  Failed = "failed",
   /** 已取消 */
-  Cancelled = 'cancelled',
+  Cancelled = "cancelled",
 }
 
 /** 创建 Session 请求 */
@@ -1040,7 +1046,7 @@ export interface ScreenshotOptions {
   /** 完整页面截图 */
   fullPage?: boolean;
   /** 图片格式 */
-  type?: 'png' | 'jpeg';
+  type?: "png" | "jpeg";
   /** 图片质量（仅jpeg） */
   quality?: number;
   /** 裁剪区域 */
@@ -1057,7 +1063,7 @@ export interface ScreenshotResponse {
   /** 图片数据（Base64） */
   data: string;
   /** 图片格式 */
-  type: 'png' | 'jpeg';
+  type: "png" | "jpeg";
   /** 宽度 */
   width: number;
   /** 高度 */
@@ -1067,7 +1073,7 @@ export interface ScreenshotResponse {
 /** 导出数据请求 */
 export interface ExportDataRequest {
   /** 导出格式 */
-  format: 'json' | 'csv' | 'html';
+  format: "json" | "csv" | "html";
   /** 选择器 */
   selector?: string;
   /** 数据提取规则 */
@@ -1086,7 +1092,7 @@ export interface ExportDataResponse {
   /** 导出数据 */
   data: unknown;
   /** 数据格式 */
-  format: 'json' | 'csv' | 'html';
+  format: "json" | "csv" | "html";
   /** 记录数 */
   recordCount: number;
 }

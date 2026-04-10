@@ -37,60 +37,62 @@ pnpm add @toani/vault-sdk
 ### 初始化 SDK
 
 ```typescript
-import { ToaniVaultSDK } from '@toani/vault-sdk';
+import { ToaniVaultSDK } from "@toani/vault-sdk";
 
 const sdk = new ToaniVaultSDK({
-  baseUrl: 'https://api.toani.io',
-  token: 'v4.local.your-paseto-token',
+  baseUrl: "https://api.toani.io",
+  token: "v4.local.your-paseto-token",
 });
 ```
 
 ### 完整示例：自动化登录并获取数据
 
 ```typescript
-import { ToaniVaultSDK, OperationType } from '@toani/vault-sdk';
+import { ToaniVaultSDK, OperationType } from "@toani/vault-sdk";
 
 const sdk = new ToaniVaultSDK({
-  baseUrl: 'https://api.toani.io',
-  token: 'v4.local.your-paseto-token',
+  baseUrl: "https://api.toani.io",
+  token: "v4.local.your-paseto-token",
 });
 
 async function automateTask() {
   // 1. 创建会话
   const { sessionId } = await sdk.sandbox.createSession({
-    serviceId: 'schwab',
-    credentialId: 'cred-123',
-    startUrl: 'https://www.schwab.com',
+    serviceId: "schwab",
+    credentialId: "cred-123",
+    startUrl: "https://www.schwab.com",
   });
 
   try {
     // 2. 导航到登录页面
-    await sdk.sandbox.navigate(sessionId, 'https://www.schwab.com/login');
+    await sdk.sandbox.navigate(sessionId, "https://www.schwab.com/login");
 
     // 3. 填写凭证并登录
-    await sdk.sandbox.fill(sessionId, '#username', 'user@example.com');
-    await sdk.sandbox.fill(sessionId, '#password', 'your-password');
-    await sdk.sandbox.click(sessionId, '#login-button');
+    await sdk.sandbox.fill(sessionId, "#username", "user@example.com");
+    await sdk.sandbox.fill(sessionId, "#password", "your-password");
+    await sdk.sandbox.click(sessionId, "#login-button");
 
     // 4. 等待页面加载完成
-    await sdk.sandbox.waitForSelector(sessionId, '.portfolio-summary', {
+    await sdk.sandbox.waitForSelector(sessionId, ".portfolio-summary", {
       timeout: 30000,
     });
 
     // 5. 获取投资组合余额
-    const balanceResult = await sdk.sandbox.getText(sessionId, '.total-balance');
-    console.log('Balance:', balanceResult.result);
+    const balanceResult = await sdk.sandbox.getText(
+      sessionId,
+      ".total-balance",
+    );
+    console.log("Balance:", balanceResult.result);
 
     // 6. 截图保存
     const screenshot = await sdk.sandbox.takeScreenshot(sessionId, {
-      type: 'png',
+      type: "png",
       fullPage: true,
     });
 
     // 保存截图到文件
-    const fs = require('fs');
-    fs.writeFileSync('portfolio.png', Buffer.from(screenshot.data, 'base64'));
-
+    const fs = require("fs");
+    fs.writeFileSync("portfolio.png", Buffer.from(screenshot.data, "base64"));
   } finally {
     // 7. 关闭会话（确保资源释放）
     await sdk.sandbox.closeSession(sessionId);
@@ -144,17 +146,17 @@ Creating → Running → [Paused] → Closed
 
 ### 操作类型
 
-| 操作类型 | 说明 | 使用场景 |
-|---------|------|---------|
-| `navigate` | 导航到 URL | 页面跳转 |
-| `click` | 点击元素 | 按钮点击、链接跳转 |
-| `fill` | 填充表单 | 输入用户名、密码等 |
-| `get_text` | 获取元素文本 | 提取页面数据 |
-| `get_attribute` | 获取元素属性 | 获取链接 href、图片 src 等 |
-| `execute_script` | 执行 JavaScript | 复杂页面交互 |
-| `wait_for_selector` | 等待元素出现 | 等待页面加载完成 |
-| `screenshot` | 截图 | 保存页面状态 |
-| `export_data` | 导出数据 | 批量提取结构化数据 |
+| 操作类型            | 说明            | 使用场景                   |
+| ------------------- | --------------- | -------------------------- |
+| `navigate`          | 导航到 URL      | 页面跳转                   |
+| `click`             | 点击元素        | 按钮点击、链接跳转         |
+| `fill`              | 填充表单        | 输入用户名、密码等         |
+| `get_text`          | 获取元素文本    | 提取页面数据               |
+| `get_attribute`     | 获取元素属性    | 获取链接 href、图片 src 等 |
+| `execute_script`    | 执行 JavaScript | 复杂页面交互               |
+| `wait_for_selector` | 等待元素出现    | 等待页面加载完成           |
+| `screenshot`        | 截图            | 保存页面状态               |
+| `export_data`       | 导出数据        | 批量提取结构化数据         |
 
 ---
 
@@ -163,25 +165,25 @@ Creating → Running → [Paused] → Closed
 ### 创建会话
 
 ```typescript
-import { SessionStatus } from '@toani/vault-sdk';
+import { SessionStatus } from "@toani/vault-sdk";
 
 // 基础创建
 const session = await sdk.sandbox.createSession({
-  serviceId: 'schwab',
-  credentialId: 'cred-123',
+  serviceId: "schwab",
+  credentialId: "cred-123",
 });
 
-console.log('Session ID:', session.sessionId);
-console.log('Status:', session.status); // 'creating'
+console.log("Session ID:", session.sessionId);
+console.log("Status:", session.status); // 'creating'
 
 // 高级配置
 const sessionWithConfig = await sdk.sandbox.createSession({
-  serviceId: 'schwab',
-  credentialId: 'cred-123',
-  startUrl: 'https://www.schwab.com',
+  serviceId: "schwab",
+  credentialId: "cred-123",
+  startUrl: "https://www.schwab.com",
   viewportWidth: 1920,
   viewportHeight: 1080,
-  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
   timeout: 60000,
 });
 ```
@@ -191,14 +193,14 @@ const sessionWithConfig = await sdk.sandbox.createSession({
 ```typescript
 // 获取单个会话
 const sessionInfo = await sdk.sandbox.getSession(sessionId);
-console.log('Status:', sessionInfo.status);
-console.log('Current URL:', sessionInfo.currentUrl);
-console.log('Page Title:', sessionInfo.pageTitle);
+console.log("Status:", sessionInfo.status);
+console.log("Current URL:", sessionInfo.currentUrl);
+console.log("Page Title:", sessionInfo.pageTitle);
 
 // 列出所有会话
 const { sessions, total } = await sdk.sandbox.listSessions();
 console.log(`Total sessions: ${total}`);
-sessions.forEach(s => {
+sessions.forEach((s) => {
   console.log(`${s.sessionId}: ${s.status} - ${s.currentUrl}`);
 });
 ```
@@ -220,7 +222,7 @@ await sdk.sandbox.resumeSession(sessionId);
 
 // 检查会话是否存在
 const exists = await sdk.sandbox.exists(sessionId);
-console.log('Session exists:', exists);
+console.log("Session exists:", exists);
 ```
 
 ### 关闭会话
@@ -231,8 +233,8 @@ await sdk.sandbox.closeSession(sessionId);
 
 // 使用 try-finally 确保会话关闭
 const session = await sdk.sandbox.createSession({
-  serviceId: 'schwab',
-  credentialId: 'cred-123',
+  serviceId: "schwab",
+  credentialId: "cred-123",
 });
 
 try {
@@ -251,12 +253,12 @@ try {
 
 ```typescript
 // 导航到指定 URL
-await sdk.sandbox.navigate(sessionId, 'https://example.com');
+await sdk.sandbox.navigate(sessionId, "https://example.com");
 
 // 使用底层 API 执行导航
 await sdk.sandbox.executeOperation(sessionId, {
   operationType: OperationType.Navigate,
-  url: 'https://example.com',
+  url: "https://example.com",
 });
 ```
 
@@ -264,30 +266,32 @@ await sdk.sandbox.executeOperation(sessionId, {
 
 ```typescript
 // 点击元素
-await sdk.sandbox.click(sessionId, '#submit-button');
+await sdk.sandbox.click(sessionId, "#submit-button");
 
 // 填充表单
-await sdk.sandbox.fill(sessionId, '#username', 'user@example.com');
-await sdk.sandbox.fill(sessionId, '#password', 'secret-password');
+await sdk.sandbox.fill(sessionId, "#username", "user@example.com");
+await sdk.sandbox.fill(sessionId, "#password", "secret-password");
 
 // 获取元素文本
-const result = await sdk.sandbox.getText(sessionId, '.price-display');
-console.log('Price:', result.result);
+const result = await sdk.sandbox.getText(sessionId, ".price-display");
+console.log("Price:", result.result);
 
 // 获取元素属性
 const linkResult = await sdk.sandbox.getAttribute(
   sessionId,
-  'a.download-link',
-  'href'
+  "a.download-link",
+  "href",
 );
-console.log('Download URL:', linkResult.result);
+console.log("Download URL:", linkResult.result);
 ```
 
 ### 执行 JavaScript
 
 ```typescript
 // 执行自定义脚本
-const scriptResult = await sdk.sandbox.executeScript(sessionId, `
+const scriptResult = await sdk.sandbox.executeScript(
+  sessionId,
+  `
   // 获取页面数据
   const data = {
     title: document.title,
@@ -306,21 +310,22 @@ const scriptResult = await sdk.sandbox.executeScript(sessionId, `
   });
 
   return data;
-`);
+`,
+);
 
-console.log('Script result:', scriptResult.result);
+console.log("Script result:", scriptResult.result);
 ```
 
 ### 等待操作
 
 ```typescript
 // 等待元素出现
-await sdk.sandbox.waitForSelector(sessionId, '.loading-complete', {
+await sdk.sandbox.waitForSelector(sessionId, ".loading-complete", {
   timeout: 30000,
 });
 
 // 等待元素可见
-await sdk.sandbox.waitForSelector(sessionId, '.modal-dialog', {
+await sdk.sandbox.waitForSelector(sessionId, ".modal-dialog", {
   timeout: 10000,
   visible: true,
 });
@@ -328,7 +333,7 @@ await sdk.sandbox.waitForSelector(sessionId, '.modal-dialog', {
 // 使用底层 API 等待
 await sdk.sandbox.executeOperation(sessionId, {
   operationType: OperationType.WaitForSelector,
-  selector: '.data-loaded',
+  selector: ".data-loaded",
   timeout: 30000,
   waitCondition: { visible: true },
 });
@@ -339,20 +344,20 @@ await sdk.sandbox.executeOperation(sessionId, {
 ```typescript
 // 截取完整页面
 const fullPage = await sdk.sandbox.takeScreenshot(sessionId, {
-  type: 'png',
+  type: "png",
   fullPage: true,
 });
 
 // 截取特定元素
 const elementShot = await sdk.sandbox.takeScreenshot(sessionId, {
-  selector: '#chart-container',
-  type: 'jpeg',
+  selector: "#chart-container",
+  type: "jpeg",
   quality: 90,
 });
 
 // 截取指定区域
 const clippedShot = await sdk.sandbox.takeScreenshot(sessionId, {
-  type: 'png',
+  type: "png",
   clip: {
     x: 100,
     y: 100,
@@ -362,8 +367,8 @@ const clippedShot = await sdk.sandbox.takeScreenshot(sessionId, {
 });
 
 // 保存截图
-const fs = require('fs');
-fs.writeFileSync('screenshot.png', Buffer.from(fullPage.data, 'base64'));
+const fs = require("fs");
+fs.writeFileSync("screenshot.png", Buffer.from(fullPage.data, "base64"));
 ```
 
 ---
@@ -375,28 +380,28 @@ WebSocket 连接提供实时控制和监控能力，适用于需要即时反馈�
 ### 基础用法
 
 ```typescript
-import { SandboxWebSocketClient, WebSocketState } from '@toani/vault-sdk';
+import { SandboxWebSocketClient, WebSocketState } from "@toani/vault-sdk";
 
 // 创建 WebSocket 客户端
 const ws = new SandboxWebSocketClient({
-  baseUrl: 'https://api.toani.io',
-  token: 'v4.local.your-paseto-token',
-  sessionId: 'session-uuid',
-  credentialId: 'credential-uuid',
-  heartbeatInterval: 30000,      // 心跳间隔（毫秒）
-  operationTimeout: 60000,       // 操作超时（毫秒）
-  autoReconnect: true,           // 自动重连
-  maxReconnectAttempts: 3,       // 最大重连次数
-  reconnectDelay: 5000,          // 重连延迟（毫秒）
+  baseUrl: "https://api.toani.io",
+  token: "v4.local.your-paseto-token",
+  sessionId: "session-uuid",
+  credentialId: "credential-uuid",
+  heartbeatInterval: 30000, // 心跳间隔（毫秒）
+  operationTimeout: 60000, // 操作超时（毫秒）
+  autoReconnect: true, // 自动重连
+  maxReconnectAttempts: 3, // 最大重连次数
+  reconnectDelay: 5000, // 重连延迟（毫秒）
 });
 
 // 设置事件回调
 ws.onConnected = (data) => {
-  console.log('Connected:', data.session_id);
+  console.log("Connected:", data.session_id);
 };
 
 ws.onDisconnected = (code, reason) => {
-  console.log('Disconnected:', code, reason);
+  console.log("Disconnected:", code, reason);
 };
 
 ws.onOperationProgress = (data) => {
@@ -404,11 +409,11 @@ ws.onOperationProgress = (data) => {
 };
 
 ws.onOperationCompleted = (data) => {
-  console.log('Operation completed:', data.success);
+  console.log("Operation completed:", data.success);
 };
 
 ws.onError = (error) => {
-  console.error('Error:', error.code, error.message);
+  console.error("Error:", error.code, error.message);
 };
 
 ws.onReconnecting = (attempt, maxAttempts) => {
@@ -419,8 +424,8 @@ ws.onReconnecting = (attempt, maxAttempts) => {
 await ws.connect();
 
 // 检查连接状态
-console.log('Connected:', ws.isConnected());
-console.log('State:', ws.getState()); // 'connected'
+console.log("Connected:", ws.isConnected());
+console.log("State:", ws.getState()); // 'connected'
 ```
 
 ### 执行操作
@@ -428,18 +433,18 @@ console.log('State:', ws.getState()); // 'connected'
 ```typescript
 // 执行导航操作
 const result = await ws.executeOperation({
-  operationType: 'navigate',
-  description: 'Navigate to example.com',
-  parameters: { url: 'https://example.com' },
+  operationType: "navigate",
+  description: "Navigate to example.com",
+  parameters: { url: "https://example.com" },
 });
 
-console.log('Navigation result:', result.success);
+console.log("Navigation result:", result.success);
 
 // 执行点击操作
 const clickResult = await ws.executeOperation({
-  operationType: 'click',
-  description: 'Click login button',
-  parameters: { selector: '#login-button' },
+  operationType: "click",
+  description: "Click login button",
+  parameters: { selector: "#login-button" },
   timeout: 10000,
 });
 ```
@@ -451,12 +456,15 @@ const clickResult = await ws.executeOperation({
 const screenshot = await ws.requestScreenshot(30000);
 
 if (screenshot.success) {
-  console.log('Screenshot format:', screenshot.format);
-  console.log('Image data length:', screenshot.imageData?.length);
+  console.log("Screenshot format:", screenshot.format);
+  console.log("Image data length:", screenshot.imageData?.length);
 
   // 保存截图
-  const fs = require('fs');
-  fs.writeFileSync('live-screenshot.png', Buffer.from(screenshot.imageData!, 'base64'));
+  const fs = require("fs");
+  fs.writeFileSync(
+    "live-screenshot.png",
+    Buffer.from(screenshot.imageData!, "base64"),
+  );
 }
 ```
 
@@ -464,60 +472,59 @@ if (screenshot.success) {
 
 ```typescript
 // 正常断开
-ws.disconnect('Task completed');
+ws.disconnect("Task completed");
 
 // 检查状态
-console.log('State:', ws.getState()); // 'closed'
+console.log("State:", ws.getState()); // 'closed'
 ```
 
 ### 完整 WebSocket 示例
 
 ```typescript
-import { SandboxWebSocketClient } from '@toani/vault-sdk';
+import { SandboxWebSocketClient } from "@toani/vault-sdk";
 
 async function executeWithWebSocket(sessionId: string, credentialId: string) {
   const ws = new SandboxWebSocketClient({
-    baseUrl: 'https://api.toani.io',
-    token: 'v4.local.your-token',
+    baseUrl: "https://api.toani.io",
+    token: "v4.local.your-token",
     sessionId,
     credentialId,
   });
 
   // 设置事件处理
-  ws.onConnected = () => console.log('WebSocket connected');
+  ws.onConnected = () => console.log("WebSocket connected");
   ws.onOperationProgress = (data) => {
     console.log(`[${data.operation_type}] ${data.progress}%: ${data.message}`);
   };
-  ws.onError = (error) => console.error('WebSocket error:', error);
+  ws.onError = (error) => console.error("WebSocket error:", error);
 
   try {
     await ws.connect();
 
     // 执行一系列操作
     await ws.executeOperation({
-      operationType: 'navigate',
-      description: 'Go to login page',
-      parameters: { url: 'https://example.com/login' },
+      operationType: "navigate",
+      description: "Go to login page",
+      parameters: { url: "https://example.com/login" },
     });
 
     await ws.executeOperation({
-      operationType: 'fill',
-      description: 'Enter username',
-      parameters: { selector: '#username', value: 'user@example.com' },
+      operationType: "fill",
+      description: "Enter username",
+      parameters: { selector: "#username", value: "user@example.com" },
     });
 
     await ws.executeOperation({
-      operationType: 'click',
-      description: 'Click login',
-      parameters: { selector: '#login-button' },
+      operationType: "click",
+      description: "Click login",
+      parameters: { selector: "#login-button" },
     });
 
     // 获取截图
     const screenshot = await ws.requestScreenshot();
     if (screenshot.success) {
-      console.log('Screenshot captured');
+      console.log("Screenshot captured");
     }
-
   } finally {
     ws.disconnect();
   }
@@ -533,34 +540,34 @@ async function executeWithWebSocket(sessionId: string, credentialId: string) {
 ```typescript
 // 导出表格数据为 JSON
 const exportResult = await sdk.sandbox.exportData(sessionId, {
-  format: 'json',
-  selector: '.portfolio-table',
+  format: "json",
+  selector: ".portfolio-table",
   extractionRules: [
-    { name: 'symbol', selector: '.symbol-cell' },
-    { name: 'quantity', selector: '.quantity-cell' },
-    { name: 'price', selector: '.price-cell' },
-    { name: 'value', selector: '.value-cell' },
+    { name: "symbol", selector: ".symbol-cell" },
+    { name: "quantity", selector: ".quantity-cell" },
+    { name: "price", selector: ".price-cell" },
+    { name: "value", selector: ".value-cell" },
   ],
 });
 
-console.log('Exported data:', exportResult.data);
-console.log('Record count:', exportResult.recordCount);
+console.log("Exported data:", exportResult.data);
+console.log("Record count:", exportResult.recordCount);
 
 // 导出为 CSV
 const csvResult = await sdk.sandbox.exportData(sessionId, {
-  format: 'csv',
-  selector: '.transactions-table',
+  format: "csv",
+  selector: ".transactions-table",
   extractionRules: [
-    { name: 'date', selector: 'td:nth-child(1)' },
-    { name: 'type', selector: 'td:nth-child(2)' },
-    { name: 'amount', selector: 'td:nth-child(3)' },
-    { name: 'description', selector: 'td:nth-child(4)' },
+    { name: "date", selector: "td:nth-child(1)" },
+    { name: "type", selector: "td:nth-child(2)" },
+    { name: "amount", selector: "td:nth-child(3)" },
+    { name: "description", selector: "td:nth-child(4)" },
   ],
 });
 
 // 保存 CSV 文件
-const fs = require('fs');
-fs.writeFileSync('transactions.csv', csvResult.data as string);
+const fs = require("fs");
+fs.writeFileSync("transactions.csv", csvResult.data as string);
 ```
 
 ### 完整数据提取示例
@@ -568,30 +575,33 @@ fs.writeFileSync('transactions.csv', csvResult.data as string);
 ```typescript
 async function extractPortfolioData(sessionId: string) {
   // 等待数据加载
-  await sdk.sandbox.waitForSelector(sessionId, '.portfolio-loaded', {
+  await sdk.sandbox.waitForSelector(sessionId, ".portfolio-loaded", {
     timeout: 30000,
   });
 
   // 提取投资组合摘要
-  const summary = await sdk.sandbox.executeScript(sessionId, `
+  const summary = await sdk.sandbox.executeScript(
+    sessionId,
+    `
     return {
       totalValue: document.querySelector('.total-value')?.textContent?.trim(),
       dayChange: document.querySelector('.day-change')?.textContent?.trim(),
       dayChangePercent: document.querySelector('.day-change-percent')?.textContent?.trim(),
     };
-  `);
+  `,
+  );
 
   // 导出持仓明细
   const positions = await sdk.sandbox.exportData(sessionId, {
-    format: 'json',
-    selector: '.positions-table tbody tr',
+    format: "json",
+    selector: ".positions-table tbody tr",
     extractionRules: [
-      { name: 'symbol', selector: 'td:nth-child(1)' },
-      { name: 'name', selector: 'td:nth-child(2)' },
-      { name: 'quantity', selector: 'td:nth-child(3)' },
-      { name: 'price', selector: 'td:nth-child(4)' },
-      { name: 'value', selector: 'td:nth-child(5)' },
-      { name: 'weight', selector: 'td:nth-child(6)' },
+      { name: "symbol", selector: "td:nth-child(1)" },
+      { name: "name", selector: "td:nth-child(2)" },
+      { name: "quantity", selector: "td:nth-child(3)" },
+      { name: "price", selector: "td:nth-child(4)" },
+      { name: "value", selector: "td:nth-child(5)" },
+      { name: "weight", selector: "td:nth-child(6)" },
     ],
   });
 
@@ -611,13 +621,13 @@ async function extractPortfolioData(sessionId: string) {
 
 ```typescript
 const session = await sdk.sandbox.createSession({
-  serviceId: 'schwab',
-  credentialId: 'cred-123',
+  serviceId: "schwab",
+  credentialId: "cred-123",
 });
 
 try {
   // 执行操作...
-  await sdk.sandbox.navigate(sessionId, 'https://example.com');
+  await sdk.sandbox.navigate(sessionId, "https://example.com");
   // ...
 } finally {
   // 确保会话关闭，释放 TEE 资源
@@ -629,8 +639,8 @@ try {
 
 ```typescript
 const ws = new SandboxWebSocketClient({
-  baseUrl: 'https://api.toani.io',
-  token: 'v4.local.your-token',
+  baseUrl: "https://api.toani.io",
+  token: "v4.local.your-token",
   sessionId,
   credentialId,
 });
@@ -647,12 +657,12 @@ await ws.connect();
 
 ```typescript
 // 根据操作复杂度设置合理的超时
-await sdk.sandbox.waitForSelector(sessionId, '.slow-loading-element', {
+await sdk.sandbox.waitForSelector(sessionId, ".slow-loading-element", {
   timeout: 60000, // 复杂页面可能需要更长时间
 });
 
 // 简单操作可以使用较短的超时
-await sdk.sandbox.click(sessionId, '#quick-button', {
+await sdk.sandbox.click(sessionId, "#quick-button", {
   timeout: 5000,
 });
 ```
@@ -660,24 +670,24 @@ await sdk.sandbox.click(sessionId, '#quick-button', {
 ### 4. 处理所有错误情况
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
+import { CredBridgeError, CredBridgeErrorCode } from "@toani/vault-sdk";
 
 try {
-  await sdk.sandbox.click(sessionId, '#button');
+  await sdk.sandbox.click(sessionId, "#button");
 } catch (error) {
   if (error instanceof CredBridgeError) {
     switch (error.code) {
       case CredBridgeErrorCode.NotFound:
-        console.log('Element not found');
+        console.log("Element not found");
         break;
       case CredBridgeErrorCode.Timeout:
-        console.log('Operation timed out');
+        console.log("Operation timed out");
         break;
       case CredBridgeErrorCode.Unauthorized:
-        console.log('Session expired, need to re-authenticate');
+        console.log("Session expired, need to re-authenticate");
         break;
       default:
-        console.error('Sandbox error:', error.message);
+        console.error("Sandbox error:", error.message);
     }
   }
 }
@@ -746,28 +756,28 @@ class SandboxSessionPool {
 ### 错误类型
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
+import { CredBridgeError, CredBridgeErrorCode } from "@toani/vault-sdk";
 
 try {
-  await sdk.sandbox.click(sessionId, '#button');
+  await sdk.sandbox.click(sessionId, "#button");
 } catch (error) {
   if (error instanceof CredBridgeError) {
-    console.log('Error code:', error.code);
-    console.log('Error message:', error.message);
-    console.log('Status code:', error.statusCode);
-    console.log('Request ID:', error.requestId);
+    console.log("Error code:", error.code);
+    console.log("Error message:", error.message);
+    console.log("Status code:", error.statusCode);
+    console.log("Request ID:", error.requestId);
 
     // 检查错误类型
     if (error.isAuthError()) {
-      console.log('Authentication error, please re-authenticate');
+      console.log("Authentication error, please re-authenticate");
     }
 
     if (error.isNetworkError()) {
-      console.log('Network error, will retry');
+      console.log("Network error, will retry");
     }
 
     if (error.isRetryable()) {
-      console.log('Error is retryable');
+      console.log("Error is retryable");
     }
   }
 }
@@ -775,20 +785,20 @@ try {
 
 ### 常见错误码
 
-| 错误码 | 说明 | 处理建议 |
-|-------|------|---------|
-| `not_found` | 会话或元素不存在 | 检查会话 ID 或选择器 |
-| `timeout` | 操作超时 | 增加超时时间或检查页面状态 |
-| `unauthorized` | 未授权 | 检查 Token 是否有效 |
-| `invalid_request` | 请求参数错误 | 检查请求参数 |
-| `internal_error` | 服务器内部错误 | 稍后重试或联系支持 |
+| 错误码            | 说明             | 处理建议                   |
+| ----------------- | ---------------- | -------------------------- |
+| `not_found`       | 会话或元素不存在 | 检查会话 ID 或选择器       |
+| `timeout`         | 操作超时         | 增加超时时间或检查页面状态 |
+| `unauthorized`    | 未授权           | 检查 Token 是否有效        |
+| `invalid_request` | 请求参数错误     | 检查请求参数               |
+| `internal_error`  | 服务器内部错误   | 稍后重试或联系支持         |
 
 ### 重试策略
 
 ```typescript
 async function executeWithRetry<T>(
   operation: () => Promise<T>,
-  maxRetries = 3
+  maxRetries = 3,
 ): Promise<T> {
   let lastError: Error | undefined;
 
@@ -805,7 +815,11 @@ async function executeWithRetry<T>(
         }
 
         // 不重试客户端错误
-        if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
+        if (
+          error.statusCode &&
+          error.statusCode >= 400 &&
+          error.statusCode < 500
+        ) {
           throw error;
         }
       }
@@ -813,7 +827,7 @@ async function executeWithRetry<T>(
       if (attempt < maxRetries) {
         const delay = Math.pow(2, attempt) * 1000; // 指数退避
         console.log(`Retry ${attempt}/${maxRetries} after ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
@@ -823,7 +837,7 @@ async function executeWithRetry<T>(
 
 // 使用
 await executeWithRetry(async () => {
-  await sdk.sandbox.click(sessionId, '#unstable-button');
+  await sdk.sandbox.click(sessionId, "#unstable-button");
 });
 ```
 
@@ -835,118 +849,118 @@ await executeWithRetry(async () => {
 
 #### 会话管理
 
-| 方法 | 说明 | 返回值 |
-|-----|------|-------|
-| `createSession(request)` | 创建新会话 | `CreateSessionResponse` |
-| `getSession(sessionId)` | 获取会话信息 | `SessionInfo` |
-| `listSessions()` | 列出所有会话 | `{ sessions: SessionInfo[], total: number }` |
-| `pauseSession(sessionId)` | 暂停会话 | `SessionInfo` |
-| `resumeSession(sessionId)` | 恢复会话 | `SessionInfo` |
-| `closeSession(sessionId)` | 关闭会话 | `{ sessionId: string, closed: boolean }` |
-| `exists(sessionId)` | 检查会话是否存在 | `boolean` |
-| `waitForStatus(sessionId, status, options)` | 等待会话达到指定状态 | `SessionInfo` |
+| 方法                                        | 说明                 | 返回值                                       |
+| ------------------------------------------- | -------------------- | -------------------------------------------- |
+| `createSession(request)`                    | 创建新会话           | `CreateSessionResponse`                      |
+| `getSession(sessionId)`                     | 获取会话信息         | `SessionInfo`                                |
+| `listSessions()`                            | 列出所有会话         | `{ sessions: SessionInfo[], total: number }` |
+| `pauseSession(sessionId)`                   | 暂停会话             | `SessionInfo`                                |
+| `resumeSession(sessionId)`                  | 恢复会话             | `SessionInfo`                                |
+| `closeSession(sessionId)`                   | 关闭会话             | `{ sessionId: string, closed: boolean }`     |
+| `exists(sessionId)`                         | 检查会话是否存在     | `boolean`                                    |
+| `waitForStatus(sessionId, status, options)` | 等待会话达到指定状态 | `SessionInfo`                                |
 
 #### 快捷操作
 
-| 方法 | 说明 | 参数 |
-|-----|------|-----|
-| `navigate(sessionId, url)` | 导航到 URL | `url: string` |
-| `click(sessionId, selector)` | 点击元素 | `selector: string` |
-| `fill(sessionId, selector, value)` | 填充表单 | `selector: string, value: string` |
-| `getText(sessionId, selector)` | 获取元素文本 | `selector: string` |
-| `getAttribute(sessionId, selector, attribute)` | 获取元素属性 | `selector: string, attribute: string` |
-| `executeScript(sessionId, script)` | 执行 JavaScript | `script: string` |
-| `waitForSelector(sessionId, selector, options)` | 等待元素 | `selector: string, options?: { timeout?: number, visible?: boolean }` |
+| 方法                                            | 说明            | 参数                                                                  |
+| ----------------------------------------------- | --------------- | --------------------------------------------------------------------- |
+| `navigate(sessionId, url)`                      | 导航到 URL      | `url: string`                                                         |
+| `click(sessionId, selector)`                    | 点击元素        | `selector: string`                                                    |
+| `fill(sessionId, selector, value)`              | 填充表单        | `selector: string, value: string`                                     |
+| `getText(sessionId, selector)`                  | 获取元素文本    | `selector: string`                                                    |
+| `getAttribute(sessionId, selector, attribute)`  | 获取元素属性    | `selector: string, attribute: string`                                 |
+| `executeScript(sessionId, script)`              | 执行 JavaScript | `script: string`                                                      |
+| `waitForSelector(sessionId, selector, options)` | 等待元素        | `selector: string, options?: { timeout?: number, visible?: boolean }` |
 
 #### 截图和导出
 
-| 方法 | 说明 | 参数 |
-|-----|------|-----|
-| `takeScreenshot(sessionId, options)` | 截图 | `options?: ScreenshotOptions` |
-| `exportData(sessionId, request)` | 导出数据 | `request: ExportDataRequest` |
+| 方法                                 | 说明     | 参数                          |
+| ------------------------------------ | -------- | ----------------------------- |
+| `takeScreenshot(sessionId, options)` | 截图     | `options?: ScreenshotOptions` |
+| `exportData(sessionId, request)`     | 导出数据 | `request: ExportDataRequest`  |
 
 ### SandboxWebSocketClient
 
 #### 配置选项
 
-| 选项 | 类型 | 默认值 | 说明 |
-|-----|------|-------|-----|
-| `baseUrl` | `string` | 必需 | API 基础 URL |
-| `token` | `string` | 必需 | PASETO Token |
-| `sessionId` | `string` | 必需 | 会话 ID |
-| `credentialId` | `string` | 必需 | 凭证 ID |
-| `heartbeatInterval` | `number` | `30000` | 心跳间隔（毫秒） |
-| `operationTimeout` | `number` | `60000` | 操作超时（毫秒） |
-| `autoReconnect` | `boolean` | `true` | 自动重连 |
-| `maxReconnectAttempts` | `number` | `3` | 最大重连次数 |
-| `reconnectDelay` | `number` | `5000` | 重连延迟（毫秒） |
+| 选项                   | 类型      | 默认值  | 说明             |
+| ---------------------- | --------- | ------- | ---------------- |
+| `baseUrl`              | `string`  | 必需    | API 基础 URL     |
+| `token`                | `string`  | 必需    | PASETO Token     |
+| `sessionId`            | `string`  | 必需    | 会话 ID          |
+| `credentialId`         | `string`  | 必需    | 凭证 ID          |
+| `heartbeatInterval`    | `number`  | `30000` | 心跳间隔（毫秒） |
+| `operationTimeout`     | `number`  | `60000` | 操作超时（毫秒） |
+| `autoReconnect`        | `boolean` | `true`  | 自动重连         |
+| `maxReconnectAttempts` | `number`  | `3`     | 最大重连次数     |
+| `reconnectDelay`       | `number`  | `5000`  | 重连延迟（毫秒） |
 
 #### 方法
 
-| 方法 | 说明 | 返回值 |
-|-----|------|-------|
-| `connect()` | 连接 WebSocket | `Promise<void>` |
-| `disconnect(reason?)` | 断开连接 | `void` |
-| `isConnected()` | 检查是否已连接 | `boolean` |
-| `getState()` | 获取连接状态 | `WebSocketState` |
-| `executeOperation(options)` | 执行操作 | `Promise<ExecuteOperationResult>` |
-| `requestScreenshot(timeout?)` | 请求截图 | `Promise<ScreenshotResult>` |
+| 方法                          | 说明           | 返回值                            |
+| ----------------------------- | -------------- | --------------------------------- |
+| `connect()`                   | 连接 WebSocket | `Promise<void>`                   |
+| `disconnect(reason?)`         | 断开连接       | `void`                            |
+| `isConnected()`               | 检查是否已连接 | `boolean`                         |
+| `getState()`                  | 获取连接状态   | `WebSocketState`                  |
+| `executeOperation(options)`   | 执行操作       | `Promise<ExecuteOperationResult>` |
+| `requestScreenshot(timeout?)` | 请求截图       | `Promise<ScreenshotResult>`       |
 
 #### 事件回调
 
-| 回调 | 参数 | 说明 |
-|-----|------|-----|
-| `onConnected` | `(data: ConnectedMessage)` | 连接成功 |
-| `onDisconnected` | `(code: number, reason: string)` | 连接断开 |
-| `onOperationProgress` | `(data: OperationProgressMessage)` | 操作进度更新 |
-| `onOperationCompleted` | `(data: OperationCompletedMessage)` | 操作完成 |
-| `onScreenshotResult` | `(data: ScreenshotResultMessage)` | 截图结果 |
-| `onSessionStatusUpdate` | `(data: SessionStatusUpdateMessage)` | 会话状态更新 |
-| `onError` | `(error: ErrorMessage)` | 错误消息 |
-| `onConnectionError` | `(error: Event)` | 连接错误 |
-| `onReconnecting` | `(attempt: number, maxAttempts: number)` | 正在重连 |
+| 回调                    | 参数                                     | 说明         |
+| ----------------------- | ---------------------------------------- | ------------ |
+| `onConnected`           | `(data: ConnectedMessage)`               | 连接成功     |
+| `onDisconnected`        | `(code: number, reason: string)`         | 连接断开     |
+| `onOperationProgress`   | `(data: OperationProgressMessage)`       | 操作进度更新 |
+| `onOperationCompleted`  | `(data: OperationCompletedMessage)`      | 操作完成     |
+| `onScreenshotResult`    | `(data: ScreenshotResultMessage)`        | 截图结果     |
+| `onSessionStatusUpdate` | `(data: SessionStatusUpdateMessage)`     | 会话状态更新 |
+| `onError`               | `(error: ErrorMessage)`                  | 错误消息     |
+| `onConnectionError`     | `(error: Event)`                         | 连接错误     |
+| `onReconnecting`        | `(attempt: number, maxAttempts: number)` | 正在重连     |
 
 ### 类型定义
 
 ```typescript
 // 会话状态
 enum SessionStatus {
-  Creating = 'creating',
-  Running = 'running',
-  Paused = 'paused',
-  Closed = 'closed',
-  Error = 'error',
+  Creating = "creating",
+  Running = "running",
+  Paused = "paused",
+  Closed = "closed",
+  Error = "error",
 }
 
 // 操作类型
 enum OperationType {
-  Navigate = 'navigate',
-  Click = 'click',
-  Fill = 'fill',
-  GetText = 'get_text',
-  GetAttribute = 'get_attribute',
-  ExecuteScript = 'execute_script',
-  WaitForSelector = 'wait_for_selector',
-  Screenshot = 'screenshot',
-  ExportData = 'export_data',
+  Navigate = "navigate",
+  Click = "click",
+  Fill = "fill",
+  GetText = "get_text",
+  GetAttribute = "get_attribute",
+  ExecuteScript = "execute_script",
+  WaitForSelector = "wait_for_selector",
+  Screenshot = "screenshot",
+  ExportData = "export_data",
 }
 
 // 操作状态
 enum OperationStatus {
-  Pending = 'pending',
-  Running = 'running',
-  Success = 'success',
-  Failed = 'failed',
-  Cancelled = 'cancelled',
+  Pending = "pending",
+  Running = "running",
+  Success = "success",
+  Failed = "failed",
+  Cancelled = "cancelled",
 }
 
 // WebSocket 状态
 enum WebSocketState {
-  Disconnected = 'disconnected',
-  Connecting = 'connecting',
-  Connected = 'connected',
-  Reconnecting = 'reconnecting',
-  Closed = 'closed',
+  Disconnected = "disconnected",
+  Connecting = "connecting",
+  Connected = "connected",
+  Reconnecting = "reconnecting",
+  Closed = "closed",
 }
 ```
 
@@ -957,7 +971,11 @@ enum WebSocketState {
 ### 完整示例：自动化投资组合查询
 
 ```typescript
-import { ToaniVaultSDK, SessionStatus, CredBridgeError } from '@toani/vault-sdk';
+import {
+  ToaniVaultSDK,
+  SessionStatus,
+  CredBridgeError,
+} from "@toani/vault-sdk";
 
 const sdk = new ToaniVaultSDK({
   baseUrl: process.env.TOANI_VAULT_BASE_URL!,
@@ -980,7 +998,7 @@ interface PortfolioData {
 
 async function queryPortfolio(
   credentialId: string,
-  serviceId: string = 'schwab'
+  serviceId: string = "schwab",
 ): Promise<PortfolioData> {
   const session = await sdk.sandbox.createSession({
     serviceId,
@@ -996,48 +1014,54 @@ async function queryPortfolio(
     });
 
     // 导航到登录页
-    await sdk.sandbox.navigate(session.sessionId, 'https://www.schwab.com/login');
+    await sdk.sandbox.navigate(
+      session.sessionId,
+      "https://www.schwab.com/login",
+    );
 
     // 等待登录表单
-    await sdk.sandbox.waitForSelector(session.sessionId, '#loginId', {
+    await sdk.sandbox.waitForSelector(session.sessionId, "#loginId", {
       timeout: 30000,
     });
 
     // 获取凭证并登录（凭证在 TEE 内自动填充）
-    await sdk.sandbox.click(session.sessionId, '#btnLogin');
+    await sdk.sandbox.click(session.sessionId, "#btnLogin");
 
     // 等待 MFA 或直接进入
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // 等待投资组合页面
-    await sdk.sandbox.waitForSelector(session.sessionId, '.portfolio-summary', {
+    await sdk.sandbox.waitForSelector(session.sessionId, ".portfolio-summary", {
       timeout: 60000,
     });
 
     // 获取投资组合摘要
-    const summaryResult = await sdk.sandbox.executeScript(session.sessionId, `
+    const summaryResult = await sdk.sandbox.executeScript(
+      session.sessionId,
+      `
       return {
         totalValue: document.querySelector('.total-value')?.textContent?.trim() || '',
         dayChange: document.querySelector('.day-change')?.textContent?.trim() || '',
       };
-    `);
+    `,
+    );
 
     // 导出持仓数据
     const positionsResult = await sdk.sandbox.exportData(session.sessionId, {
-      format: 'json',
-      selector: '.positions-table tbody tr',
+      format: "json",
+      selector: ".positions-table tbody tr",
       extractionRules: [
-        { name: 'symbol', selector: 'td:nth-child(1)' },
-        { name: 'name', selector: 'td:nth-child(2)' },
-        { name: 'quantity', selector: 'td:nth-child(3)' },
-        { name: 'price', selector: 'td:nth-child(4)' },
-        { name: 'value', selector: 'td:nth-child(5)' },
+        { name: "symbol", selector: "td:nth-child(1)" },
+        { name: "name", selector: "td:nth-child(2)" },
+        { name: "quantity", selector: "td:nth-child(3)" },
+        { name: "price", selector: "td:nth-child(4)" },
+        { name: "value", selector: "td:nth-child(5)" },
       ],
     });
 
     // 截图
     const screenshot = await sdk.sandbox.takeScreenshot(session.sessionId, {
-      type: 'png',
+      type: "png",
       fullPage: true,
     });
 
@@ -1048,33 +1072,32 @@ async function queryPortfolio(
       screenshot: screenshot.data,
       timestamp: new Date().toISOString(),
     };
-
   } finally {
     await sdk.sandbox.closeSession(session.sessionId);
   }
 }
 
 // 运行
-queryPortfolio('your-credential-id')
-  .then(data => {
-    console.log('Portfolio:', data);
+queryPortfolio("your-credential-id")
+  .then((data) => {
+    console.log("Portfolio:", data);
   })
   .catch((error: CredBridgeError) => {
-    console.error('Failed to query portfolio:', error.message);
+    console.error("Failed to query portfolio:", error.message);
     process.exit(1);
   });
 ```
 
 ### 术语表
 
-| 术语 | 说明 |
-|-----|------|
-| TEE | Trusted Execution Environment，可信执行环境 |
-| Sandbox | TEE 内的安全浏览器自动化环境 |
-| Session | 浏览器会话实例 |
-| Operation | 在会话中执行的单个操作 |
-| Selector | CSS 选择器或 XPath，用于定位页面元素 |
-| WebSocket | 实时双向通信协议 |
+| 术语      | 说明                                        |
+| --------- | ------------------------------------------- |
+| TEE       | Trusted Execution Environment，可信执行环境 |
+| Sandbox   | TEE 内的安全浏览器自动化环境                |
+| Session   | 浏览器会话实例                              |
+| Operation | 在会话中执行的单个操作                      |
+| Selector  | CSS 选择器或 XPath，用于定位页面元素        |
+| WebSocket | 实时双向通信协议                            |
 
 ---
 

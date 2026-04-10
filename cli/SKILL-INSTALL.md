@@ -12,13 +12,13 @@ cd /Users/yvan/AIWorkspace/credbridge/cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.1.tgz
+npm install -g ./toani-vault-cli-0.0.2.tgz
 ```
 
 ## Registry Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.1
+npm install -g @toani/vault-cli@0.0.2
 ```
 
 ## Smoke Checks

@@ -52,12 +52,13 @@ Enclave 是 Intel SGX 提供的可信执行环境，是一个受保护的内存�
 
 CredBridge 的 TEE 边界定义如下：
 
-| 区域 | 可信度 | 说明 |
-|------|--------|------|
-| **Enclave 内部** | ✅ 可信 | 密钥派生、加密/解密、敏感操作 |
+| 区域             | 可信度    | 说明                           |
+| ---------------- | --------- | ------------------------------ |
+| **Enclave 内部** | ✅ 可信   | 密钥派生、加密/解密、敏感操作  |
 | **Enclave 外部** | ❌ 不可信 | API 网关、业务逻辑、数据库访问 |
 
 **关键原则**：
+
 - 密钥材料永不出 Enclave 边界
 - 所有加密操作在 Enclave 内完成
 - 外部只能访问加密后的数据
@@ -132,11 +133,11 @@ pub enum EnclaveCall {
     DeriveKey { tenant_id, user_id },
     EncryptData { plaintext, key_id },
     DecryptData { ciphertext, key_id },
-    
+
     // 认证操作
     GenerateQuote { challenge },
     VerifySignature { data, signature },
-    
+
     // 管理操作
     Initialize { config },
     Shutdown { },
@@ -152,6 +153,7 @@ pub enum EnclaveExit {
 ```
 
 **安全原则**：
+
 - ECALL 参数经过严格验证
 - OCALL 仅限于必要的系统调用
 - 所有调用记录审计日志
@@ -160,12 +162,12 @@ pub enum EnclaveExit {
 
 TEE Sandbox 提供额外的安全隔离层：
 
-| 隔离机制 | 实现 | 保护目标 |
-|---------|------|---------|
-| **Namespace** | PID/Net/Mount/IPC/UTS | 进程、网络、文件系统隔离 |
-| **cgroups v2** | CPU/内存/IO 限制 | 资源滥用防护 |
-| **seccomp** | 系统调用白名单 | 内核攻击面最小化 |
-| **凭证隔离** | 每会话独立命名空间 | 凭证泄露隔离 |
+| 隔离机制       | 实现                  | 保护目标                 |
+| -------------- | --------------------- | ------------------------ |
+| **Namespace**  | PID/Net/Mount/IPC/UTS | 进程、网络、文件系统隔离 |
+| **cgroups v2** | CPU/内存/IO 限制      | 资源滥用防护             |
+| **seccomp**    | 系统调用白名单        | 内核攻击面最小化         |
+| **凭证隔离**   | 每会话独立命名空间    | 凭证泄露隔离             |
 
 ### 密钥清理和内存安全
 
@@ -190,6 +192,7 @@ scheduler.start(cache); // 定期清理过期密钥
 ```
 
 **清理策略**：
+
 - **L1 Master Key**: Enclave 生命周期内持久化，关闭时清理
 - **L2 User Key**: 5 分钟 TTL，过期自动清理
 - **L3 Credential Key**: 单次使用，用完即焚
@@ -241,16 +244,16 @@ use vault_service::tee::{Enclave, EnclaveConfig};
 let config = EnclaveConfig {
     // 用户密钥缓存 TTL（秒）
     user_key_ttl: 300,  // 5 分钟
-    
+
     // 密封策略
     seal_policy: SealPolicy::Mrsigner,  // 或 Mrenclave
-    
+
     // 密封数据存储路径
     sealed_storage_path: ".sealed".to_string(),
-    
+
     // Enclave 名称
     name: "credbridge-enclave".to_string(),
-    
+
     // 调试模式（仅开发使用）
     debug_mode: false,
 };
@@ -357,9 +360,9 @@ use vault_service::crypto::keys::{MasterKey, UserVaultKey, CredentialKey};
         purpose,
         timestamp,
     );
-    
+
     // 使用密钥加密/解密...
-    
+
 } // key 自动被 zeroize，key_material 被覆写为零
 ```
 

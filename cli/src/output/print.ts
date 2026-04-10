@@ -1,7 +1,7 @@
-import type { OutputFormat } from '../types/cli.js';
+import type { OutputFormat } from "../types/cli.js";
 
 export function printResult(data: unknown, format: OutputFormat): void {
-  if (format === 'json') {
+  if (format === "json") {
     console.log(JSON.stringify(data, null, 2));
     return;
   }
@@ -33,7 +33,7 @@ export function printResult(data: unknown, format: OutputFormat): void {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function warn(message: string): void {
@@ -43,4 +43,3 @@ export function warn(message: string): void {
 export function fail(message: string): never {
   throw new Error(message);
 }
-

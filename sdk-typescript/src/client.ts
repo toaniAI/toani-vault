@@ -13,7 +13,7 @@ import {
   type SdkEventType,
   type EventListener,
   type TokenInfo,
-} from './types.js';
+} from "./types.js";
 
 /** 默认配置 */
 const DEFAULT_CONFIG: Partial<CredBridgeConfig> = {
@@ -39,21 +39,24 @@ function generateRequestId(): string {
 }
 
 /** 解析 API 错误码 */
-function parseErrorCode(statusCode: number, errorCode?: string): CredBridgeErrorCode {
+function parseErrorCode(
+  statusCode: number,
+  errorCode?: string,
+): CredBridgeErrorCode {
   if (errorCode) {
     const codeMap: Record<string, CredBridgeErrorCode> = {
-      'not_found': CredBridgeErrorCode.NotFound,
-      'invalid_request': CredBridgeErrorCode.InvalidRequest,
-      'unauthorized': CredBridgeErrorCode.Unauthorized,
-      'forbidden': CredBridgeErrorCode.Forbidden,
-      'internal_error': CredBridgeErrorCode.InternalError,
-      'token_expired': CredBridgeErrorCode.TokenExpired,
-      'invalid_token': CredBridgeErrorCode.InvalidToken,
-      'token_revoked': CredBridgeErrorCode.TokenRevoked,
-      'insufficient_scope': CredBridgeErrorCode.InsufficientScope,
-      'tenant_isolation_violation': CredBridgeErrorCode.TenantIsolationViolation,
-      'credential_expired': CredBridgeErrorCode.CredentialExpired,
-      'decryption_failed': CredBridgeErrorCode.DecryptionFailed,
+      not_found: CredBridgeErrorCode.NotFound,
+      invalid_request: CredBridgeErrorCode.InvalidRequest,
+      unauthorized: CredBridgeErrorCode.Unauthorized,
+      forbidden: CredBridgeErrorCode.Forbidden,
+      internal_error: CredBridgeErrorCode.InternalError,
+      token_expired: CredBridgeErrorCode.TokenExpired,
+      invalid_token: CredBridgeErrorCode.InvalidToken,
+      token_revoked: CredBridgeErrorCode.TokenRevoked,
+      insufficient_scope: CredBridgeErrorCode.InsufficientScope,
+      tenant_isolation_violation: CredBridgeErrorCode.TenantIsolationViolation,
+      credential_expired: CredBridgeErrorCode.CredentialExpired,
+      decryption_failed: CredBridgeErrorCode.DecryptionFailed,
     };
     return codeMap[errorCode] ?? CredBridgeErrorCode.Unknown;
   }
@@ -116,7 +119,10 @@ export class CredBridgeClient {
   public setToken(token: string): void {
     this.config.token = token;
     this.parseAndStoreToken(token);
-    this.emit('token_refreshed' as SdkEventType, { token, tokenInfo: this.tokenInfo });
+    this.emit("token_refreshed" as SdkEventType, {
+      token,
+      tokenInfo: this.tokenInfo,
+    });
   }
 
   /**
@@ -194,7 +200,7 @@ export class CredBridgeClient {
           listener(eventObj as unknown as Parameters<typeof listener>[0]);
         } catch (error) {
           // 监听器错误不应影响主流程
-          console.error('Event listener error:', error);
+          console.error("Event listener error:", error);
         }
       });
     }
@@ -207,32 +213,55 @@ export class CredBridgeClient {
     method: string,
     path: string,
     body?: unknown,
-    options: RequestOptions = {}
+    options: RequestOptions = {},
   ): Promise<T> {
     const requestId = options.requestId ?? generateRequestId();
-    const url = `${this.config.baseUrl.replace(/\/$/, '')}/api/v1${path}`;
+    const url = `${this.config.baseUrl.replace(/\/$/, "")}/api/v1${path}`;
     const timeout = options.timeout ?? this.config.timeout;
-    const maxRetries = options.skipRetry ? 0 : (options.retries ?? this.config.maxRetries);
+    const maxRetries = options.skipRetry
+      ? 0
+      : (options.retries ?? this.config.maxRetries);
 
     // 检查是否需要刷新 Token
-    if (this.config.autoRefreshToken && this.isTokenExpiringSoon() && !path.includes('/tokens')) {
-      this.emit('token_expiring' as SdkEventType, { tokenInfo: this.tokenInfo });
+    if (
+      this.config.autoRefreshToken &&
+      this.isTokenExpiringSoon() &&
+      !path.includes("/tokens")
+    ) {
+      this.emit("token_expiring" as SdkEventType, {
+        tokenInfo: this.tokenInfo,
+      });
     }
 
-    this.emit('request_start' as SdkEventType, { method, path, requestId });
+    this.emit("request_start" as SdkEventType, { method, path, requestId });
 
     let lastError: CredBridgeError | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const result = await this.executeRequest<T>(method, url, body, timeout, requestId, options.headers);
-        this.emit('request_success' as SdkEventType, { method, path, requestId });
+        const result = await this.executeRequest<T>(
+          method,
+          url,
+          body,
+          timeout,
+          requestId,
+          options.headers,
+        );
+        this.emit("request_success" as SdkEventType, {
+          method,
+          path,
+          requestId,
+        });
         return result;
       } catch (error) {
         lastError = error as CredBridgeError;
 
         // 如果是认证错误，尝试刷新 Token 后重试
-        if (lastError.isAuthError() && this.config.autoRefreshToken && attempt === 0) {
+        if (
+          lastError.isAuthError() &&
+          this.config.autoRefreshToken &&
+          attempt === 0
+        ) {
           try {
             await this.refreshTokenIfNeeded();
             continue; // 使用新 Token 重试
@@ -243,7 +272,7 @@ export class CredBridgeClient {
 
         // 如果不是可重试的错误，或者已经是最后一次尝试，抛出错误
         if (!lastError.isRetryable() || attempt === maxRetries) {
-          this.emit('request_error' as SdkEventType, {
+          this.emit("request_error" as SdkEventType, {
             method,
             path,
             requestId,
@@ -254,7 +283,7 @@ export class CredBridgeClient {
 
         // 计算退避延迟
         const delay = calculateBackoffDelay(attempt);
-        this.emit('retry' as SdkEventType, {
+        this.emit("retry" as SdkEventType, {
           method,
           path,
           requestId,
@@ -267,9 +296,12 @@ export class CredBridgeClient {
     }
 
     // 所有重试都失败了
-    throw lastError ?? new CredBridgeError(
-      CredBridgeErrorCode.Unknown,
-      'Request failed after retries'
+    throw (
+      lastError ??
+      new CredBridgeError(
+        CredBridgeErrorCode.Unknown,
+        "Request failed after retries",
+      )
     );
   }
 
@@ -282,28 +314,28 @@ export class CredBridgeClient {
     body: unknown,
     timeout: number,
     requestId: string,
-    customHeaders?: Record<string, string>
+    customHeaders?: Record<string, string>,
   ): Promise<T> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'X-Request-ID': requestId,
+        "Content-Type": "application/json",
+        "X-Request-ID": requestId,
         ...this.config.headers,
         ...customHeaders,
       };
 
       // 添加 Authorization 头
       if (this.config.token) {
-        headers['Authorization'] = `Bearer ${this.config.token}`;
+        headers["Authorization"] = `Bearer ${this.config.token}`;
       }
 
       // 添加请求签名（如果配置了签名密钥）
       if (this.config.signingKey) {
         const signature = await this.signRequest(method, url, body);
-        headers['X-CredBridge-Signature'] = signature;
+        headers["X-CredBridge-Signature"] = signature;
       }
 
       const response = await fetch(url, {
@@ -316,10 +348,10 @@ export class CredBridgeClient {
       clearTimeout(timeoutId);
 
       // 解析响应
-      const contentType = response.headers.get('content-type');
+      const contentType = response.headers.get("content-type");
       let responseData: unknown;
 
-      if (contentType?.includes('application/json')) {
+      if (contentType?.includes("application/json")) {
         responseData = await response.json();
       } else {
         const text = await response.text();
@@ -330,11 +362,21 @@ export class CredBridgeClient {
       if (!response.ok) {
         // 尝试解析错误响应
         const errorData =
-          typeof responseData === 'object' &&
+          typeof responseData === "object" &&
           responseData !== null &&
-          'error' in responseData
-            ? (responseData as { error: { code: string; message: string; details?: unknown } }).error
-            : { code: 'unknown', message: typeof responseData === 'string' ? responseData : 'Unknown error' };
+          "error" in responseData
+            ? (
+                responseData as {
+                  error: { code: string; message: string; details?: unknown };
+                }
+              ).error
+            : {
+                code: "unknown",
+                message:
+                  typeof responseData === "string"
+                    ? responseData
+                    : "Unknown error",
+              };
 
         const errorCode = parseErrorCode(response.status, errorData.code);
 
@@ -343,7 +385,7 @@ export class CredBridgeClient {
           errorData.message,
           response.status,
           errorData.details as Record<string, unknown> | undefined,
-          requestId
+          requestId,
         );
       }
 
@@ -351,9 +393,9 @@ export class CredBridgeClient {
       // 1. 标准包装格式: { success: true, data: T }
       // 2. 直接格式: T (后端直接返回数据)
       if (
-        typeof responseData === 'object' &&
+        typeof responseData === "object" &&
         responseData !== null &&
-        'success' in responseData &&
+        "success" in responseData &&
         responseData.success === true
       ) {
         // 标准包装格式
@@ -366,24 +408,24 @@ export class CredBridgeClient {
       clearTimeout(timeoutId);
 
       // 处理 AbortController 超时
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         throw new CredBridgeError(
           CredBridgeErrorCode.Timeout,
           `Request timeout after ${timeout}ms`,
           undefined,
           undefined,
-          requestId
+          requestId,
         );
       }
 
       // 处理网络错误
-      if (error instanceof TypeError && error.message.includes('fetch')) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
         throw new CredBridgeError(
           CredBridgeErrorCode.NetworkError,
           `Network error: ${error.message}`,
           undefined,
           undefined,
-          requestId
+          requestId,
         );
       }
 
@@ -395,10 +437,10 @@ export class CredBridgeClient {
       // 未知错误
       throw new CredBridgeError(
         CredBridgeErrorCode.Unknown,
-        error instanceof Error ? error.message : 'Unknown error',
+        error instanceof Error ? error.message : "Unknown error",
         undefined,
         undefined,
-        requestId
+        requestId,
       );
     }
   }
@@ -407,7 +449,7 @@ export class CredBridgeClient {
    * 验证 PASETO 格式
    */
   private validatePasetoFormat(token: string): boolean {
-    return token.startsWith('v4.local.') || token.startsWith('v4.public.');
+    return token.startsWith("v4.local.") || token.startsWith("v4.public.");
   }
 
   /**
@@ -418,39 +460,41 @@ export class CredBridgeClient {
     if (!this.validatePasetoFormat(token)) {
       throw new CredBridgeError(
         CredBridgeErrorCode.InvalidToken,
-        'Invalid PASETO token format. Token must start with v4.local. or v4.public.'
+        "Invalid PASETO token format. Token must start with v4.local. or v4.public.",
       );
     }
 
     try {
       // 解析 PASETO token 的 payload 部分
-      const parts = token.split('.');
+      const parts = token.split(".");
       if (parts.length >= 3) {
         const payloadBase64 = parts[2];
-        const payloadJson = Buffer.from(payloadBase64, 'base64url').toString('utf-8');
+        const payloadJson = Buffer.from(payloadBase64, "base64url").toString(
+          "utf-8",
+        );
         const payload = JSON.parse(payloadJson);
 
         // 解析 scope 字符串为数组
-        const scopeStr = payload.scope || '';
+        const scopeStr = payload.scope || "";
         const scopes = scopeStr.split(/\s+/).filter(Boolean);
 
         // 解析 subject (tenant_id:user_id)
-        const subject = payload.sub || '';
-        const [tenantId, userId] = subject.split(':');
+        const subject = payload.sub || "";
+        const [tenantId, userId] = subject.split(":");
 
         this.tokenInfo = {
-          tokenId: payload.jti || '',
+          tokenId: payload.jti || "",
           subject,
-          tenantId: tenantId || payload.tenant_id || '',
-          userId: userId || '',
-          expiresAt: parseInt(payload.exp || '0', 10),
-          scopes: scopes as TokenInfo['scopes'],
-          issuedAt: parseInt(payload.iat || '0', 10),
+          tenantId: tenantId || payload.tenant_id || "",
+          userId: userId || "",
+          expiresAt: parseInt(payload.exp || "0", 10),
+          scopes: scopes as TokenInfo["scopes"],
+          issuedAt: parseInt(payload.iat || "0", 10),
         };
       }
     } catch (error) {
       // Token 解析失败，但不影响使用
-      console.warn('Failed to parse token:', error);
+      console.warn("Failed to parse token:", error);
     }
   }
 
@@ -483,7 +527,7 @@ export class CredBridgeClient {
     // 实际使用时需要替换为真正的刷新逻辑
     throw new CredBridgeError(
       CredBridgeErrorCode.InvalidToken,
-      'Token refresh not implemented. Please provide a new token manually.'
+      "Token refresh not implemented. Please provide a new token manually.",
     );
   }
 
@@ -493,7 +537,7 @@ export class CredBridgeClient {
   private async signRequest(
     _method: string,
     _url: string,
-    _body: unknown
+    _body: unknown,
   ): Promise<string> {
     // 请求签名实现
     // 这里应该使用配置的 signingKey 对请求进行签名
@@ -510,34 +554,46 @@ export class CredBridgeClient {
    * GET 请求
    */
   public async get<T>(path: string, options?: RequestOptions): Promise<T> {
-    return this.request<T>('GET', path, undefined, options);
+    return this.request<T>("GET", path, undefined, options);
   }
 
   /**
    * POST 请求
    */
-  public async post<T>(path: string, body: unknown, options?: RequestOptions): Promise<T> {
-    return this.request<T>('POST', path, body, options);
+  public async post<T>(
+    path: string,
+    body: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    return this.request<T>("POST", path, body, options);
   }
 
   /**
    * PUT 请求
    */
-  public async put<T>(path: string, body: unknown, options?: RequestOptions): Promise<T> {
-    return this.request<T>('PUT', path, body, options);
+  public async put<T>(
+    path: string,
+    body: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    return this.request<T>("PUT", path, body, options);
   }
 
   /**
    * DELETE 请求
    */
   public async delete<T>(path: string, options?: RequestOptions): Promise<T> {
-    return this.request<T>('DELETE', path, undefined, options);
+    return this.request<T>("DELETE", path, undefined, options);
   }
 
   /**
    * PATCH 请求
    */
-  public async patch<T>(path: string, body: unknown, options?: RequestOptions): Promise<T> {
-    return this.request<T>('PATCH', path, body, options);
+  public async patch<T>(
+    path: string,
+    body: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    return this.request<T>("PATCH", path, body, options);
   }
 }

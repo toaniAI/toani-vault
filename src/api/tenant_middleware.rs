@@ -42,7 +42,7 @@ impl Default for TenantIsolationConfig {
             public_paths: vec![
                 "/health".to_string(),
                 "/api/v1/health".to_string(),
-                "/api/v1/auth/login".to_string(),
+                "/api/v1/auth/session".to_string(),
             ],
         }
     }
@@ -68,7 +68,7 @@ impl TenantIsolationConfig {
             public_paths: vec![
                 "/health".to_string(),
                 "/api/v1/health".to_string(),
-                "/api/v1/auth/login".to_string(),
+                "/api/v1/auth/session".to_string(),
                 "/api/v1/auth/register".to_string(),
             ],
         }
@@ -386,6 +386,8 @@ mod tests {
         assert!(!config.enable_tenant_active_check);
         assert!(config.enable_rls_context);
         assert!(config.is_public_path("/health"));
+        assert!(config.is_public_path("/api/v1/auth/session"));
+        assert!(!config.is_public_path("/api/v1/auth/login"));
         assert!(!config.is_public_path("/api/v1/credentials"));
     }
 

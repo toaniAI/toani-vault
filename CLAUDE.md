@@ -50,6 +50,9 @@ cargo fmt
 
 # Lint
 cargo clippy
+
+# Hardware compile check (Linux SGX runners)
+cargo test --features tee-hardware --lib --tests --no-run
 ```
 
 ### Frontend (React + Vite)
@@ -62,6 +65,9 @@ npm run dev
 
 # Build for production
 npm run build
+
+# Run unit tests
+npm run test:unit
 
 # Lint
 npm run lint
@@ -86,6 +92,7 @@ CredBridge is a zero-trust credential vault with hardware-level security via Int
 ### Key Architecture Decisions
 
 **Four-Layer Key Hierarchy:**
+
 ```
 L0: SGX Sealing Key (hardware root)
  └─ L1: Enclave Master Key
@@ -101,43 +108,60 @@ L0: SGX Sealing Key (hardware root)
 **TEE modes:** `TEE_MODE=simulation` for dev, `TEE_MODE=hardware` for production SGX hardware. Hardware mode requires Intel SGX-capable CPU.
 
 **Storage backend selection** (via `CREDBRIDGE_STORAGE_BACKEND`):
+
 - `auto` (default) — prefers Postgres if `DATABASE_URL` is set, then Vault if `VAULT_ADDR`+`VAULT_TOKEN` are set, otherwise fails
-- `memory` — in-process only, for dev/test
 - `postgres` — PostgreSQL backend
 - `vault` — HashiCorp Vault backend
 
 **API base path:** All API routes are mounted at `/api/v1`.
 
+### Runtime Storage Policy
+
+| Domain                 | Backend             | Config                       |
+| ---------------------- | ------------------- | ---------------------------- |
+| vault                  | PostgreSQL or Vault | `CREDBRIDGE_STORAGE_BACKEND` |
+| auth                   | PostgreSQL          | `DATABASE_URL`               |
+| tenant config          | PostgreSQL          | `DATABASE_URL`               |
+| sandbox records        | PostgreSQL          | `DATABASE_URL`               |
+| audit                  | immudb              | `IMMUDB_*` (default)         |
+| token state            | Redis               | `REDIS_URL`                  |
+| rate limit state       | Redis               | `REDIS_URL`                  |
+| attestation challenges | Redis               | `REDIS_URL`                  |
+
+Production startup fails if required durable backends are missing. For local development, memory fallback can be enabled via `CREDBRIDGE_*_ALLOW_MEMORY_FALLBACK=true` variables.
+
 ### Key Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CREDBRIDGE_PORT` | `8080` | HTTP server port |
-| `CREDBRIDGE_HOST` | `0.0.0.0` | HTTP server host |
-| `CREDBRIDGE_ENV` | `development` | `development` or `production` |
-| `TEE_MODE` | `hardware` | `simulation` or `hardware` |
-| `CREDBRIDGE_STORAGE_BACKEND` | `auto` | `auto`, `memory`, `postgres`, `vault` |
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `VAULT_ADDR` / `VAULT_TOKEN` | — | HashiCorp Vault connection |
-| `CREDBRIDGE_ALLOWED_ORIGINS` | — | Comma-separated CORS origins (production) |
-| `RUST_LOG` | `info` | Log level |
+| Variable                      | Default       | Description                               |
+| ----------------------------- | ------------- | ----------------------------------------- |
+| `CREDBRIDGE_PORT`             | `8080`        | HTTP server port                          |
+| `CREDBRIDGE_HOST`             | `0.0.0.0`     | HTTP server host                          |
+| `CREDBRIDGE_ENV`              | `development` | `development` or `production`             |
+| `TEE_MODE`                    | `hardware`    | `simulation` or `hardware`                |
+| `CREDBRIDGE_STORAGE_BACKEND`  | `auto`        | `auto`, `postgres`, `vault`               |
+| `DATABASE_URL`                | —             | PostgreSQL connection string              |
+| `REDIS_URL`                   | —             | Redis connection string                   |
+| `VAULT_ADDR` / `VAULT_TOKEN`  | —             | HashiCorp Vault connection                |
+| `IMMUDB_HOST` / `IMMUDB_PORT` | —             | immudb connection                         |
+| `CREDBRIDGE_ALLOWED_ORIGINS`  | —             | Comma-separated CORS origins (production) |
+| `RUST_LOG`                    | `info`        | Log level                                 |
 
 ### Backend Structure (`src/`)
 
-| Module | Purpose |
-|--------|---------|
-| `api/` | Axum HTTP routes and middleware — credentials, attestation, audit, auth, sandbox, tenant, i18n |
-| `tee/` | TEE enclave lifecycle, keys, sealing, DCAP attestation, sandbox execution (nsjail + seccomp + cgroups + namespaces) |
-| `crypto/` | HKDF key derivation, AES-GCM encryption, key structures, constant-time comparison |
-| `vault/` | Credential storage: `CredentialVault` abstraction over pluggable backends (memory, Postgres, HashiCorp Vault) |
-| `token/` | PASETO token generation/validation, Redis session store, token revocation |
-| `services/` | Business logic: `db/` (connection pool, schema), `llm/` (multi-provider AI: OpenAI, Azure, Claude) |
-| `audit/` | Immutable audit log via immudb + in-memory fallback |
-| `models/` | Shared data models |
-| `tenant/` | Multi-tenant isolation logic, tenant config store |
-| `connector/` | External system connectors, HTTP connector, registry |
-| `mcp/` | Model Context Protocol server integration |
-| `bin/` | Additional binary entry points (`generate_test_token`, `db-verify`) |
+| Module       | Purpose                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `api/`       | Axum HTTP routes and middleware — credentials, attestation, audit, auth, sandbox, tenant, i18n                      |
+| `tee/`       | TEE enclave lifecycle, keys, sealing, DCAP attestation, sandbox execution (nsjail + seccomp + cgroups + namespaces) |
+| `crypto/`    | HKDF key derivation, AES-GCM encryption, key structures, constant-time comparison                                   |
+| `vault/`     | Credential storage: `CredentialVault` abstraction over pluggable backends (memory, Postgres, HashiCorp Vault)       |
+| `token/`     | PASETO token generation/validation, Redis session store, token revocation                                           |
+| `services/`  | Business logic: `db/` (connection pool, schema), `llm/` (multi-provider AI: OpenAI, Azure, Claude)                  |
+| `audit/`     | Immutable audit log via immudb + in-memory fallback                                                                 |
+| `models/`    | Shared data models                                                                                                  |
+| `tenant/`    | Multi-tenant isolation logic, tenant config store                                                                   |
+| `connector/` | External system connectors, HTTP connector, registry                                                                |
+| `mcp/`       | Model Context Protocol server integration                                                                           |
+| `bin/`       | Additional binary entry points (`generate_test_token`, `db-verify`)                                                 |
 
 The Rust crate is named `vault-service` (`vault_service` when used as a library import).
 
@@ -167,12 +191,27 @@ features/
 
 All routes are protected via `ProtectedRoute`; public routes use `PublicRoute`. Pages are lazy-loaded via `React.lazy`.
 
+### API Structure
+
+Key endpoints (all under `/api/v1`):
+
+| Endpoint                        | Purpose                 | Scope                |
+| ------------------------------- | ----------------------- | -------------------- |
+| `POST /credentials`             | Create credential       | `credential:write`   |
+| `GET /credentials`              | List credentials        | `credential:read`    |
+| `GET /credentials/:id`          | Get credential metadata | `credential:read`    |
+| `POST /credentials/:id/decrypt` | Decrypt credential      | `credential:decrypt` |
+| `GET /audit/logs`               | Query audit logs        | `audit:read`         |
+| `POST /audit/export`            | Export audit logs       | `audit:read`         |
+
+See `API.md` for complete API documentation.
+
 ### External Services (required for full operation)
 
 - **PostgreSQL** — Primary database (credentials, audit, tenant data)
-- **Redis** — Session/token store
-- **immudb** — Immutable audit log
-- **HashiCorp Vault** — Secrets management (`VAULT_ADDR`, `VAULT_TOKEN`)
+- **Redis** — Session/token store, rate limiting, attestation challenges
+- **immudb** — Immutable audit log with cryptographic verification
+- **HashiCorp Vault** — Optional secrets management backend
 
 See `docker/docker-compose.yml` for default connection settings and env vars.
 
@@ -180,16 +219,16 @@ See `docker/docker-compose.yml` for default connection settings and env vars.
 
 Tests in `tests/` use `[[test]]` entries in `Cargo.toml`. Key test files:
 
-| Test | Path |
-|------|------|
-| `paseto_tests` | `tests/token/paseto_tests.rs` |
-| `redis_store_tests` | `tests/token/redis_store_tests.rs` |
-| `audit_api_tests` | `tests/api/audit_tests.rs` |
-| `tenant_middleware_tests` | `tests/api/tenant_middleware_tests.rs` |
-| `rls_integration` | `tests/rls_integration.rs` (requires `rls-tests` feature) |
-| `sandbox_export_tests` | `tests/tee/sandbox_export_tests.rs` |
-| `dcap_tests` | `tests/tee/dcap_tests.rs` |
-| `sgx_hardware_tests` | `tests/` (requires SGX hardware) |
+| Test                      | Path                                                      |
+| ------------------------- | --------------------------------------------------------- |
+| `paseto_tests`            | `tests/token/paseto_tests.rs`                             |
+| `redis_store_tests`       | `tests/token/redis_store_tests.rs`                        |
+| `audit_api_tests`         | `tests/api/audit_tests.rs`                                |
+| `tenant_middleware_tests` | `tests/api/tenant_middleware_tests.rs`                    |
+| `rls_integration`         | `tests/rls_integration.rs` (requires `rls-tests` feature) |
+| `sandbox_export_tests`    | `tests/tee/sandbox_export_tests.rs`                       |
+| `dcap_tests`              | `tests/tee/dcap_tests.rs`                                 |
+| `sgx_hardware_tests`      | `tests/` (requires SGX hardware)                          |
 
 ### SDKs
 
@@ -199,174 +238,52 @@ Tests in `tests/` use `[[test]]` entries in `Cargo.toml`. Key test files:
 
 ---
 
-## MetaBot Workspace
+## Code Standards
 
-This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs Claude Code with full tool access.
+### Rust
 
-### /metaskill — AI Agent Team Generator
+- Use `thiserror` for structured error handling
+- Use `anyhow` for application-level errors with `context()`
+- Async functions use native `async fn` or `async-trait`
+- Database queries use SQLx with compile-time checking
+- Sensitive data uses `zeroize` for secure clearing
+- Constant-time comparison for secrets (`constant_time_eq`)
+- Never use `unwrap()` or `expect()` in production code
+- Naming: modules/functions/variables use `snake_case`, types use `PascalCase`, constants use `SCREAMING_SNAKE_CASE`
 
-```
-/metaskill ios app          → generates full .claude/ agent team
-/metaskill a security agent → creates a single agent
-/metaskill a deploy skill   → creates a custom slash command
-```
+### React/TypeScript
 
-### /metamemory — Shared Knowledge Store
+- TypeScript strict mode enabled
+- Function components with Hooks
+- Zustand for state management
+- TanStack Query for data fetching
+- shadcn/ui + Radix UI for components
+- Tailwind CSS for styling
+- Naming: Components use `PascalCase`, hooks use `camelCase` starting with `use`, props interfaces use `[ComponentName]Props`
 
-```bash
-mm search <query>       # Search documents
-mm get <doc_id>         # Get document by ID
-mm list [folder_id]     # List documents
-mm folders              # Browse folder tree
-```
+---
 
-### /metabot — Agent Bus, Scheduling & Bot Management
+## Security Considerations
 
-```bash
-mb bots                                    # List all bots
-mb task <botName> <chatId> <prompt>        # Delegate task
-mb schedule list                           # List scheduled tasks
-mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a task
-mb health                                  # Health check
-```
+1. **Credential Management**: This is a credential vault — all changes must consider security impact
+2. **TEE Environment**: Code runs in trusted execution environment with special restrictions
+3. **Encryption**: AES-256-GCM for credential encryption, HKDF for key derivation
+4. **Token Handling**: PASETO (not JWT) for authentication tokens
+5. **Audit Logging**: All sensitive operations logged to immutable immudb store
+6. **Sandbox**: Credential-consuming operations run in isolated nsjail sandbox with seccomp, cgroups, namespaces
+7. **Input Validation**: Validate all inputs; use parameterized queries
 
-### Guidelines
+---
 
-- **Search before creating** — always check if a file or document already exists before creating new ones.
-- **Use metamemory** — when you discover important knowledge, project patterns, or user preferences, save them to memory so future sessions can benefit.
-- **Output files** — when generating files the user needs (images, PDFs, reports), copy them to the outputs directory provided in the system prompt so they get sent to the chat automatically.
-- **Be concise in chat** — responses appear as Feishu/Telegram cards with limited space. Keep answers focused and use markdown formatting.
+## Additional Documentation
 
-<!-- rtk-instructions v2 -->
-# RTK (Rust Token Killer) - Token-Optimized Commands
-
-## Golden Rule
-
-**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
-
-**Important**: Even in command chains with `&&`, use `rtk`:
-```bash
-# ❌ Wrong
-git add . && git commit -m "msg" && git push
-
-# ✅ Correct
-rtk git add . && rtk git commit -m "msg" && rtk git push
-```
-
-## RTK Commands by Workflow
-
-### Build & Compile (80-90% savings)
-```bash
-rtk cargo build         # Cargo build output
-rtk cargo check         # Cargo check output
-rtk cargo clippy        # Clippy warnings grouped by file (80%)
-rtk tsc                 # TypeScript errors grouped by file/code (83%)
-rtk lint                # ESLint/Biome violations grouped (84%)
-rtk prettier --check    # Files needing format only (70%)
-rtk next build          # Next.js build with route metrics (87%)
-```
-
-### Test (90-99% savings)
-```bash
-rtk cargo test          # Cargo test failures only (90%)
-rtk vitest run          # Vitest failures only (99.5%)
-rtk playwright test     # Playwright failures only (94%)
-rtk test <cmd>          # Generic test wrapper - failures only
-```
-
-### Git (59-80% savings)
-```bash
-rtk git status          # Compact status
-rtk git log             # Compact log (works with all git flags)
-rtk git diff            # Compact diff (80%)
-rtk git show            # Compact show (80%)
-rtk git add             # Ultra-compact confirmations (59%)
-rtk git commit          # Ultra-compact confirmations (59%)
-rtk git push            # Ultra-compact confirmations
-rtk git pull            # Ultra-compact confirmations
-rtk git branch          # Compact branch list
-rtk git fetch           # Compact fetch
-rtk git stash           # Compact stash
-rtk git worktree        # Compact worktree
-```
-
-Note: Git passthrough works for ALL subcommands, even those not explicitly listed.
-
-### GitHub (26-87% savings)
-```bash
-rtk gh pr view <num>    # Compact PR view (87%)
-rtk gh pr checks        # Compact PR checks (79%)
-rtk gh run list         # Compact workflow runs (82%)
-rtk gh issue list       # Compact issue list (80%)
-rtk gh api              # Compact API responses (26%)
-```
-
-### JavaScript/TypeScript Tooling (70-90% savings)
-```bash
-rtk pnpm list           # Compact dependency tree (70%)
-rtk pnpm outdated       # Compact outdated packages (80%)
-rtk pnpm install        # Compact install output (90%)
-rtk npm run <script>    # Compact npm script output
-rtk npx <cmd>           # Compact npx command output
-rtk prisma              # Prisma without ASCII art (88%)
-```
-
-### Files & Search (60-75% savings)
-```bash
-rtk ls <path>           # Tree format, compact (65%)
-rtk read <file>         # Code reading with filtering (60%)
-rtk grep <pattern>      # Search grouped by file (75%)
-rtk find <pattern>      # Find grouped by directory (70%)
-```
-
-### Analysis & Debug (70-90% savings)
-```bash
-rtk err <cmd>           # Filter errors only from any command
-rtk log <file>          # Deduplicated logs with counts
-rtk json <file>         # JSON structure without values
-rtk deps                # Dependency overview
-rtk env                 # Environment variables compact
-rtk summary <cmd>       # Smart summary of command output
-rtk diff                # Ultra-compact diffs
-```
-
-### Infrastructure (85% savings)
-```bash
-rtk docker ps           # Compact container list
-rtk docker images       # Compact image list
-rtk docker logs <c>     # Deduplicated logs
-rtk kubectl get         # Compact resource list
-rtk kubectl logs        # Deduplicated pod logs
-```
-
-### Network (65-70% savings)
-```bash
-rtk curl <url>          # Compact HTTP responses (70%)
-rtk wget <url>          # Compact download output (65%)
-```
-
-### Meta Commands
-```bash
-rtk gain                # View token savings statistics
-rtk gain --history      # View command history with savings
-rtk discover            # Analyze Claude Code sessions for missed RTK usage
-rtk proxy <cmd>         # Run command without filtering (for debugging)
-rtk init                # Add RTK instructions to CLAUDE.md
-rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
-```
-
-## Token Savings Overview
-
-| Category | Commands | Typical Savings |
-|----------|----------|-----------------|
-| Tests | vitest, playwright, cargo test | 90-99% |
-| Build | next, tsc, lint, prettier | 70-87% |
-| Git | status, log, diff, add, commit | 59-80% |
-| GitHub | gh pr, gh run, gh issue | 26-87% |
-| Package Managers | pnpm, npm, npx | 70-90% |
-| Files | ls, read, grep, find | 60-75% |
-| Infrastructure | docker, kubectl | 85% |
-| Network | curl, wget | 65-70% |
-
-Overall average: **60-90% token reduction** on common development operations.
-<!-- /rtk-instructions -->
+- `README.md` — Project overview and CLI usage guide
+- `API.md` — Complete REST API documentation
+- `docs/README.md` — Documentation hub
+- `IMMUDB_SETUP.md` — immudb setup instructions
+- `INTEL_SGX_DEPLOYMENT_REQUIREMENTS.md` — SGX deployment guide
+- `sdk-rust/README.md` — Rust SDK documentation
+- `sdk-typescript/README.md` — TypeScript SDK documentation
+- `cli/README.md` — CLI documentation
+- `.claude/rules/rust-coding-standards.md` — Detailed Rust coding standards
+- `.claude/rules/react-coding-standards.md` — Detailed React coding standards

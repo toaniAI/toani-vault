@@ -13,11 +13,27 @@ npm install -g @toani/vault-cli
 
 ## Configure
 
+Recommended CLI bootstrap:
+
+1. Sign in to the web app.
+2. Open `Profile -> Automation Access`.
+3. Create an automation token for your tenant scopes.
+4. Configure the CLI with that token:
+
 ```bash
 toani config init --url https://dev-credbridge.bitkinetic.com/ --token <AUTOMATION_TOKEN>
 ```
 
+`Privy Access Token` exchange is browser-oriented and is not expected to be available directly from a terminal workflow.
+
+Legacy/manual session import is still supported when you already have a session token:
+
+```bash
+toani auth login --url https://dev-credbridge.bitkinetic.com/ --session-token <SESSION_TOKEN>
+```
+
 Config is stored at `~/.toani/config.json` with fields:
+
 - `baseUrl`
 - `automationToken` (preferred API token for automation commands)
 - `sessionToken` (Session Token)
@@ -28,12 +44,14 @@ Config is stored at `~/.toani/config.json` with fields:
 - `timeout`
 
 Token resolution priority:
+
 1. explicit `--token`
 2. active profile `automationToken`
 3. env `TOANI_VAULT_TOKEN`
 4. `sessionToken` only for session-only auth commands
 
 Base URL resolution priority:
+
 1. explicit `--base-url`
 2. env `TOANI_BASE_URL`
 3. env `CREDBRIDGE_BASE_URL`
@@ -101,5 +119,5 @@ toani config profile show
 
 - `auth logout` only clears `sessionToken`; it does not clear `automationToken`.
 - `auth token create --save` writes the created automation token into the active profile.
-- `Privy Access Token` is only for exchanging `Session Token`.
+- `Privy Access Token` is only for exchanging `Session Token` and is primarily a browser-side flow.
 - `API Access Token` and `Service Account Token` are for API/CLI automation calls.

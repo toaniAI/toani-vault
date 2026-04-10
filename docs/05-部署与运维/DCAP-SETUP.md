@@ -250,7 +250,7 @@ println!("MRSIGNER: {}", hex::encode(quote.report_body.mrsigner));
 
 在没有 SGX 硬件的环境中，如需运行 simulation-safe 测试或文档示例，请显式设置 `TEE_MODE=simulation`：
 
-```rust
+````rust
 use vault_service::config::TeeRuntimeMode;
 
 let dcap_config = DcapConfig {
@@ -271,11 +271,12 @@ cargo run --features tee-hardware --bin sgx_dcap_quote_legacy_demo
 # 正例：按 Intel 推荐顺序执行
 TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so \
 cargo run --features tee-hardware --bin sgx_dcap_quote_standard_demo
-```
+````
 
 - `sgx_dcap_quote_legacy_demo` 用于稳定复现旧链路，输出已加载 `.so` 路径、`get_quote_size` 返回码和失败阶段。
 - `sgx_dcap_quote_standard_demo` 用于验证修复后的执行顺序，输出 `.so` 路径、`get_target_info rc`、`get_quote_size rc`、`quote_size` 和最终失败阶段。
-```
+
+````
 
 ## API 使用
 
@@ -287,7 +288,7 @@ cargo run --features tee-hardware --bin sgx_dcap_quote_standard_demo
 
 ```bash
 curl http://localhost:3000/api/v1/attestation/quote
-```
+````
 
 响应：
 
@@ -516,11 +517,11 @@ cargo run
 
 ### 建议验收矩阵
 
-| 类别 | 运行环境 | 目标 | 建议命令 |
-|------|----------|------|----------|
-| `simulation-safe` | 普通 CI / 开发机 | 验证默认构建、格式、lint、单测不依赖 SGX | `cargo fmt --check` / `cargo clippy --tests -- -D warnings` / `cargo test` |
-| `service-dependent` | 可访问数据库、Redis、immudb 的环境 | 验证服务集成行为，但不要求 SGX | `TEE_MODE=simulation cargo test --test attestation_api_tests` |
-| `hardware-only` | SGX 专用 runner / 预发机 | 验证真实 SGX/DCAP/AESM/PCCS 闭环 | `TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1` |
+| 类别                | 运行环境                           | 目标                                     | 建议命令                                                                               |
+| ------------------- | ---------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| `simulation-safe`   | 普通 CI / 开发机                   | 验证默认构建、格式、lint、单测不依赖 SGX | `cargo fmt --check` / `cargo clippy --tests -- -D warnings` / `cargo test`             |
+| `service-dependent` | 可访问数据库、Redis、immudb 的环境 | 验证服务集成行为，但不要求 SGX           | `TEE_MODE=simulation cargo test --test attestation_api_tests`                          |
+| `hardware-only`     | SGX 专用 runner / 预发机           | 验证真实 SGX/DCAP/AESM/PCCS 闭环         | `TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1` |
 
 ### 无法执行硬件验证时的记录模板
 

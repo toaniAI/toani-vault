@@ -134,6 +134,7 @@ Use the [Conventional Commits](https://www.conventionalcommits.org/) format:
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`
 
 Examples:
+
 ```
 feat(api): add credential rotation endpoint
 fix(crypto): use constant-time comparison for token validation
@@ -152,6 +153,7 @@ CredBridge handles sensitive credential data. All contributions must:
 ## Pull Request Process
 
 1. **Branch from `master`** — create a feature branch with a descriptive name:
+
    ```bash
    git checkout -b feat/credential-rotation
    ```
@@ -159,6 +161,7 @@ CredBridge handles sensitive credential data. All contributions must:
 2. **Make your changes** — keep commits focused and atomic.
 
 3. **Ensure all gates pass locally** before pushing:
+
    ```bash
    cargo fmt && cargo clippy --tests -- -D warnings && cargo test
    ```

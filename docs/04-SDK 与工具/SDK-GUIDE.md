@@ -38,24 +38,24 @@ npm install @toani/vault-sdk
 ```
 
 ```typescript
-import { CredBridgeClient, CredentialType } from '@toani/vault-sdk';
+import { CredBridgeClient, CredentialType } from "@toani/vault-sdk";
 
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.toani.io',
-  token: 'your-api-token',
+  baseUrl: "https://api.toani.io",
+  token: "your-api-token",
 });
 
 // 创建凭证
 const credential = await client.credentials.createUsernamePassword(
-  'schwab',
-  'user@example.com',
-  'secret_password'
+  "schwab",
+  "user@example.com",
+  "secret_password",
 );
 
 // 解密凭证
 const decrypted = await client.credentials.decrypt(
   credential.credentialId,
-  '用户登录操作'
+  "用户登录操作",
 );
 ```
 
@@ -97,23 +97,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 凭证类型
 
-| 类型 | 描述 | 适用场景 |
-|------|------|----------|
-| `UsernamePassword` | 用户名密码 | 传统登录 |
-| `ApiKey` | API 密钥 | 服务间调用 |
-| `OAuthRefresh` | OAuth 刷新令牌 | 第三方集成 |
-| `SessionCookie` | 会话 Cookie | Web 应用 |
-| `KycDocument` | KYC 文档 | 合规验证 |
+| 类型               | 描述           | 适用场景   |
+| ------------------ | -------------- | ---------- |
+| `UsernamePassword` | 用户名密码     | 传统登录   |
+| `ApiKey`           | API 密钥       | 服务间调用 |
+| `OAuthRefresh`     | OAuth 刷新令牌 | 第三方集成 |
+| `SessionCookie`    | 会话 Cookie    | Web 应用   |
+| `KycDocument`      | KYC 文档       | 合规验证   |
 
 ### Token Scope
 
-| Scope | 权限 | 描述 |
-|-------|------|------|
-| `credential:read` | 读取凭证 | 查看凭证元数据 |
-| `credential:decrypt` | 解密凭证 | 获取明文凭证内容 |
-| `credential:write` | 写入凭证 | 创建和删除凭证 |
-| `audit:read` | 读取审计日志 | 查看审计记录 |
-| `admin` | 管理员 | 所有权限 |
+| Scope                | 权限         | 描述             |
+| -------------------- | ------------ | ---------------- |
+| `credential:read`    | 读取凭证     | 查看凭证元数据   |
+| `credential:decrypt` | 解密凭证     | 获取明文凭证内容 |
+| `credential:write`   | 写入凭证     | 创建和删除凭证   |
+| `audit:read`         | 读取审计日志 | 查看审计记录     |
+| `admin`              | 管理员       | 所有权限         |
 
 ---
 
@@ -121,31 +121,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 初始化
 
-| 操作 | TypeScript | Rust |
-|------|-----------|------|
-| 创建客户端 | `new CredBridgeClient(config)` | `ToaniVaultSDK::new(config)` |
-| 设置 Token | `client.setToken(token)` | `client.set_token(token)` |
-| 获取 Token 信息 | `client.getTokenInfo()` | `client.get_token_info()` |
+| 操作            | TypeScript                     | Rust                         |
+| --------------- | ------------------------------ | ---------------------------- |
+| 创建客户端      | `new CredBridgeClient(config)` | `ToaniVaultSDK::new(config)` |
+| 设置 Token      | `client.setToken(token)`       | `client.set_token(token)`    |
+| 获取 Token 信息 | `client.getTokenInfo()`        | `client.get_token_info()`    |
 
 ### 凭证管理
 
-| 操作 | TypeScript | Rust |
-|------|-----------|------|
-| 创建凭证 | `credentials.create(request)` | `credentials.create(service_id, type, data, expires, options)` |
-| 获取列表 | `credentials.list(filter)` | `credentials.list(filter, options)` |
-| 获取详情 | `credentials.get(id)` | `credentials.get(id, options)` |
-| 解密凭证 | `credentials.decrypt(id, reason)` | `credentials.decrypt(id, reason, options)` |
-| 删除凭证 | `credentials.delete(id)` | `credentials.delete(id, options)` |
+| 操作     | TypeScript                        | Rust                                                           |
+| -------- | --------------------------------- | -------------------------------------------------------------- |
+| 创建凭证 | `credentials.create(request)`     | `credentials.create(service_id, type, data, expires, options)` |
+| 获取列表 | `credentials.list(filter)`        | `credentials.list(filter, options)`                            |
+| 获取详情 | `credentials.get(id)`             | `credentials.get(id, options)`                                 |
+| 解密凭证 | `credentials.decrypt(id, reason)` | `credentials.decrypt(id, reason, options)`                     |
+| 删除凭证 | `credentials.delete(id)`          | `credentials.delete(id, options)`                              |
 
 ### Token 管理
 
-| 操作 | TypeScript | Rust |
-|------|-----------|------|
-| 检查有效期 | `token.isValid()` | `token.is_valid()` |
+| 操作         | TypeScript                     | Rust                             |
+| ------------ | ------------------------------ | -------------------------------- |
+| 检查有效期   | `token.isValid()`              | `token.is_valid()`               |
 | 检查即将过期 | `token.isExpiringSoon(buffer)` | `token.is_expiring_soon(buffer)` |
-| 获取剩余时间 | `token.getRemainingTime()` | `token.get_remaining_time()` |
-| 检查权限 | `token.hasScope(scope)` | `token.has_scope(scope)` |
-| 验证 Token | `token.verify()` | `token.verify(options)` |
+| 获取剩余时间 | `token.getRemainingTime()`     | `token.get_remaining_time()`     |
+| 检查权限     | `token.hasScope(scope)`        | `token.has_scope(scope)`         |
+| 验证 Token   | `token.verify()`               | `token.verify(options)`          |
 
 ---
 
@@ -159,16 +159,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```typescript
 // 存储银行登录凭证
 const credential = await client.credentials.createUsernamePassword(
-  'schwab',
-  'user@example.com',
-  'SecureBankPass123!',
-  { expiresAt: Date.now() / 1000 + 86400 * 90 }
+  "schwab",
+  "user@example.com",
+  "SecureBankPass123!",
+  { expiresAt: Date.now() / 1000 + 86400 * 90 },
 );
 
 // 后续使用时解密
 const decrypted = await client.credentials.decrypt(
   credential.credentialId,
-  '执行转账操作'
+  "执行转账操作",
 );
 ```
 
@@ -204,15 +204,15 @@ let decrypted = sdk.credentials()
 ```typescript
 // 存储 Stripe API 密钥
 const apiKey = await client.credentials.createApiKey(
-  'stripe',
-  'sk_live_51H...',
-  'sk_secret_...',
-  { expiresAt: Date.now() / 1000 + 86400 * 365 }
+  "stripe",
+  "sk_live_51H...",
+  "sk_secret_...",
+  { expiresAt: Date.now() / 1000 + 86400 * 365 },
 );
 
 // 获取所有 API Key 凭证
 const { credentials } = await client.credentials.list({
-  credentialType: CredentialType.ApiKey
+  credentialType: CredentialType.ApiKey,
 });
 ```
 
@@ -249,13 +249,13 @@ let (credentials, _) = sdk.credentials().list(Some(filter), None).await?;
 
 ```typescript
 // 检查权限
-if (!client.token.hasScope('credential:decrypt')) {
-  throw new Error('缺少解密权限');
+if (!client.token.hasScope("credential:decrypt")) {
+  throw new Error("缺少解密权限");
 }
 
 // 检查多个权限
-if (!client.token.hasAllScopes(['credential:read', 'credential:decrypt'])) {
-  throw new Error('权限不足');
+if (!client.token.hasAllScopes(["credential:read", "credential:decrypt"])) {
+  throw new Error("权限不足");
 }
 ```
 
@@ -299,7 +299,7 @@ const client = new CredBridgeClient({
 ### 2. 错误处理
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
+import { CredBridgeError, CredBridgeErrorCode } from "@toani/vault-sdk";
 
 try {
   const credential = await client.credentials.get(id);
@@ -327,10 +327,10 @@ try {
 
 ```typescript
 // 好的做法
-await client.credentials.decrypt(id, '用户 user@example.com 执行转账');
+await client.credentials.decrypt(id, "用户 user@example.com 执行转账");
 
 // 不好的做法
-await client.credentials.decrypt(id, '使用凭证');
+await client.credentials.decrypt(id, "使用凭证");
 ```
 
 ### 4. 凭证过期管理
@@ -344,7 +344,10 @@ async function rotateExpiringCredentials() {
   const { credentials } = await client.credentials.list({ onlyValid: true });
 
   for (const cred of credentials) {
-    if (cred.expiresAt && new Date(cred.expiresAt) < new Date(Date.now() + 7 * 86400 * 1000)) {
+    if (
+      cred.expiresAt &&
+      new Date(cred.expiresAt) < new Date(Date.now() + 7 * 86400 * 1000)
+    ) {
       // 凭证将在7天内过期，执行轮换
       await rotateCredential(cred.credentialId);
     }
@@ -363,6 +366,7 @@ async function rotateExpiringCredentials() {
 **错误**: `TokenExpired` 或 `Unauthorized`
 
 **解决方案**:
+
 ```typescript
 // 检查 Token 有效期
 if (client.token.isExpiringSoon()) {
@@ -377,12 +381,13 @@ if (client.token.isExpiringSoon()) {
 **错误**: `NetworkError` 或 `Timeout`
 
 **解决方案**:
+
 ```typescript
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.toani.io',
-  token: 'your-token',
-  timeout: 60000,  // 增加超时时间
-  maxRetries: 5,   // 增加重试次数
+  baseUrl: "https://api.toani.io",
+  token: "your-token",
+  timeout: 60000, // 增加超时时间
+  maxRetries: 5, // 增加重试次数
 });
 ```
 
@@ -391,15 +396,19 @@ const client = new CredBridgeClient({
 **错误**: `InsufficientScope` 或 `Forbidden`
 
 **解决方案**:
+
 ```typescript
 // 检查权限
 const scopes = client.token.getScopes();
-console.log('Granted scopes:', scopes);
+console.log("Granted scopes:", scopes);
 
 // 确认所需权限
-const requiredScopes = ['credential:read', 'credential:decrypt'];
+const requiredScopes = ["credential:read", "credential:decrypt"];
 if (!client.token.hasAllScopes(requiredScopes)) {
-  console.error('Missing scopes:', requiredScopes.filter(s => !client.token.hasScope(s)));
+  console.error(
+    "Missing scopes:",
+    requiredScopes.filter((s) => !client.token.hasScope(s)),
+  );
 }
 ```
 

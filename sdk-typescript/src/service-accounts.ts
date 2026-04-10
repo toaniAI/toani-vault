@@ -1,4 +1,4 @@
-import type { CredBridgeClient } from './client.js';
+import type { CredBridgeClient } from "./client.js";
 import type {
   RequestOptions,
   ServiceAccountInfo,
@@ -7,7 +7,7 @@ import type {
   ServiceAccountTokenMetadata,
   CreateServiceAccountRequest,
   UpdateServiceAccountRequest,
-} from './types.js';
+} from "./types.js";
 
 interface ServiceAccountInfoApi {
   id: string;
@@ -72,7 +72,7 @@ function mapServiceAccount(item: ServiceAccountInfoApi): ServiceAccountInfo {
 }
 
 function mapTokenCreateResponse(
-  item: ServiceAccountTokenCreateResponseApi
+  item: ServiceAccountTokenCreateResponseApi,
 ): ServiceAccountTokenCreateResponse {
   return {
     accessToken: item.access_token,
@@ -90,7 +90,9 @@ function mapTokenCreateResponse(
   };
 }
 
-function mapTokenMetadata(item: ServiceAccountTokenMetadataApi): ServiceAccountTokenMetadata {
+function mapTokenMetadata(
+  item: ServiceAccountTokenMetadataApi,
+): ServiceAccountTokenMetadata {
   return {
     tokenId: item.token_id,
     tokenType: item.token_type,
@@ -118,32 +120,35 @@ export class ServiceAccountsService {
 
   public async create(
     request: CreateServiceAccountRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ServiceAccountInfo> {
     const response = await this.client.post<ServiceAccountInfoApi>(
-      '/service-accounts',
+      "/service-accounts",
       {
         name: request.name,
         description: request.description,
         scope_ceiling: request.scopeCeiling,
       },
-      options
+      options,
     );
     return mapServiceAccount(response);
   }
 
   public async list(options?: RequestOptions): Promise<ServiceAccountInfo[]> {
     const response = await this.client.get<ServiceAccountInfoApi[]>(
-      '/service-accounts',
-      options
+      "/service-accounts",
+      options,
     );
     return response.map(mapServiceAccount);
   }
 
-  public async get(id: string, options?: RequestOptions): Promise<ServiceAccountInfo> {
+  public async get(
+    id: string,
+    options?: RequestOptions,
+  ): Promise<ServiceAccountInfo> {
     const response = await this.client.get<ServiceAccountInfoApi>(
       `/service-accounts/${id}`,
-      options
+      options,
     );
     return mapServiceAccount(response);
   }
@@ -151,7 +156,7 @@ export class ServiceAccountsService {
   public async update(
     id: string,
     request: UpdateServiceAccountRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ServiceAccountInfo> {
     const response = await this.client.patch<ServiceAccountInfoApi>(
       `/service-accounts/${id}`,
@@ -161,7 +166,7 @@ export class ServiceAccountsService {
         status: request.status,
         scope_ceiling: request.scopeCeiling,
       },
-      options
+      options,
     );
     return mapServiceAccount(response);
   }
@@ -169,27 +174,28 @@ export class ServiceAccountsService {
   public async createToken(
     id: string,
     request: ServiceAccountTokenCreateRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ServiceAccountTokenCreateResponse> {
-    const response = await this.client.post<ServiceAccountTokenCreateResponseApi>(
-      `/service-accounts/${id}/tokens`,
-      {
-        scopes: request.scopes,
-        ttl_seconds: request.ttlSeconds,
-        display_name: request.displayName,
-      },
-      options
-    );
+    const response =
+      await this.client.post<ServiceAccountTokenCreateResponseApi>(
+        `/service-accounts/${id}/tokens`,
+        {
+          scopes: request.scopes,
+          ttl_seconds: request.ttlSeconds,
+          display_name: request.displayName,
+        },
+        options,
+      );
     return mapTokenCreateResponse(response);
   }
 
   public async listTokens(
     id: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<ServiceAccountTokenMetadata[]> {
     const response = await this.client.get<ServiceAccountTokenMetadataApi[]>(
       `/service-accounts/${id}/tokens`,
-      options
+      options,
     );
     return response.map(mapTokenMetadata);
   }

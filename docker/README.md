@@ -52,6 +52,7 @@ chmod +x scripts/*.sh
 ```
 
 这将生成：
+
 - `.env` 文件（包含随机生成的密码）
 - 必要的配置文件
 - 目录结构
@@ -59,11 +60,13 @@ chmod +x scripts/*.sh
 ### 2. 启动服务
 
 **开发环境：**
+
 ```bash
 docker-compose up -d
 ```
 
 **生产环境：**
+
 ```bash
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
@@ -83,61 +86,61 @@ curl http://localhost:8080/health
 
 ## 服务清单
 
-| 服务 | 端口 | 用途 |
-|------|------|------|
-| vault-service | 8080 | CredBridge 主服务 |
-| postgres | 5432 | 主数据库 |
-| redis | 6379 | 缓存与会话存储 |
-| immudb | 3322 | 不可变审计日志 |
-| vault | 8200 | HashiCorp Vault 密钥管理 |
-| grafana | 3000 | 监控仪表盘（可选） |
-| prometheus | 9090 | 指标收集（可选） |
+| 服务          | 端口 | 用途                     |
+| ------------- | ---- | ------------------------ |
+| vault-service | 8080 | CredBridge 主服务        |
+| postgres      | 5432 | 主数据库                 |
+| redis         | 6379 | 缓存与会话存储           |
+| immudb        | 3322 | 不可变审计日志           |
+| vault         | 8200 | HashiCorp Vault 密钥管理 |
+| grafana       | 3000 | 监控仪表盘（可选）       |
+| prometheus    | 9090 | 指标收集（可选）         |
 
 ## 环境变量
 
 ### 核心服务配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `VAULT_SERVICE_HOST` | 0.0.0.0 | 服务绑定地址 |
-| `VAULT_SERVICE_PORT` | 8080 | 服务端口 |
-| `VAULT_SERVICE_ENV` | development | 环境类型 |
-| `RUST_LOG` | debug | 日志级别 |
+| 变量                 | 默认值      | 说明         |
+| -------------------- | ----------- | ------------ |
+| `VAULT_SERVICE_HOST` | 0.0.0.0     | 服务绑定地址 |
+| `VAULT_SERVICE_PORT` | 8080        | 服务端口     |
+| `VAULT_SERVICE_ENV`  | development | 环境类型     |
+| `RUST_LOG`           | debug       | 日志级别     |
 
 ### 数据库配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DATABASE_URL` | - | PostgreSQL 连接字符串 |
-| `DB_USER` | credbridge | 数据库用户名 |
-| `DB_PASSWORD` | - | 数据库密码 |
-| `DB_NAME` | credbridge | 数据库名称 |
+| 变量           | 默认值     | 说明                  |
+| -------------- | ---------- | --------------------- |
+| `DATABASE_URL` | -          | PostgreSQL 连接字符串 |
+| `DB_USER`      | credbridge | 数据库用户名          |
+| `DB_PASSWORD`  | -          | 数据库密码            |
+| `DB_NAME`      | credbridge | 数据库名称            |
 
 ### Redis 配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `REDIS_URL` | - | Redis 连接字符串 |
-| `REDIS_HOST` | redis | Redis 主机 |
-| `REDIS_PORT` | 6379 | Redis 端口 |
-| `REDIS_PASSWORD` | - | Redis 密码 |
+| 变量             | 默认值 | 说明             |
+| ---------------- | ------ | ---------------- |
+| `REDIS_URL`      | -      | Redis 连接字符串 |
+| `REDIS_HOST`     | redis  | Redis 主机       |
+| `REDIS_PORT`     | 6379   | Redis 端口       |
+| `REDIS_PASSWORD` | -      | Redis 密码       |
 
 ### immudb 配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `IMMUDB_HOST` | immudb | immudb 主机 |
-| `IMMUDB_PORT` | 3322 | immudb 端口 |
-| `IMMUDB_DATABASE` | credbridge_audit | 审计数据库名 |
-| `IMMUDB_USERNAME` | credbridge | immudb 用户名 |
-| `IMMUDB_PASSWORD` | - | immudb 密码 |
+| 变量              | 默认值           | 说明          |
+| ----------------- | ---------------- | ------------- |
+| `IMMUDB_HOST`     | immudb           | immudb 主机   |
+| `IMMUDB_PORT`     | 3322             | immudb 端口   |
+| `IMMUDB_DATABASE` | credbridge_audit | 审计数据库名  |
+| `IMMUDB_USERNAME` | credbridge       | immudb 用户名 |
+| `IMMUDB_PASSWORD` | -                | immudb 密码   |
 
 ### Vault 配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `VAULT_ADDR` | http://vault:8200 | Vault 地址 |
-| `VAULT_TOKEN` | - | Vault Root Token |
+| 变量          | 默认值            | 说明             |
+| ------------- | ----------------- | ---------------- |
+| `VAULT_ADDR`  | http://vault:8200 | Vault 地址       |
+| `VAULT_TOKEN` | -                 | Vault Root Token |
 
 ## 常用命令
 
@@ -243,6 +246,7 @@ docker-compose --profile monitoring up -d
 ```
 
 访问地址：
+
 - Grafana: http://localhost:3000 (admin/admin)
 - Prometheus: http://localhost:9090
 

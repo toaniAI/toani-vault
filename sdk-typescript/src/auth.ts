@@ -2,7 +2,7 @@
  * CredBridge SDK - Auth 服务
  */
 
-import type { CredBridgeClient } from './client.js';
+import type { CredBridgeClient } from "./client.js";
 import {
   type AuthCreateAccessTokenRequest,
   type AuthCreateAccessTokenResponse,
@@ -20,7 +20,7 @@ import {
   type AuthTenantInfo,
   type AuthUserProfile,
   type RequestOptions,
-} from './types.js';
+} from "./types.js";
 
 interface AuthIdentityInfoApi {
   provider: string;
@@ -176,7 +176,9 @@ function mapTenant(tenant?: AuthTenantInfoApi): AuthTenantInfo | undefined {
   };
 }
 
-function mapCreateSessionResponse(response: AuthCreateSessionResponseApi): AuthCreateSessionResponse {
+function mapCreateSessionResponse(
+  response: AuthCreateSessionResponseApi,
+): AuthCreateSessionResponse {
   return {
     user: mapUser(response.user),
     session: mapSession(response.session),
@@ -201,7 +203,7 @@ function mapMeResponse(response: AuthMeResponseApi): AuthMeResponse {
 }
 
 function mapCreateAccessTokenResponse(
-  response: AuthCreateAccessTokenResponseApi
+  response: AuthCreateAccessTokenResponseApi,
 ): AuthCreateAccessTokenResponse {
   return {
     accessToken: response.access_token,
@@ -217,13 +219,17 @@ function mapCreateAccessTokenResponse(
   };
 }
 
-function mapAutomationToken(response: AuthAutomationTokenApi): AuthAutomationToken {
+function mapAutomationToken(
+  response: AuthAutomationTokenApi,
+): AuthAutomationToken {
   return {
     tokenId: response.token_id,
     tokenKind: response.token_kind,
     tokenName: response.token_name,
     tokenPrefix: response.token_prefix,
-    tokenPreview: response.token_prefix ? `${response.token_prefix}...` : undefined,
+    tokenPreview: response.token_prefix
+      ? `${response.token_prefix}...`
+      : undefined,
     tokenType: response.token_type,
     subjectType: response.subject_type,
     subjectId: response.subject_id,
@@ -256,15 +262,15 @@ export class AuthService {
 
   public async createSession(
     request: AuthCreateSessionRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<AuthCreateSessionResponse> {
     const response = await this.client.post<AuthCreateSessionResponseApi>(
-      '/auth/session',
+      "/auth/session",
       {
         privy_access_token: request.privyAccessToken,
         invitation_token: request.invitationToken,
       },
-      options
+      options,
     );
 
     return mapCreateSessionResponse(response);
@@ -272,43 +278,55 @@ export class AuthService {
 
   public async createAccessToken(
     request: AuthCreateAccessTokenRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<AuthCreateAccessTokenResponse> {
     const response = await this.client.post<AuthCreateAccessTokenResponseApi>(
-      '/auth/access-token',
+      "/auth/access-token",
       {
         scopes: request.scopes,
         ttl_seconds: request.ttlSeconds,
       },
-      options
+      options,
     );
 
     return mapCreateAccessTokenResponse(response);
   }
 
-  public async revokeAccessToken(tokenId: string, options?: RequestOptions): Promise<boolean> {
+  public async revokeAccessToken(
+    tokenId: string,
+    options?: RequestOptions,
+  ): Promise<boolean> {
     const response = await this.client.post<{ revoked: boolean }>(
       `/tokens/${tokenId}/revoke`,
       {},
-      options
+      options,
     );
 
     return response.revoked;
   }
 
   public async me(options?: RequestOptions): Promise<AuthMeResponse> {
-    const response = await this.client.get<AuthMeResponseApi>('/auth/me', options);
+    const response = await this.client.get<AuthMeResponseApi>(
+      "/auth/me",
+      options,
+    );
     return mapMeResponse(response);
   }
 
   public async logout(options?: RequestOptions): Promise<AuthLogoutResponse> {
-    return this.client.post<AuthLogoutResponse>('/auth/logout', undefined, options);
+    return this.client.post<AuthLogoutResponse>(
+      "/auth/logout",
+      undefined,
+      options,
+    );
   }
 
-  public async memberships(options?: RequestOptions): Promise<AuthMembershipsResponse> {
+  public async memberships(
+    options?: RequestOptions,
+  ): Promise<AuthMembershipsResponse> {
     const response = await this.client.get<AuthMembershipsResponseApi>(
-      '/auth/memberships',
-      options
+      "/auth/memberships",
+      options,
     );
 
     return {
@@ -318,19 +336,20 @@ export class AuthService {
 
   public async createAutomationToken(
     request: AuthCreateAutomationTokenRequest,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<AuthCreateAutomationTokenResponse> {
-    const response = await this.client.post<AuthCreateAutomationTokenResponseApi>(
-      '/profile/automation-tokens',
-      {
-        name: request.name,
-        description: request.description,
-        scopes: request.scopes,
-        ttl_seconds: request.ttlSeconds,
-        created_via: request.createdVia,
-      },
-      options
-    );
+    const response =
+      await this.client.post<AuthCreateAutomationTokenResponseApi>(
+        "/profile/automation-tokens",
+        {
+          name: request.name,
+          description: request.description,
+          scopes: request.scopes,
+          ttl_seconds: request.ttlSeconds,
+          created_via: request.createdVia,
+        },
+        options,
+      );
 
     return {
       tokenValue: response.token_value,
@@ -339,33 +358,35 @@ export class AuthService {
     };
   }
 
-  public async listAutomationTokens(options?: RequestOptions): Promise<AuthAutomationToken[]> {
+  public async listAutomationTokens(
+    options?: RequestOptions,
+  ): Promise<AuthAutomationToken[]> {
     const response = await this.client.get<AuthAutomationTokenApi[]>(
-      '/profile/automation-tokens',
-      options
+      "/profile/automation-tokens",
+      options,
     );
     return response.map(mapAutomationToken);
   }
 
   public async getAutomationToken(
     tokenId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<AuthAutomationToken> {
     const response = await this.client.get<AuthAutomationTokenApi>(
       `/profile/automation-tokens/${tokenId}`,
-      options
+      options,
     );
     return mapAutomationToken(response);
   }
 
   public async revokeAutomationToken(
     tokenId: string,
-    options?: RequestOptions
+    options?: RequestOptions,
   ): Promise<AuthAutomationToken> {
     const response = await this.client.post<AuthAutomationTokenApi>(
       `/profile/automation-tokens/${tokenId}/revoke`,
       {},
-      options
+      options,
     );
     return mapAutomationToken(response);
   }

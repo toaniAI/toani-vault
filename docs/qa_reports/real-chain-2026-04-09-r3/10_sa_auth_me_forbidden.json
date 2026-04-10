@@ -1,1 +1,7 @@
-{"error":"forbidden","message":"服务器内部错误","error_description":"服务器内部错误","i18n":{"key":"errors.auth.insufficient_permissions"},"locale":"zh-CN"}
+{
+  "error": "forbidden",
+  "message": "服务器内部错误",
+  "error_description": "服务器内部错误",
+  "i18n": { "key": "errors.auth.insufficient_permissions" },
+  "locale": "zh-CN"
+}

@@ -6,12 +6,12 @@
 
 ## 📋 文档导航
 
-| 文档 | 描述 | 用途 |
-|------|------|------|
-| [SGX_HARDWARE_TEST_PLAN.md](./SGX_HARDWARE_TEST_PLAN.md) | 测试计划与设计 | 了解测试策略和用例设计 |
-| [SGX_TEST_EXECUTION_GUIDE.md](./SGX_TEST_EXECUTION_GUIDE.md) | 测试执行指南 | 按步骤执行测试 |
-| [DCAP_SETUP.md](./DCAP_SETUP.md) | DCAP 配置指南 | 安装和配置 DCAP |
-| [SANDBOX_ANALYSIS.md](./SANDBOX_ANALYSIS.md) | 沙箱功能分析 | 了解沙箱架构 |
+| 文档                                                         | 描述           | 用途                   |
+| ------------------------------------------------------------ | -------------- | ---------------------- |
+| [SGX_HARDWARE_TEST_PLAN.md](./SGX_HARDWARE_TEST_PLAN.md)     | 测试计划与设计 | 了解测试策略和用例设计 |
+| [SGX_TEST_EXECUTION_GUIDE.md](./SGX_TEST_EXECUTION_GUIDE.md) | 测试执行指南   | 按步骤执行测试         |
+| [DCAP_SETUP.md](./DCAP_SETUP.md)                             | DCAP 配置指南  | 安装和配置 DCAP        |
+| [SANDBOX_ANALYSIS.md](./SANDBOX_ANALYSIS.md)                 | 沙箱功能分析   | 了解沙箱架构           |
 
 ---
 
@@ -88,41 +88,46 @@ credbridge/
 
 ### 测试用例列表
 
-| 编号 | 测试名称 | 测试类型 | 执行时间 |
-|------|---------|---------|---------|
-| HW-001 | SGX 硬件基础验证 | 冒烟测试 | <1s |
-| HW-002 | Enclave 测量值一致性 | 功能测试 | <2s |
-| HW-003 | DCAP Quote 生成 | 功能测试 | <3s |
-| HW-004 | DCAP Quote 验证 | 功能测试 | <2s |
-| HW-005 | 挑战 - 响应协议 | 集成测试 | <5s |
-| HW-006 | SGX Sealing 密钥 | 安全测试 | <2s |
-| HW-007 | 密钥层次结构 | 安全测试 | <3s |
-| HW-008 | 安全通道建立 | 集成测试 | <2s |
-| HW-009 | 测量值白名单 | 安全测试 | <3s |
-| HW-010 | 重放攻击防护 | 安全测试 | <2s |
+| 编号   | 测试名称             | 测试类型 | 执行时间 |
+| ------ | -------------------- | -------- | -------- |
+| HW-001 | SGX 硬件基础验证     | 冒烟测试 | <1s      |
+| HW-002 | Enclave 测量值一致性 | 功能测试 | <2s      |
+| HW-003 | DCAP Quote 生成      | 功能测试 | <3s      |
+| HW-004 | DCAP Quote 验证      | 功能测试 | <2s      |
+| HW-005 | 挑战 - 响应协议      | 集成测试 | <5s      |
+| HW-006 | SGX Sealing 密钥     | 安全测试 | <2s      |
+| HW-007 | 密钥层次结构         | 安全测试 | <3s      |
+| HW-008 | 安全通道建立         | 集成测试 | <2s      |
+| HW-009 | 测量值白名单         | 安全测试 | <3s      |
+| HW-010 | 重放攻击防护         | 安全测试 | <2s      |
 
 ### 测试覆盖的功能
 
 ✅ **Quote 生成与验证**
+
 - DCAP Quote 在真实硬件上生成
 - Quote 签名验证
 - 测量值比对
 
 ✅ **远程认证协议**
+
 - 挑战 - 响应完整流程
 - Nonce 绑定机制
 - 重放攻击防护
 
 ✅ **密钥管理**
+
 - SGX Sealing Key 派生
 - 密钥层次结构（L0→L1→L2→L3）
 - 租户隔离
 
 ✅ **安全通道**
+
 - 基于认证的密钥协商
 - 加密通信
 
 ✅ **访问控制**
+
 - 测量值白名单
 - 证书链验证
 
@@ -132,22 +137,22 @@ credbridge/
 
 ### 硬件要求
 
-| 组件 | 最低要求 | 推荐配置 |
-|------|---------|---------|
-| CPU | Intel 第 6 代酷睿 | Intel 第 10 代或更新 |
-| SGX | FLC 支持 | SGX2 支持 |
-| 内存 | 4GB | 8GB+ |
-| BIOS | SGX Enabled | SGX + VT-x Enabled |
+| 组件 | 最低要求          | 推荐配置             |
+| ---- | ----------------- | -------------------- |
+| CPU  | Intel 第 6 代酷睿 | Intel 第 10 代或更新 |
+| SGX  | FLC 支持          | SGX2 支持            |
+| 内存 | 4GB               | 8GB+                 |
+| BIOS | SGX Enabled       | SGX + VT-x Enabled   |
 
 ### 软件要求
 
-| 组件 | 版本 | 说明 |
-|------|------|------|
-| Linux Kernel | 5.11+ | 内置 SGX 驱动 |
-| SGX Driver | 2.11+ | 内核<5.11 时需要 |
-| SGX SDK | 2.24+ | Intel 官方 SDK |
-| DCAP Library | 1.15+ | Data Center Attestation Primitives |
-| AESM Service | 最新 | Architectural Enclave Service Manager |
+| 组件         | 版本  | 说明                                  |
+| ------------ | ----- | ------------------------------------- |
+| Linux Kernel | 5.11+ | 内置 SGX 驱动                         |
+| SGX Driver   | 2.11+ | 内核<5.11 时需要                      |
+| SGX SDK      | 2.24+ | Intel 官方 SDK                        |
+| DCAP Library | 1.15+ | Data Center Attestation Primitives    |
+| AESM Service | 最新  | Architectural Enclave Service Manager |
 
 ### 快速检查清单
 
@@ -175,6 +180,7 @@ ls -la /dev/sgx_*
 ### 通过标准
 
 所有测试应通过：
+
 ```
 test result: ok. 11 passed; 0 failed; 0 ignored
 ```
@@ -182,6 +188,7 @@ test result: ok. 11 passed; 0 failed; 0 ignored
 ### 失败处理
 
 如果看到失败：
+
 ```
 test test_dcap_quote_generation_hardware ... FAILED
 ```
@@ -194,12 +201,12 @@ test test_dcap_quote_generation_hardware ... FAILED
 
 在推荐配置上的预期性能：
 
-| 指标 | 预期值 |
-|------|-------|
-| Quote 生成 | <500ms |
-| Quote 验证 | <200ms |
-| 完整测试套件 | <30s |
-| 代码覆盖率 | >80% |
+| 指标         | 预期值 |
+| ------------ | ------ |
+| Quote 生成   | <500ms |
+| Quote 验证   | <200ms |
+| 完整测试套件 | <30s   |
+| 代码覆盖率   | >80%   |
 
 ---
 
@@ -238,6 +245,7 @@ RUST_LOG=debug cargo test --test sgx_hardware_tests -- --nocapture
 ### Q4: 如何在 macOS/Windows 上测试？
 
 **A**: SGX 硬件测试仅支持 Linux。在其他平台可以：
+
 1. 使用虚拟机（启用 SGX 穿透）
 2. 使用模拟模式运行单元测试
 3. 使用远程 Linux 测试服务器
@@ -271,6 +279,7 @@ cargo test --test sgx_hardware_tests --release \
 ### 贡献测试用例
 
 欢迎提交新的测试用例，特别是：
+
 - 边界条件测试
 - 压力测试
 - 安全场景测试
@@ -316,8 +325,8 @@ cargo test --test sgx_hardware_tests --release \
 
 ## 📝 更新日志
 
-| 日期 | 版本 | 变更 |
-|------|------|------|
+| 日期       | 版本  | 变更                             |
+| ---------- | ----- | -------------------------------- |
 | 2026-03-20 | 1.0.0 | 初始版本，包含 10 个核心测试用例 |
 
 ---

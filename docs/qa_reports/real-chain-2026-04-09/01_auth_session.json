@@ -1,1 +1,28 @@
-{"user":{"id":"019d7199-7017-7791-8e7b-c9f8cf883284","display_name":"Mock User","status":"active","onboarding_completed":false,"default_tenant_id":null,"identities":[{"provider":"privy","subject":"did:privy:mock","wallet_address":"0x1234567890abcdef","email":"mock@example.com","is_verified":true,"is_primary":true}]},"session":{"id":"019d7199-7037-7f00-ac9d-530565abd70c","session_token":"ttpreRBRwqf4OoZ47-_S2aXHpXR4YHp7qyVIJmBj8RM","expires_at":"2026-04-09T10:36:14.391817+00:00","mfa_status":"not_required"},"memberships":[],"current_tenant":null,"current_membership":null}
+{
+  "user": {
+    "id": "019d7199-7017-7791-8e7b-c9f8cf883284",
+    "display_name": "Mock User",
+    "status": "active",
+    "onboarding_completed": false,
+    "default_tenant_id": null,
+    "identities": [
+      {
+        "provider": "privy",
+        "subject": "did:privy:mock",
+        "wallet_address": "0x1234567890abcdef",
+        "email": "mock@example.com",
+        "is_verified": true,
+        "is_primary": true
+      }
+    ]
+  },
+  "session": {
+    "id": "019d7199-7037-7f00-ac9d-530565abd70c",
+    "session_token": "ttpreRBRwqf4OoZ47-_S2aXHpXR4YHp7qyVIJmBj8RM",
+    "expires_at": "2026-04-09T10:36:14.391817+00:00",
+    "mfa_status": "not_required"
+  },
+  "memberships": [],
+  "current_tenant": null,
+  "current_membership": null
+}

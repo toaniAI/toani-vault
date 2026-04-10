@@ -86,23 +86,23 @@ Content-Type: application/json
 
 **字段说明**
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `success` | boolean | 请求是否成功 |
-| `challenge_id` | string | 挑战唯一标识符 |
-| `nonce` | string | 32字节随机挑战值（hex编码） |
-| `quote_b64` | string | SGX Quote（base64编码） |
-| `expires_at` | number | 挑战过期时间戳（Unix秒） |
-| `mrenclave` | string | Enclave 测量值（MRENCLAVE） |
-| `mrsigner` | string | 签名者测量值（MRSIGNER） |
-| `error` | string | 错误信息（如果失败） |
+| 字段           | 类型    | 说明                        |
+| -------------- | ------- | --------------------------- |
+| `success`      | boolean | 请求是否成功                |
+| `challenge_id` | string  | 挑战唯一标识符              |
+| `nonce`        | string  | 32字节随机挑战值（hex编码） |
+| `quote_b64`    | string  | SGX Quote（base64编码）     |
+| `expires_at`   | number  | 挑战过期时间戳（Unix秒）    |
+| `mrenclave`    | string  | Enclave 测量值（MRENCLAVE） |
+| `mrsigner`     | string  | 签名者测量值（MRSIGNER）    |
+| `error`        | string  | 错误信息（如果失败）        |
 
 **错误码**
 
-| HTTP 状态码 | 错误场景 |
-|-------------|----------|
-| 500 | Enclave 未运行或内部错误 |
-| 503 | 服务暂时不可用 |
+| HTTP 状态码 | 错误场景                 |
+| ----------- | ------------------------ |
+| 500         | Enclave 未运行或内部错误 |
+| 503         | 服务暂时不可用           |
 
 ---
 
@@ -138,21 +138,21 @@ Content-Type: application/json
 
 **字段说明**
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `success` | boolean | API 调用是否成功 |
-| `verified` | boolean | 认证是否通过 |
-| `mrenclave` | string | 验证通过的 MRENCLAVE |
-| `mrsigner` | string | 验证通过的 MRSIGNER |
-| `timestamp` | number | 验证时间戳 |
-| `error` | string | 验证失败原因 |
+| 字段        | 类型    | 说明                 |
+| ----------- | ------- | -------------------- |
+| `success`   | boolean | API 调用是否成功     |
+| `verified`  | boolean | 认证是否通过         |
+| `mrenclave` | string  | 验证通过的 MRENCLAVE |
+| `mrsigner`  | string  | 验证通过的 MRSIGNER  |
+| `timestamp` | number  | 验证时间戳           |
+| `error`     | string  | 验证失败原因         |
 
 **错误码**
 
-| HTTP 状态码 | 错误场景 |
-|-------------|----------|
-| 400 | 无效的 base64 编码或 Quote 格式 |
-| 500 | 内部错误 |
+| HTTP 状态码 | 错误场景                        |
+| ----------- | ------------------------------- |
+| 400         | 无效的 base64 编码或 Quote 格式 |
+| 500         | 内部错误                        |
 
 **安全特性**
 
@@ -190,22 +190,22 @@ GET /api/v1/attestation/status
 
 **状态值**
 
-| 状态 | 说明 |
-|------|------|
-| `authenticated` | 已认证，Quote 有效 |
+| 状态                   | 说明                       |
+| ---------------------- | -------------------------- |
+| `authenticated`        | 已认证，Quote 有效         |
 | `pending_verification` | 待验证，Quote 未生成或无效 |
-| `expired` | Quote 已过期 |
-| `uninitialized` | Enclave 未初始化 |
+| `expired`              | Quote 已过期               |
+| `uninitialized`        | Enclave 未初始化           |
 
 **字段说明**
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `status` | string | 当前认证状态 |
-| `enclave_state` | string | Enclave 运行状态 |
-| `quote_valid` | boolean | 当前 Quote 是否有效 |
-| `quote_expires_at` | number | Quote 过期时间 |
-| `last_verified_at` | number | 最后验证时间 |
+| 字段               | 类型    | 说明                |
+| ------------------ | ------- | ------------------- |
+| `status`           | string  | 当前认证状态        |
+| `enclave_state`    | string  | Enclave 运行状态    |
+| `quote_valid`      | boolean | 当前 Quote 是否有效 |
+| `quote_expires_at` | number  | Quote 过期时间      |
+| `last_verified_at` | number  | 最后验证时间        |
 
 ---
 
@@ -269,29 +269,29 @@ Content-Type: application/json
 
 **字段说明**
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `success` | boolean | API 调用是否成功 |
-| `valid` | boolean | Quote 验证是否通过 |
-| `mrenclave` | string | Quote 中的 MRENCLAVE 值（hex 编码） |
-| `mrsigner` | string | Quote 中的 MRSIGNER 值（hex 编码） |
-| `timestamp` | number | 验证时间戳（Unix 秒） |
-| `error` | string | 验证失败原因（如果失败） |
+| 字段        | 类型    | 说明                                |
+| ----------- | ------- | ----------------------------------- |
+| `success`   | boolean | API 调用是否成功                    |
+| `valid`     | boolean | Quote 验证是否通过                  |
+| `mrenclave` | string  | Quote 中的 MRENCLAVE 值（hex 编码） |
+| `mrsigner`  | string  | Quote 中的 MRSIGNER 值（hex 编码）  |
+| `timestamp` | number  | 验证时间戳（Unix 秒）               |
+| `error`     | string  | 验证失败原因（如果失败）            |
 
 **请求参数**
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `quote_b64` | string | 是 | SGX Quote（base64 编码） |
-| `nonce` | string | 否 | 可选的挑战 nonce（hex 编码），用于验证 Quote 与挑战的绑定 |
+| 参数        | 类型   | 必填 | 说明                                                      |
+| ----------- | ------ | ---- | --------------------------------------------------------- |
+| `quote_b64` | string | 是   | SGX Quote（base64 编码）                                  |
+| `nonce`     | string | 否   | 可选的挑战 nonce（hex 编码），用于验证 Quote 与挑战的绑定 |
 
 **错误码**
 
-| HTTP 状态码 | 错误场景 |
-|-------------|----------|
-| 400 | 无效的 base64 编码或 Quote 格式 |
-| 500 | 内部错误 |
-| 503 | 服务暂时不可用 |
+| HTTP 状态码 | 错误场景                        |
+| ----------- | ------------------------------- |
+| 400         | 无效的 base64 编码或 Quote 格式 |
+| 500         | 内部错误                        |
+| 503         | 服务暂时不可用                  |
 
 **安全特性**
 
@@ -341,29 +341,29 @@ GET /api/v1/attestation/report
 
 **字段说明**
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `success` | boolean | API 调用是否成功 |
-| `data.version` | string | Quote 版本号 |
-| `data.mrenclave` | string | Enclave 测量值（MRENCLAVE） |
-| `data.mrsigner` | string | 签名者测量值（MRSIGNER） |
-| `data.security_version` | number | 安全版本号 |
-| `data.product_id` | number | 产品 ID |
-| `data.attributes` | string | Enclave 属性（hex 编码） |
-| `data.timestamp` | number | Quote 生成时间戳（Unix 秒） |
-| `data.quote_b64` | string | SGX Quote（base64 编码） |
-| `data.certificate_info.subject` | string | 证书主题 |
-| `data.certificate_info.issuer` | string | 证书颁发者 |
-| `data.certificate_info.not_before` | string | 证书有效期起始 |
-| `data.certificate_info.not_after` | string | 证书有效期结束 |
-| `data.certificate_info.fingerprint` | string | 证书指纹（SHA256） |
+| 字段                                | 类型    | 说明                        |
+| ----------------------------------- | ------- | --------------------------- |
+| `success`                           | boolean | API 调用是否成功            |
+| `data.version`                      | string  | Quote 版本号                |
+| `data.mrenclave`                    | string  | Enclave 测量值（MRENCLAVE） |
+| `data.mrsigner`                     | string  | 签名者测量值（MRSIGNER）    |
+| `data.security_version`             | number  | 安全版本号                  |
+| `data.product_id`                   | number  | 产品 ID                     |
+| `data.attributes`                   | string  | Enclave 属性（hex 编码）    |
+| `data.timestamp`                    | number  | Quote 生成时间戳（Unix 秒） |
+| `data.quote_b64`                    | string  | SGX Quote（base64 编码）    |
+| `data.certificate_info.subject`     | string  | 证书主题                    |
+| `data.certificate_info.issuer`      | string  | 证书颁发者                  |
+| `data.certificate_info.not_before`  | string  | 证书有效期起始              |
+| `data.certificate_info.not_after`   | string  | 证书有效期结束              |
+| `data.certificate_info.fingerprint` | string  | 证书指纹（SHA256）          |
 
 **错误码**
 
-| HTTP 状态码 | 错误场景 |
-|-------------|----------|
-| 500 | 内部错误 |
-| 503 | 服务暂时不可用（Quote 不可用） |
+| HTTP 状态码 | 错误场景                       |
+| ----------- | ------------------------------ |
+| 500         | 内部错误                       |
+| 503         | 服务暂时不可用（Quote 不可用） |
 
 **使用场景**
 
@@ -401,25 +401,25 @@ Content-Type: application/json
 
 **字段说明**
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `success` | boolean | API 调用是否成功 |
-| `new_quote_b64` | string | 新的 SGX Quote（base64 编码） |
-| `timestamp` | number | Quote 生成时间戳（Unix 秒） |
-| `error` | string | 错误信息（如果失败） |
+| 字段            | 类型    | 说明                          |
+| --------------- | ------- | ----------------------------- |
+| `success`       | boolean | API 调用是否成功              |
+| `new_quote_b64` | string  | 新的 SGX Quote（base64 编码） |
+| `timestamp`     | number  | Quote 生成时间戳（Unix 秒）   |
+| `error`         | string  | 错误信息（如果失败）          |
 
 **请求参数**
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `challenge` | string | 否 | 可选的挑战数据，用于绑定新的 Quote |
+| 参数        | 类型   | 必填 | 说明                               |
+| ----------- | ------ | ---- | ---------------------------------- |
+| `challenge` | string | 否   | 可选的挑战数据，用于绑定新的 Quote |
 
 **错误码**
 
-| HTTP 状态码 | 错误场景 |
-|-------------|----------|
-| 500 | 内部错误（Enclave 未运行等） |
-| 503 | 服务暂时不可用 |
+| HTTP 状态码 | 错误场景                     |
+| ----------- | ---------------------------- |
+| 500         | 内部错误（Enclave 未运行等） |
+| 503         | 服务暂时不可用               |
 
 **使用场景**
 
@@ -456,7 +456,7 @@ GET /api/v1/attestation/health
 }
 ```
 
-```
+````
 
 ## API 端点列表
 
@@ -527,7 +527,7 @@ async fn perform_attestation() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-```
+````
 
 ### cURL 示例
 
@@ -587,13 +587,13 @@ curl http://localhost:3000/api/v1/attestation/status
 
 常见错误：
 
-| 错误 | 说明 | 处理方式 |
-|------|------|----------|
-| `Challenge not found` | 挑战不存在或已过期 | 重新创建挑战 |
-| `Challenge already used` | 挑战已被使用 | 重新创建挑战 |
-| `Measurement mismatch` | MRENCLAVE/MRSIGNER 不在白名单 | 检查 Enclave 配置 |
-| `Quote expired` | Quote 已过期 | 刷新 Quote |
-| `Enclave not running` | Enclave 未启动 | 检查服务状态 |
+| 错误                     | 说明                          | 处理方式          |
+| ------------------------ | ----------------------------- | ----------------- |
+| `Challenge not found`    | 挑战不存在或已过期            | 重新创建挑战      |
+| `Challenge already used` | 挑战已被使用                  | 重新创建挑战      |
+| `Measurement mismatch`   | MRENCLAVE/MRSIGNER 不在白名单 | 检查 Enclave 配置 |
+| `Quote expired`          | Quote 已过期                  | 刷新 Quote        |
+| `Enclave not running`    | Enclave 未启动                | 检查服务状态      |
 
 ## 相关文档
 

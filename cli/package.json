@@ -1,6 +1,6 @@
 {
   "name": "@toani/vault-cli",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Toani Vault CLI",
   "type": "module",
   "bin": {
@@ -16,14 +16,12 @@
     "INTERFACE_BASELINE.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup --config tsup.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@toani/vault-sdk": "^0.1.0"
-  },
   "devDependencies": {
+    "@toani/vault-sdk": "^0.1.0",
     "@types/node": "^22.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",

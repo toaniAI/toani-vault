@@ -97,14 +97,14 @@ cargo run --example axum_integration
 
 Axum 示例提供以下 API 端点：
 
-| 方法 | 路径 | 描述 | 所需权限 |
-|------|------|------|----------|
-| GET | `/api/me` | 获取当前用户信息 | 无 |
-| GET | `/api/credentials` | 获取凭证列表 | `credential:read` |
-| GET | `/api/credentials/:id` | 获取凭证详情 | `credential:read` |
-| POST | `/api/credentials/:id/decrypt` | 解密凭证 | `credential:decrypt` |
-| POST | `/api/credentials` | 创建凭证 | `credential:write` |
-| DELETE | `/api/credentials/:id` | 删除凭证 | `credential:write` |
+| 方法   | 路径                           | 描述             | 所需权限             |
+| ------ | ------------------------------ | ---------------- | -------------------- |
+| GET    | `/api/me`                      | 获取当前用户信息 | 无                   |
+| GET    | `/api/credentials`             | 获取凭证列表     | `credential:read`    |
+| GET    | `/api/credentials/:id`         | 获取凭证详情     | `credential:read`    |
+| POST   | `/api/credentials/:id/decrypt` | 解密凭证         | `credential:decrypt` |
+| POST   | `/api/credentials`             | 创建凭证         | `credential:write`   |
+| DELETE | `/api/credentials/:id`         | 删除凭证         | `credential:write`   |
 
 ## 示例代码结构
 

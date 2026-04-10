@@ -12,9 +12,9 @@ Toani Vault SDK - TypeScript client for secure credential management.
 
 ### 认证模式对比
 
-| 认证类型 | 适用场景 | 认证方式 |
-|---------|---------|---------|
-| **用户认证** | 最终用户访问 | Web 界面 Privy 钱包登录 |
+| 认证类型         | 适用场景                | 认证方式                    |
+| ---------------- | ----------------------- | --------------------------- |
+| **用户认证**     | 最终用户访问            | Web 界面 Privy 钱包登录     |
 | **服务账户认证** | 自动化、CI/CD、后台服务 | Platform API Token (此 SDK) |
 
 ### 用户认证 (Privy 钱包)
@@ -48,8 +48,8 @@ toani auth login --url https://vault.toani.io --token <your-platform-token> --se
 
 ```typescript
 const sdk = new ToaniVaultSDK({
-  baseUrl: 'https://vault.toani.io',
-  token: 'v4.local.your-platform-api-token',  // Platform API Token
+  baseUrl: "https://vault.toani.io",
+  token: "v4.local.your-platform-api-token", // Platform API Token
 });
 ```
 
@@ -66,7 +66,7 @@ Platform API Token 需通过管理界面或 API 创建：
 ```typescript
 // 1) 用 Session Token 换 API Access Token（默认 900 秒）
 const issued = await sdk.auth.createAccessToken({
-  scopes: ['tokens:read', 'tokens:write'],
+  scopes: ["tokens:read", "tokens:write"],
   ttlSeconds: 900,
 });
 
@@ -77,13 +77,13 @@ await sdk.token.revokeById(tokenMeta.tokenId);
 
 // 3) Service Account 生命周期
 const sa = await sdk.serviceAccounts.create({
-  name: 'ci-bot',
-  scopeCeiling: ['credential:read', 'tokens:read'],
+  name: "ci-bot",
+  scopeCeiling: ["credential:read", "tokens:read"],
 });
 const saToken = await sdk.serviceAccounts.createToken(sa.id, {
-  scopes: ['credential:read'],
+  scopes: ["credential:read"],
   ttlSeconds: 3600,
-  displayName: 'ci-job-token',
+  displayName: "ci-job-token",
 });
 const saTokenMetadata = await sdk.serviceAccounts.listTokens(sa.id);
 ```
@@ -95,16 +95,16 @@ Use a user session token to mint tenant-scoped automation tokens, then switch th
 ```typescript
 const issued = await sdk.auth.createAutomationToken(
   {
-    name: 'ci-bot',
-    scopes: ['credential:read', 'audit:read'],
+    name: "ci-bot",
+    scopes: ["credential:read", "audit:read"],
     ttlSeconds: 86400,
-    createdVia: 'sdk',
+    createdVia: "sdk",
   },
   {
     headers: {
       Authorization: `Bearer ${sessionToken}`,
     },
-  }
+  },
 );
 
 sdk.client.setToken(issued.tokenValue);
@@ -134,29 +134,29 @@ pnpm add @toani/vault-sdk
 ## 快速开始
 
 ```typescript
-import { ToaniVaultSDK, CredentialType } from '@toani/vault-sdk';
+import { ToaniVaultSDK, CredentialType } from "@toani/vault-sdk";
 
 // 初始化 SDK
 const sdk = new ToaniVaultSDK({
-  baseUrl: 'https://vault.toani.io',
-  token: 'v4.local.your-paseto-token',
+  baseUrl: "https://vault.toani.io",
+  token: "v4.local.your-paseto-token",
 });
 
 // 创建凭证
 const credential = await sdk.credentials.create({
-  serviceId: 'schwab',
+  serviceId: "schwab",
   credentialType: CredentialType.UsernamePassword,
   plaintextData: {
-    username: 'user@example.com',
-    password: 'secret_password',
+    username: "user@example.com",
+    password: "secret_password",
   },
 });
 
-console.log('Created credential:', credential.credentialId);
+console.log("Created credential:", credential.credentialId);
 
 // 解密凭证
 const decrypted = await sdk.credentials.decrypt(credential.credentialId);
-console.log('Username:', decrypted.plaintextData.username);
+console.log("Username:", decrypted.plaintextData.username);
 ```
 
 ## 迁移说明
@@ -180,18 +180,19 @@ const sdk = new CredBridgeSDK({ ... }); // 等同于 ToaniVaultSDK
 ```typescript
 const sdk = new ToaniVaultSDK({
   // 必需
-  baseUrl: 'https://vault.toani.io',
-  token: 'v4.local.your-token',
+  baseUrl: "https://vault.toani.io",
+  token: "v4.local.your-token",
 
   // 可选
-  timeout: 30000,                    // 请求超时（毫秒，默认 30000）
-  maxRetries: 3,                     // 最大重试次数（默认 3）
-  autoRefreshToken: true,            // 自动刷新 Token（默认 true）
+  timeout: 30000, // 请求超时（毫秒，默认 30000）
+  maxRetries: 3, // 最大重试次数（默认 3）
+  autoRefreshToken: true, // 自动刷新 Token（默认 true）
   tokenRefreshBuffer: 5 * 60 * 1000, // Token 刷新缓冲时间（毫秒，默认 5分钟）
-  headers: {                         // 自定义请求头
-    'X-Custom-Header': 'value',
+  headers: {
+    // 自定义请求头
+    "X-Custom-Header": "value",
   },
-  signingKey: 'your-signing-key',    // 请求签名密钥（可选）
+  signingKey: "your-signing-key", // 请求签名密钥（可选）
 });
 ```
 
@@ -202,34 +203,34 @@ const sdk = new ToaniVaultSDK({
 ```typescript
 // 用户名密码凭证
 const credential = await sdk.credentials.create({
-  serviceId: 'schwab',
+  serviceId: "schwab",
   credentialType: CredentialType.UsernamePassword,
   plaintextData: {
-    username: 'user@example.com',
-    password: 'secret',
+    username: "user@example.com",
+    password: "secret",
   },
   expiresAt: Math.floor(Date.now() / 1000) + 86400 * 30, // 30天后过期
 });
 
 // 快捷方式：创建用户名密码凭证
 const credential2 = await sdk.credentials.createUsernamePassword(
-  'schwab',
-  'user@example.com',
-  'secret',
-  { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 30 }
+  "schwab",
+  "user@example.com",
+  "secret",
+  { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 30 },
 );
 
 // 快捷方式：创建 API Key 凭证
 const apiKeyCred = await sdk.credentials.createApiKey(
-  'stripe',
-  'sk_live_...',
-  'secret_key'
+  "stripe",
+  "sk_live_...",
+  "secret_key",
 );
 
 // 快捷方式：创建 OAuth 刷新令牌
 const oauthCred = await sdk.credentials.createOAuthRefresh(
-  'google',
-  '1//0d...'
+  "google",
+  "1//0d...",
 );
 ```
 
@@ -241,7 +242,7 @@ const { credentials, total } = await sdk.credentials.list();
 
 // 按服务 ID 过滤
 const { credentials } = await sdk.credentials.list({
-  serviceId: 'schwab',
+  serviceId: "schwab",
 });
 
 // 按类型过滤
@@ -250,42 +251,42 @@ const { credentials } = await sdk.credentials.list({
 });
 
 // 快捷方式
-const { credentials } = await sdk.credentials.getByService('schwab');
+const { credentials } = await sdk.credentials.getByService("schwab");
 const { credentials } = await sdk.credentials.getByType(CredentialType.ApiKey);
 ```
 
 ### 获取凭证详情
 
 ```typescript
-const credential = await sdk.credentials.get('credential-id');
-console.log('Service:', credential.serviceId);
-console.log('Type:', credential.credentialType);
+const credential = await sdk.credentials.get("credential-id");
+console.log("Service:", credential.serviceId);
+console.log("Type:", credential.credentialType);
 ```
 
 ### 解密凭证
 
 ```typescript
 const decrypted = await sdk.credentials.decrypt(
-  'credential-id',
-  '用户登录操作' // 解密理由（用于审计）
+  "credential-id",
+  "用户登录操作", // 解密理由（用于审计）
 );
 
-console.log('Plaintext:', decrypted.plaintextData);
+console.log("Plaintext:", decrypted.plaintextData);
 ```
 
 ### 删除凭证
 
 ```typescript
-const result = await sdk.credentials.delete('credential-id');
+const result = await sdk.credentials.delete("credential-id");
 if (result.deleted) {
-  console.log('Credential deleted');
+  console.log("Credential deleted");
 }
 ```
 
 ### 检查凭证是否存在
 
 ```typescript
-const exists = await sdk.credentials.exists('credential-id');
+const exists = await sdk.credentials.exists("credential-id");
 ```
 
 ## Token 管理
@@ -293,19 +294,19 @@ const exists = await sdk.credentials.exists('credential-id');
 ```typescript
 // 获取 Token 信息
 const tokenInfo = sdk.token.getTokenInfo();
-console.log('Token ID:', tokenInfo?.tokenId);
-console.log('Tenant ID:', tokenInfo?.tenantId);
-console.log('User ID:', tokenInfo?.userId);
-console.log('Scopes:', tokenInfo?.scopes);
+console.log("Token ID:", tokenInfo?.tokenId);
+console.log("Tenant ID:", tokenInfo?.tenantId);
+console.log("User ID:", tokenInfo?.userId);
+console.log("Scopes:", tokenInfo?.scopes);
 
 // 检查 Token 有效性
 if (sdk.token.isValid()) {
-  console.log('Token is valid');
+  console.log("Token is valid");
 }
 
 // 检查 Token 是否即将过期
 if (sdk.token.isExpiringSoon()) {
-  console.log('Token will expire soon, refreshing...');
+  console.log("Token will expire soon, refreshing...");
 }
 
 // 获取剩余时间
@@ -313,12 +314,12 @@ const remainingSeconds = sdk.token.getRemainingTime();
 console.log(`Token expires in ${sdk.token.getRemainingTimeFormatted()}`);
 
 // 检查 Scope
-if (sdk.token.hasScope('credential:decrypt')) {
-  console.log('Can decrypt credentials');
+if (sdk.token.hasScope("credential:decrypt")) {
+  console.log("Can decrypt credentials");
 }
 
-if (sdk.token.hasAnyScope(['credential:read', 'credential:write'])) {
-  console.log('Can read or write credentials');
+if (sdk.token.hasAnyScope(["credential:read", "credential:write"])) {
+  console.log("Can read or write credentials");
 }
 
 // 验证 Token（向服务器验证）
@@ -328,37 +329,37 @@ const isValid = await sdk.token.verify();
 await sdk.token.revoke();
 
 // 更新 Token
-sdk.token.setToken('v4.local.new-token');
+sdk.token.setToken("v4.local.new-token");
 ```
 
 ## 事件监听
 
 ```typescript
 // 监听 Token 即将过期
-sdk.client.on('token_expiring', (event) => {
-  console.log('Token expiring:', event.data);
+sdk.client.on("token_expiring", (event) => {
+  console.log("Token expiring:", event.data);
 });
 
 // 监听 Token 刷新
-sdk.client.on('token_refreshed', (event) => {
-  console.log('Token refreshed:', event.data.tokenInfo);
+sdk.client.on("token_refreshed", (event) => {
+  console.log("Token refreshed:", event.data.tokenInfo);
 });
 
 // 监听请求事件
-sdk.client.on('request_start', (event) => {
-  console.log('Request started:', event.data.method, event.data.path);
+sdk.client.on("request_start", (event) => {
+  console.log("Request started:", event.data.method, event.data.path);
 });
 
-sdk.client.on('request_success', (event) => {
-  console.log('Request succeeded:', event.data.requestId);
+sdk.client.on("request_success", (event) => {
+  console.log("Request succeeded:", event.data.requestId);
 });
 
-sdk.client.on('request_error', (event) => {
-  console.log('Request failed:', event.data.error);
+sdk.client.on("request_error", (event) => {
+  console.log("Request failed:", event.data.error);
 });
 
 // 监听重试事件
-sdk.client.on('retry', (event) => {
+sdk.client.on("retry", (event) => {
   console.log(`Retrying ${event.data.attempt}/${event.data.maxRetries}`);
 });
 ```
@@ -366,36 +367,36 @@ sdk.client.on('retry', (event) => {
 ## 错误处理
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk';
+import { CredBridgeError, CredBridgeErrorCode } from "@toani/vault-sdk";
 
 try {
-  const credential = await sdk.credentials.get('invalid-id');
+  const credential = await sdk.credentials.get("invalid-id");
 } catch (error) {
   if (error instanceof CredBridgeError) {
-    console.log('Error code:', error.code);
-    console.log('Error message:', error.message);
-    console.log('Status code:', error.statusCode);
-    console.log('Request ID:', error.requestId);
+    console.log("Error code:", error.code);
+    console.log("Error message:", error.message);
+    console.log("Status code:", error.statusCode);
+    console.log("Request ID:", error.requestId);
 
     // 检查错误类型
     if (error.isAuthError()) {
-      console.log('Authentication error, please re-authenticate');
+      console.log("Authentication error, please re-authenticate");
     }
 
     if (error.isRetryable()) {
-      console.log('Network error, will retry');
+      console.log("Network error, will retry");
     }
 
     // 根据错误码处理
     switch (error.code) {
       case CredBridgeErrorCode.NotFound:
-        console.log('Credential not found');
+        console.log("Credential not found");
         break;
       case CredBridgeErrorCode.Unauthorized:
-        console.log('Invalid token');
+        console.log("Invalid token");
         break;
       case CredBridgeErrorCode.InsufficientScope:
-        console.log('Insufficient permissions');
+        console.log("Insufficient permissions");
         break;
     }
   }
@@ -407,12 +408,12 @@ try {
 ### 自定义请求选项
 
 ```typescript
-const credential = await sdk.credentials.get('id', {
-  timeout: 10000,      // 10秒超时
-  skipRetry: true,     // 禁用重试
-  requestId: 'custom-request-id',
+const credential = await sdk.credentials.get("id", {
+  timeout: 10000, // 10秒超时
+  skipRetry: true, // 禁用重试
+  requestId: "custom-request-id",
   headers: {
-    'X-Custom-Header': 'value',
+    "X-Custom-Header": "value",
   },
 });
 ```
@@ -421,39 +422,39 @@ const credential = await sdk.credentials.get('id', {
 
 ```typescript
 // GET 请求
-const data = await sdk.client.get('/some-endpoint');
+const data = await sdk.client.get("/some-endpoint");
 
 // POST 请求
-const result = await sdk.client.post('/some-endpoint', { key: 'value' });
+const result = await sdk.client.post("/some-endpoint", { key: "value" });
 
 // PUT 请求
-await sdk.client.put('/some-endpoint', { key: 'value' });
+await sdk.client.put("/some-endpoint", { key: "value" });
 
 // DELETE 请求
-await sdk.client.delete('/some-endpoint');
+await sdk.client.delete("/some-endpoint");
 
 // PATCH 请求
-await sdk.client.patch('/some-endpoint', { key: 'value' });
+await sdk.client.patch("/some-endpoint", { key: "value" });
 ```
 
 ### 检查兼容性
 
 ```typescript
 const compatibility = await sdk.checkCompatibility();
-console.log('Compatible:', compatibility.compatible);
-console.log('API Version:', compatibility.apiVersion);
-console.log('Message:', compatibility.message);
+console.log("Compatible:", compatibility.compatible);
+console.log("API Version:", compatibility.apiVersion);
+console.log("Message:", compatibility.message);
 ```
 
 ## 凭证类型
 
 ```typescript
 enum CredentialType {
-  UsernamePassword = 'username_password',  // 用户名密码
-  OAuthRefresh = 'oauth_refresh',          // OAuth 刷新令牌
-  ApiKey = 'api_key',                      // API 密钥
-  SessionCookie = 'session_cookie',        // 会话 Cookie
-  KycDocument = 'kyc_document',            // KYC 文档
+  UsernamePassword = "username_password", // 用户名密码
+  OAuthRefresh = "oauth_refresh", // OAuth 刷新令牌
+  ApiKey = "api_key", // API 密钥
+  SessionCookie = "session_cookie", // 会话 Cookie
+  KycDocument = "kyc_document", // KYC 文档
 }
 ```
 
@@ -461,11 +462,11 @@ enum CredentialType {
 
 ```typescript
 enum TokenScope {
-  CredentialRead = 'credential:read',      // 读取凭证元数据
-  CredentialDecrypt = 'credential:decrypt', // 解密凭证
-  CredentialWrite = 'credential:write',    // 创建/删除凭证
-  AuditRead = 'audit:read',                // 读取审计日志
-  Admin = 'admin',                         // 所有管理权限
+  CredentialRead = "credential:read", // 读取凭证元数据
+  CredentialDecrypt = "credential:decrypt", // 解密凭证
+  CredentialWrite = "credential:write", // 创建/删除凭证
+  AuditRead = "audit:read", // 读取审计日志
+  Admin = "admin", // 所有管理权限
 }
 ```
 

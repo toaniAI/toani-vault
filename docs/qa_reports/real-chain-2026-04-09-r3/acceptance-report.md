@@ -36,12 +36,14 @@ Health check: `GET /health` returned `{"status":"alive","ready":true,...}`.
 Evidence directory: `docs/qa_reports/real-chain-2026-04-09-r3/`
 
 User chain:
+
 - `01_auth_session.status` = `200`
 - `04_create_access_token.status` = `200` (`subject_type=user`, `issued_from=session`)
 - `05_tokens_list.status` = `200`
 - `06_token_get.status` = `200`
 
 Service account chain:
+
 - `07_service_account_create.status` = `200`
 - `08_service_account_token_create.status` = `200` (`subject_type=service_account`, `issued_from=service_account`)
 - `09_service_account_tokens_list.status` = `200`
@@ -53,6 +55,7 @@ Service account chain:
 ## 3) CLI Real-Chain Execution
 
 CLI evidence:
+
 - `cli_01_config_init.json`
 - `cli_02_auth_session.json`
 - `cli_03_access_token_create_store.json`
@@ -65,6 +68,7 @@ CLI evidence:
 - `cli_10_config_show_after_logout.json`
 
 Key checks:
+
 - `auth access-token create --store` wrote API token to config
 - `auth logout` cleared `sessionToken` and preserved `token`
 - `service-accounts` command group is executable end-to-end on real backend
@@ -82,6 +86,7 @@ Key checks:
 Decision: **PASS (for this change scope)**
 
 Covered and passed:
+
 - independent service account subject model (API behavior)
 - token metadata create/list/get/revoke flow
 - service account scope ceiling enforcement
@@ -89,6 +94,7 @@ Covered and passed:
 - CLI command coverage for new token/service-account flows
 
 Not covered in this run:
+
 - old token compatibility path where token exists but `api_tokens` metadata row is missing
 - full frontend regression coverage
 - SGX hardware mode runtime acceptance (this run is `TEE_MODE=simulation`)

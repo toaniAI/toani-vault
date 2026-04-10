@@ -40,28 +40,28 @@ CredBridge 是 AI Agent 领域第一个专用的零信任凭证保险库开源�
 
 ## 2. 需求列表
 
-| 需求编号 | 需求名称 | 优先级 | 一句话说明 |
-|---------|---------|--------|-----------|
-| REQ-001 | 硬编码 Token 清理 | P0 | 移除仓库中所有硬编码的 PASETO Token 和测试凭证 |
-| REQ-002 | 内部基础设施 URL 清理 | P0 | 替换或移除所有内部域名和镜像仓库地址 |
-| REQ-003 | 开发者路径修复 | P0 | 修复 docker-compose 中硬编码的绝对路径为相对路径 |
-| REQ-004 | 敏感文件 Git 管理 | P0 | 将 .env.bak 等敏感文件加入 .gitignore |
-| REQ-005 | Git 历史安全评估 | P0 | 评估并清理 Git 历史中的敏感信息残留 |
-| REQ-006 | 安全扫描验证 | P0 | 运行 trufflehog/git-secrets 验证零敏感信息泄露 |
-| REQ-007 | MIT LICENSE 文件 | P0 | 在仓库根目录创建 MIT 许可证文件 |
-| REQ-008 | README 国际化 | P0 | 将 README 翻译为英文，原中文版保留为 README_CN.md |
-| REQ-009 | SDK 代码英文化 | P0 | 将 TypeScript/Rust SDK 的中文注释和字符串翻译为英文 |
-| REQ-010 | 后端代码英文化 | P0 | 将后端 Rust 代码中的中文错误消息和注释翻译为英文 |
-| REQ-011 | CLI 输出英文化 | P0 | 确保 CLI 工具的所有用户可见文本为英文 |
-| REQ-012 | 前端 UI 品牌化 | P1 | 将控制台 UI 配色方案更新为 zk.me 品牌色系 |
-| REQ-013 | 品牌资源替换 | P1 | 替换 favicon 和 Logo 为 CredBridge/zk.me 品牌资源 |
-| REQ-014 | npm 包发布配置 | P1 | 完善 package.json 配置并发布 @toani/vault-sdk 到 npm (旧名 @credbridge/sdk 已弃用) |
-| REQ-015 | 贡献指南 | P1 | 创建 CONTRIBUTING.md 贡献流程文档 |
-| REQ-016 | 行为准则 | P1 | 创建 CODE_OF_CONDUCT.md 社区行为准则 |
-| REQ-017 | Issue/PR 模板 | P1 | 创建 GitHub/Clawhub Issue 和 PR 模板 |
-| REQ-018 | docker-compose 一键启动 | P1 | 修复 docker-compose 配置，支持一键启动完整开发环境 |
-| REQ-019 | 环境变量示例 | P1 | 提供 .env.example 文件，包含所有必要环境变量说明 |
-| REQ-020 | 文档目录清理 | P1 | 分离内部文档和公开文档，移除敏感内部报告 |
+| 需求编号 | 需求名称                | 优先级 | 一句话说明                                                                         |
+| -------- | ----------------------- | ------ | ---------------------------------------------------------------------------------- |
+| REQ-001  | 硬编码 Token 清理       | P0     | 移除仓库中所有硬编码的 PASETO Token 和测试凭证                                     |
+| REQ-002  | 内部基础设施 URL 清理   | P0     | 替换或移除所有内部域名和镜像仓库地址                                               |
+| REQ-003  | 开发者路径修复          | P0     | 修复 docker-compose 中硬编码的绝对路径为相对路径                                   |
+| REQ-004  | 敏感文件 Git 管理       | P0     | 将 .env.bak 等敏感文件加入 .gitignore                                              |
+| REQ-005  | Git 历史安全评估        | P0     | 评估并清理 Git 历史中的敏感信息残留                                                |
+| REQ-006  | 安全扫描验证            | P0     | 运行 trufflehog/git-secrets 验证零敏感信息泄露                                     |
+| REQ-007  | MIT LICENSE 文件        | P0     | 在仓库根目录创建 MIT 许可证文件                                                    |
+| REQ-008  | README 国际化           | P0     | 将 README 翻译为英文，原中文版保留为 README_CN.md                                  |
+| REQ-009  | SDK 代码英文化          | P0     | 将 TypeScript/Rust SDK 的中文注释和字符串翻译为英文                                |
+| REQ-010  | 后端代码英文化          | P0     | 将后端 Rust 代码中的中文错误消息和注释翻译为英文                                   |
+| REQ-011  | CLI 输出英文化          | P0     | 确保 CLI 工具的所有用户可见文本为英文                                              |
+| REQ-012  | 前端 UI 品牌化          | P1     | 将控制台 UI 配色方案更新为 zk.me 品牌色系                                          |
+| REQ-013  | 品牌资源替换            | P1     | 替换 favicon 和 Logo 为 CredBridge/zk.me 品牌资源                                  |
+| REQ-014  | npm 包发布配置          | P1     | 完善 package.json 配置并发布 @toani/vault-sdk 到 npm (旧名 @credbridge/sdk 已弃用) |
+| REQ-015  | 贡献指南                | P1     | 创建 CONTRIBUTING.md 贡献流程文档                                                  |
+| REQ-016  | 行为准则                | P1     | 创建 CODE_OF_CONDUCT.md 社区行为准则                                               |
+| REQ-017  | Issue/PR 模板           | P1     | 创建 GitHub/Clawhub Issue 和 PR 模板                                               |
+| REQ-018  | docker-compose 一键启动 | P1     | 修复 docker-compose 配置，支持一键启动完整开发环境                                 |
+| REQ-019  | 环境变量示例            | P1     | 提供 .env.example 文件，包含所有必要环境变量说明                                   |
+| REQ-020  | 文档目录清理            | P1     | 分离内部文档和公开文档，移除敏感内部报告                                           |
 
 ---
 
@@ -90,6 +90,7 @@ CredBridge 是 AI Agent 领域第一个专用的零信任凭证保险库开源�
    - 扫描 `password`、`token`、`secret` 等关键词的硬编码赋值
 
 **验证方式**:
+
 ```bash
 # 使用 trufflehog 扫描
 trufflehog filesystem .
@@ -135,6 +136,7 @@ git-secrets --scan-history
 **docker/docker-compose.yml** 中 `build.context` 硬编码了开发者本机绝对路径 `/Users/yvan/AIWorkspace/credbridge`。
 
 **处理方式**:
+
 - 将绝对路径改为相对路径（如 `.` 或 `./..`）
 - 验证修复后的配置在 macOS 和 Linux 上均可正常启动
 
@@ -186,11 +188,13 @@ git-secrets --scan-history
 **详细描述**:
 
 **扫描工具**:
+
 - **trufflehog**: 检测 Git 历史中的敏感信息
 - **git-secrets**: 防止提交敏感信息
 - **detect-secrets**: 静态代码扫描
 
 **验证流程**:
+
 ```bash
 # 1. 安装扫描工具
 pip install trufflehog git-secrets detect-secrets
@@ -365,6 +369,7 @@ detect-secrets scan > .secrets.baseline
 **详细描述**:
 
 1. **package.json 完善**:
+
    ```json
    {
      "name": "@toani/vault-sdk",
@@ -409,6 +414,7 @@ detect-secrets scan > .secrets.baseline
 **文件位置**: `/CONTRIBUTING.md`
 
 **内容要求**:
+
 1. 贡献流程：Fork → Branch → PR → Review
 2. 开发环境搭建步骤
 3. 代码规范（Rust/React 编码标准）
@@ -428,6 +434,7 @@ detect-secrets scan > .secrets.baseline
 **文件位置**: `/CODE_OF_CONDUCT.md`
 
 **内容要求**:
+
 - 采用 Contributor Covenant 标准文本
 - 包含报告不当行为的联系方式
 - 明确不可接受行为的定义
@@ -487,12 +494,14 @@ detect-secrets scan > .secrets.baseline
 **文件位置**: `/.env.example`
 
 **内容要求**:
+
 - 包含所有必要环境变量
 - 使用 `your_xxx_here` 占位符（非真实值）
 - 每个变量附带说明注释
 - 标注哪些变量是必需的，哪些是可选的
 
 **示例变量**:
+
 ```
 # Database
 DATABASE_URL=postgresql://user:password@localhost/credbridge
@@ -553,31 +562,31 @@ TEE_ENABLED=false
 
 ### 用户成功指标
 
-| 指标 | 目标值 | 验证方式 |
-|------|--------|----------|
+| 指标           | 目标值                            | 验证方式 |
+| -------------- | --------------------------------- | -------- |
 | 首次体验成功率 | 开发者 clone 后 10 分钟内启动环境 | 内部测试 |
-| SDK 集成体验 | 5 行代码内完成首次 API 调用 | 文档验证 |
-| 文档自助率 | 无需联系团队支持完成集成 | 用户测试 |
-| 零困惑感 | 所有文档和代码为英文 | 人工审查 |
+| SDK 集成体验   | 5 行代码内完成首次 API 调用       | 文档验证 |
+| 文档自助率     | 无需联系团队支持完成集成          | 用户测试 |
+| 零困惑感       | 所有文档和代码为英文              | 人工审查 |
 
 ### 业务成功指标
 
-| 指标 | 目标值 | 时间范围 |
-|------|--------|----------|
-| 社区发布 | 成功推送到 Clawhub 社区 | 发布时 |
-| npm 包可用 | @toani/vault-sdk 可安装 (旧名 @credbridge/sdk) | 发布后 |
-| GitHub/Clawhub Stars | > 500 | 发布后 3 个月 |
-| 外部贡献 | 至少 10 个 Issue 或 PR | 发布后 3 个月 |
+| 指标                 | 目标值                                         | 时间范围      |
+| -------------------- | ---------------------------------------------- | ------------- |
+| 社区发布             | 成功推送到 Clawhub 社区                        | 发布时        |
+| npm 包可用           | @toani/vault-sdk 可安装 (旧名 @credbridge/sdk) | 发布后        |
+| GitHub/Clawhub Stars | > 500                                          | 发布后 3 个月 |
+| 外部贡献             | 至少 10 个 Issue 或 PR                         | 发布后 3 个月 |
 
 ### 技术成功指标
 
-| 指标 | 目标值 | 验证方式 |
-|------|--------|----------|
-| 安全零泄露 | 0 敏感信息 | trufflehog 扫描 |
-| CI 通过 | 所有测试通过 | CI 验证 |
-| SDK 功能对齐 | TS/Rust API 一致 | 代码审查 |
-| 合规就绪 | MIT LICENSE 存在 | 文件检查 |
+| 指标         | 目标值           | 验证方式        |
+| ------------ | ---------------- | --------------- |
+| 安全零泄露   | 0 敏感信息       | trufflehog 扫描 |
+| CI 通过      | 所有测试通过     | CI 验证         |
+| SDK 功能对齐 | TS/Rust API 一致 | 代码审查        |
+| 合规就绪     | MIT LICENSE 存在 | 文件检查        |
 
 ---
 
-*PRD Version 2.0 — Ready for Internal Review*
+_PRD Version 2.0 — Ready for Internal Review_

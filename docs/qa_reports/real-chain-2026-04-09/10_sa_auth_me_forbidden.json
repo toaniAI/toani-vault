@@ -1,1 +1,10 @@
-{"error":"user_not_found","message":"用户不存在","error_description":"用户不存在","i18n":{"key":"errors.auth.user_not_found","params":{"error":"用户未找到: 019d7199-70ee-7f90-8e0a-a140a1ad0206"}},"locale":"zh-CN"}
+{
+  "error": "user_not_found",
+  "message": "用户不存在",
+  "error_description": "用户不存在",
+  "i18n": {
+    "key": "errors.auth.user_not_found",
+    "params": { "error": "用户未找到: 019d7199-70ee-7f90-8e0a-a140a1ad0206" }
+  },
+  "locale": "zh-CN"
+}

@@ -84,6 +84,7 @@ CredBridge is a zero-trust credential vault with hardware-level security via Int
 ### Key Architecture Decisions
 
 **Four-Layer Key Hierarchy:**
+
 ```
 L0: SGX Sealing Key (hardware root)
  └─ L1: Enclave Master Key
@@ -100,20 +101,20 @@ L0: SGX Sealing Key (hardware root)
 
 ### Backend Structure (`src/`)
 
-| Module | Purpose |
-|--------|---------|
-| `api/` | Axum HTTP routes — credentials, attestation, audit, connector, sandbox, versioning |
-| `tee/` | TEE enclave lifecycle, keys, sealing, DCAP attestation, sandbox execution |
-| `crypto/` | HKDF key derivation, AES-GCM encryption, key structures |
-| `vault/` | Credential storage models and DB operations |
-| `token/` | PASETO token generation/validation, Redis session store |
-| `services/` | Business logic layer |
-| `audit/` | Immutable audit log via immudb |
-| `models/` | Shared data models |
-| `tenant/` | Multi-tenant isolation logic |
-| `connector/` | External system connectors |
-| `mcp/` | Model Context Protocol server integration |
-| `bin/` | Additional binary entry points |
+| Module       | Purpose                                                                            |
+| ------------ | ---------------------------------------------------------------------------------- |
+| `api/`       | Axum HTTP routes — credentials, attestation, audit, connector, sandbox, versioning |
+| `tee/`       | TEE enclave lifecycle, keys, sealing, DCAP attestation, sandbox execution          |
+| `crypto/`    | HKDF key derivation, AES-GCM encryption, key structures                            |
+| `vault/`     | Credential storage models and DB operations                                        |
+| `token/`     | PASETO token generation/validation, Redis session store                            |
+| `services/`  | Business logic layer                                                               |
+| `audit/`     | Immutable audit log via immudb                                                     |
+| `models/`    | Shared data models                                                                 |
+| `tenant/`    | Multi-tenant isolation logic                                                       |
+| `connector/` | External system connectors                                                         |
+| `mcp/`       | Model Context Protocol server integration                                          |
+| `bin/`       | Additional binary entry points                                                     |
 
 ### Frontend Structure (`frontend/src/`)
 
@@ -137,6 +138,7 @@ See `docker/docker-compose.yml` for default connection settings and env vars.
 ### Integration Tests
 
 Tests in `tests/` are organized by domain and use `[[test]]` entries in `Cargo.toml`. Key test files:
+
 - `credentials_api_tests.rs` — Credential CRUD via HTTP
 - `rls_integration_test.rs` — Row-level security enforcement
 - `sgx_hardware_tests.rs` — SGX hardware attestation (requires SGX)

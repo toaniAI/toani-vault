@@ -33,16 +33,16 @@
 
 ## 2. 当前状态摘要
 
-| 领域 | 现状 | 对 hardware 启动的影响 |
-|------|------|-------------------------|
-| `TEE_MODE` / 运行时探测 | 已统一；hardware 下设备/RA 前置缺失会 fail-closed | 环境就绪后可通过探测 |
-| `HardwareRootKey::for_runtime_mode(Hardware)` | **直接 `Err`，未实现** | **主进程在密钥层次初始化处失败** |
-| `SealingService::get_sealing_key` | `simulate_egetkey`，注释标明模拟 | 无真实 SGX sealing |
-| `Enclave::initialize` / 测量值 | 用户态模拟生命周期；`generate_measurement` 为假 MRENCLAVE/MRSIGNER | 与真实 enclave 不一致 |
-| `DcapService::generate_dcap_quote` | hardware 分支**显式拒绝** | **Attestation 初始化必然失败** |
-| PCS / 证书链 | 部分结构存在；hardware 路径多处 `fail-closed` 错误返回 | 需接真实现 |
-| 依赖 | Cargo 中**无** Intel SGX SDK / `sgx_urts` 等典型依赖 | 需新增构建与链接形态 |
-| `vault-service` 独立 attestation | `TEE_MODE=hardware` 时**拒绝初始化** | **非首要目标必选项**；见 §4.6 |
+| 领域                                          | 现状                                                               | 对 hardware 启动的影响           |
+| --------------------------------------------- | ------------------------------------------------------------------ | -------------------------------- |
+| `TEE_MODE` / 运行时探测                       | 已统一；hardware 下设备/RA 前置缺失会 fail-closed                  | 环境就绪后可通过探测             |
+| `HardwareRootKey::for_runtime_mode(Hardware)` | **直接 `Err`，未实现**                                             | **主进程在密钥层次初始化处失败** |
+| `SealingService::get_sealing_key`             | `simulate_egetkey`，注释标明模拟                                   | 无真实 SGX sealing               |
+| `Enclave::initialize` / 测量值                | 用户态模拟生命周期；`generate_measurement` 为假 MRENCLAVE/MRSIGNER | 与真实 enclave 不一致            |
+| `DcapService::generate_dcap_quote`            | hardware 分支**显式拒绝**                                          | **Attestation 初始化必然失败**   |
+| PCS / 证书链                                  | 部分结构存在；hardware 路径多处 `fail-closed` 错误返回             | 需接真实现                       |
+| 依赖                                          | Cargo 中**无** Intel SGX SDK / `sgx_urts` 等典型依赖               | 需新增构建与链接形态             |
+| `vault-service` 独立 attestation              | `TEE_MODE=hardware` 时**拒绝初始化**                               | **非首要目标必选项**；见 §4.6    |
 
 ---
 
@@ -126,12 +126,12 @@
 
 ## 5. 建议实施阶段
 
-| 阶段 | 内容 | 产出 |
-|------|------|------|
-| **P0** | 构建链 + 最小 enclave 加载 + 真实 MRENCLAVE/MRSIGNER | 可在机器上确认 enclave 已加载且测量值非模拟 |
-| **P1** | EGETKEY / 真实 Sealing + `HardwareRootKey::for_runtime_mode(Hardware)` + 与 `main` 初始化顺序收敛 | **主进程在 hardware 下越过 L0 初始化** |
-| **P2** | DCAP Quote 生成 + PCS/PCCS 最小闭环 | **`init_attestation_api` 成功** |
-| **P3** | 验证链硬化、白名单、§4.7 最小检查表、扩展硬件集成测试 | 达到第 1 节 DoD 全条 |
+| 阶段   | 内容                                                                                              | 产出                                        |
+| ------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **P0** | 构建链 + 最小 enclave 加载 + 真实 MRENCLAVE/MRSIGNER                                              | 可在机器上确认 enclave 已加载且测量值非模拟 |
+| **P1** | EGETKEY / 真实 Sealing + `HardwareRootKey::for_runtime_mode(Hardware)` + 与 `main` 初始化顺序收敛 | **主进程在 hardware 下越过 L0 初始化**      |
+| **P2** | DCAP Quote 生成 + PCS/PCCS 最小闭环                                                               | **`init_attestation_api` 成功**             |
+| **P3** | 验证链硬化、白名单、§4.7 最小检查表、扩展硬件集成测试                                             | 达到第 1 节 DoD 全条                        |
 
 阶段间可并行文档与 CI，但**代码依赖顺序**建议严格按 P0→P1→P2，否则会出现「Quote 有了但 L0 仍假」等不一致状态。
 
@@ -149,16 +149,16 @@
 
 ## 7. 参考代码锚点（便于拆任务）
 
-| 文件 | 与硬件相关的关键点 |
-|------|-------------------|
-| `src/main.rs` | `HardwareRootKey::for_runtime_mode`、`validate_runtime_requirements`、`init_attestation_api` 调用链 |
-| `src/crypto/keys.rs` | `for_runtime_mode`、`from_sgx_sealing_key` |
-| `src/tee/sealing.rs` | `get_sealing_key` / `simulate_egetkey` |
-| `src/tee/enclave.rs` | `initialize`、`generate_measurement` |
-| `src/tee/dcap.rs` | `generate_dcap_quote`、`register_with_pcs`、`validate_dcap_config` |
-| `src/api/attestation.rs` | `init_attestation_api` |
-| `vault-service/src/api/attestation.rs` | `init_attestation_api` hardware 分支 |
-| `.drone.yml` | `backend-hardware-attestation` 流水线扩展 |
+| 文件                                   | 与硬件相关的关键点                                                                                  |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `src/main.rs`                          | `HardwareRootKey::for_runtime_mode`、`validate_runtime_requirements`、`init_attestation_api` 调用链 |
+| `src/crypto/keys.rs`                   | `for_runtime_mode`、`from_sgx_sealing_key`                                                          |
+| `src/tee/sealing.rs`                   | `get_sealing_key` / `simulate_egetkey`                                                              |
+| `src/tee/enclave.rs`                   | `initialize`、`generate_measurement`                                                                |
+| `src/tee/dcap.rs`                      | `generate_dcap_quote`、`register_with_pcs`、`validate_dcap_config`                                  |
+| `src/api/attestation.rs`               | `init_attestation_api`                                                                              |
+| `vault-service/src/api/attestation.rs` | `init_attestation_api` hardware 分支                                                                |
+| `.drone.yml`                           | `backend-hardware-attestation` 流水线扩展                                                           |
 
 ---
 

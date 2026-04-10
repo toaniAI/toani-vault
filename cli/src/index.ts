@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { loadConfig, saveConfig } from './config/store.js';
+import { loadConfig, saveConfig } from "./config/store.js";
 import {
   runAudit,
   runAuth,
@@ -8,11 +8,11 @@ import {
   runSandbox,
   runServiceAccounts,
   runTokens,
-} from './commands/index.js';
-import { printResult } from './output/print.js';
-import type { OutputFormat } from './types/cli.js';
+} from "./commands/index.js";
+import { printResult } from "./output/print.js";
+import type { OutputFormat } from "./types/cli.js";
 
-const BASE_URL_ENV_KEYS = ['TOANI_BASE_URL', 'CREDBRIDGE_BASE_URL'] as const;
+const BASE_URL_ENV_KEYS = ["TOANI_BASE_URL", "CREDBRIDGE_BASE_URL"] as const;
 
 function printHelp(): void {
   console.log(`toani - Toani Vault CLI
@@ -41,7 +41,12 @@ function resolveBaseUrlFromEnv(): string | undefined {
   return undefined;
 }
 
-function parseGlobalArgs(argv: string[]): { rest: string[]; output?: OutputFormat; baseUrl?: string; token?: string } {
+function parseGlobalArgs(argv: string[]): {
+  rest: string[];
+  output?: OutputFormat;
+  baseUrl?: string;
+  token?: string;
+} {
   const rest: string[] = [];
   let output: OutputFormat | undefined;
   let baseUrl: string | undefined;
@@ -49,16 +54,16 @@ function parseGlobalArgs(argv: string[]): { rest: string[]; output?: OutputForma
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--output') {
-      output = (argv[i + 1] as OutputFormat) ?? 'table';
+    if (arg === "--output") {
+      output = (argv[i + 1] as OutputFormat) ?? "table";
       i += 1;
-    } else if (arg === '--base-url') {
+    } else if (arg === "--base-url") {
       baseUrl = argv[i + 1];
       i += 1;
-    } else if (arg === '--token') {
+    } else if (arg === "--token") {
       token = argv[i + 1];
       i += 1;
-    } else if (arg === '-h' || arg === '--help') {
+    } else if (arg === "-h" || arg === "--help") {
       printHelp();
       process.exit(0);
     } else {
@@ -92,30 +97,33 @@ async function main(): Promise<void> {
   }
 
   switch (group) {
-    case 'auth':
+    case "auth":
       await runAuth(runtimeConfig, subArgs);
       return;
-    case 'config':
+    case "config":
       await runConfig(runtimeConfig, subArgs);
       return;
-    case 'credentials':
+    case "credentials":
       await runCredentials(runtimeConfig, subArgs);
       return;
-    case 'tokens':
+    case "tokens":
       await runTokens(runtimeConfig, subArgs);
       return;
-    case 'service-accounts':
+    case "service-accounts":
       await runServiceAccounts(runtimeConfig, subArgs);
       return;
-    case 'sandbox':
+    case "sandbox":
       await runSandbox(runtimeConfig, subArgs);
       return;
-    case 'audit':
+    case "audit":
       await runAudit(runtimeConfig, subArgs);
       return;
-    case '--version':
-    case '-v':
-      printResult({ name: '@toani/vault-cli', version: '0.0.1' }, runtimeConfig.output);
+    case "--version":
+    case "-v":
+      printResult(
+        { name: "@toani/vault-cli", version: "0.0.2" },
+        runtimeConfig.output,
+      );
       return;
     default:
       throw new Error(`Unknown command group: ${group}`);

@@ -34,11 +34,11 @@
 
 **响应字段说明**:
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `status` | string | 当前主服务实现恒为字面量 `healthy` |
-| `version` | string | 服务版本号（`CARGO_PKG_VERSION`） |
-| `timestamp` | u64 | Unix 时间戳（秒） |
+| 字段        | 类型   | 说明                               |
+| ----------- | ------ | ---------------------------------- |
+| `status`    | string | 当前主服务实现恒为字面量 `healthy` |
+| `version`   | string | 服务版本号（`CARGO_PKG_VERSION`）  |
+| `timestamp` | u64    | Unix 时间戳（秒）                  |
 
 ---
 
@@ -86,15 +86,15 @@
 
 **响应字段说明**:
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `status` | string | 整体状态：`healthy` 或 `degraded` |
-| `version` | string | 服务版本号（`CARGO_PKG_VERSION`） |
-| `timestamp` | u64 | Unix 时间戳（秒） |
-| `components` | object | 各子系统状态摘要 |
-| `components.vault` | string | 保险库/存储相关摘要（当前占位为 `healthy`） |
-| `components.enclave` | string | `TEE_MODE=hardware` 时为 `healthy`；`TEE_MODE=simulation` 时为字面量 `simulation` |
-| `components.audit_log` | string | 审计日志子系统摘要（当前占位为 `healthy`） |
+| 字段                   | 类型   | 说明                                                                              |
+| ---------------------- | ------ | --------------------------------------------------------------------------------- |
+| `status`               | string | 整体状态：`healthy` 或 `degraded`                                                 |
+| `version`              | string | 服务版本号（`CARGO_PKG_VERSION`）                                                 |
+| `timestamp`            | u64    | Unix 时间戳（秒）                                                                 |
+| `components`           | object | 各子系统状态摘要                                                                  |
+| `components.vault`     | string | 保险库/存储相关摘要（当前占位为 `healthy`）                                       |
+| `components.enclave`   | string | `TEE_MODE=hardware` 时为 `healthy`；`TEE_MODE=simulation` 时为字面量 `simulation` |
+| `components.audit_log` | string | 审计日志子系统摘要（当前占位为 `healthy`）                                        |
 
 ---
 
@@ -140,13 +140,13 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ### Token Scope 权限
 
-| Scope | 权限说明 |
-|-------|----------|
-| `credential:read` | 读取凭证元数据 |
+| Scope                | 权限说明         |
+| -------------------- | ---------------- |
+| `credential:read`    | 读取凭证元数据   |
 | `credential:decrypt` | 解密凭证获取明文 |
-| `credential:write` | 创建/更新凭证 |
-| `audit:read` | 读取审计日志 |
-| `admin` | 所有管理权限 |
+| `credential:write`   | 创建/更新凭证    |
+| `audit:read`         | 读取审计日志     |
+| `admin`              | 所有管理权限     |
 
 ---
 
@@ -161,6 +161,7 @@ Authorization: Bearer <paseto_v4_local_token>
 **Scope**: `credential:write`
 
 **请求体**:
+
 ```json
 {
   "service_id": "schwab",
@@ -174,6 +175,7 @@ Authorization: Bearer <paseto_v4_local_token>
 ```
 
 **响应 (201 Created)**:
+
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
@@ -196,14 +198,15 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **查询参数**:
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `service_id` | string | 按服务 ID 过滤 |
-| `credential_type` | string | 按凭证类型过滤 |
-| `include_deleted` | bool | 包含已删除的凭证 |
-| `only_valid` | bool | 仅返回未过期的凭证 |
+| 参数              | 类型   | 说明               |
+| ----------------- | ------ | ------------------ |
+| `service_id`      | string | 按服务 ID 过滤     |
+| `credential_type` | string | 按凭证类型过滤     |
+| `include_deleted` | bool   | 包含已删除的凭证   |
+| `only_valid`      | bool   | 仅返回未过期的凭证 |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "credentials": [
@@ -234,11 +237,12 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **路径参数**:
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
+| 参数 | 类型   | 说明              |
+| ---- | ------ | ----------------- |
 | `id` | string | 凭证 ID (UUID v7) |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
@@ -273,11 +277,12 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **路径参数**:
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
+| 参数 | 类型   | 说明              |
+| ---- | ------ | ----------------- |
 | `id` | string | 凭证 ID (UUID v7) |
 
 **请求体**:
+
 ```json
 {
   "reason": "用户登录操作"
@@ -285,6 +290,7 @@ Authorization: Bearer <paseto_v4_local_token>
 ```
 
 **响应 (200 OK)**:
+
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
@@ -309,11 +315,12 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **路径参数**:
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
+| 参数 | 类型   | 说明              |
+| ---- | ------ | ----------------- |
 | `id` | string | 凭证 ID (UUID v7) |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
@@ -335,35 +342,36 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **查询参数**:
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `start_time` | u64 | 否 | 开始时间戳（Unix 秒） |
-| `end_time` | u64 | 否 | 结束时间戳（Unix 秒） |
-| `action` | string | 否 | 操作类型过滤 |
-| `risk_tier` | string | 否 | 风险等级：Low/Medium/High/Critical |
-| `user_id_hash` | string | 否 | 用户 ID 哈希过滤 |
-| `outcome` | string | 否 | 结果：Success/Failure/Denied/Timeout/Aborted |
-| `limit` | u32 | 否 | 返回条数限制（默认 20，最大 100） |
-| `offset` | u32 | 否 | 分页偏移量（默认 0） |
+| 参数           | 类型   | 必填 | 说明                                         |
+| -------------- | ------ | ---- | -------------------------------------------- |
+| `start_time`   | u64    | 否   | 开始时间戳（Unix 秒）                        |
+| `end_time`     | u64    | 否   | 结束时间戳（Unix 秒）                        |
+| `action`       | string | 否   | 操作类型过滤                                 |
+| `risk_tier`    | string | 否   | 风险等级：Low/Medium/High/Critical           |
+| `user_id_hash` | string | 否   | 用户 ID 哈希过滤                             |
+| `outcome`      | string | 否   | 结果：Success/Failure/Denied/Timeout/Aborted |
+| `limit`        | u32    | 否   | 返回条数限制（默认 20，最大 100）            |
+| `offset`       | u32    | 否   | 分页偏移量（默认 0）                         |
 
 **支持的操作类型 (AuditAction)**:
 
-| 操作 | 风险等级 | 说明 |
-|------|----------|------|
-| `CredentialDecrypt` | High | 凭证解密 |
-| `CredentialAccess` | Medium | 凭证访问 |
-| `CredentialCreate` | Medium | 凭证创建 |
-| `CredentialDelete` | High | 凭证删除 |
-| `TokenIssue` | Medium | Token 签发 |
-| `TokenRevoke` | Medium | Token 撤销 |
-| `TokenValidate` | Low | Token 验证 |
-| `AuditQuery` | High | 审计日志查询 |
-| `KeyRotation` | Critical | 密钥轮换 |
-| `AdminLogin` | Critical | 管理员登录 |
-| `SystemConfigChange` | High | 系统配置变更 |
-| `FailedAuth` | High | 认证失败 |
+| 操作                 | 风险等级 | 说明         |
+| -------------------- | -------- | ------------ |
+| `CredentialDecrypt`  | High     | 凭证解密     |
+| `CredentialAccess`   | Medium   | 凭证访问     |
+| `CredentialCreate`   | Medium   | 凭证创建     |
+| `CredentialDelete`   | High     | 凭证删除     |
+| `TokenIssue`         | Medium   | Token 签发   |
+| `TokenRevoke`        | Medium   | Token 撤销   |
+| `TokenValidate`      | Low      | Token 验证   |
+| `AuditQuery`         | High     | 审计日志查询 |
+| `KeyRotation`        | Critical | 密钥轮换     |
+| `AdminLogin`         | Critical | 管理员登录   |
+| `SystemConfigChange` | High     | 系统配置变更 |
+| `FailedAuth`         | High     | 认证失败     |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "entries": [
@@ -391,20 +399,20 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **字段说明**:
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | UUID v7 格式的事件 ID |
-| `user_id_hash` | string | SHA-256 哈希的用户 ID |
-| `timestamp` | u64 | UTC 时间戳（毫秒） |
-| `session_id` | string | 会话标识 |
-| `service` | string | 服务名称 |
-| `action` | string | 操作类型 |
-| `risk_tier` | string | 风险等级 |
-| `outcome` | string | 操作结果 |
-| `tee_mrenclave` | string | TEE MRENCLAVE 测量值 |
-| `action_token_jti` | string | Action Token JTI |
-| `chain_index` | u64 | 审计链中的索引位置 |
-| `merkle_root` | string | Merkle Tree 根哈希 |
+| 字段               | 类型   | 说明                  |
+| ------------------ | ------ | --------------------- |
+| `id`               | string | UUID v7 格式的事件 ID |
+| `user_id_hash`     | string | SHA-256 哈希的用户 ID |
+| `timestamp`        | u64    | UTC 时间戳（毫秒）    |
+| `session_id`       | string | 会话标识              |
+| `service`          | string | 服务名称              |
+| `action`           | string | 操作类型              |
+| `risk_tier`        | string | 风险等级              |
+| `outcome`          | string | 操作结果              |
+| `tee_mrenclave`    | string | TEE MRENCLAVE 测量值  |
+| `action_token_jti` | string | Action Token JTI      |
+| `chain_index`      | u64    | 审计链中的索引位置    |
+| `merkle_root`      | string | Merkle Tree 根哈希    |
 
 ---
 
@@ -418,11 +426,12 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **路径参数**:
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
+| 参数 | 类型   | 说明                  |
+| ---- | ------ | --------------------- |
 | `id` | string | 审计条目 ID (UUID v7) |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "entry": {
@@ -443,10 +452,7 @@ Authorization: Bearer <paseto_v4_local_token>
     "verified": true,
     "signature_valid": true,
     "chain_hash_valid": true,
-    "merkle_proof": [
-      "abc123...",
-      "def456..."
-    ],
+    "merkle_proof": ["abc123...", "def456..."],
     "state_hash": "a1b2c3d4..."
   }
 }
@@ -454,13 +460,13 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **验证字段说明**:
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `verified` | bool | 整体验证结果 |
-| `signature_valid` | bool | Ed25519 签名验证结果 |
-| `chain_hash_valid` | bool | 链式哈希验证结果 |
-| `merkle_proof` | array | Merkle Tree 包含证明 |
-| `state_hash` | string | immudb 状态哈希 |
+| 字段               | 类型   | 说明                 |
+| ------------------ | ------ | -------------------- |
+| `verified`         | bool   | 整体验证结果         |
+| `signature_valid`  | bool   | Ed25519 签名验证结果 |
+| `chain_hash_valid` | bool   | 链式哈希验证结果     |
+| `merkle_proof`     | array  | Merkle Tree 包含证明 |
+| `state_hash`       | string | immudb 状态哈希      |
 
 ---
 
@@ -473,6 +479,7 @@ Authorization: Bearer <paseto_v4_local_token>
 **Scope**: `audit:read` 或 `admin`
 
 **请求体**:
+
 ```json
 {
   "start_time": 1704067200,
@@ -484,14 +491,15 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **请求字段说明**:
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `start_time` | u64 | 否 | 开始时间戳（Unix 秒） |
-| `end_time` | u64 | 否 | 结束时间戳（Unix 秒） |
-| `format` | string | 否 | 导出格式：`json` 或 `csv`（默认 json） |
-| `include_verification` | bool | 否 | 是否包含验证签名（默认 false） |
+| 字段                   | 类型   | 必填 | 说明                                   |
+| ---------------------- | ------ | ---- | -------------------------------------- |
+| `start_time`           | u64    | 否   | 开始时间戳（Unix 秒）                  |
+| `end_time`             | u64    | 否   | 结束时间戳（Unix 秒）                  |
+| `format`               | string | 否   | 导出格式：`json` 或 `csv`（默认 json） |
+| `include_verification` | bool   | 否   | 是否包含验证签名（默认 false）         |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "format": "json",
@@ -506,17 +514,18 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **字段说明**:
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `format` | string | 导出格式 |
-| `filename` | string | 建议的文件名 |
-| `content` | string | Base64 编码的导出内容 |
-| `entry_count` | u64 | 导出的条目数量 |
-| `signature` | string | 导出内容的数字签名（可选） |
-| `exported_at` | string | 导出时间（ISO 8601） |
-| `expires_at` | string | 导出文件过期时间（ISO 8601） |
+| 字段          | 类型   | 说明                         |
+| ------------- | ------ | ---------------------------- |
+| `format`      | string | 导出格式                     |
+| `filename`    | string | 建议的文件名                 |
+| `content`     | string | Base64 编码的导出内容        |
+| `entry_count` | u64    | 导出的条目数量               |
+| `signature`   | string | 导出内容的数字签名（可选）   |
+| `exported_at` | string | 导出时间（ISO 8601）         |
+| `expires_at`  | string | 导出文件过期时间（ISO 8601） |
 
 **JSON 导出格式**:
+
 ```json
 {
   "export_metadata": {
@@ -540,6 +549,7 @@ Authorization: Bearer <paseto_v4_local_token>
 ```
 
 **CSV 导出格式**:
+
 ```csv
 id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrenclave,action_token_jti,chain_index
 018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c,1709990400000,e3b0c442...,session_xyz789,vault-service,CredentialDecrypt,High,Success,9f86d081...,jti_abc123,42
@@ -556,6 +566,7 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 **Scope**: `audit:read` 或 `admin`
 
 **请求体**:
+
 ```json
 {
   "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
@@ -565,13 +576,14 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 **请求字段说明**:
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `entry_id` | string | 是 | 审计条目 ID (UUID v7) |
-| `include_proof` | bool | 否 | 是否包含 Merkle Proof（默认 true） |
-| `chain_index` | u64 | 否 | 链索引（可选，用于直接索引验证） |
+| 字段            | 类型   | 必填 | 说明                               |
+| --------------- | ------ | ---- | ---------------------------------- |
+| `entry_id`      | string | 是   | 审计条目 ID (UUID v7)              |
+| `include_proof` | bool   | 否   | 是否包含 Merkle Proof（默认 true） |
+| `chain_index`   | u64    | 否   | 链索引（可选，用于直接索引验证）   |
 
 **响应 (200 OK)**:
+
 ```json
 {
   "verified": true,
@@ -583,10 +595,7 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
   "state_hash": "a1b2c3d4e5f6...",
   "verification_timestamp": "2024-03-01T12:00:00Z",
   "proof": {
-    "inclusion_proof": [
-      "abc123...",
-      "def456..."
-    ],
+    "inclusion_proof": ["abc123...", "def456..."],
     "transaction_id": 12345,
     "root_hash": "a1b2c3d4e5f6..."
   }
@@ -595,20 +604,20 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 **响应字段说明**:
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `verified` | bool | 整体验证结果 |
-| `entry_id` | string | 验证的条目 ID |
-| `chain_index` | u64 | 链索引位置 |
-| `signature_valid` | bool | Ed25519 签名验证 |
-| `chain_hash_valid` | bool | 链式哈希验证 |
-| `merkle_root` | string | Merkle Tree 根哈希 |
-| `state_hash` | string | immudb 状态哈希 |
-| `verification_timestamp` | string | 验证时间（ISO 8601） |
-| `proof` | object | 验证证明详情 |
-| `proof.inclusion_proof` | array | Merkle Tree 包含证明路径 |
-| `proof.transaction_id` | u64 | immudb 事务 ID |
-| `proof.root_hash` | string | 验证时的根哈希 |
+| 字段                     | 类型   | 说明                     |
+| ------------------------ | ------ | ------------------------ |
+| `verified`               | bool   | 整体验证结果             |
+| `entry_id`               | string | 验证的条目 ID            |
+| `chain_index`            | u64    | 链索引位置               |
+| `signature_valid`        | bool   | Ed25519 签名验证         |
+| `chain_hash_valid`       | bool   | 链式哈希验证             |
+| `merkle_root`            | string | Merkle Tree 根哈希       |
+| `state_hash`             | string | immudb 状态哈希          |
+| `verification_timestamp` | string | 验证时间（ISO 8601）     |
+| `proof`                  | object | 验证证明详情             |
+| `proof.inclusion_proof`  | array  | Merkle Tree 包含证明路径 |
+| `proof.transaction_id`   | u64    | immudb 事务 ID           |
+| `proof.root_hash`        | string | 验证时的根哈希           |
 
 ---
 
@@ -633,28 +642,29 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 ### 错误码列表
 
-| HTTP 状态码 | 错误码 | 说明 |
-|-------------|--------|------|
-| 400 | `invalid_request` | 请求参数无效或缺失 |
-| 400 | `invalid_time_range` | 时间范围无效 |
-| 401 | `missing_token` | 缺少 Authorization 头 |
-| 401 | `invalid_token` | Token 格式无效或过期 |
-| 401 | `revoked_token` | Token 已被撤销 |
-| 403 | `insufficient_scope` | Token 缺少必需的 Scope |
-| 403 | `access_denied` | 访问被拒绝（权限不足） |
-| 404 | `not_found` | 资源不存在 |
-| 404 | `audit_entry_not_found` | 审计条目不存在 |
-| 404 | `credential_not_found` | 凭证不存在 |
-| 409 | `conflict` | 资源冲突 |
-| 422 | `unprocessable_entity` | 请求语义错误 |
-| 429 | `rate_limited` | 请求频率超限 |
-| 500 | `internal_error` | 服务器内部错误 |
-| 500 | `storage_error` | 审计存储错误 |
-| 503 | `service_unavailable` | 服务暂时不可用 |
+| HTTP 状态码 | 错误码                  | 说明                   |
+| ----------- | ----------------------- | ---------------------- |
+| 400         | `invalid_request`       | 请求参数无效或缺失     |
+| 400         | `invalid_time_range`    | 时间范围无效           |
+| 401         | `missing_token`         | 缺少 Authorization 头  |
+| 401         | `invalid_token`         | Token 格式无效或过期   |
+| 401         | `revoked_token`         | Token 已被撤销         |
+| 403         | `insufficient_scope`    | Token 缺少必需的 Scope |
+| 403         | `access_denied`         | 访问被拒绝（权限不足） |
+| 404         | `not_found`             | 资源不存在             |
+| 404         | `audit_entry_not_found` | 审计条目不存在         |
+| 404         | `credential_not_found`  | 凭证不存在             |
+| 409         | `conflict`              | 资源冲突               |
+| 422         | `unprocessable_entity`  | 请求语义错误           |
+| 429         | `rate_limited`          | 请求频率超限           |
+| 500         | `internal_error`        | 服务器内部错误         |
+| 500         | `storage_error`         | 审计存储错误           |
+| 503         | `service_unavailable`   | 服务暂时不可用         |
 
 ### 认证错误示例
 
 **缺少 Token (401)**:
+
 ```json
 {
   "error": {
@@ -665,6 +675,7 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 ```
 
 **Token 过期 (401)**:
+
 ```json
 {
   "error": {
@@ -675,6 +686,7 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 ```
 
 **权限不足 (403)**:
+
 ```json
 {
   "error": {
@@ -691,6 +703,7 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 ### 审计 API 错误示例
 
 **条目不存在 (404)**:
+
 ```json
 {
   "error": {
@@ -704,6 +717,7 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 ```
 
 **验证失败 (400)**:
+
 ```json
 {
   "error": {
@@ -724,14 +738,14 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 API 实施速率限制以防止滥用：
 
-| 端点 | 限制 |
-|------|------|
-| `POST /api/v1/credentials` | 100/分钟 |
-| `GET /api/v1/credentials` | 300/分钟 |
-| `POST /api/v1/credentials/*/decrypt` | 60/分钟 |
-| `GET /api/v1/audit/logs` | 60/分钟 |
-| `POST /api/v1/audit/export` | 10/分钟 |
-| `POST /api/v1/audit/verify` | 120/分钟 |
+| 端点                                 | 限制     |
+| ------------------------------------ | -------- |
+| `POST /api/v1/credentials`           | 100/分钟 |
+| `GET /api/v1/credentials`            | 300/分钟 |
+| `POST /api/v1/credentials/*/decrypt` | 60/分钟  |
+| `GET /api/v1/audit/logs`             | 60/分钟  |
+| `POST /api/v1/audit/export`          | 10/分钟  |
+| `POST /api/v1/audit/verify`          | 120/分钟 |
 
 超出限制的请求将返回 `429 Too Many Requests` 状态码。
 
@@ -767,12 +781,14 @@ API 版本通过 URL 路径前缀指定：
 ### 枚举值
 
 **RiskTier**:
+
 - `Low` - 低风险操作
 - `Medium` - 中等风险操作
 - `High` - 高风险操作
 - `Critical` - 关键风险操作
 
 **Outcome**:
+
 - `Success` - 操作成功
 - `Failure` - 操作失败
 - `Denied` - 操作被拒绝
@@ -780,6 +796,7 @@ API 版本通过 URL 路径前缀指定：
 - `Aborted` - 操作中止
 
 **CredentialType**:
+
 - `username_password`
 - `api_key`
 - `oauth_token`
