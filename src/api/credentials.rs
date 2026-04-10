@@ -18,7 +18,7 @@ use crate::models::{CredentialMetadata, CredentialType};
 use crate::tee::SharedEnclave;
 use crate::vault::models::{
     CreateCredentialRequest, CredentialFilter, CredentialId, EncryptedPayload, ServiceId, TenantId,
-    UserId, VaultEntry,
+    UserId, VaultEntry, VaultError,
 };
 use crate::vault::storage::CredentialVault;
 use axum::{
@@ -407,6 +407,15 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// 将 VaultError 转换为 ApiError，租户隔离违规返回 403 而非 500
+fn vault_error_to_api_error(e: VaultError) -> ApiError {
+    match e {
+        VaultError::TenantIsolationViolation { .. } => ApiError::new("forbidden", "无权访问该凭证"),
+        VaultError::CredentialNotFound(_) => ApiError::new("not_found", "凭证不存在"),
+        _ => ApiError::new("internal_error", e.to_string()),
+    }
+}
+
 /// 创建凭证请求
 #[derive(Debug, Deserialize)]
 pub struct CreateCredentialApiRequest {
@@ -598,11 +607,23 @@ pub struct ListCredentialsResponse {
     pub total: usize,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct ListCredentialsQuery {
     pub service_id: Option<String>,
     pub credential_type: Option<String>,
     pub only_valid: Option<bool>,
+    #[serde(default = "default_page")]
+    pub page: usize,
+    #[serde(default = "default_page_size")]
+    pub page_size: usize,
+}
+
+fn default_page() -> usize {
+    1
+}
+
+fn default_page_size() -> usize {
+    20
 }
 
 #[allow(clippy::result_large_err)]
@@ -641,6 +662,17 @@ pub async fn list_credentials(
     Extension(token): Extension<ValidatedToken>,
     Query(query): Query<ListCredentialsQuery>,
 ) -> Result<Json<ListCredentialsResponse>, ApiError> {
+    // 验证分页参数
+    if query.page == 0 {
+        return Err(ApiError::new("invalid_request", "page must be >= 1"));
+    }
+    if query.page_size == 0 || query.page_size > 100 {
+        return Err(ApiError::new(
+            "invalid_request",
+            "page_size must be between 1 and 100",
+        ));
+    }
+
     // 验证 Scope: credential:read
     require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
@@ -709,7 +741,7 @@ pub async fn get_credential(
     let metadata = state
         .vault
         .get_credential_metadata(&credential_id, &tenant_id, &user_id)
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?
+        .map_err(vault_error_to_api_error)?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
     // 记录访问审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
@@ -788,7 +820,7 @@ pub async fn decrypt_credential_endpoint(
     let entry = state
         .vault
         .get_credential(&credential_id, &tenant_id, &user_id)
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?
+        .map_err(vault_error_to_api_error)?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
     // 检查凭证是否已过期
@@ -916,7 +948,7 @@ pub async fn delete_credential(
     let deleted = state
         .vault
         .delete_credential(&credential_id, &tenant_id, &user_id)
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
+        .map_err(vault_error_to_api_error)?;
 
     if !deleted {
         return Err(ApiError::new("not_found", "凭证不存在"));
@@ -994,7 +1026,7 @@ pub async fn update_credential(
             encrypted_payload,
             request.change_reason,
         )
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
+        .map_err(vault_error_to_api_error)?;
 
     Ok(Json(UpdateCredentialApiResponse {
         credential_id: id,

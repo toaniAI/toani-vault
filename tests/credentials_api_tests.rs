@@ -817,3 +817,99 @@ async fn test_create_credential_empty_service_id_returns_400() {
     // 空字符串是合法的字符串，应该进入后续流程（返回非403错误）
     assert_ne!(status, StatusCode::FORBIDDEN);
 }
+
+/// BUG-18173: 测试获取凭证列表 page=0 返回 400 + invalid_request
+#[tokio::test]
+async fn test_list_credentials_page_zero_returns_400() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+
+    let app = test_router(state, token);
+
+    // 发送 page=0 的请求
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?page=0&page_size=10")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("page must be >= 1")
+    );
+}
+
+/// BUG-18173: 测试获取凭证列表 page_size=0 返回 400 + invalid_request
+#[tokio::test]
+async fn test_list_credentials_page_size_zero_returns_400() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+
+    let app = test_router(state, token);
+
+    // 发送 page_size=0 的请求
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?page=1&page_size=0")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("page_size must be between 1 and 100")
+    );
+}
+
+/// BUG-18173: 测试获取凭证列表 page_size>100 返回 400 + invalid_request
+#[tokio::test]
+async fn test_list_credentials_page_size_exceeds_max_returns_400() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+
+    let app = test_router(state, token);
+
+    // 发送 page_size=101 的请求
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?page=1&page_size=101")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("page_size must be between 1 and 100")
+    );
+}
