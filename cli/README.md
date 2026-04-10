@@ -14,20 +14,24 @@ npm install -g @toani/vault-cli
 ## Configure
 
 ```bash
-toani config init --url https://dev-credbridge.bitkinetic.com/ --token <TOKEN>
+toani config init --url https://dev-credbridge.bitkinetic.com/ --token <AUTOMATION_TOKEN>
 ```
 
 Config is stored at `~/.toani/config.json` with fields:
 - `baseUrl`
-- `token` (API Access Token)
+- `automationToken` (preferred API token for automation commands)
 - `sessionToken` (Session Token)
+- `currentTenantId`
+- `currentProfile`
+- `profiles`
 - `output` (`table` or `json`)
 - `timeout`
 
 Token resolution priority:
 1. explicit `--token`
-2. `config.token`
-3. `config.sessionToken`
+2. active profile `automationToken`
+3. env `TOANI_VAULT_TOKEN`
+4. `sessionToken` only for session-only auth commands
 
 Base URL resolution priority:
 1. explicit `--base-url`
@@ -39,9 +43,14 @@ Base URL resolution priority:
 ## Commands
 
 ```bash
-toani auth login --url <URL> --token <TOKEN>
+toani auth login --url <URL> --session-token <TOKEN>
 toani auth status
 toani auth session --privy-access-token <PRIVY_TOKEN>
+toani auth use-tenant <tenant-id>
+toani auth token create --name <name> --scope <scope1,scope2> [--ttl-seconds 900] [--save]
+toani auth token list
+toani auth token get <token-id>
+toani auth token revoke <token-id>
 toani auth access-token create --scope <scope1,scope2> [--ttl-seconds 900] [--store]
 toani auth access-token revoke --token-id <id>
 toani auth me
@@ -83,11 +92,14 @@ toani audit verify [--payload '{"log_id":"..."}']
 toani config show
 toani config set <key> <value>
 toani config get <key>
+toani config profile create <name>
+toani config profile use <name>
+toani config profile show
 ```
 
 ## Notes
 
-- `auth logout` only clears `sessionToken`; it does not clear `token`.
-- `auth access-token create --store` writes the created access token into `config.token` (default behavior).
+- `auth logout` only clears `sessionToken`; it does not clear `automationToken`.
+- `auth token create --save` writes the created automation token into the active profile.
 - `Privy Access Token` is only for exchanging `Session Token`.
 - `API Access Token` and `Service Account Token` are for API/CLI automation calls.

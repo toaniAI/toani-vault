@@ -41,6 +41,7 @@ use vault_service::api::{
     i18n::{LocaleResolverState, locale_middleware},
     middleware::auth_middleware,
     notifications::notifications_routes,
+    profile_token_routes,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
     service_account_routes,
@@ -507,8 +508,13 @@ async fn initialize_app_state(
         "开始初始化速率限制"
     );
     let rate_limit_config = RateLimitConfig::from_env();
-    let rate_limit_state = RateLimitState::new(rate_limit_config);
-    info!(module = "rate_limit", status = "ready", "速率限制就绪");
+    let rate_limit_state = initialize_rate_limit_state(rate_limit_config).await?;
+    info!(
+        module = "rate_limit",
+        status = "ready",
+        backend = "redis",
+        "速率限制就绪"
+    );
 
     // --- Attestation ---
     info!(
@@ -743,6 +749,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
     let token_routes = token_routes(app_state.auth_state.clone());
+    let profile_token_routes = profile_token_routes(app_state.auth_state.clone());
     let service_account_routes = service_account_routes(app_state.auth_state.clone());
 
     // 认证中间件层
@@ -766,6 +773,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         // 通知列表路由
         .merge(notifications_routes)
         .merge(token_routes)
+        .merge(profile_token_routes)
         .merge(service_account_routes)
         // 认证用户信息与偏好
         .merge(protected_auth_routes)
@@ -859,6 +867,16 @@ fn initialize_token_store() -> Result<(TokenStore, &'static str), Box<dyn std::e
     let token_store = create_redis_token_store(&redis_url)
         .map_err(|error| std::io::Error::other(format!("Redis Token 存储初始化失败: {error}")))?;
     Ok((token_store, "redis"))
+}
+
+async fn initialize_rate_limit_state(
+    config: RateLimitConfig,
+) -> Result<RateLimitState, Box<dyn std::error::Error>> {
+    let redis_url = env::var("REDIS_URL")
+        .map_err(|_| std::io::Error::other("rate limit state 要求 REDIS_URL，内存回退已禁用"))?;
+    RateLimitState::new(config, &redis_url)
+        .await
+        .map_err(|error| std::io::Error::other(format!("Redis 限流存储初始化失败: {error}")).into())
 }
 
 #[derive(Debug, Clone)]

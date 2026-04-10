@@ -573,6 +573,23 @@ pub struct CreateAccessTokenResponse {
     pub granted_scopes: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAutomationTokenRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub scopes: Vec<String>,
+    pub ttl_seconds: Option<u64>,
+    pub created_via: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAutomationTokenResponse {
+    pub token_value: String,
+    pub token_preview: String,
+    #[serde(flatten)]
+    pub metadata: ApiTokenMetadata,
+}
+
 /// Token 列表项
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenListItem {
@@ -595,6 +612,9 @@ pub struct ListTokensResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiTokenMetadata {
     pub token_id: String,
+    pub token_kind: String,
+    pub token_name: Option<String>,
+    pub token_prefix: Option<String>,
     pub token_type: String,
     pub subject_type: String,
     pub subject_id: String,
@@ -603,7 +623,12 @@ pub struct ApiTokenMetadata {
     pub session_id: Option<String>,
     pub membership_id: Option<String>,
     pub display_name: Option<String>,
+    pub description: Option<String>,
     pub granted_scopes: Vec<String>,
+    pub issued_membership_role_snapshot: Option<String>,
+    pub permission_source: Option<String>,
+    pub created_via: Option<String>,
+    pub revoked_reason: Option<String>,
     pub expires_at: String,
     pub revoked_at: Option<String>,
     pub created_at: String,

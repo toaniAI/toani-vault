@@ -62,6 +62,37 @@ Platform API Token 需通过管理界面或 API 创建：
 2. 进入"开发者中心" > "API Tokens"
 3. 创建新的服务账户 Token，设置所需权限范围
 
+### Profile Automation Tokens
+
+也可以先拿用户 Session Token，再为当前租户签发一个用户自动化令牌：
+
+```rust,no_run
+use std::collections::HashMap;
+use toani_vault_sdk::{CreateAutomationTokenRequest, RequestOptions, ToaniVaultSDK};
+
+# async fn example(sdk: ToaniVaultSDK, session_token: String) -> Result<(), Box<dyn std::error::Error>> {
+let mut headers = HashMap::new();
+headers.insert("Authorization".to_string(), format!("Bearer {}", session_token));
+
+let issued = sdk.token().create_automation_token(
+    CreateAutomationTokenRequest {
+        name: "ci-bot".to_string(),
+        description: Some("nightly credential sync".to_string()),
+        scopes: vec!["credential:read".to_string(), "audit:read".to_string()],
+        ttl_seconds: Some(86_400),
+        created_via: Some("sdk".to_string()),
+    },
+    Some(RequestOptions {
+        headers: Some(headers),
+        ..Default::default()
+    }),
+).await?;
+
+sdk.client().set_token(issued.token_value);
+# Ok(())
+# }
+```
+
 ---
 
 ## 特性

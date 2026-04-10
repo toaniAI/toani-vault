@@ -88,6 +88,28 @@ const saToken = await sdk.serviceAccounts.createToken(sa.id, {
 const saTokenMetadata = await sdk.serviceAccounts.listTokens(sa.id);
 ```
 
+## Profile Automation Tokens
+
+Use a user session token to mint tenant-scoped automation tokens, then switch the SDK client to the returned `tokenValue` for background jobs:
+
+```typescript
+const issued = await sdk.auth.createAutomationToken(
+  {
+    name: 'ci-bot',
+    scopes: ['credential:read', 'audit:read'],
+    ttlSeconds: 86400,
+    createdVia: 'sdk',
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+    },
+  }
+);
+
+sdk.client.setToken(issued.tokenValue);
+```
+
 ---
 
 ## 特性

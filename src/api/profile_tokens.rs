@@ -1,0 +1,440 @@
+use std::collections::HashSet;
+
+use super::{
+    auth::AuthApiState,
+    middleware::{TokenScope, ValidatedToken},
+    response::ApiErrorResponse,
+    tokens::{
+        TOKEN_SECRET_KEY, TokenMetadataResponse, map_token_metadata, parse_uuid_str,
+        unix_to_datetime,
+    },
+};
+use crate::audit::{AuditAction, Outcome};
+use crate::auth::{
+    ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType, MembershipStatus, TenantMembership,
+};
+use crate::token::{MAX_TOKEN_TTL_SECONDS, PasetoToken, TOKEN_ISSUED_FROM_SESSION, TokenClaims};
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, State},
+    routing::{get, post},
+};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+
+const AUTOMATION_TOKEN_KIND: &str = "user_automation";
+const AUTOMATION_PERMISSION_SOURCE: &str = "membership_subset";
+const CREATED_VIA_PROFILE: &str = "profile_dashboard";
+const CREATED_VIA_CLI: &str = "cli";
+const CREATED_VIA_SDK: &str = "sdk";
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAutomationTokenRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub ttl_seconds: Option<u64>,
+    #[serde(default)]
+    pub created_via: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateAutomationTokenResponse {
+    pub token_value: String,
+    pub token_preview: String,
+    #[serde(flatten)]
+    pub metadata: TokenMetadataResponse,
+}
+
+pub fn profile_token_routes(state: AuthApiState) -> Router {
+    Router::new()
+        .route(
+            "/profile/automation-tokens",
+            get(list_automation_tokens_handler).post(create_automation_token_handler),
+        )
+        .route(
+            "/profile/automation-tokens/:token_id",
+            get(get_automation_token_handler),
+        )
+        .route(
+            "/profile/automation-tokens/:token_id/revoke",
+            post(revoke_automation_token_handler),
+        )
+        .with_state(state)
+}
+
+async fn create_automation_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(request): Json<CreateAutomationTokenRequest>,
+) -> Result<Json<CreateAutomationTokenResponse>, ApiErrorResponse> {
+    ensure_automation_manager(&token)?;
+    let membership = load_active_membership(&state, &token).await?;
+
+    if request.name.trim().is_empty() {
+        return Err(ApiErrorResponse::invalid_request("Token name is required"));
+    }
+    if request.scopes.is_empty() {
+        return Err(ApiErrorResponse::invalid_request(
+            "At least one scope is required",
+        ));
+    }
+
+    let granted_scopes = validate_scope_subset(&request.scopes, &membership)?;
+    let ttl_seconds = request
+        .ttl_seconds
+        .unwrap_or(3600)
+        .clamp(1, MAX_TOKEN_TTL_SECONDS);
+    let mut claims = TokenClaims::new(
+        token.subject.clone(),
+        token.tenant_id.clone(),
+        granted_scopes.join(" "),
+        false,
+        ttl_seconds,
+    )
+    .with_subject_type(token.subject_type.clone())
+    .with_issued_from(TOKEN_ISSUED_FROM_SESSION)
+    .with_membership_id(membership.id.to_string());
+    if let Some(session_id) = token.session_id() {
+        claims = claims.with_session_id(session_id.to_string());
+    }
+
+    let paseto_key = PasetoToken::key_from_bytes(&TOKEN_SECRET_KEY)
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+    let token_value = PasetoToken::sign(&claims, &paseto_key)
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+    let token_prefix = build_token_prefix(&token_value);
+
+    let mut metadata = ApiTokenMetadata::new(
+        claims.jti.clone(),
+        ApiTokenType::UserAccessToken,
+        ApiTokenSubjectType::User,
+        parse_uuid_str(&token.user_id, "user_id")?,
+        parse_uuid_str(&token.tenant_id, "tenant_id")?,
+        TOKEN_ISSUED_FROM_SESSION,
+        unix_to_datetime(claims.exp)?,
+    )
+    .with_token_kind(AUTOMATION_TOKEN_KIND)
+    .with_token_name(request.name.trim())
+    .with_token_prefix(token_prefix.clone())
+    .with_scopes(granted_scopes.clone())
+    .with_membership_id(membership.id)
+    .with_membership_role_snapshot(membership.role.as_str())
+    .with_permission_source(AUTOMATION_PERMISSION_SOURCE)
+    .with_created_via(normalize_created_via(request.created_via.as_deref()))
+    .with_display_name(request.name.trim());
+    if let Some(session_id) = token.session_id() {
+        metadata = metadata.with_session_id(parse_uuid_str(session_id, "session_id")?);
+    }
+    if let Some(description) = request.description.as_deref()
+        && !description.trim().is_empty()
+    {
+        metadata = metadata.with_description(description.trim());
+    }
+
+    let stored = state
+        .auth_service
+        .create_api_token_metadata(&metadata)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    state
+        .record_audit(
+            AuditAction::TokenIssue,
+            &token.user_id,
+            Outcome::Success,
+            Some(serde_json::json!({
+                "audit_event": "automation_token_issued",
+                "token_id": claims.jti,
+                "tenant_id": token.tenant_id,
+                "membership_id": membership.id,
+                "scopes": granted_scopes,
+                "created_via": normalize_created_via(request.created_via.as_deref()),
+            })),
+        )
+        .await;
+
+    Ok(Json(CreateAutomationTokenResponse {
+        token_value,
+        token_preview: build_token_preview(Some(&token_prefix)),
+        metadata: map_token_metadata(stored),
+    }))
+}
+
+async fn list_automation_tokens_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+) -> Result<Json<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
+    ensure_automation_manager(&token)?;
+    let membership = load_active_membership(&state, &token).await?;
+    let user_id = parse_uuid_str(&token.user_id, "user_id")?;
+
+    let items = state
+        .auth_service
+        .list_api_tokens(membership.tenant_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+    Ok(Json(
+        items
+            .into_iter()
+            .filter(|item| {
+                item.subject_type == ApiTokenSubjectType::User
+                    && item.subject_id == user_id
+                    && item.token_kind == AUTOMATION_TOKEN_KIND
+            })
+            .map(map_token_metadata)
+            .collect(),
+    ))
+}
+
+async fn get_automation_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(token_id): Path<String>,
+) -> Result<Json<TokenMetadataResponse>, ApiErrorResponse> {
+    ensure_automation_manager(&token)?;
+    let membership = load_active_membership(&state, &token).await?;
+    let user_id = parse_uuid_str(&token.user_id, "user_id")?;
+
+    let item = state
+        .auth_service
+        .get_api_token_metadata(&token_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Automation token not found"))?;
+
+    if item.tenant_id != membership.tenant_id
+        || item.subject_id != user_id
+        || item.subject_type != ApiTokenSubjectType::User
+        || item.token_kind != AUTOMATION_TOKEN_KIND
+    {
+        return Err(ApiErrorResponse::forbidden(
+            "Cannot access another user's automation token",
+        ));
+    }
+
+    Ok(Json(map_token_metadata(item)))
+}
+
+async fn revoke_automation_token_handler(
+    State(state): State<AuthApiState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(token_id): Path<String>,
+) -> Result<Json<TokenMetadataResponse>, ApiErrorResponse> {
+    ensure_automation_manager(&token)?;
+    let membership = load_active_membership(&state, &token).await?;
+    let user_id = parse_uuid_str(&token.user_id, "user_id")?;
+
+    let item = state
+        .auth_service
+        .get_api_token_metadata(&token_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Automation token not found"))?;
+
+    if item.tenant_id != membership.tenant_id
+        || item.subject_id != user_id
+        || item.subject_type != ApiTokenSubjectType::User
+        || item.token_kind != AUTOMATION_TOKEN_KIND
+    {
+        return Err(ApiErrorResponse::forbidden(
+            "Cannot revoke another user's automation token",
+        ));
+    }
+
+    let revoked = state
+        .auth_service
+        .revoke_api_token_metadata(&token_id, Utc::now())
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::not_found("Automation token not found"))?;
+
+    state
+        .record_audit(
+            AuditAction::TokenRevoke,
+            &token.user_id,
+            Outcome::Success,
+            Some(serde_json::json!({
+                "audit_event": "automation_token_revoked",
+                "token_id": token_id,
+                "tenant_id": token.tenant_id,
+            })),
+        )
+        .await;
+
+    Ok(Json(map_token_metadata(revoked)))
+}
+
+#[allow(clippy::result_large_err)]
+fn ensure_automation_manager(token: &ValidatedToken) -> Result<(), ApiErrorResponse> {
+    if !token.is_user_subject() {
+        return Err(ApiErrorResponse::forbidden(
+            "Only user sessions can manage automation tokens",
+        ));
+    }
+    if token.issued_from() != TOKEN_ISSUED_FROM_SESSION {
+        return Err(ApiErrorResponse::forbidden(
+            "Automation tokens cannot manage automation tokens",
+        ));
+    }
+    if token.membership_id().is_none() {
+        return Err(ApiErrorResponse::forbidden(
+            "An active tenant membership is required",
+        ));
+    }
+    Ok(())
+}
+
+async fn load_active_membership(
+    state: &AuthApiState,
+    token: &ValidatedToken,
+) -> Result<TenantMembership, ApiErrorResponse> {
+    let membership_id = parse_uuid_str(token.membership_id().unwrap_or_default(), "membership_id")?;
+    let membership = state
+        .auth_service
+        .get_membership_by_id(membership_id)
+        .await
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
+        .ok_or_else(|| ApiErrorResponse::forbidden("Active membership not found"))?;
+
+    let token_user_id = parse_uuid_str(&token.user_id, "user_id")?;
+    if membership.user_id != token_user_id
+        || membership.tenant_id.to_string() != token.tenant_id
+        || membership.status != MembershipStatus::Active
+    {
+        return Err(ApiErrorResponse::forbidden(
+            "Current membership is not allowed to manage automation tokens",
+        ));
+    }
+
+    Ok(membership)
+}
+
+#[allow(clippy::result_large_err)]
+fn validate_scope_subset(
+    requested_scopes: &[String],
+    membership: &TenantMembership,
+) -> Result<Vec<String>, ApiErrorResponse> {
+    let membership_scopes = membership.scopes.iter().cloned().collect::<HashSet<_>>();
+    let has_admin = membership_scopes.contains(TokenScope::Admin.as_str());
+
+    requested_scopes
+        .iter()
+        .map(|scope| {
+            let normalized = TokenScope::parse(scope)
+                .map(|parsed| parsed.as_str().to_string())
+                .ok_or_else(|| {
+                    ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}"))
+                })?;
+            if has_admin || membership_scopes.contains(&normalized) {
+                Ok(normalized)
+            } else {
+                Err(ApiErrorResponse::forbidden(
+                    "Requested scopes must be a subset of the current membership scopes",
+                ))
+            }
+        })
+        .collect()
+}
+
+fn build_token_prefix(token_value: &str) -> String {
+    token_value.chars().take(18).collect()
+}
+
+fn build_token_preview(token_prefix: Option<&str>) -> String {
+    format!("{}...", token_prefix.unwrap_or("v4.local"))
+}
+
+fn normalize_created_via(created_via: Option<&str>) -> &'static str {
+    match created_via {
+        Some(CREATED_VIA_CLI) => CREATED_VIA_CLI,
+        Some(CREATED_VIA_SDK) => CREATED_VIA_SDK,
+        _ => CREATED_VIA_PROFILE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::middleware::ValidatedToken;
+    use crate::auth::{MembershipRole, MembershipSource};
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    fn membership_with_scopes(scopes: Vec<&str>) -> TenantMembership {
+        TenantMembership {
+            id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            role: MembershipRole::Admin,
+            status: MembershipStatus::Active,
+            invited_by: None,
+            joined_at: None,
+            source: MembershipSource::System,
+            scopes: scopes.into_iter().map(str::to_string).collect(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn scope_subset_accepts_membership_scopes() {
+        let membership = membership_with_scopes(vec!["credential:read", "audit:read"]);
+        let result = validate_scope_subset(
+            &["credential:read".to_string(), "audit:read".to_string()],
+            &membership,
+        )
+        .expect("membership subset should be accepted");
+
+        assert_eq!(result, vec!["credential:read", "audit:read"]);
+    }
+
+    #[test]
+    fn scope_subset_rejects_outside_membership_scope() {
+        let membership = membership_with_scopes(vec!["credential:read"]);
+        let error = validate_scope_subset(&["audit:read".to_string()], &membership)
+            .expect_err("non-subset scope should be rejected");
+
+        assert_eq!(error.error, "forbidden");
+    }
+
+    #[test]
+    fn normalize_created_via_defaults_to_profile() {
+        assert_eq!(normalize_created_via(None), CREATED_VIA_PROFILE);
+        assert_eq!(normalize_created_via(Some("unknown")), CREATED_VIA_PROFILE);
+        assert_eq!(
+            normalize_created_via(Some(CREATED_VIA_CLI)),
+            CREATED_VIA_CLI
+        );
+        assert_eq!(
+            normalize_created_via(Some(CREATED_VIA_SDK)),
+            CREATED_VIA_SDK
+        );
+    }
+
+    #[test]
+    fn automation_manager_requires_session_issued_token() {
+        let mut metadata = HashMap::new();
+        metadata.insert("membership_id".to_string(), Uuid::now_v7().to_string());
+        let token = ValidatedToken {
+            token_id: "token_1".to_string(),
+            subject: "tenant:user".to_string(),
+            tenant_id: Uuid::now_v7().to_string(),
+            user_id: Uuid::now_v7().to_string(),
+            expires_at: u64::MAX,
+            scopes: vec![TokenScope::TenantRead],
+            issued_at: 0,
+            membership_id: Some("legacy-membership".to_string()),
+            metadata,
+            subject_type: "user".to_string(),
+            issued_from: "automation".to_string(),
+        };
+
+        let error = ensure_automation_manager(&token).expect_err("non-session token must fail");
+        assert_eq!(error.error, "forbidden");
+        assert!(error.message.contains("cannot manage"));
+    }
+}

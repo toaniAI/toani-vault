@@ -27,6 +27,7 @@ use crate::tee::{
     quote::QuoteSerializer,
     validate_runtime_requirements,
 };
+use async_trait::async_trait;
 use axum::{
     Router,
     extract::State,
@@ -35,10 +36,12 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use redis::{AsyncCommands, Client as RedisClient, Script};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock as AsyncRwLock;
 
 /// 认证状态
 pub struct AttestationState {
@@ -54,8 +57,8 @@ pub struct AttestationState {
     /// 运行时能力探测结果
     tee_capabilities: TeeCapabilities,
 
-    /// 待验证 challenge 集合。challenge quote 必须由同一个 DCAP 服务生成并验证。
-    pending_challenges: Arc<RwLock<HashMap<String, Challenge>>>,
+    /// 待验证 challenge 存储。默认要求 Redis 持久化，多实例共享。
+    challenge_store: Arc<dyn ChallengeStore>,
 
     /// 最近一次 quote/challenge 校验成功时间。
     last_verified_at: Arc<RwLock<Option<u64>>>,
@@ -67,7 +70,7 @@ impl std::fmt::Debug for AttestationState {
             .field("config", &self.config)
             .field("dcap_service", &"<DcapService>")
             .field("enclave", &"<Enclave>")
-            .field("pending_challenges", &"<HashMap<String, Challenge>>")
+            .field("challenge_store", &"<dyn ChallengeStore>")
             .field("last_verified_at", &"<Option<u64>>")
             .finish()
     }
@@ -80,9 +83,138 @@ impl Clone for AttestationState {
             enclave: Arc::clone(&self.enclave),
             config: self.config.clone(),
             tee_capabilities: self.tee_capabilities.clone(),
-            pending_challenges: Arc::clone(&self.pending_challenges),
+            challenge_store: Arc::clone(&self.challenge_store),
             last_verified_at: Arc::clone(&self.last_verified_at),
         }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ChallengeStoreError {
+    #[error("Redis 连接错误: {0}")]
+    RedisConnection(String),
+
+    #[error("Redis 操作错误: {0}")]
+    RedisOperation(String),
+
+    #[error("序列化错误: {0}")]
+    Serialization(String),
+}
+
+#[async_trait]
+trait ChallengeStore: Send + Sync {
+    async fn put(&self, challenge: &Challenge) -> Result<(), ChallengeStoreError>;
+    async fn take(&self, challenge_id: &str) -> Result<Option<Challenge>, ChallengeStoreError>;
+}
+
+#[derive(Debug, Default)]
+struct InMemoryChallengeStore {
+    challenges: Arc<AsyncRwLock<HashMap<String, Challenge>>>,
+}
+
+#[async_trait]
+impl ChallengeStore for InMemoryChallengeStore {
+    async fn put(&self, challenge: &Challenge) -> Result<(), ChallengeStoreError> {
+        let mut challenges = self.challenges.write().await;
+        challenges.retain(|_, existing| !existing.is_expired());
+        challenges.insert(challenge.id.clone(), challenge.clone());
+        Ok(())
+    }
+
+    async fn take(&self, challenge_id: &str) -> Result<Option<Challenge>, ChallengeStoreError> {
+        let mut challenges = self.challenges.write().await;
+        challenges.retain(|_, existing| !existing.is_expired());
+        Ok(challenges.remove(challenge_id))
+    }
+}
+
+#[derive(Debug)]
+struct RedisChallengeStore {
+    client: RedisClient,
+    key_prefix: String,
+}
+
+impl RedisChallengeStore {
+    fn new(redis_url: &str) -> Result<Self, ChallengeStoreError> {
+        let client = RedisClient::open(redis_url)
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+        Ok(Self {
+            client,
+            key_prefix: "credbridge:attestation:challenge:".to_string(),
+        })
+    }
+
+    async fn health_check(&self) -> Result<(), ChallengeStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+
+        redis::cmd("PING")
+            .query_async::<_, String>(&mut conn)
+            .await
+            .map_err(|error| ChallengeStoreError::RedisOperation(error.to_string()))?;
+
+        Ok(())
+    }
+
+    fn build_key(&self, challenge_id: &str) -> String {
+        format!("{}{}", self.key_prefix, challenge_id)
+    }
+}
+
+#[async_trait]
+impl ChallengeStore for RedisChallengeStore {
+    async fn put(&self, challenge: &Challenge) -> Result<(), ChallengeStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+
+        let ttl_seconds = challenge
+            .expires_at
+            .saturating_sub(current_timestamp())
+            .max(1);
+        let payload = serde_json::to_string(challenge)
+            .map_err(|error| ChallengeStoreError::Serialization(error.to_string()))?;
+
+        conn.set_ex::<_, _, ()>(self.build_key(&challenge.id), payload, ttl_seconds)
+            .await
+            .map_err(|error| ChallengeStoreError::RedisOperation(error.to_string()))?;
+        Ok(())
+    }
+
+    async fn take(&self, challenge_id: &str) -> Result<Option<Challenge>, ChallengeStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+
+        let script = Script::new(
+            r#"
+local value = redis.call("GET", KEYS[1])
+if value then
+  redis.call("DEL", KEYS[1])
+end
+return value
+"#,
+        );
+
+        let payload: Option<String> = script
+            .key(self.build_key(challenge_id))
+            .invoke_async(&mut conn)
+            .await
+            .map_err(|error| ChallengeStoreError::RedisOperation(error.to_string()))?;
+
+        payload
+            .map(|value| {
+                serde_json::from_str::<Challenge>(&value)
+                    .map_err(|error| ChallengeStoreError::Serialization(error.to_string()))
+            })
+            .transpose()
     }
 }
 
@@ -93,7 +225,10 @@ impl AttestationState {
         }
     }
 
-    fn generate_challenge(&self, enclave_id: Option<String>) -> Result<Challenge, &'static str> {
+    async fn generate_challenge(
+        &self,
+        enclave_id: Option<String>,
+    ) -> Result<Challenge, &'static str> {
         let challenge = Challenge::with_metadata(
             format!("chal_{}", uuid::Uuid::new_v4().simple()),
             self.config.quote_max_age,
@@ -108,22 +243,18 @@ impl AttestationState {
 
         let mut challenge = challenge;
         challenge.enclave_id = enclave_id;
-
-        let mut pending = self
-            .pending_challenges
-            .write()
-            .map_err(|_| "Failed to acquire pending challenge lock")?;
-        pending.retain(|_, existing| !existing.is_expired());
-        pending.insert(challenge.id.clone(), challenge.clone());
+        self.challenge_store
+            .put(&challenge)
+            .await
+            .map_err(|_| "Failed to persist attestation challenge")?;
         Ok(challenge)
     }
 
-    fn take_challenge(&self, challenge_id: &str) -> Result<Option<Challenge>, &'static str> {
-        let mut pending = self
-            .pending_challenges
-            .write()
-            .map_err(|_| "Failed to acquire pending challenge lock")?;
-        Ok(pending.remove(challenge_id))
+    async fn take_challenge(&self, challenge_id: &str) -> Result<Option<Challenge>, &'static str> {
+        self.challenge_store
+            .take(challenge_id)
+            .await
+            .map_err(|_| "Failed to load attestation challenge")
     }
 
     pub async fn runtime_snapshot(&self) -> AttestationRuntimeSnapshot {
@@ -305,6 +436,9 @@ pub struct AttestationApiConfig {
 
     /// 是否启用 PCS 注册
     pub enable_pcs_registration: bool,
+
+    /// 仅测试/显式 fallback 使用内存 challenge store。
+    pub allow_memory_challenge_store: bool,
 }
 
 impl Default for AttestationApiConfig {
@@ -315,6 +449,7 @@ impl Default for AttestationApiConfig {
             require_api_key: false,
             quote_max_age: 3600,
             enable_pcs_registration: true,
+            allow_memory_challenge_store: false,
         }
     }
 }
@@ -790,7 +925,7 @@ async fn create_challenge(
         );
     }
 
-    let challenge = match state.generate_challenge(request.enclave_id.clone()) {
+    let challenge = match state.generate_challenge(request.enclave_id.clone()).await {
         Ok(challenge) => challenge,
         Err(error) => {
             return (
@@ -907,7 +1042,7 @@ async fn verify_challenge_response(
         }
     };
 
-    let challenge = match state.take_challenge(&request.challenge_id) {
+    let challenge = match state.take_challenge(&request.challenge_id).await {
         Ok(Some(challenge)) => challenge,
         Ok(None) => {
             return (
@@ -1174,6 +1309,23 @@ pub async fn init_attestation_api(
     let dcap_service = DcapService::new(dcap_config)
         .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
 
+    let challenge_store: Arc<dyn ChallengeStore> = if config.allow_memory_challenge_store {
+        Arc::new(InMemoryChallengeStore::default())
+    } else {
+        let redis_url = std::env::var("REDIS_URL").map_err(|_| {
+            AttestationInitError::ConfigurationError(
+                "attestation challenge state 要求 REDIS_URL，内存回退已禁用".to_string(),
+            )
+        })?;
+        let store = RedisChallengeStore::new(&redis_url)
+            .map_err(|error| AttestationInitError::ConfigurationError(error.to_string()))?;
+        store
+            .health_check()
+            .await
+            .map_err(|error| AttestationInitError::ConfigurationError(error.to_string()))?;
+        Arc::new(store)
+    };
+
     // 初始化 DCAP（生成 Quote）
     {
         let enclave_guard = enclave.lock().await;
@@ -1187,7 +1339,7 @@ pub async fn init_attestation_api(
         enclave,
         config,
         tee_capabilities,
-        pending_challenges: Arc::new(RwLock::new(HashMap::new())),
+        challenge_store,
         last_verified_at: Arc::new(RwLock::new(None)),
     }))
 }
@@ -1301,6 +1453,7 @@ mod tests {
             AttestationApiConfig {
                 tee_runtime: TeeRuntimeConfig::simulation(),
                 root_key_source: "simulation".to_string(),
+                allow_memory_challenge_store: true,
                 ..Default::default()
             },
             enclave.clone(),

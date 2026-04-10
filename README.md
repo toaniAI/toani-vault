@@ -25,6 +25,8 @@ The service now enforces explicit per-domain storage requirements at startup:
 - `sandbox records`: PostgreSQL (`DATABASE_URL`)
 - `audit`: immudb (`IMMUDB_*`) by default
 - `token state`: Redis (`REDIS_URL`)
+- `rate limit state`: Redis (`REDIS_URL`)
+- `attestation challenges`: Redis (`REDIS_URL`)
 
 Production startup fails if required durable backends are missing.
 
@@ -35,6 +37,15 @@ For local development/testing only, memory fallback must be explicitly enabled:
 - `CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK=true`
 - `CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=true`
 - `CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK=true`
+
+The following runtime-only structures intentionally remain in memory:
+
+- sandbox warm instance pool
+- sandbox active session handles
+- sandbox credential short-lived cache
+
+These in-memory structures are performance/runtime concerns only and must not be treated as the
+sole source of truth for user-visible or compliance-relevant state.
 
 ## Architecture Summary
 

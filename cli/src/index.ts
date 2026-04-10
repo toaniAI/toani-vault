@@ -21,7 +21,7 @@ Usage:
   toani [--output json|table] [--base-url URL] [--token TOKEN] <group> <command> [options]
 
 Groups:
-  auth         login/status/logout/session/me/memberships/access-token
+  auth         login/status/logout/session/me/memberships/use-tenant/token/access-token
   config       init/show/set/get
   credentials  list/get/create/update/delete/decrypt/versions/rollback
   tokens       create/list/get/verify/stats/revoke
@@ -83,7 +83,8 @@ async function main(): Promise<void> {
     ...config,
     output: globals.output ?? config.output,
     baseUrl: globals.baseUrl ?? envBaseUrl ?? config.baseUrl,
-    token: globals.token ?? config.token,
+    automationToken: globals.token ?? config.automationToken ?? config.token,
+    token: globals.token ?? config.automationToken ?? config.token,
   };
 
   if (globals.baseUrl || globals.token || globals.output) {

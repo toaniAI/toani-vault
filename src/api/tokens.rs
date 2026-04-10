@@ -51,6 +51,9 @@ pub struct CreatedTokenResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct TokenMetadataResponse {
     pub token_id: String,
+    pub token_kind: String,
+    pub token_name: Option<String>,
+    pub token_prefix: Option<String>,
     pub token_type: String,
     pub subject_type: String,
     pub subject_id: String,
@@ -59,7 +62,12 @@ pub struct TokenMetadataResponse {
     pub session_id: Option<String>,
     pub membership_id: Option<String>,
     pub display_name: Option<String>,
+    pub description: Option<String>,
     pub granted_scopes: Vec<String>,
+    pub issued_membership_role_snapshot: Option<String>,
+    pub permission_source: Option<String>,
+    pub created_via: Option<String>,
+    pub revoked_reason: Option<String>,
     pub expires_at: String,
     pub revoked_at: Option<String>,
     pub created_at: String,
@@ -194,6 +202,7 @@ pub async fn issue_access_token_from_session(
         TOKEN_ISSUED_FROM_SESSION,
         unix_to_datetime(claims.exp)?,
     )
+    .with_token_kind("user_access_token")
     .with_scopes(granted_scopes.clone());
     let metadata = if let Some(session_id) = token.session_id() {
         metadata.with_session_id(parse_uuid_str(session_id, "session_id")?)
@@ -618,6 +627,9 @@ fn format_datetime(value: DateTime<Utc>) -> String {
 pub(crate) fn map_token_metadata(item: ApiTokenMetadata) -> TokenMetadataResponse {
     TokenMetadataResponse {
         token_id: item.id,
+        token_kind: item.token_kind,
+        token_name: item.token_name,
+        token_prefix: item.token_prefix,
         token_type: item.token_type.as_str().to_string(),
         subject_type: item.subject_type.as_str().to_string(),
         subject_id: item.subject_id.to_string(),
@@ -626,7 +638,12 @@ pub(crate) fn map_token_metadata(item: ApiTokenMetadata) -> TokenMetadataRespons
         session_id: item.session_id.map(|value| value.to_string()),
         membership_id: item.membership_id.map(|value| value.to_string()),
         display_name: item.display_name,
+        description: item.description,
         granted_scopes: item.scopes,
+        issued_membership_role_snapshot: item.issued_membership_role_snapshot,
+        permission_source: item.permission_source,
+        created_via: item.created_via,
+        revoked_reason: item.revoked_reason,
         expires_at: format_datetime(item.expires_at),
         revoked_at: item.revoked_at.map(format_datetime),
         created_at: format_datetime(item.created_at),

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { CliConfig, OutputFormat } from '../types/cli.js';
+import type { CliConfig, CliProfile, OutputFormat } from '../types/cli.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.toani');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
@@ -10,6 +10,9 @@ const DEFAULT_CONFIG: CliConfig = {
   baseUrl: 'https://dev-credbridge.bitkinetic.com/',
   output: 'table',
   timeout: 30000,
+  currentProfile: 'default',
+  profiles: { default: {} },
+  credentialSource: 'none',
 };
 
 export function getConfigPath(): string {
@@ -22,11 +25,33 @@ export function loadConfig(): CliConfig {
   }
   const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   const parsed = JSON.parse(raw) as Partial<CliConfig>;
+  const currentProfile = parsed.currentProfile ?? 'default';
+  const profiles = parsed.profiles ?? { default: {} };
+  const activeProfile: CliProfile = profiles[currentProfile] ?? {};
+  const output = (activeProfile.output ?? parsed.output ?? DEFAULT_CONFIG.output) === 'json' ? 'json' : 'table';
+  const timeout =
+    typeof activeProfile.timeout === 'number'
+      ? activeProfile.timeout
+      : typeof parsed.timeout === 'number'
+        ? parsed.timeout
+        : DEFAULT_CONFIG.timeout;
+  const baseUrl = activeProfile.baseUrl ?? parsed.baseUrl ?? DEFAULT_CONFIG.baseUrl;
+  const automationToken = activeProfile.automationToken ?? parsed.automationToken ?? parsed.token;
+  const sessionToken = activeProfile.sessionToken ?? parsed.sessionToken;
+  const currentTenantId = activeProfile.currentTenantId ?? parsed.currentTenantId;
   return {
     ...DEFAULT_CONFIG,
     ...parsed,
-    output: (parsed.output === 'json' ? 'json' : 'table') as OutputFormat,
-    timeout: typeof parsed.timeout === 'number' ? parsed.timeout : DEFAULT_CONFIG.timeout,
+    baseUrl,
+    token: automationToken,
+    automationToken,
+    sessionToken,
+    currentTenantId,
+    currentProfile,
+    profiles,
+    output: output as OutputFormat,
+    timeout,
+    credentialSource: automationToken ? 'automation' : sessionToken ? 'session' : 'none',
   };
 }
 
@@ -34,5 +59,31 @@ export function saveConfig(config: CliConfig): void {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   }
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+  const currentProfile = config.currentProfile ?? 'default';
+  const profiles = {
+    ...(config.profiles ?? {}),
+    [currentProfile]: {
+      ...(config.profiles?.[currentProfile] ?? {}),
+      baseUrl: config.baseUrl,
+      automationToken: config.automationToken ?? config.token,
+      sessionToken: config.sessionToken,
+      currentTenantId: config.currentTenantId,
+      output: config.output,
+      timeout: config.timeout,
+    },
+  };
+  fs.writeFileSync(
+    CONFIG_PATH,
+    JSON.stringify(
+      {
+        ...config,
+        token: config.automationToken ?? config.token,
+        profiles,
+        currentProfile,
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
 }

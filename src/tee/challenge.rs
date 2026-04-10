@@ -37,6 +37,7 @@
 use crate::tee::attestation::{AttestationError, AttestationResult, AttestationService, Quote};
 use crate::tee::enclave::{Enclave, EnclaveError};
 use ring::digest::{SHA256, digest};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -118,7 +119,7 @@ impl From<EnclaveError> for ChallengeError {
 }
 
 /// 挑战数据
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Challenge {
     /// 挑战唯一标识符
     pub id: String,
@@ -143,7 +144,7 @@ pub struct Challenge {
 }
 
 /// 挑战状态
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChallengeStatus {
     /// 已创建，等待响应
     Pending,
@@ -158,7 +159,7 @@ pub enum ChallengeStatus {
 }
 
 /// 挑战元数据
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChallengeMetadata {
     /// 客户端 IP 地址
     pub client_ip: Option<String>,

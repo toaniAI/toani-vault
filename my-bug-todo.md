@@ -1,13 +1,19 @@
 # 我的 Bug 待处理清单
 
-- 生成时间: 2026-04-09 21:42:47 (Asia/Shanghai)
+- 生成时间: 2026-04-10 11:13:33 (Asia/Shanghai)
 - 禅道账号: jiangjiyu
 - 产品: zkMe (#25)
-- Bug 总数: 13
+- Bug 总数: 14
 - 数据来源: ZenTao API v1 `GET /products/25/bugs`，按 `assignedTo=jiangjiyu` 且 `status!=closed` 过滤
 - 维护方式: 将每条前面的 `[ ]` 改为 `[1]`表示给出验收标准，改为`[2]`表示已分析原因，改为`[3]`表示已经修复完成待验收，改为`[x]`表示验收通过。
 
 ## 清单
+
+- [ ] #18159 【API】开发者中心: 支持的凭证类型应该有6种，目前只显示了3种
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-10T02:35:21Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18159.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18159
 
 - [ ] #18156 【API】凭证管理: 解密凭证，租户A去解密租户B下的凭证 ，状态码应该返回业务错误，而不是500
   - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3

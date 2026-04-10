@@ -121,8 +121,9 @@ pub use service_accounts::ServiceAccountsService;
 pub use token::TokenManager;
 pub use types::{
     AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter, AuditLogsResponse,
-    AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse, CreateCredentialRequest, CreateCredentialResponse,
-    CreateSandboxSessionRequest, CreateSandboxSessionResponse, CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
+    AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse, CreateAutomationTokenRequest,
+    CreateAutomationTokenResponse, CreateCredentialRequest, CreateCredentialResponse, CreateSandboxSessionRequest,
+    CreateSandboxSessionResponse, CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
     CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError, CredBridgeErrorCode,
     CredentialFilter, CredentialMetadata, CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
     DeleteCredentialResponse, ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse, GetCredentialResponse,

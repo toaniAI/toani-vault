@@ -25,7 +25,7 @@ export function parseOptions(argv: string[]): ParsedOptions {
 export function createSdk(config: CliConfig): ToaniVaultSDK {
   return new ToaniVaultSDK({
     baseUrl: config.baseUrl,
-    token: config.token,
+    token: config.automationToken ?? config.token,
     timeout: config.timeout,
   });
 }

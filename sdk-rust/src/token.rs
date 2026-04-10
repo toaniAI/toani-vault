@@ -20,9 +20,9 @@
 //! # 示例
 //!
 //! ```rust,no_run
-//! use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+//! use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, TokenScope};
 //!
-//! # async fn example() {
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // 服务账户认证 - 使用 Platform API Token
 //! let sdk = ToaniVaultSDK::new(
 //!     CredBridgeConfig::new("https://vault.toani.io")
@@ -33,6 +33,7 @@
 //! if sdk.token().has_scope(TokenScope::CredentialRead) {
 //!     println!("Can read credentials");
 //! }
+//! # Ok(())
 //! # }
 //! ```
 
@@ -40,7 +41,8 @@ use crate::{
     client::CredBridgeClient,
     types::{
         ApiTokenMetadata,
-        CreateAccessTokenResponse, CreateTokenRequest, CreateTokenResponse, CredBridgeError,
+        CreateAccessTokenResponse, CreateAutomationTokenRequest, CreateAutomationTokenResponse,
+        CreateTokenRequest, CreateTokenResponse, CredBridgeError,
         CredBridgeErrorCode,
         ListTokensResponse, RequestOptions, Result, RevokeTokenResponse, TokenInfo, TokenScope,
         TokenStatsResponse,
@@ -303,6 +305,52 @@ impl TokenManager {
 
         self.client
             .post_with_options("/auth/access-token", body, options)
+            .await
+    }
+
+    pub async fn create_automation_token(
+        &self,
+        request: CreateAutomationTokenRequest,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateAutomationTokenResponse> {
+        self.client
+            .post_with_options("/profile/automation-tokens", request, options)
+            .await
+    }
+
+    pub async fn list_automation_tokens(
+        &self,
+        options: Option<RequestOptions>,
+    ) -> Result<Vec<ApiTokenMetadata>> {
+        self.client
+            .get_with_options("/profile/automation-tokens", options)
+            .await
+    }
+
+    pub async fn get_automation_token(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<ApiTokenMetadata> {
+        self.client
+            .get_with_options(
+                &format!("/profile/automation-tokens/{}", token_id.as_ref()),
+                options,
+            )
+            .await
+    }
+
+    pub async fn revoke_automation_token(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<ApiTokenMetadata> {
+        self.client
+            .post_with_options(
+                &format!("/profile/automation-tokens/{}/revoke", token_id.as_ref()),
+                serde_json::json!({}),
+                options,
+            )
             .await
     }
 

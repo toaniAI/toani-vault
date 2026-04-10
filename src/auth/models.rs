@@ -1361,6 +1361,7 @@ impl FromStr for ApiTokenSubjectType {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ApiTokenMetadata {
     pub id: String,
+    pub token_kind: String,
     pub token_type: ApiTokenType,
     pub subject_type: ApiTokenSubjectType,
     pub subject_id: Uuid,
@@ -1368,8 +1369,18 @@ pub struct ApiTokenMetadata {
     pub issued_from: String,
     pub session_id: Option<Uuid>,
     pub membership_id: Option<Uuid>,
+    pub token_name: Option<String>,
+    pub token_prefix: Option<String>,
     pub display_name: Option<String>,
+    pub description: Option<String>,
     pub scopes: Vec<String>,
+    pub issued_membership_role_snapshot: Option<String>,
+    pub permission_source: Option<String>,
+    pub created_via: Option<String>,
+    pub revoked_reason: Option<String>,
+    pub oauth_client_id: Option<String>,
+    pub oauth_grant_type: Option<String>,
+    pub oauth_subject_mode: Option<String>,
     pub expires_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -1388,6 +1399,7 @@ impl ApiTokenMetadata {
     ) -> Self {
         Self {
             id: id.into(),
+            token_kind: "user_access_token".to_string(),
             token_type,
             subject_type,
             subject_id,
@@ -1395,8 +1407,18 @@ impl ApiTokenMetadata {
             issued_from: issued_from.into(),
             session_id: None,
             membership_id: None,
+            token_name: None,
+            token_prefix: None,
             display_name: None,
+            description: None,
             scopes: Vec::new(),
+            issued_membership_role_snapshot: None,
+            permission_source: None,
+            created_via: None,
+            revoked_reason: None,
+            oauth_client_id: None,
+            oauth_grant_type: None,
+            oauth_subject_mode: None,
             expires_at,
             revoked_at: None,
             created_at: Utc::now(),
@@ -1414,6 +1436,30 @@ impl ApiTokenMetadata {
         self
     }
 
+    pub fn with_token_kind(mut self, token_kind: impl Into<String>) -> Self {
+        self.token_kind = token_kind.into();
+        self
+    }
+
+    pub fn with_token_name(mut self, token_name: impl Into<String>) -> Self {
+        let token_name = token_name.into();
+        self.token_name = Some(token_name.clone());
+        if self.display_name.is_none() {
+            self.display_name = Some(token_name);
+        }
+        self
+    }
+
+    pub fn with_token_prefix(mut self, token_prefix: impl Into<String>) -> Self {
+        self.token_prefix = Some(token_prefix.into());
+        self
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
     pub fn with_session_id(mut self, session_id: Uuid) -> Self {
         self.session_id = Some(session_id);
         self
@@ -1424,8 +1470,28 @@ impl ApiTokenMetadata {
         self
     }
 
+    pub fn with_permission_source(mut self, permission_source: impl Into<String>) -> Self {
+        self.permission_source = Some(permission_source.into());
+        self
+    }
+
+    pub fn with_created_via(mut self, created_via: impl Into<String>) -> Self {
+        self.created_via = Some(created_via.into());
+        self
+    }
+
+    pub fn with_membership_role_snapshot(mut self, role: impl Into<String>) -> Self {
+        self.issued_membership_role_snapshot = Some(role.into());
+        self
+    }
+
     pub fn revoke(&mut self, at: DateTime<Utc>) {
         self.revoked_at = Some(at);
+    }
+
+    pub fn with_revoked_reason(mut self, revoked_reason: impl Into<String>) -> Self {
+        self.revoked_reason = Some(revoked_reason.into());
+        self
     }
 
     pub fn mark_used(&mut self, at: DateTime<Utc>) {

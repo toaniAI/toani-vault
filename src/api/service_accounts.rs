@@ -308,6 +308,7 @@ async fn create_service_account_token_handler(
         TOKEN_ISSUED_FROM_SERVICE_ACCOUNT,
         unix_to_datetime(expires_at)?,
     )
+    .with_token_kind("service_account")
     .with_scopes(granted_scopes.clone());
     let metadata = if let Some(display_name) = request.display_name.clone() {
         metadata.with_display_name(display_name)

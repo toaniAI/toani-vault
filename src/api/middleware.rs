@@ -523,6 +523,56 @@ async fn validate_token(
             ));
         }
 
+        if metadata.subject_id.to_string() != validation_result.user_id {
+            return Err(AuthError::new(
+                "invalid_token",
+                locale,
+                "errors.auth.invalid_token",
+                I18nParams::new(),
+            ));
+        }
+
+        if let Some(membership_id) = metadata.membership_id {
+            let membership = auth_service
+                .get_membership_by_id(membership_id)
+                .await
+                .ok()
+                .flatten()
+                .ok_or_else(|| {
+                    AuthError::new(
+                        "invalid_token",
+                        locale,
+                        "errors.auth.invalid_token",
+                        I18nParams::new(),
+                    )
+                })?;
+
+            let has_admin = membership
+                .scopes
+                .iter()
+                .any(|scope| scope == TokenScope::Admin.as_str());
+            let scopes_still_allowed = validation_result.scopes.iter().all(|scope| {
+                has_admin
+                    || membership
+                        .scopes
+                        .iter()
+                        .any(|owned| owned == scope.as_str())
+            });
+
+            if membership.user_id.to_string() != validation_result.user_id
+                || membership.tenant_id.to_string() != validation_result.tenant_id
+                || !membership.status.allows_access()
+                || !scopes_still_allowed
+            {
+                return Err(AuthError::new(
+                    "invalid_token",
+                    locale,
+                    "errors.auth.invalid_token",
+                    I18nParams::new(),
+                ));
+            }
+        }
+
         let _ = auth_service
             .mark_api_token_used(&validation_result.token_id, chrono::Utc::now())
             .await;

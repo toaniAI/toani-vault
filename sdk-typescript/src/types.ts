@@ -817,6 +817,45 @@ export interface AuthLogoutResponse {
   success: boolean;
 }
 
+export interface AuthAutomationToken {
+  tokenId: string;
+  tokenKind: string;
+  tokenName?: string;
+  tokenPrefix?: string;
+  tokenPreview?: string;
+  tokenType: string;
+  subjectType: string;
+  subjectId: string;
+  tenantId: string;
+  issuedFrom: string;
+  sessionId?: string;
+  membershipId?: string;
+  description?: string;
+  grantedScopes: string[];
+  issuedMembershipRoleSnapshot?: string;
+  permissionSource?: string;
+  createdVia?: string;
+  revokedReason?: string;
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+export interface AuthCreateAutomationTokenRequest {
+  name: string;
+  description?: string;
+  scopes: string[];
+  ttlSeconds?: number;
+  createdVia?: 'profile_dashboard' | 'cli' | 'sdk';
+}
+
+export interface AuthCreateAutomationTokenResponse {
+  tokenValue: string;
+  tokenPreview: string;
+  metadata: AuthAutomationToken;
+}
+
 // ============================================================================
 // Sandbox 类型
 // ============================================================================

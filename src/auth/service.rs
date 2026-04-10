@@ -993,18 +993,24 @@ impl AuthServiceImpl {
         let row = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
             INSERT INTO api_tokens (
-                id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                session_id, membership_id, display_name, scopes, expires_at,
-                revoked_at, created_at, last_used_at
+                id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                session_id, membership_id, token_name, token_prefix, display_name, description,
+                scopes, issued_membership_role_snapshot, permission_source, created_via,
+                revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
+                expires_at, revoked_at, created_at, last_used_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            RETURNING id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                      session_id, membership_id, display_name,
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                    $18, $19, $20, $21, $22, $23, $24, $25, $26)
+            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                      session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      issued_membership_role_snapshot, permission_source, created_via,
+                      revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
             "#,
         )
         .bind(&metadata.id)
+        .bind(&metadata.token_kind)
         .bind(metadata.token_type.as_str())
         .bind(metadata.subject_type.as_str())
         .bind(metadata.subject_id)
@@ -1012,8 +1018,18 @@ impl AuthServiceImpl {
         .bind(&metadata.issued_from)
         .bind(metadata.session_id)
         .bind(metadata.membership_id)
+        .bind(&metadata.token_name)
+        .bind(&metadata.token_prefix)
         .bind(&metadata.display_name)
+        .bind(&metadata.description)
         .bind(&scopes)
+        .bind(&metadata.issued_membership_role_snapshot)
+        .bind(&metadata.permission_source)
+        .bind(&metadata.created_via)
+        .bind(&metadata.revoked_reason)
+        .bind(&metadata.oauth_client_id)
+        .bind(&metadata.oauth_grant_type)
+        .bind(&metadata.oauth_subject_mode)
         .bind(metadata.expires_at)
         .bind(metadata.revoked_at)
         .bind(metadata.created_at)
@@ -1032,9 +1048,11 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let rows = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
-            SELECT id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                   session_id, membership_id, display_name,
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, token_name, token_prefix, display_name, description,
                    ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   issued_membership_role_snapshot, permission_source, created_via,
+                   revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
             FROM api_tokens
             WHERE tenant_id = $1
@@ -1057,9 +1075,11 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let rows = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
-            SELECT id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                   session_id, membership_id, display_name,
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, token_name, token_prefix, display_name, description,
                    ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   issued_membership_role_snapshot, permission_source, created_via,
+                   revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
             FROM api_tokens
             WHERE tenant_id = $1
@@ -1084,9 +1104,11 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let row = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
-            SELECT id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                   session_id, membership_id, display_name,
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, token_name, token_prefix, display_name, description,
                    ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   issued_membership_role_snapshot, permission_source, created_via,
+                   revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
             FROM api_tokens
             WHERE id = $1
@@ -1111,9 +1133,11 @@ impl AuthServiceImpl {
             UPDATE api_tokens
             SET revoked_at = $2
             WHERE id = $1
-            RETURNING id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                      session_id, membership_id, display_name,
+            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                      session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      issued_membership_role_snapshot, permission_source, created_via,
+                      revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
             "#,
         )
@@ -1137,9 +1161,11 @@ impl AuthServiceImpl {
             UPDATE api_tokens
             SET last_used_at = $2
             WHERE id = $1
-            RETURNING id, token_type, subject_type, subject_id, tenant_id, issued_from,
-                      session_id, membership_id, display_name,
+            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                      session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      issued_membership_role_snapshot, permission_source, created_via,
+                      revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
             "#,
         )

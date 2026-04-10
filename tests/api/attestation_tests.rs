@@ -24,12 +24,19 @@ use vault_service::tee::{Enclave, EnclaveConfig, validate_runtime_requirements};
 /// 创建 simulation-safe 认证 API 状态。
 async fn create_simulation_safe_test_state() -> std::sync::Arc<vault_service::api::AttestationState>
 {
+    create_simulation_safe_test_state_with_quote_age(3600).await
+}
+
+async fn create_simulation_safe_test_state_with_quote_age(
+    quote_max_age: u64,
+) -> std::sync::Arc<vault_service::api::AttestationState> {
     let config = AttestationApiConfig {
         tee_runtime: TeeRuntimeConfig::simulation(),
         root_key_source: "simulation".to_string(),
         require_api_key: false,
-        quote_max_age: 3600,
+        quote_max_age,
         enable_pcs_registration: false,
+        allow_memory_challenge_store: true,
     };
 
     let mut enclave = Enclave::new(EnclaveConfig {
@@ -46,6 +53,108 @@ async fn create_simulation_safe_test_state() -> std::sync::Arc<vault_service::ap
     )
     .await
     .expect("Failed to initialize attestation API")
+}
+
+/// 同一 challenge 只能消费一次，第二次验证必须失败。
+#[tokio::test]
+async fn test_challenge_response_replay_is_rejected() {
+    let state = create_simulation_safe_test_state().await;
+    let app = attestation_routes(state);
+
+    let challenge_request = Request::builder()
+        .method("POST")
+        .uri("/challenge")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+
+    let challenge_response = app.clone().oneshot(challenge_request).await.unwrap();
+    let challenge_body = axum::body::to_bytes(challenge_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let challenge_json: serde_json::Value = serde_json::from_slice(&challenge_body).unwrap();
+
+    let verify_request_body = format!(
+        r#"{{"challenge_id": "{}", "quote_b64": "{}"}}"#,
+        challenge_json["challenge_id"].as_str().unwrap(),
+        challenge_json["quote_b64"].as_str().unwrap()
+    );
+
+    let first_verify = Request::builder()
+        .method("POST")
+        .uri("/verify-response")
+        .header("Content-Type", "application/json")
+        .body(Body::from(verify_request_body.clone()))
+        .unwrap();
+    let first_response = app.clone().oneshot(first_verify).await.unwrap();
+    assert_eq!(first_response.status(), StatusCode::OK);
+
+    let second_verify = Request::builder()
+        .method("POST")
+        .uri("/verify-response")
+        .header("Content-Type", "application/json")
+        .body(Body::from(verify_request_body))
+        .unwrap();
+    let second_response = app.clone().oneshot(second_verify).await.unwrap();
+    assert_eq!(second_response.status(), StatusCode::OK);
+
+    let second_body = axum::body::to_bytes(second_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let second_json: serde_json::Value = serde_json::from_slice(&second_body).unwrap();
+    assert!(second_json["success"].as_bool().unwrap());
+    assert!(!second_json["verified"].as_bool().unwrap());
+    assert!(
+        second_json["error"]
+            .as_str()
+            .unwrap()
+            .contains("Challenge not found or expired")
+    );
+}
+
+/// challenge 超时后必须无法验证。
+#[tokio::test]
+async fn test_challenge_response_expired_is_rejected() {
+    let state = create_simulation_safe_test_state_with_quote_age(1).await;
+    let app = attestation_routes(state);
+
+    let challenge_request = Request::builder()
+        .method("POST")
+        .uri("/challenge")
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{}"#))
+        .unwrap();
+
+    let challenge_response = app.clone().oneshot(challenge_request).await.unwrap();
+    let challenge_body = axum::body::to_bytes(challenge_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let challenge_json: serde_json::Value = serde_json::from_slice(&challenge_body).unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    let verify_request_body = format!(
+        r#"{{"challenge_id": "{}", "quote_b64": "{}"}}"#,
+        challenge_json["challenge_id"].as_str().unwrap(),
+        challenge_json["quote_b64"].as_str().unwrap()
+    );
+
+    let verify_request = Request::builder()
+        .method("POST")
+        .uri("/verify-response")
+        .header("Content-Type", "application/json")
+        .body(Body::from(verify_request_body))
+        .unwrap();
+
+    let verify_response = app.oneshot(verify_request).await.unwrap();
+    assert_eq!(verify_response.status(), StatusCode::OK);
+
+    let verify_body = axum::body::to_bytes(verify_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let verify_json: serde_json::Value = serde_json::from_slice(&verify_body).unwrap();
+    assert!(verify_json["success"].as_bool().unwrap());
+    assert!(!verify_json["verified"].as_bool().unwrap());
 }
 
 /// 测试创建认证挑战端点
@@ -354,6 +463,7 @@ async fn test_hardware_mode_init_fails_closed_without_real_sgx_prerequisites() {
         require_api_key: false,
         quote_max_age: 3600,
         enable_pcs_registration: true,
+        allow_memory_challenge_store: true,
     };
 
     let mut enclave = Enclave::new(EnclaveConfig::default());
