@@ -1000,7 +1000,7 @@ impl AuthServiceImpl {
                 expires_at, revoked_at, created_at, last_used_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                    $18, $19, $20, $21, $22, $23, $24, $25, $26)
+                    $18, $19, $20, $21, $22, $23, $24, $25)
             RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
