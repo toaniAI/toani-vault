@@ -31,7 +31,7 @@
 //! store.revoke_token("tenant_123", "jti_uuid").await.unwrap();
 //! ```
 
-use super::claims::TokenClaims;
+use super::claims::{DEFAULT_TOKEN_TTL_SECONDS, TokenClaims};
 use redis::{AsyncCommands, Client, RedisError, aio::MultiplexedConnection};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -90,7 +90,7 @@ impl TokenMetadata {
             user_id: claims.sub.clone(),
             tenant_id: claims.aud.clone(),
             scope: claims.scope.clone(),
-            issued_at: claims.iat.unwrap_or(claims.exp - 900),
+            issued_at: claims.iat.unwrap_or(claims.exp - DEFAULT_TOKEN_TTL_SECONDS),
             expires_at: claims.exp,
             revoked: false,
             revoked_at: None,

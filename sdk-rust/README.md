@@ -4,45 +4,18 @@
 
 用于与 Toani Vault API 交互的 Rust SDK。
 
-## 认证模式
+## 认证模型
 
-> **重要**: 此 SDK 支持两种认证模式，请根据使用场景选择正确的方式。
+此 SDK 的公开集成面只接受 bearer token。
 
-### 认证模式对比
+- 前端用户登录继续通过 Web + Privy 完成。
+- 前端为当前 tenant 创建 `automation token`。
+- Rust SDK 直接使用 `automation token`。
+- 如需更小权限或更短 TTL，再用当前 bearer token 签发 `access token`。
 
-| 认证类型         | 适用场景                | 认证方式                    |
-| ---------------- | ----------------------- | --------------------------- |
-| **用户认证**     | 最终用户访问            | Web 界面 Privy 钱包登录     |
-| **服务账户认证** | 自动化、CI/CD、后台服务 | Platform API Token (此 SDK) |
+`automation token` 与 `access token` 的调用方式完全一致，都是设置到 SDK client 的 bearer token。
 
-### 用户认证 (Privy 钱包)
-
-用户认证通过 Web 界面完成，使用 Privy 钱包登录：
-
-1. 访问 https://vault.toani.io
-2. 点击"使用钱包登录"
-3. 通过 Privy 支持的钱包（如 MetaMask、Phantom）完成认证
-4. 认证成功后获得用户 Session Token（仅表示登录态）
-
-**注意**: `Privy Access Token` 仅用于换取 `Session Token`，不是 API 调用 token。
-
-### 服务账户认证 (Platform API Token)
-
-此 SDK 用于服务账户认证，适用于：
-
-- CI/CD 管道自动化
-- 后台服务/微服务
-- 管理脚本和自动化工具
-- 跨系统集成
-
-使用 CLI 登录服务账户：
-
-```bash
-# 登录服务账户（需要 Platform API Token）
-toani auth login --url https://vault.toani.io --token <your-platform-token> --service-account
-```
-
-或在代码中直接设置：
+示例：
 
 ```rust
 use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
@@ -54,26 +27,14 @@ let sdk = ToaniVaultSDK::new(
 )?;
 ```
 
-### 如何获取 Platform API Token
-
-Platform API Token 需通过管理界面或 API 创建：
-
-1. 使用管理员账户登录 Web 界面
-2. 进入"开发者中心" > "API Tokens"
-3. 创建新的服务账户 Token，设置所需权限范围
-
 ### Profile Automation Tokens
 
-也可以先拿用户 Session Token，再为当前租户签发一个用户自动化令牌：
+也可以用当前 bearer token 为当前租户签发一个 automation token：
 
 ```rust,no_run
-use std::collections::HashMap;
-use toani_vault_sdk::{CreateAutomationTokenRequest, RequestOptions, ToaniVaultSDK};
+use toani_vault_sdk::{CreateAutomationTokenRequest, ToaniVaultSDK};
 
-# async fn example(sdk: ToaniVaultSDK, session_token: String) -> Result<(), Box<dyn std::error::Error>> {
-let mut headers = HashMap::new();
-headers.insert("Authorization".to_string(), format!("Bearer {}", session_token));
-
+# async fn example(sdk: ToaniVaultSDK) -> Result<(), Box<dyn std::error::Error>> {
 let issued = sdk.token().create_automation_token(
     CreateAutomationTokenRequest {
         name: "ci-bot".to_string(),
@@ -82,10 +43,7 @@ let issued = sdk.token().create_automation_token(
         ttl_seconds: Some(86_400),
         created_via: Some("sdk".to_string()),
     },
-    Some(RequestOptions {
-        headers: Some(headers),
-        ..Default::default()
-    }),
+    None,
 ).await?;
 
 sdk.client().set_token(issued.token_value);

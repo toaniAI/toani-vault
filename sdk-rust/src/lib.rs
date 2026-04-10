@@ -104,12 +104,12 @@
 use std::sync::Arc;
 
 // 导出子模块
+pub mod audit;
 pub mod client;
 pub mod credentials;
-pub mod audit;
 pub mod sandbox;
-pub mod token;
 pub mod service_accounts;
+pub mod token;
 pub mod types;
 
 // 重新导出常用类型
@@ -120,17 +120,20 @@ pub use sandbox::SandboxService;
 pub use service_accounts::ServiceAccountsService;
 pub use token::TokenManager;
 pub use types::{
-    AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter, AuditLogsResponse,
-    AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse, CreateAutomationTokenRequest,
-    CreateAutomationTokenResponse, CreateCredentialRequest, CreateCredentialResponse, CreateSandboxSessionRequest,
-    CreateSandboxSessionResponse, CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
-    CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError, CredBridgeErrorCode,
-    CredentialFilter, CredentialMetadata, CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
-    DeleteCredentialResponse, ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse, GetCredentialResponse,
-    ListCredentialsResponse, ListTokensResponse, RequestOptions, Result, RollbackCredentialResponse,
-    SandboxOperationDetail, SandboxSessionActionResponse, SandboxSessionDetail, SandboxSessionsResponse,
-    SandboxStatsResponse, ServiceAccountInfo, TokenInfo, TokenRefreshResult, TokenScope, TokenStatsResponse,
-    UpdateCredentialResponse, UpdateServiceAccountRequest, VersionDetail, VersionHistory, ApiTokenMetadata,
+    ApiTokenMetadata, AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter,
+    AuditLogsResponse, AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse,
+    CreateAutomationTokenRequest, CreateAutomationTokenResponse, CreateCredentialRequest,
+    CreateCredentialResponse, CreateSandboxSessionRequest, CreateSandboxSessionResponse,
+    CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
+    CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError,
+    CredBridgeErrorCode, CredentialFilter, CredentialMetadata, CredentialType,
+    DecryptCredentialRequest, DecryptCredentialResponse, DeleteCredentialResponse,
+    ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse, GetCredentialResponse,
+    ListCredentialsResponse, ListTokensResponse, RequestOptions, Result,
+    RollbackCredentialResponse, SandboxOperationDetail, SandboxSessionActionResponse,
+    SandboxSessionDetail, SandboxSessionsResponse, SandboxStatsResponse, ServiceAccountInfo,
+    TokenInfo, TokenRefreshResult, TokenScope, TokenStatsResponse, UpdateCredentialResponse,
+    UpdateServiceAccountRequest, VersionDetail, VersionHistory,
 };
 
 /// SDK 版本

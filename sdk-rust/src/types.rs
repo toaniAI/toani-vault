@@ -830,7 +830,10 @@ impl CredBridgeError {
 
     /// 是否为网络错误
     pub fn is_network_error(&self) -> bool {
-        matches!(self.code, CredBridgeErrorCode::NetworkError | CredBridgeErrorCode::Timeout)
+        matches!(
+            self.code,
+            CredBridgeErrorCode::NetworkError | CredBridgeErrorCode::Timeout
+        )
     }
 
     /// 是否为认证错误

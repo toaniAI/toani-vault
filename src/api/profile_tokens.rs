@@ -13,7 +13,10 @@ use crate::audit::{AuditAction, Outcome};
 use crate::auth::{
     ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType, MembershipStatus, TenantMembership,
 };
-use crate::token::{MAX_TOKEN_TTL_SECONDS, PasetoToken, TOKEN_ISSUED_FROM_SESSION, TokenClaims};
+use crate::token::{
+    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, PasetoToken,
+    TOKEN_ISSUED_FROM_AUTOMATION, TokenClaims,
+};
 use axum::{
     Extension, Json, Router,
     extract::{Path, State},
@@ -70,7 +73,7 @@ async fn create_automation_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateAutomationTokenRequest>,
 ) -> Result<Json<CreateAutomationTokenResponse>, ApiErrorResponse> {
-    ensure_automation_manager(&token)?;
+    ensure_user_token_manager(&token, &[TokenScope::TokensWrite, TokenScope::Admin])?;
     let membership = load_active_membership(&state, &token).await?;
 
     if request.name.trim().is_empty() {
@@ -82,11 +85,11 @@ async fn create_automation_token_handler(
         ));
     }
 
-    let granted_scopes = validate_scope_subset(&request.scopes, &membership)?;
+    let granted_scopes = validate_scope_subset(&request.scopes, &membership, &token)?;
     let ttl_seconds = request
         .ttl_seconds
-        .unwrap_or(3600)
-        .clamp(1, MAX_TOKEN_TTL_SECONDS);
+        .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
+        .clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS);
     let mut claims = TokenClaims::new(
         token.subject.clone(),
         token.tenant_id.clone(),
@@ -95,7 +98,7 @@ async fn create_automation_token_handler(
         ttl_seconds,
     )
     .with_subject_type(token.subject_type.clone())
-    .with_issued_from(TOKEN_ISSUED_FROM_SESSION)
+    .with_issued_from(TOKEN_ISSUED_FROM_AUTOMATION)
     .with_membership_id(membership.id.to_string());
     if let Some(session_id) = token.session_id() {
         claims = claims.with_session_id(session_id.to_string());
@@ -113,7 +116,7 @@ async fn create_automation_token_handler(
         ApiTokenSubjectType::User,
         parse_uuid_str(&token.user_id, "user_id")?,
         parse_uuid_str(&token.tenant_id, "tenant_id")?,
-        TOKEN_ISSUED_FROM_SESSION,
+        TOKEN_ISSUED_FROM_AUTOMATION,
         unix_to_datetime(claims.exp)?,
     )
     .with_token_kind(AUTOMATION_TOKEN_KIND)
@@ -167,7 +170,7 @@ async fn list_automation_tokens_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
 ) -> Result<Json<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
-    ensure_automation_manager(&token)?;
+    ensure_user_token_manager(&token, &[TokenScope::TokensRead, TokenScope::Admin])?;
     let membership = load_active_membership(&state, &token).await?;
     let user_id = parse_uuid_str(&token.user_id, "user_id")?;
 
@@ -195,7 +198,7 @@ async fn get_automation_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Path(token_id): Path<String>,
 ) -> Result<Json<TokenMetadataResponse>, ApiErrorResponse> {
-    ensure_automation_manager(&token)?;
+    ensure_user_token_manager(&token, &[TokenScope::TokensRead, TokenScope::Admin])?;
     let membership = load_active_membership(&state, &token).await?;
     let user_id = parse_uuid_str(&token.user_id, "user_id")?;
 
@@ -224,7 +227,14 @@ async fn revoke_automation_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Path(token_id): Path<String>,
 ) -> Result<Json<TokenMetadataResponse>, ApiErrorResponse> {
-    ensure_automation_manager(&token)?;
+    ensure_user_token_manager(
+        &token,
+        &[
+            TokenScope::TokensRevoke,
+            TokenScope::TokensWrite,
+            TokenScope::Admin,
+        ],
+    )?;
     let membership = load_active_membership(&state, &token).await?;
     let user_id = parse_uuid_str(&token.user_id, "user_id")?;
 
@@ -269,20 +279,23 @@ async fn revoke_automation_token_handler(
 }
 
 #[allow(clippy::result_large_err)]
-fn ensure_automation_manager(token: &ValidatedToken) -> Result<(), ApiErrorResponse> {
+fn ensure_user_token_manager(
+    token: &ValidatedToken,
+    required_scopes: &[TokenScope],
+) -> Result<(), ApiErrorResponse> {
     if !token.is_user_subject() {
         return Err(ApiErrorResponse::forbidden(
-            "Only user sessions can manage automation tokens",
-        ));
-    }
-    if token.issued_from() != TOKEN_ISSUED_FROM_SESSION {
-        return Err(ApiErrorResponse::forbidden(
-            "Automation tokens cannot manage automation tokens",
+            "Only user tokens can manage automation tokens",
         ));
     }
     if token.membership_id().is_none() {
         return Err(ApiErrorResponse::forbidden(
             "An active tenant membership is required",
+        ));
+    }
+    if !token.has_any_scope(required_scopes) {
+        return Err(ApiErrorResponse::forbidden(
+            "Missing required scope for automation token management",
         ));
     }
     Ok(())
@@ -317,6 +330,7 @@ async fn load_active_membership(
 fn validate_scope_subset(
     requested_scopes: &[String],
     membership: &TenantMembership,
+    token: &ValidatedToken,
 ) -> Result<Vec<String>, ApiErrorResponse> {
     let membership_scopes = membership.scopes.iter().cloned().collect::<HashSet<_>>();
     let has_admin = membership_scopes.contains(TokenScope::Admin.as_str());
@@ -324,18 +338,21 @@ fn validate_scope_subset(
     requested_scopes
         .iter()
         .map(|scope| {
-            let normalized = TokenScope::parse(scope)
-                .map(|parsed| parsed.as_str().to_string())
-                .ok_or_else(|| {
-                    ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}"))
-                })?;
-            if has_admin || membership_scopes.contains(&normalized) {
-                Ok(normalized)
-            } else {
-                Err(ApiErrorResponse::forbidden(
+            let parsed = TokenScope::parse(scope).ok_or_else(|| {
+                ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}"))
+            })?;
+            let normalized = parsed.as_str().to_string();
+            if !(has_admin || membership_scopes.contains(&normalized)) {
+                return Err(ApiErrorResponse::forbidden(
                     "Requested scopes must be a subset of the current membership scopes",
-                ))
+                ));
             }
+            if !token.has_scope(&parsed) {
+                return Err(ApiErrorResponse::forbidden(
+                    "Requested scopes must be a subset of the current token scopes",
+                ));
+            }
+            Ok(normalized)
         })
         .collect()
 }
@@ -383,9 +400,15 @@ mod tests {
     #[test]
     fn scope_subset_accepts_membership_scopes() {
         let membership = membership_with_scopes(vec!["credential:read", "audit:read"]);
+        let token = ValidatedToken::mock(
+            &membership.tenant_id.to_string(),
+            &membership.user_id.to_string(),
+            vec![TokenScope::CredentialRead, TokenScope::AuditRead],
+        );
         let result = validate_scope_subset(
             &["credential:read".to_string(), "audit:read".to_string()],
             &membership,
+            &token,
         )
         .expect("membership subset should be accepted");
 
@@ -395,10 +418,31 @@ mod tests {
     #[test]
     fn scope_subset_rejects_outside_membership_scope() {
         let membership = membership_with_scopes(vec!["credential:read"]);
-        let error = validate_scope_subset(&["audit:read".to_string()], &membership)
+        let token = ValidatedToken::mock(
+            &membership.tenant_id.to_string(),
+            &membership.user_id.to_string(),
+            vec![TokenScope::CredentialRead, TokenScope::AuditRead],
+        );
+        let error = validate_scope_subset(&["audit:read".to_string()], &membership, &token)
             .expect_err("non-subset scope should be rejected");
 
         assert_eq!(error.error, "forbidden");
+    }
+
+    #[test]
+    fn scope_subset_rejects_outside_current_token_scope() {
+        let membership = membership_with_scopes(vec!["credential:read", "audit:read"]);
+        let token = ValidatedToken::mock(
+            &membership.tenant_id.to_string(),
+            &membership.user_id.to_string(),
+            vec![TokenScope::CredentialRead],
+        );
+
+        let error = validate_scope_subset(&["audit:read".to_string()], &membership, &token)
+            .expect_err("current token subset should be enforced");
+
+        assert_eq!(error.error, "forbidden");
+        assert!(error.message.contains("current token scopes"));
     }
 
     #[test]
@@ -416,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn automation_manager_requires_session_issued_token() {
+    fn automation_manager_requires_user_token_with_scope() {
         let mut metadata = HashMap::new();
         metadata.insert("membership_id".to_string(), Uuid::now_v7().to_string());
         let token = ValidatedToken {
@@ -433,8 +477,9 @@ mod tests {
             issued_from: "automation".to_string(),
         };
 
-        let error = ensure_automation_manager(&token).expect_err("non-session token must fail");
+        let error = ensure_user_token_manager(&token, &[TokenScope::TokensRead])
+            .expect_err("missing token scope must fail");
         assert_eq!(error.error, "forbidden");
-        assert!(error.message.contains("cannot manage"));
+        assert!(error.message.contains("Missing required scope"));
     }
 }

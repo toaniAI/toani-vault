@@ -20,8 +20,8 @@ use crate::auth::{
     ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType, ServiceAccount, ServiceAccountStatus,
 };
 use crate::token::{
-    MAX_TOKEN_TTL_SECONDS, PasetoToken, TOKEN_ISSUED_FROM_SERVICE_ACCOUNT,
-    TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TokenClaims,
+    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, PasetoToken,
+    TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TokenClaims,
 };
 
 use super::tokens::TOKEN_SECRET_KEY;
@@ -278,8 +278,8 @@ async fn create_service_account_token_handler(
 
     let ttl_seconds = request
         .ttl_seconds
-        .unwrap_or(3600)
-        .clamp(1, MAX_TOKEN_TTL_SECONDS);
+        .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
+        .clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS);
     let claims = TokenClaims::new(
         format!("{}:{}", service_account.tenant_id, service_account.id),
         service_account.tenant_id.to_string(),

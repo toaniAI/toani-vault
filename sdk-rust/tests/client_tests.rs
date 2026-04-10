@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use serde_json::json;
 use toani_vault_sdk::{
     client::CredBridgeClient,
     credentials::CredentialsService,
@@ -11,7 +12,6 @@ use toani_vault_sdk::{
     types::{CredBridgeConfig, CredBridgeErrorCode, CredentialType, RequestOptions},
     ToaniVaultSDK,
 };
-use serde_json::json;
 use wiremock::{
     matchers::{header, method, path, query_param},
     Mock, MockServer, ResponseTemplate,
@@ -47,8 +47,7 @@ fn create_test_config(server_url: &str) -> CredBridgeConfig {
 
 #[tokio::test]
 async fn test_client_creation() {
-    let config = CredBridgeConfig::new("https://api.credbridge.io")
-        .with_token(create_test_token());
+    let config = CredBridgeConfig::new("https://api.credbridge.io").with_token(create_test_token());
 
     let client = CredBridgeClient::new(config);
     assert!(client.is_ok());
@@ -141,7 +140,10 @@ async fn test_create_credential() {
 
     assert!(result.is_ok());
     let credential = result.unwrap();
-    assert_eq!(credential.credential_id, "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c");
+    assert_eq!(
+        credential.credential_id,
+        "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c"
+    );
     assert_eq!(credential.service_id, "schwab");
 }
 
@@ -207,7 +209,10 @@ async fn test_list_credentials() {
     let (cred_list, total) = result.unwrap();
     assert_eq!(total, 1);
     assert_eq!(cred_list.len(), 1);
-    assert_eq!(cred_list[0].credential_id, "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c");
+    assert_eq!(
+        cred_list[0].credential_id,
+        "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c"
+    );
 }
 
 #[tokio::test]
@@ -273,18 +278,16 @@ async fn test_get_credential_not_found() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/credentials/invalid-id"))
-        .respond_with(
-            ResponseTemplate::new(404).set_body_json(serde_json::json!({
-                "error": {
-                    "code": "not_found",
-                    "message": "Credential not found",
-                },
-                "meta": {
-                    "request_id": "test-request-id",
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "error": {
+                "code": "not_found",
+                "message": "Credential not found",
+            },
+            "meta": {
+                "request_id": "test-request-id",
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }
+        })))
         .mount(&mock_server)
         .await;
 
@@ -306,7 +309,10 @@ async fn test_decrypt_credential() {
     let credential_id = "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c";
 
     Mock::given(method("POST"))
-        .and(path(format!("/api/v1/credentials/{}/decrypt", credential_id)))
+        .and(path(format!(
+            "/api/v1/credentials/{}/decrypt",
+            credential_id
+        )))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "credential_id": credential_id,
             "service_id": "schwab",
@@ -323,7 +329,9 @@ async fn test_decrypt_credential() {
     let client = std::sync::Arc::new(CredBridgeClient::new(config).unwrap());
     let credentials = CredentialsService::new(client);
 
-    let result = credentials.decrypt(credential_id, Some("用户登录"), None).await;
+    let result = credentials
+        .decrypt(credential_id, Some("用户登录"), None)
+        .await;
     assert!(result.is_ok());
 
     let decrypted = result.unwrap();
@@ -399,18 +407,16 @@ async fn test_credential_not_exists() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/credentials/non-existent-id"))
-        .respond_with(
-            ResponseTemplate::new(404).set_body_json(serde_json::json!({
-                "error": {
-                    "code": "not_found",
-                    "message": "Credential not found",
-                },
-                "meta": {
-                    "request_id": "test-request-id",
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "error": {
+                "code": "not_found",
+                "message": "Credential not found",
+            },
+            "meta": {
+                "request_id": "test-request-id",
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }
+        })))
         .mount(&mock_server)
         .await;
 
@@ -459,7 +465,10 @@ async fn test_token_manager_info() {
 
     assert_eq!(token_manager.get_tenant_id(), Some("tenant1".to_string()));
     assert_eq!(token_manager.get_user_id(), Some("user1".to_string()));
-    assert_eq!(token_manager.get_token_id(), Some("test_token_id".to_string()));
+    assert_eq!(
+        token_manager.get_token_id(),
+        Some("test_token_id".to_string())
+    );
     assert!(token_manager.is_valid());
     // Token expires in 1 hour (3600 seconds)
     // Should NOT be expiring within 5 minutes (300 seconds)
@@ -531,28 +540,28 @@ async fn test_error_handling() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/credentials/error-test"))
-        .respond_with(
-            ResponseTemplate::new(500).set_body_json(serde_json::json!({
-                "error": {
-                    "code": "internal_error",
-                    "message": "Internal server error",
-                    "details": {
-                        "error_id": "err-123",
-                    }
-                },
-                "meta": {
-                    "request_id": "test-request-id",
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
+        .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+            "error": {
+                "code": "internal_error",
+                "message": "Internal server error",
+                "details": {
+                    "error_id": "err-123",
                 }
-            })),
-        )
+            },
+            "meta": {
+                "request_id": "test-request-id",
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            }
+        })))
         .mount(&mock_server)
         .await;
 
     let config = create_test_config(&mock_server.uri());
     let client = CredBridgeClient::new(config).unwrap();
 
-    let result = client.get::<serde_json::Value>("/credentials/error-test").await;
+    let result = client
+        .get::<serde_json::Value>("/credentials/error-test")
+        .await;
     assert!(result.is_err());
 
     let error = result.unwrap_err();
@@ -583,11 +592,7 @@ async fn test_credential_type_display() {
     use std::fmt::Write;
 
     let mut output = String::new();
-    write!(&mut output,
-        "{}",
-        CredentialType::UsernamePassword
-    )
-    .unwrap();
+    write!(&mut output, "{}", CredentialType::UsernamePassword).unwrap();
     assert_eq!(output, "username_password");
 
     output.clear();
@@ -600,7 +605,8 @@ async fn test_token_scope_display() {
     use std::fmt::Write;
 
     let mut output = String::new();
-    write!(&mut output,
+    write!(
+        &mut output,
         "{}",
         toani_vault_sdk::types::TokenScope::CredentialRead
     )
@@ -608,12 +614,7 @@ async fn test_token_scope_display() {
     assert_eq!(output, "credential:read");
 
     output.clear();
-    write!(
-        &mut output,
-        "{}",
-        toani_vault_sdk::types::TokenScope::Admin
-    )
-    .unwrap();
+    write!(&mut output, "{}", toani_vault_sdk::types::TokenScope::Admin).unwrap();
     assert_eq!(output, "admin");
 }
 
@@ -631,4 +632,3 @@ async fn test_deprecated_sdk_alias() {
     // Both should point to the same type
     let _sdk: toani_vault_sdk::ToaniVaultSDK = sdk.unwrap();
 }
-

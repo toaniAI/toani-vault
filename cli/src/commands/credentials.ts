@@ -1,4 +1,4 @@
-import { CredentialType } from "../../../sdk-typescript/src/index.ts";
+import { CredentialType } from "../../../sdk-typescript/src/index.js";
 import type { CliConfig } from "../types/cli.js";
 import { printResult } from "../output/print.js";
 import {

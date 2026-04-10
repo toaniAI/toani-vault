@@ -6,65 +6,21 @@ Toani Vault SDK - TypeScript client for secure credential management.
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)](https://nodejs.org/)
 
-## 认证模式
+## 认证模型
 
-> **重要**: 此 SDK 支持两种认证模式，请根据使用场景选择正确的方式。
+此 SDK 的公开集成面只接受 bearer token。
 
-### 认证模式对比
+- 前端用户登录继续通过 Web + Privy 完成。
+- 前端为当前 tenant 创建 `automation token`。
+- SDK 直接使用 `automation token`。
+- 如需更小权限或更短 TTL，再用当前 bearer token 签发 `access token`。
 
-| 认证类型         | 适用场景                | 认证方式                    |
-| ---------------- | ----------------------- | --------------------------- |
-| **用户认证**     | 最终用户访问            | Web 界面 Privy 钱包登录     |
-| **服务账户认证** | 自动化、CI/CD、后台服务 | Platform API Token (此 SDK) |
-
-### 用户认证 (Privy 钱包)
-
-用户认证通过 Web 界面完成，使用 Privy 钱包登录：
-
-1. 访问 https://vault.toani.io
-2. 点击"使用钱包登录"
-3. 通过 Privy 支持的钱包（如 MetaMask、Phantom）完成认证
-4. 认证成功后获得用户 Session Token（仅表示登录态）
-
-**注意**: `Privy Access Token` 仅用于换取 `Session Token`，不是 API 调用 token。
-
-### 服务账户认证 (Platform API Token)
-
-此 SDK 用于服务账户认证，适用于：
-
-- CI/CD 管道自动化
-- 后台服务/微服务
-- 管理脚本和自动化工具
-- 跨系统集成
-
-使用 CLI 登录服务账户：
-
-```bash
-# 登录服务账户（需要 Platform API Token）
-toani auth login --url https://vault.toani.io --token <your-platform-token> --service-account
-```
-
-或在代码中直接设置：
-
-```typescript
-const sdk = new ToaniVaultSDK({
-  baseUrl: "https://vault.toani.io",
-  token: "v4.local.your-platform-api-token", // Platform API Token
-});
-```
-
-### 如何获取 Platform API Token
-
-Platform API Token 需通过管理界面或 API 创建：
-
-1. 使用管理员账户登录 Web 界面
-2. 进入"开发者中心" > "API Tokens"
-3. 创建新的服务账户 Token，设置所需权限范围
+`automation token` 与 `access token` 的调用方式完全一致，都是配置到 SDK `token` 字段里的 `Bearer` 凭证。
 
 ## Token 与 Service Account API（新增）
 
 ```typescript
-// 1) 用 Session Token 换 API Access Token（默认 900 秒）
+// 1) 用当前 bearer token 换更小权限的 access token（默认 900 秒）
 const issued = await sdk.auth.createAccessToken({
   scopes: ["tokens:read", "tokens:write"],
   ttlSeconds: 900,
@@ -90,22 +46,15 @@ const saTokenMetadata = await sdk.serviceAccounts.listTokens(sa.id);
 
 ## Profile Automation Tokens
 
-Use a user session token to mint tenant-scoped automation tokens, then switch the SDK client to the returned `tokenValue` for background jobs:
+Use the currently configured bearer token to mint a tenant-scoped automation token, then switch the SDK client to the returned `tokenValue` for background jobs:
 
 ```typescript
-const issued = await sdk.auth.createAutomationToken(
-  {
-    name: "ci-bot",
-    scopes: ["credential:read", "audit:read"],
-    ttlSeconds: 86400,
-    createdVia: "sdk",
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${sessionToken}`,
-    },
-  },
-);
+const issued = await sdk.auth.createAutomationToken({
+  name: "ci-bot",
+  scopes: ["credential:read", "audit:read"],
+  ttlSeconds: 86400,
+  createdVia: "sdk",
+});
 
 sdk.client.setToken(issued.tokenValue);
 ```

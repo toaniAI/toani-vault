@@ -529,7 +529,7 @@ Authorization: Bearer <paseto_v4_local_token>
 - [撤销 Token](#撤销-token)
 - [获取 Token 统计](#获取-token-统计)
 
-### 从 Session 创建 API Access Token
+### 从当前 User Bearer 创建 API Access Token
 
 **Endpoint**: `POST /api/v1/auth/access-token`
 
@@ -537,7 +537,7 @@ Authorization: Bearer <paseto_v4_local_token>
 
 **说明**:
 
-- 仅接受用户 Session bearer
+- 接受具备足够 scope 的 user bearer
 - 默认 TTL 为 `900s`
 - 响应会返回 `subject_type`、`issued_from`、`granted_scopes`
 

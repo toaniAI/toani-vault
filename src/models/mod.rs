@@ -111,7 +111,7 @@ impl Default for TenantConfig {
         Self {
             tenant_id: String::new(),
             storage_quota: 1024 * 1024 * 1024, // 1GB
-            token_ttl_seconds: 900,            // 15分钟
+            token_ttl_seconds: 7200,           // 2小时
             audit_retention_days: 7,
             is_active: true,
         }

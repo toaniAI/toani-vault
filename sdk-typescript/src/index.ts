@@ -107,7 +107,6 @@ export {
   type VerifyAuditLogResult,
 
   // Auth 类型
-  type AuthCreateSessionRequest,
   type AuthCreateAccessTokenRequest,
   type AuthCreateAccessTokenResponse,
   type AuthAutomationToken,
@@ -115,10 +114,8 @@ export {
   type AuthCreateAutomationTokenResponse,
   type AuthIdentityInfo,
   type AuthUserProfile,
-  type AuthSessionInfo,
   type AuthMembershipInfo,
   type AuthTenantInfo,
-  type AuthCreateSessionResponse,
   type AuthMeResponse,
   type AuthMembershipsResponse,
   type AuthLogoutResponse,

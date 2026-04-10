@@ -34,12 +34,13 @@ use crate::api::audit::AuditStorage;
 use crate::api::i18n::{I18nParams, ResolvedLocale, set_content_language, translate};
 use crate::api::middleware::{TokenScope, ValidatedToken};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse};
-use crate::api::tokens::{CreateTokenRequest, issue_access_token_from_session};
+use crate::api::tokens::{CreateTokenRequest, issue_access_token_from_user_token};
 use crate::audit::{AuditAction, AuditEntry, Outcome, RedactedParam};
 use crate::auth::{
     AuthError, AuthService, CreateUserRequest, ExternalIdentity, InviteeType, MembershipRole,
     TenantInvitation, TenantMembership, User,
 };
+use crate::token::TOKEN_ISSUED_FROM_SESSION;
 
 use super::token_blacklist::{TokenStore, create_token_store};
 
@@ -618,6 +619,12 @@ fn map_tenant_info(membership: &TenantMembership) -> TenantInfo {
     }
 }
 
+fn is_web_session_token(token: &ValidatedToken) -> bool {
+    token.is_user_subject()
+        && token.issued_from() == TOKEN_ISSUED_FROM_SESSION
+        && token.session_id() == Some(token.token_id.as_str())
+}
+
 fn map_frontend_user_profile(
     user: &User,
     identities: Vec<ExternalIdentity>,
@@ -891,7 +898,7 @@ pub async fn create_access_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateAccessTokenRequest>,
 ) -> Result<ApiSuccessResponse<AccessTokenResponse>, ApiErrorResponse> {
-    let created = issue_access_token_from_session(
+    let created = issue_access_token_from_user_token(
         &state,
         &token,
         CreateTokenRequest {
@@ -927,7 +934,7 @@ pub async fn get_current_user_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
-    if token.is_service_account_subject() {
+    if !is_web_session_token(&token) {
         return auth_error_response(
             StatusCode::FORBIDDEN,
             "forbidden",
@@ -1040,7 +1047,7 @@ pub async fn logout_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
-    if token.is_service_account_subject() {
+    if !is_web_session_token(&token) {
         return auth_error_response(
             StatusCode::FORBIDDEN,
             "forbidden",
@@ -1127,7 +1134,7 @@ pub async fn consume_invitation_handler(
     locale: ResolvedLocale,
     Json(request): Json<ConsumeInvitationRequest>,
 ) -> Response {
-    if token.is_service_account_subject() {
+    if !is_web_session_token(&token) {
         return auth_error_response(
             StatusCode::FORBIDDEN,
             "forbidden",
@@ -1202,7 +1209,7 @@ pub async fn get_mfa_status_handler(
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
 ) -> Response {
-    if token.is_service_account_subject() {
+    if !is_web_session_token(&token) {
         return auth_error_response(
             StatusCode::FORBIDDEN,
             "forbidden",
@@ -1254,7 +1261,7 @@ pub async fn sync_mfa_status_handler(
     locale: ResolvedLocale,
     Json(request): Json<SyncMfaStatusRequest>,
 ) -> Response {
-    if token.is_service_account_subject() {
+    if !is_web_session_token(&token) {
         return auth_error_response(
             StatusCode::FORBIDDEN,
             "forbidden",
@@ -1652,6 +1659,8 @@ pub async fn revoke_invitation_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::middleware::TokenScope;
+    use std::collections::HashMap;
 
     #[test]
     fn test_user_profile_serialization() {
@@ -1799,5 +1808,36 @@ mod tests {
             select_current_membership(&memberships, Some(Uuid::now_v7()), Some(Uuid::now_v7()))
                 .expect("first membership should be selected");
         assert_eq!(selected_from_first.tenant_id, first_tenant_id);
+    }
+
+    #[test]
+    fn test_is_web_session_token_requires_session_origin_and_self_session() {
+        let session_id = Uuid::now_v7().to_string();
+        let mut metadata = HashMap::new();
+        metadata.insert("session_id".to_string(), session_id.clone());
+
+        let base = ValidatedToken {
+            token_id: session_id.clone(),
+            subject: "tenant:user".to_string(),
+            tenant_id: "tenant".to_string(),
+            user_id: Uuid::now_v7().to_string(),
+            expires_at: u64::MAX,
+            scopes: vec![TokenScope::TokensRead],
+            issued_at: 1,
+            membership_id: Some(Uuid::now_v7().to_string()),
+            metadata,
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+        };
+
+        assert!(is_web_session_token(&base));
+
+        let mut automation = base.clone();
+        automation.issued_from = crate::token::TOKEN_ISSUED_FROM_AUTOMATION.to_string();
+        assert!(!is_web_session_token(&automation));
+
+        let mut mismatched = base;
+        mismatched.token_id = Uuid::now_v7().to_string();
+        assert!(!is_web_session_token(&mismatched));
     }
 }

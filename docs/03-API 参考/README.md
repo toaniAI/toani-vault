@@ -17,7 +17,7 @@
 ### 认证 API (Privy 钱包优先)
 
 - `POST /api/v1/auth/session` - 从 Privy Token 创建会话
-- `POST /api/v1/auth/access-token` - 从用户 Session 创建 API Access Token
+- `POST /api/v1/auth/access-token` - 从当前 user bearer 创建 API Access Token
 - `GET /api/v1/auth/me` - 获取当前用户信息
 - `POST /api/v1/auth/logout` - 注销会话
 - `POST /api/v1/auth/invitations/consume` - 消费邀请 Token

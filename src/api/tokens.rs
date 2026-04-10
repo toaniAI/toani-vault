@@ -18,8 +18,8 @@ use super::{
 use crate::audit::{AuditAction, Outcome};
 use crate::auth::{ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType};
 use crate::token::{
-    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, PasetoToken,
-    TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_ISSUED_FROM_SESSION,
+    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, PasetoToken,
+    TOKEN_ISSUED_FROM_ACCESS_TOKEN, TOKEN_ISSUED_FROM_SERVICE_ACCOUNT,
     TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER, TokenClaims,
 };
 
@@ -122,18 +122,24 @@ pub async fn create_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateTokenRequest>,
 ) -> Result<Json<CreatedTokenResponse>, ApiErrorResponse> {
-    let created = issue_access_token_from_session(&state, &token, request).await?;
+    let created = issue_access_token_from_user_token(&state, &token, request).await?;
     Ok(Json(created))
 }
 
-pub async fn issue_access_token_from_session(
+pub async fn issue_access_token_from_user_token(
     state: &AuthApiState,
     token: &ValidatedToken,
     request: CreateTokenRequest,
 ) -> Result<CreatedTokenResponse, ApiErrorResponse> {
     if !token.is_user_subject() {
         return Err(ApiErrorResponse::forbidden(
-            "Only user sessions can issue API access tokens",
+            "Only user tokens can issue API access tokens",
+        ));
+    }
+
+    if token.membership_id().is_none() {
+        return Err(ApiErrorResponse::forbidden(
+            "An active tenant membership is required",
         ));
     }
 
@@ -160,7 +166,7 @@ pub async fn issue_access_token_from_session(
 
     if requested_scopes.iter().any(|scope| !token.has_scope(scope)) {
         return Err(ApiErrorResponse::forbidden(
-            "Requested scopes must be a subset of the current session scopes",
+            "Requested scopes must be a subset of the current token scopes",
         ));
     }
 
@@ -179,7 +185,7 @@ pub async fn issue_access_token_from_session(
         ttl_seconds,
     )
     .with_subject_type(TOKEN_SUBJECT_TYPE_USER)
-    .with_issued_from(TOKEN_ISSUED_FROM_SESSION);
+    .with_issued_from(TOKEN_ISSUED_FROM_ACCESS_TOKEN);
 
     if let Some(membership_id) = token.membership_id() {
         claims = claims.with_membership_id(membership_id);
@@ -199,7 +205,7 @@ pub async fn issue_access_token_from_session(
         ApiTokenSubjectType::User,
         parse_uuid_str(&token.user_id, "user_id")?,
         parse_uuid_str(&token.tenant_id, "tenant_id")?,
-        TOKEN_ISSUED_FROM_SESSION,
+        TOKEN_ISSUED_FROM_ACCESS_TOKEN,
         unix_to_datetime(claims.exp)?,
     )
     .with_token_kind("user_access_token")
@@ -227,7 +233,7 @@ pub async fn issue_access_token_from_session(
             &token.user_id,
             Outcome::Success,
             Some(json!({
-                "issued_from": TOKEN_ISSUED_FROM_SESSION,
+                "issued_from": TOKEN_ISSUED_FROM_ACCESS_TOKEN,
                 "subject_type": TOKEN_SUBJECT_TYPE_USER,
                 "token_id": token_id,
                 "scopes": granted_scopes,
@@ -243,7 +249,7 @@ pub async fn issue_access_token_from_session(
         token_id: claims.jti.clone(),
         token_type: "Bearer".to_string(),
         subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
-        issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+        issued_from: TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string(),
         display_name: None,
         expires_in: ttl_seconds,
         scope: scope_string,
@@ -605,7 +611,7 @@ fn invalid_token_response() -> VerifyTokenResponse {
 fn normalize_ttl(expires_in: Option<u64>) -> u64 {
     expires_in
         .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
-        .clamp(1, MAX_TOKEN_TTL_SECONDS)
+        .clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS)
 }
 
 #[allow(clippy::result_large_err)]
@@ -827,9 +833,9 @@ mod tests {
 
         assert!(response.access_token.starts_with("v4.local."));
         assert_eq!(response.scope, "credential:read audit:read");
-        assert_eq!(response.expires_in, 3600);
+        assert_eq!(response.expires_in, MIN_TOKEN_TTL_SECONDS);
         assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
-        assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_SESSION);
+        assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_ACCESS_TOKEN);
     }
 
     #[tokio::test]
@@ -870,6 +876,8 @@ mod tests {
         .expect("token creation should succeed")
         .0;
 
+        assert_eq!(created.expires_in, MIN_TOKEN_TTL_SECONDS);
+
         let verified = verify_token_handler(
             State(test_state()),
             Extension(session_token(vec![TokenScope::TokensRead])),
@@ -892,7 +900,7 @@ mod tests {
         );
         assert_eq!(
             verified.issued_from.as_deref(),
-            Some(TOKEN_ISSUED_FROM_SESSION)
+            Some(TOKEN_ISSUED_FROM_ACCESS_TOKEN)
         );
         assert_eq!(
             verified.scopes.unwrap_or_default(),

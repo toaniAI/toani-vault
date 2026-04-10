@@ -434,8 +434,8 @@ pub struct TenantSettings {
 }
 
 fn default_token_ttl() -> u64 {
-    900
-} // 15 minutes
+    7200
+} // 2 hours
 fn default_session_timeout() -> u64 {
     3600
 } // 1 hour

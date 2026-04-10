@@ -9,14 +9,11 @@ import {
   type AuthAutomationToken,
   type AuthCreateAutomationTokenRequest,
   type AuthCreateAutomationTokenResponse,
-  type AuthCreateSessionRequest,
-  type AuthCreateSessionResponse,
   type AuthIdentityInfo,
   type AuthLogoutResponse,
   type AuthMeResponse,
   type AuthMembershipInfo,
   type AuthMembershipsResponse,
-  type AuthSessionInfo,
   type AuthTenantInfo,
   type AuthUserProfile,
   type RequestOptions,
@@ -40,13 +37,6 @@ interface AuthUserProfileApi {
   identities: AuthIdentityInfoApi[];
 }
 
-interface AuthSessionInfoApi {
-  id: string;
-  session_token: string;
-  expires_at: string;
-  mfa_status: string;
-}
-
 interface AuthMembershipInfoApi {
   id: string;
   tenant_id: string;
@@ -59,14 +49,6 @@ interface AuthMembershipInfoApi {
 interface AuthTenantInfoApi {
   id: string;
   name?: string;
-}
-
-interface AuthCreateSessionResponseApi {
-  user: AuthUserProfileApi;
-  session: AuthSessionInfoApi;
-  memberships: AuthMembershipInfoApi[];
-  current_tenant?: AuthTenantInfoApi;
-  current_membership?: AuthMembershipInfoApi;
 }
 
 interface AuthMeResponseApi {
@@ -145,15 +127,6 @@ function mapUser(user: AuthUserProfileApi): AuthUserProfile {
   };
 }
 
-function mapSession(session: AuthSessionInfoApi): AuthSessionInfo {
-  return {
-    id: session.id,
-    sessionToken: session.session_token,
-    expiresAt: session.expires_at,
-    mfaStatus: session.mfa_status,
-  };
-}
-
 function mapMembership(membership: AuthMembershipInfoApi): AuthMembershipInfo {
   return {
     id: membership.id,
@@ -173,20 +146,6 @@ function mapTenant(tenant?: AuthTenantInfoApi): AuthTenantInfo | undefined {
   return {
     id: tenant.id,
     name: tenant.name,
-  };
-}
-
-function mapCreateSessionResponse(
-  response: AuthCreateSessionResponseApi,
-): AuthCreateSessionResponse {
-  return {
-    user: mapUser(response.user),
-    session: mapSession(response.session),
-    memberships: response.memberships.map(mapMembership),
-    currentTenant: mapTenant(response.current_tenant),
-    currentMembership: response.current_membership
-      ? mapMembership(response.current_membership)
-      : undefined,
   };
 }
 
@@ -258,22 +217,6 @@ export class AuthService {
 
   constructor(client: CredBridgeClient) {
     this.client = client;
-  }
-
-  public async createSession(
-    request: AuthCreateSessionRequest,
-    options?: RequestOptions,
-  ): Promise<AuthCreateSessionResponse> {
-    const response = await this.client.post<AuthCreateSessionResponseApi>(
-      "/auth/session",
-      {
-        privy_access_token: request.privyAccessToken,
-        invitation_token: request.invitationToken,
-      },
-      options,
-    );
-
-    return mapCreateSessionResponse(response);
   }
 
   public async createAccessToken(

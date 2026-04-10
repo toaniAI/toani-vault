@@ -1,13 +1,43 @@
 # 我的 Bug 待处理清单
 
-- 生成时间: 2026-04-10 12:12:33 (Asia/Shanghai)
+- 生成时间: 2026-04-10 17:01:07 (Asia/Shanghai)
 - 禅道账号: jiangjiyu
 - 产品: zkMe (#25)
-- Bug 总数: 14
+- Bug 总数: 19
 - 数据来源: ZenTao API v1 `GET /products/25/bugs`，按 `assignedTo=jiangjiyu` 且 `status!=closed` 过滤
 - 维护方式: 将每条前面的 `[ ]` 改为 `[1]`表示给出验收标准，改为`[2]`表示已分析原因，改为`[3]`表示已经修复完成待验收，改为`[x]`表示验收通过。
 
 ## 清单
+
+- [ ] #18164 【Dashboard】个人资料:One-time token reveal下的token内容无法肉眼看清内容
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-10T06:53:00Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18164.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18164
+
+- [ ] #18163 【Dashboard】中英文切换: 中英文切换弹框下方的描述应该去掉
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-10T06:14:13Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18163.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18163
+
+- [ ] #18162 【Dashboard】个人资料: 中文状态下，这些内容，都应该翻译成中文显示
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-10T06:01:33Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18162.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18162
+
+- [ ] #18161 【Dashboard】个人资料: 选中的scope颜色不能跟create按钮一样
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: zhoushichuan | 指派时间: 2026-04-10T05:57:16Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18161.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18161
+
+- [ ] #18160 【Dashboard】仪表盘：/stats 接口报 500
+  - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3
+  - 提出人: xiaomeishan | 指派时间: 2026-04-10T05:52:51Z
+  - 详情页: https://zt.bitkinetic.com/bug-view-18160.html
+  - API详情: https://zt.bitkinetic.com/api.php/v1/bugs/18160
 
 - [ ] #18159 【API】开发者中心: 支持的凭证类型应该有6种，目前只显示了3种
   - 产品: zkMe | 状态: active | 严重程度: S3 | 优先级: P3

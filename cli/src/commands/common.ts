@@ -1,4 +1,4 @@
-import { ToaniVaultSDK } from "../../../sdk-typescript/src/index.ts";
+import { ToaniVaultSDK } from "../../../sdk-typescript/src/index.js";
 import type { CliConfig, ParsedOptions } from "../types/cli.js";
 import { fail } from "../output/print.js";
 
@@ -25,7 +25,7 @@ export function parseOptions(argv: string[]): ParsedOptions {
 export function createSdk(config: CliConfig): ToaniVaultSDK {
   return new ToaniVaultSDK({
     baseUrl: config.baseUrl,
-    token: config.automationToken ?? config.token,
+    token: config.token,
     timeout: config.timeout,
   });
 }

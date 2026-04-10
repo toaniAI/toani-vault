@@ -291,9 +291,12 @@ pub mod scopes {
     pub const ADMIN: &str = "admin";
 }
 
-/// 默认 Token 有效期（15 分钟 = 900 秒）
+/// 默认 Token 有效期（2 小时 = 7200 秒）
 /// 符合 SA-003 架构约束
-pub const DEFAULT_TOKEN_TTL_SECONDS: u64 = 900;
+pub const DEFAULT_TOKEN_TTL_SECONDS: u64 = 7200;
+
+/// Token 最小有效期（2 小时 = 7200 秒）
+pub const MIN_TOKEN_TTL_SECONDS: u64 = 7200;
 
 /// 最大 Token 有效期（24 小时）
 pub const MAX_TOKEN_TTL_SECONDS: u64 = 86400;
@@ -301,6 +304,8 @@ pub const MAX_TOKEN_TTL_SECONDS: u64 = 86400;
 pub const TOKEN_SUBJECT_TYPE_USER: &str = "user";
 pub const TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT: &str = "service_account";
 pub const TOKEN_ISSUED_FROM_SESSION: &str = "session";
+pub const TOKEN_ISSUED_FROM_AUTOMATION: &str = "automation";
+pub const TOKEN_ISSUED_FROM_ACCESS_TOKEN: &str = "access_token";
 pub const TOKEN_ISSUED_FROM_SERVICE_ACCOUNT: &str = "service_account";
 
 fn default_subject_type() -> String {
@@ -384,7 +389,13 @@ mod tests {
 
     #[test]
     fn test_token_claims_new() {
-        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
+        let claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
 
         assert_eq!(claims.iss, "credbridge-vault");
         assert_eq!(claims.sub, "user_123");
@@ -407,14 +418,26 @@ mod tests {
 
     #[test]
     fn test_validate_valid_claims() {
-        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
+        let claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
 
         assert!(claims.validate("tenant_456").is_ok());
     }
 
     #[test]
     fn test_validate_invalid_issuer() {
-        let mut claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
+        let mut claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
         claims.iss = "invalid-issuer".to_string();
 
         assert_eq!(
@@ -425,7 +448,13 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_audience() {
-        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
+        let claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
 
         assert_eq!(
             claims.validate("wrong_tenant"),
@@ -438,7 +467,13 @@ mod tests {
 
     #[test]
     fn test_validate_expired() {
-        let mut claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
+        let mut claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
         // 设置为已过期
         claims.exp = 1; // 过去的 Unix 时间戳
 
@@ -447,7 +482,13 @@ mod tests {
 
     #[test]
     fn test_is_expired() {
-        let mut claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
+        let mut claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
 
         assert!(!claims.is_expired());
 
@@ -461,7 +502,7 @@ mod tests {
         let claims = TokenClaims::new("user_123", "tenant_456", "credential:read", true, 900);
 
         let ttl = claims.remaining_ttl();
-        assert!(ttl > 0 && ttl <= 900);
+        assert!(ttl > 0 && ttl <= DEFAULT_TOKEN_TTL_SECONDS);
     }
 
     #[test]
@@ -471,7 +512,7 @@ mod tests {
             "tenant_456",
             "credential:read credential:write",
             true,
-            900,
+            DEFAULT_TOKEN_TTL_SECONDS,
         );
 
         let json = claims.to_json().unwrap();
@@ -487,7 +528,7 @@ mod tests {
             "tenant_456",
             "credential:read credential:write admin",
             true,
-            900,
+            DEFAULT_TOKEN_TTL_SECONDS,
         );
 
         let scopes = claims.scopes();
@@ -499,7 +540,13 @@ mod tests {
 
     #[test]
     fn test_has_scope() {
-        let claims = TokenClaims::new("user_123", "tenant_456", "credential:read admin", true, 900);
+        let claims = TokenClaims::new(
+            "user_123",
+            "tenant_456",
+            "credential:read admin",
+            true,
+            DEFAULT_TOKEN_TTL_SECONDS,
+        );
 
         assert!(claims.has_scope("credential:read"));
         assert!(claims.has_scope("admin"));

@@ -743,14 +743,6 @@ export interface VerifyAuditLogResult {
 // Auth 类型
 // ============================================================================
 
-/** 创建会话请求 */
-export interface AuthCreateSessionRequest {
-  /** Privy Access Token */
-  privyAccessToken: string;
-  /** 邀请 Token（可选） */
-  invitationToken?: string;
-}
-
 /** Auth 身份信息 */
 export interface AuthIdentityInfo {
   provider: string;
@@ -771,14 +763,6 @@ export interface AuthUserProfile {
   identities: AuthIdentityInfo[];
 }
 
-/** Auth 会话信息 */
-export interface AuthSessionInfo {
-  id: string;
-  sessionToken: string;
-  expiresAt: string;
-  mfaStatus: string;
-}
-
 /** Auth 成员资格信息 */
 export interface AuthMembershipInfo {
   id: string;
@@ -793,15 +777,6 @@ export interface AuthMembershipInfo {
 export interface AuthTenantInfo {
   id: string;
   name?: string;
-}
-
-/** 创建会话响应 */
-export interface AuthCreateSessionResponse {
-  user: AuthUserProfile;
-  session: AuthSessionInfo;
-  memberships: AuthMembershipInfo[];
-  currentTenant?: AuthTenantInfo;
-  currentMembership?: AuthMembershipInfo;
 }
 
 /** 当前用户响应 */

@@ -465,7 +465,7 @@ export class CredBridgeClient {
     }
 
     try {
-      // 解析 PASETO token 的 payload 部分
+      // 测试 token 可能直接暴露 JSON payload；真实 v4.local token 解不出来时静默跳过。
       const parts = token.split(".");
       if (parts.length >= 3) {
         const payloadBase64 = parts[2];
@@ -493,8 +493,11 @@ export class CredBridgeClient {
         };
       }
     } catch (error) {
-      // Token 解析失败，但不影响使用
-      console.warn("Failed to parse token:", error);
+      // 真实 v4.local token 为加密 payload，本地无法可靠解析；保留 token 可用性即可。
+      this.tokenInfo = undefined;
+      if (token.startsWith("v4.public.")) {
+        console.warn("Failed to parse token:", error);
+      }
     }
   }
 

@@ -16,8 +16,8 @@ export async function runConfig(
         ...config,
         baseUrl: (options.url as string | undefined) ?? config.baseUrl,
         token: options.token as string | undefined,
-        automationToken: options.token as string | undefined,
-        sessionToken: options["session-token"] as string | undefined,
+        automationToken: undefined,
+        sessionToken: undefined,
         currentTenantId: options["tenant-id"] as string | undefined,
       };
       saveConfig(next);
@@ -40,11 +40,7 @@ export async function runConfig(
       const next: CliConfig = { ...config };
       if (key === "baseUrl") next.baseUrl = value;
       else if (key === "token") next.token = value;
-      else if (key === "automationToken") {
-        next.automationToken = value;
-        next.token = value;
-      } else if (key === "currentTenantId") next.currentTenantId = value;
-      else if (key === "sessionToken") next.sessionToken = value;
+      else if (key === "currentTenantId") next.currentTenantId = value;
       else if (key === "timeout") next.timeout = Number(value);
       else if (key === "output")
         next.output = value === "json" ? "json" : "table";
@@ -76,10 +72,11 @@ export async function runConfig(
           profiles: {
             ...(config.profiles ?? {}),
             [name]: {
-              baseUrl: config.baseUrl,
-              output: config.output,
-              timeout: config.timeout,
-            },
+          baseUrl: config.baseUrl,
+          token: config.token,
+          output: config.output,
+          timeout: config.timeout,
+        },
           },
         };
         saveConfig(next);
@@ -99,9 +96,9 @@ export async function runConfig(
           ...config,
           currentProfile: name,
           baseUrl: profile.baseUrl ?? config.baseUrl,
-          automationToken: profile.automationToken,
-          token: profile.automationToken,
-          sessionToken: profile.sessionToken,
+          token: profile.token ?? profile.automationToken,
+          automationToken: undefined,
+          sessionToken: undefined,
           currentTenantId: profile.currentTenantId,
           output: profile.output ?? config.output,
           timeout: profile.timeout ?? config.timeout,

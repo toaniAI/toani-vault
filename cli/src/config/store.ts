@@ -40,8 +40,11 @@ export function loadConfig(): CliConfig {
         : DEFAULT_CONFIG.timeout;
   const baseUrl =
     activeProfile.baseUrl ?? parsed.baseUrl ?? DEFAULT_CONFIG.baseUrl;
-  const automationToken =
-    activeProfile.automationToken ?? parsed.automationToken ?? parsed.token;
+  const token =
+    activeProfile.token ??
+    activeProfile.automationToken ??
+    parsed.token ??
+    parsed.automationToken;
   const sessionToken = activeProfile.sessionToken ?? parsed.sessionToken;
   const currentTenantId =
     activeProfile.currentTenantId ?? parsed.currentTenantId;
@@ -49,18 +52,18 @@ export function loadConfig(): CliConfig {
     ...DEFAULT_CONFIG,
     ...parsed,
     baseUrl,
-    token: automationToken,
-    automationToken,
+    token,
+    automationToken: undefined,
     sessionToken,
     currentTenantId,
     currentProfile,
     profiles,
     output: output as OutputFormat,
     timeout,
-    credentialSource: automationToken
-      ? "automation"
+    credentialSource: token
+      ? "token"
       : sessionToken
-        ? "session"
+        ? "legacy"
         : "none",
   };
 }
@@ -75,8 +78,7 @@ export function saveConfig(config: CliConfig): void {
     [currentProfile]: {
       ...(config.profiles?.[currentProfile] ?? {}),
       baseUrl: config.baseUrl,
-      automationToken: config.automationToken ?? config.token,
-      sessionToken: config.sessionToken,
+      token: config.token,
       currentTenantId: config.currentTenantId,
       output: config.output,
       timeout: config.timeout,
@@ -86,8 +88,11 @@ export function saveConfig(config: CliConfig): void {
     CONFIG_PATH,
     JSON.stringify(
       {
-        ...config,
-        token: config.automationToken ?? config.token,
+        baseUrl: config.baseUrl,
+        token: config.token,
+        currentTenantId: config.currentTenantId,
+        output: config.output,
+        timeout: config.timeout,
         profiles,
         currentProfile,
       },

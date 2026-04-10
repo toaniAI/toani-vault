@@ -3,21 +3,18 @@ import { printResult } from "../output/print.js";
 import { createSdk, parseOptions, requireArg } from "./common.js";
 import { saveConfig } from "../config/store.js";
 
-function automationTokenFromConfig(config: CliConfig): string | undefined {
-  return config.automationToken ?? config.token;
-}
-
 function bearerFromConfig(config: CliConfig): string | undefined {
-  return automationTokenFromConfig(config) ?? config.sessionToken;
+  return config.token;
 }
 
-function sessionAuthorization(config: CliConfig): { Authorization: string } {
-  if (!config.sessionToken) {
+function requireBearer(config: CliConfig): string {
+  const bearer = bearerFromConfig(config);
+  if (!bearer) {
     throw new Error(
-      "No session token found. Run `toani auth session --privy-access-token ...` or `toani auth login --session-token ...` first.",
+      "No bearer token found. Configure one with `--token` or `toani config init --token ...` first.",
     );
   }
-  return { Authorization: `Bearer ${config.sessionToken}` };
+  return bearer;
 }
 
 export async function runAuth(
@@ -29,31 +26,13 @@ export async function runAuth(
   const options = parseOptions(rest);
 
   switch (subcommand) {
-    case "login": {
-      const url = requireArg(options, "url");
-      const sessionToken =
-        (options["session-token"] as string | undefined) ??
-        requireArg(options, "token");
-      const next = { ...config, baseUrl: url, sessionToken };
-      saveConfig(next);
-      printResult(
-        { ok: true, baseUrl: url, sessionTokenStored: true },
-        config.output,
-      );
-      return;
-    }
     case "status": {
       printResult(
         {
           currentProfile: config.currentProfile ?? "default",
-          credentialSource: automationTokenFromConfig(config)
-            ? "automation"
-            : config.sessionToken
-              ? "session"
-              : "none",
+          credentialSource: config.token ? "token" : "none",
           tenantId: config.currentTenantId,
-          automationTokenPresent: Boolean(automationTokenFromConfig(config)),
-          sessionTokenPresent: Boolean(config.sessionToken),
+          tokenPresent: Boolean(config.token),
           baseUrl: config.baseUrl,
         },
         config.output,
@@ -61,45 +40,20 @@ export async function runAuth(
       return;
     }
     case "me": {
-      const bearer = bearerFromConfig(config);
-      const me = await sdk.client.get("/auth/me", {
-        headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined,
-      });
+      requireBearer(config);
+      const me = await sdk.auth.me();
       printResult(me, config.output);
       return;
     }
     case "logout": {
-      const bearer = bearerFromConfig(config);
-      await sdk.client.post(
-        "/auth/logout",
-        {},
-        { headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined },
-      );
-      saveConfig({ ...config, sessionToken: undefined });
+      saveConfig({ ...config, token: undefined, automationToken: undefined });
       printResult(
         {
           ok: true,
-          loggedOut: true,
-          sessionTokenCleared: true,
-          automationTokenPreserved: Boolean(automationTokenFromConfig(config)),
+          localTokenCleared: true,
         },
         config.output,
       );
-      return;
-    }
-    case "session": {
-      const privyAccessToken = requireArg(options, "privy-access-token");
-      const session = await sdk.auth.createSession({
-        privyAccessToken,
-        invitationToken: options["invitation-token"] as string | undefined,
-      });
-      saveConfig({
-        ...config,
-        sessionToken: session.session.sessionToken,
-        currentTenantId:
-          session.currentTenant?.id ?? session.currentMembership?.tenantId,
-      });
-      printResult(session, config.output);
       return;
     }
     case "use-tenant": {
@@ -112,10 +66,8 @@ export async function runAuth(
       return;
     }
     case "memberships": {
-      const bearer = bearerFromConfig(config);
-      const memberships = await sdk.client.get("/auth/memberships", {
-        headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined,
-      });
+      requireBearer(config);
+      const memberships = await sdk.auth.memberships();
       printResult(memberships, config.output);
       return;
     }
@@ -123,6 +75,7 @@ export async function runAuth(
       const nested = options._[0];
 
       if (nested === "create") {
+        requireBearer(config);
         const name = requireArg(
           options,
           "name",
@@ -143,13 +96,11 @@ export async function runAuth(
             ttlSeconds,
             createdVia: "cli",
           },
-          { headers: sessionAuthorization(config) },
         );
         const shouldSave = Boolean(options.save);
         if (shouldSave) {
           saveConfig({
             ...config,
-            automationToken: response.tokenValue,
             token: response.tokenValue,
           });
         }
@@ -158,34 +109,31 @@ export async function runAuth(
       }
 
       if (nested === "list") {
-        const items = await sdk.auth.listAutomationTokens({
-          headers: sessionAuthorization(config),
-        });
+        requireBearer(config);
+        const items = await sdk.auth.listAutomationTokens();
         printResult(items, config.output);
         return;
       }
 
       if (nested === "get") {
+        requireBearer(config);
         const tokenId = options._[1];
         if (!tokenId) {
           throw new Error("Usage: toani auth token get <token-id>");
         }
-        const item = await sdk.auth.getAutomationToken(tokenId, {
-          headers: sessionAuthorization(config),
-        });
+        const item = await sdk.auth.getAutomationToken(tokenId);
         printResult(item, config.output);
         return;
       }
 
       if (nested === "revoke") {
+        requireBearer(config);
         const tokenId =
           options._[1] ?? (options["token-id"] as string | undefined);
         if (!tokenId) {
           throw new Error("Usage: toani auth token revoke <token-id>");
         }
-        const item = await sdk.auth.revokeAutomationToken(tokenId, {
-          headers: sessionAuthorization(config),
-        });
+        const item = await sdk.auth.revokeAutomationToken(tokenId);
         printResult(item, config.output);
         return;
       }
@@ -210,23 +158,17 @@ export async function runAuth(
         const ttlRaw = options["ttl-seconds"];
         const ttlSeconds =
           typeof ttlRaw === "string" ? Number(ttlRaw) : undefined;
-        const result = (await sdk.client.post(
-          "/auth/access-token",
-          {
-            scopes,
-            ttl_seconds: ttlSeconds,
-          },
-          {
-            headers: sessionAuthorization(config),
-          },
-        )) as { access_token: string; [key: string]: unknown };
+        requireBearer(config);
+        const result = await sdk.auth.createAccessToken({
+          scopes,
+          ttlSeconds,
+        });
 
         const shouldStore = options.store !== false;
         if (shouldStore) {
           saveConfig({
             ...config,
-            automationToken: result.access_token,
-            token: result.access_token,
+            token: result.accessToken,
           });
         }
 
@@ -245,14 +187,8 @@ export async function runAuth(
           "token-id",
           "Usage: toani auth access-token revoke --token-id <token-id>",
         );
-        const revokedResp = await sdk.client.post(
-          `/tokens/${tokenId}/revoke`,
-          {},
-          {
-            headers: sessionAuthorization(config),
-          },
-        );
-        const revoked = Boolean((revokedResp as { revoked?: boolean }).revoked);
+        requireBearer(config);
+        const revoked = await sdk.auth.revokeAccessToken(tokenId);
         printResult({ revoked, tokenId }, config.output);
         return;
       }
@@ -262,7 +198,7 @@ export async function runAuth(
     }
     default:
       throw new Error(
-        "Usage: toani auth <login|status|logout|session|me|memberships|use-tenant|token|access-token> [options]",
+        "Usage: toani auth <status|logout|me|memberships|use-tenant|token|access-token> [options]",
       );
   }
 }

@@ -24,19 +24,10 @@ Recommended CLI bootstrap:
 toani config init --url https://dev-credbridge.bitkinetic.com/ --token <AUTOMATION_TOKEN>
 ```
 
-`Privy Access Token` exchange is browser-oriented and is not expected to be available directly from a terminal workflow.
-
-Legacy/manual session import is still supported when you already have a session token:
-
-```bash
-toani auth login --url https://dev-credbridge.bitkinetic.com/ --session-token <SESSION_TOKEN>
-```
-
 Config is stored at `~/.toani/config.json` with fields:
 
 - `baseUrl`
-- `automationToken` (preferred API token for automation commands)
-- `sessionToken` (Session Token)
+- `token`
 - `currentTenantId`
 - `currentProfile`
 - `profiles`
@@ -46,9 +37,8 @@ Config is stored at `~/.toani/config.json` with fields:
 Token resolution priority:
 
 1. explicit `--token`
-2. active profile `automationToken`
+2. active profile `token`
 3. env `TOANI_VAULT_TOKEN`
-4. `sessionToken` only for session-only auth commands
 
 Base URL resolution priority:
 
@@ -61,9 +51,7 @@ Base URL resolution priority:
 ## Commands
 
 ```bash
-toani auth login --url <URL> --session-token <TOKEN>
 toani auth status
-toani auth session --privy-access-token <PRIVY_TOKEN>
 toani auth use-tenant <tenant-id>
 toani auth token create --name <name> --scope <scope1,scope2> [--ttl-seconds 900] [--save]
 toani auth token list
@@ -117,7 +105,7 @@ toani config profile show
 
 ## Notes
 
-- `auth logout` only clears `sessionToken`; it does not clear `automationToken`.
+- `auth logout` is local-only and clears the configured bearer token.
 - `auth token create --save` writes the created automation token into the active profile.
-- `Privy Access Token` is only for exchanging `Session Token` and is primarily a browser-side flow.
-- `API Access Token` and `Service Account Token` are for API/CLI automation calls.
+- CLI integrations only use bearer tokens. Browser-side Privy/session flows are not exposed as CLI commands.
+- `automation token`, `access token`, and `service account token` all use the same `Bearer` call pattern in the CLI.

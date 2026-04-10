@@ -5,12 +5,11 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        CreateCredentialRequest, CreateCredentialResponse, CredentialFilter,
-        CredentialMetadata, CredentialType, DecryptCredentialRequest,
-        DecryptCredentialResponse, DeleteCredentialResponse, GetCredentialResponse,
-        ListCredentialsResponse, RequestOptions, Result, RollbackCredentialRequest,
-        RollbackCredentialResponse, UpdateCredentialRequest, UpdateCredentialResponse,
-        VersionDetail, VersionHistory,
+        CreateCredentialRequest, CreateCredentialResponse, CredentialFilter, CredentialMetadata,
+        CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
+        DeleteCredentialResponse, GetCredentialResponse, ListCredentialsResponse, RequestOptions,
+        Result, RollbackCredentialRequest, RollbackCredentialResponse, UpdateCredentialRequest,
+        UpdateCredentialResponse, VersionDetail, VersionHistory,
     },
 };
 use serde_json::Value;
@@ -299,10 +298,8 @@ impl CredentialsService {
 
         debug!(path = %path, "Listing credentials");
 
-        let response: ListCredentialsResponse = self
-            .client
-            .get_with_options(&path, options)
-            .await?;
+        let response: ListCredentialsResponse =
+            self.client.get_with_options(&path, options).await?;
 
         Ok((response.credentials, response.total))
     }
@@ -422,10 +419,8 @@ impl CredentialsService {
             "Deleting credential"
         );
 
-        let response: DeleteCredentialResponse = self
-            .client
-            .delete_with_options(&path, options)
-            .await?;
+        let response: DeleteCredentialResponse =
+            self.client.delete_with_options(&path, options).await?;
 
         if response.deleted {
             info!(
@@ -473,7 +468,11 @@ impl CredentialsService {
         version: u32,
         options: Option<RequestOptions>,
     ) -> Result<VersionDetail> {
-        let path = format!("/credentials/{}/versions/{}", credential_id.as_ref(), version);
+        let path = format!(
+            "/credentials/{}/versions/{}",
+            credential_id.as_ref(),
+            version
+        );
         self.client.get_with_options(&path, options).await
     }
 

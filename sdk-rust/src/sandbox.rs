@@ -51,7 +51,10 @@ impl SandboxService {
         options: Option<RequestOptions>,
     ) -> Result<ApiSuccess<SandboxSessionDetail>> {
         self.client
-            .get_with_options(&format!("/sandbox/sessions/{}", session_id.as_ref()), options)
+            .get_with_options(
+                &format!("/sandbox/sessions/{}", session_id.as_ref()),
+                options,
+            )
             .await
     }
 
@@ -62,7 +65,10 @@ impl SandboxService {
         options: Option<RequestOptions>,
     ) -> Result<ApiSuccess<SandboxSessionActionResponse>> {
         self.client
-            .delete_with_options(&format!("/sandbox/sessions/{}", session_id.as_ref()), options)
+            .delete_with_options(
+                &format!("/sandbox/sessions/{}", session_id.as_ref()),
+                options,
+            )
             .await
     }
 

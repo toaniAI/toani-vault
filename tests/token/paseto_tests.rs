@@ -7,8 +7,8 @@
 //! 测试 Token 签发、验证、过期和 Scope 权限验证
 
 use vault_service::token::{
-    ClaimsError, PasetoToken, ScopeValidator, TokenClaims, TokenError, TokenValidationResult,
-    quick_verify, scopes,
+    ClaimsError, DEFAULT_TOKEN_TTL_SECONDS, PasetoToken, ScopeValidator, TokenClaims, TokenError,
+    TokenValidationResult, quick_verify, scopes,
 };
 
 /// 模拟撤销检查器
@@ -109,11 +109,11 @@ mod token_generation_tests {
     }
 
     #[test]
-    fn test_default_ttl_is_15_minutes() {
+    fn test_default_ttl_is_2_hours() {
         let claims =
             TokenClaims::with_default_ttl("user_123", "tenant_456", "credential:read", true);
 
-        let expected_exp = claims.iat.unwrap() + 900; // 15 minutes
+        let expected_exp = claims.iat.unwrap() + DEFAULT_TOKEN_TTL_SECONDS;
         assert_eq!(claims.exp, expected_exp);
     }
 

@@ -106,9 +106,9 @@ toani credentials list
 
 | 命令                                           | 描述                    |
 | ---------------------------------------------- | ----------------------- |
-| `toani auth login --url <url> --token <token>` | 登录到 Toani Vault 服务 |
+| `toani config init --url <url> --token <token>` | 配置 CLI bearer token   |
 | `toani auth status`                            | 检查登录状态            |
-| `toani auth logout`                            | 注销并移除本地配置      |
+| `toani auth logout`                            | 清理本地 bearer token   |
 
 #### 凭证管理 (`credentials`)
 

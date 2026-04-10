@@ -75,7 +75,7 @@ console.log("   - exportData(sessionId, request)");
 
 console.log("\n=== 测试完成 ===");
 console.log(
-  "\n注意：以上测试仅验证 SDK 接口可用性，实际 API 调用需要有效的 Token 和后端服务支持。",
+  "\n注意：以上测试仅验证 SDK 接口可用性。公开认证面只使用已配置的 bearer token；浏览器侧 Privy/session 流程不属于 SDK 对外接口。",
 );
 console.log(
   "\n迁移说明: CredBridgeSDK 已重命名为 ToaniVaultSDK，旧名称仍可作为兼容别名使用。",

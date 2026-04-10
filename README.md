@@ -119,9 +119,9 @@ toani credentials list
 
 | Command                                        | Description                    |
 | ---------------------------------------------- | ------------------------------ |
-| `toani auth login --url <url> --token <token>` | Login to Toani Vault service   |
+| `toani config init --url <url> --token <token>` | Configure CLI bearer token     |
 | `toani auth status`                            | Check login status             |
-| `toani auth logout`                            | Logout and remove local config |
+| `toani auth logout`                            | Clear local bearer token       |
 
 #### Credential Management (`credentials`)
 

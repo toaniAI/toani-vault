@@ -29,7 +29,9 @@ impl ServiceAccountsService {
     }
 
     pub async fn list(&self, options: Option<RequestOptions>) -> Result<Vec<ServiceAccountInfo>> {
-        self.client.get_with_options("/service-accounts", options).await
+        self.client
+            .get_with_options("/service-accounts", options)
+            .await
     }
 
     pub async fn get(
