@@ -224,7 +224,10 @@ steps:
           }
         }
         EOF
-      - curl -fsSL -X POST -H 'Content-Type: application/json' --data @payload.json https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
+      - >-
+        curl -fsSL -X POST -H 'Content-Type: application/json'
+        --data @payload.json
+        https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
     when:
       ref:
         - refs/heads/branch_dev
