@@ -504,8 +504,8 @@
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 26,
-      "lastAccessed": 1775835768544,
+      "accessCount": 33,
+      "lastAccessed": 1775836990362,
       "type": "file"
     },
     {
@@ -533,6 +533,12 @@
       "type": "directory"
     },
     {
+      "path": "src",
+      "accessCount": 9,
+      "lastAccessed": 1775836799311,
+      "type": "directory"
+    },
+    {
       "path": "frontend/src/shared/api/hooks.ts",
       "accessCount": 8,
       "lastAccessed": 1775828275256,
@@ -545,15 +551,15 @@
       "type": "directory"
     },
     {
-      "path": "src",
-      "accessCount": 8,
-      "lastAccessed": 1775835398638,
-      "type": "directory"
-    },
-    {
       "path": "zentao/18173.md",
       "accessCount": 6,
       "lastAccessed": 1775831009878,
+      "type": "file"
+    },
+    {
+      "path": "src/main.rs",
+      "accessCount": 6,
+      "lastAccessed": 1775836799391,
       "type": "file"
     },
     {
@@ -584,6 +590,12 @@
       "path": "zentao/18169.md",
       "accessCount": 4,
       "lastAccessed": 1775835768602,
+      "type": "file"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 4,
+      "lastAccessed": 1775836799295,
       "type": "file"
     },
     {
@@ -659,21 +671,15 @@
       "type": "directory"
     },
     {
-      "path": "src/api/routes.rs",
+      "path": "src/api",
       "accessCount": 2,
-      "lastAccessed": 1775835026831,
-      "type": "file"
-    },
-    {
-      "path": "src/main.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775835546703,
-      "type": "file"
+      "lastAccessed": 1775836350651,
+      "type": "directory"
     },
     {
       "path": "Cargo.toml",
-      "accessCount": 1,
-      "lastAccessed": 1775792510617,
+      "accessCount": 2,
+      "lastAccessed": 1775836829383,
       "type": "file"
     },
     {
@@ -723,12 +729,6 @@
       "accessCount": 1,
       "lastAccessed": 1775818176202,
       "type": "file"
-    },
-    {
-      "path": "src/api",
-      "accessCount": 1,
-      "lastAccessed": 1775825221024,
-      "type": "directory"
     },
     {
       "path": "src/vault/mod.rs",
