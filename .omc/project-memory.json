@@ -498,20 +498,20 @@
   "hotPaths": [
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 44,
-      "lastAccessed": 1775833779682,
+      "accessCount": 45,
+      "lastAccessed": 1775866730560,
       "type": "file"
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 35,
-      "lastAccessed": 1775838383040,
+      "accessCount": 40,
+      "lastAccessed": 1775868157278,
       "type": "file"
     },
     {
       "path": "tests/credentials_api_tests.rs",
-      "accessCount": 16,
-      "lastAccessed": 1775833805800,
+      "accessCount": 26,
+      "lastAccessed": 1775868047287,
       "type": "directory"
     },
     {
@@ -522,8 +522,8 @@
     },
     {
       "path": "src",
-      "accessCount": 11,
-      "lastAccessed": 1775837986374,
+      "accessCount": 12,
+      "lastAccessed": 1775866711158,
       "type": "directory"
     },
     {
@@ -533,16 +533,16 @@
       "type": "file"
     },
     {
+      "path": "frontend/src",
+      "accessCount": 11,
+      "lastAccessed": 1775839203797,
+      "type": "directory"
+    },
+    {
       "path": "frontend/src/app/router-components.tsx",
       "accessCount": 10,
       "lastAccessed": 1775828308206,
       "type": "file"
-    },
-    {
-      "path": "frontend/src",
-      "accessCount": 9,
-      "lastAccessed": 1775828259845,
-      "type": "directory"
     },
     {
       "path": "frontend/src/shared/api/hooks.ts",
@@ -566,6 +566,12 @@
       "path": "zentao/18171.md",
       "accessCount": 5,
       "lastAccessed": 1775834450098,
+      "type": "file"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775866720929,
       "type": "file"
     },
     {
@@ -593,10 +599,16 @@
       "type": "file"
     },
     {
-      "path": "src/api/routes.rs",
+      "path": "src/api",
       "accessCount": 4,
-      "lastAccessed": 1775836799295,
-      "type": "file"
+      "lastAccessed": 1775866730474,
+      "type": "directory"
+    },
+    {
+      "path": "",
+      "accessCount": 4,
+      "lastAccessed": 1775866798408,
+      "type": "directory"
     },
     {
       "path": "frontend/src/shared/stores/authStore.ts",
@@ -615,12 +627,6 @@
       "accessCount": 3,
       "lastAccessed": 1775828296101,
       "type": "file"
-    },
-    {
-      "path": "",
-      "accessCount": 3,
-      "lastAccessed": 1775838087067,
-      "type": "directory"
     },
     {
       "path": "CLAUDE.md",
@@ -669,12 +675,6 @@
       "accessCount": 2,
       "lastAccessed": 1775828324451,
       "type": "file"
-    },
-    {
-      "path": "src/api",
-      "accessCount": 2,
-      "lastAccessed": 1775836350651,
-      "type": "directory"
     },
     {
       "path": "Cargo.toml",
