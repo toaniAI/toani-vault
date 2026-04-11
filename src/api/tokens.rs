@@ -837,9 +837,29 @@ mod tests {
 
         assert!(response.access_token.starts_with("v4.local."));
         assert_eq!(response.scope, "credential:read audit:read");
-        assert_eq!(response.expires_in, MIN_TOKEN_TTL_SECONDS);
+        assert_eq!(response.expires_in, 3600);
         assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
         assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_ACCESS_TOKEN);
+    }
+
+    #[tokio::test]
+    async fn create_token_respects_minimum_ttl_option() {
+        let response = create_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(900),
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert_eq!(response.expires_in, MIN_TOKEN_TTL_SECONDS);
     }
 
     #[tokio::test]
@@ -910,6 +930,26 @@ mod tests {
             verified.scopes.unwrap_or_default(),
             vec!["credential:read".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn create_token_caps_ttl_at_maximum() {
+        let response = create_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(MAX_TOKEN_TTL_SECONDS + 1),
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert_eq!(response.expires_in, MAX_TOKEN_TTL_SECONDS);
     }
 
     #[tokio::test]
