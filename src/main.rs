@@ -46,7 +46,7 @@ use vault_service::api::{
     i18n::{LocaleResolverState, locale_middleware},
     middleware::auth_middleware,
     notifications::notifications_routes,
-    profile_token_routes,
+    profile_token_routes, public_token_routes,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxState, sandbox_routes},
     service_account_routes,
@@ -758,6 +758,7 @@ fn build_api_routes(app_state: AppState) -> Router {
     let tenant_routes = tenant_routes::<Arc<dyn TenantConfigStore>>().with_state(tenant_api_state);
     let notifications_routes = notifications_routes();
     let token_routes = token_routes(app_state.auth_state.clone());
+    let public_token_routes = public_token_routes(app_state.auth_state.clone());
     let profile_token_routes = profile_token_routes(app_state.auth_state.clone());
     let service_account_routes = service_account_routes(app_state.auth_state.clone());
 
@@ -818,6 +819,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         .route("/", get(api_root_handler))
         // 认证路由（公开）
         .merge(auth_routes)
+        .merge(public_token_routes)
         // 受保护的路由
         .merge(protected_routes);
 

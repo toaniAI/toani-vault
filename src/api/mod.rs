@@ -60,4 +60,4 @@ pub use tenant_middleware::{
     cross_tenant_check_middleware, tenant_isolation_middleware, validate_path_tenant_id,
     validate_query_tenant_id,
 };
-pub use tokens::token_routes;
+pub use tokens::{public_token_routes, token_routes};

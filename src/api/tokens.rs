@@ -76,7 +76,8 @@ pub struct TokenMetadataResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyTokenRequest {
-    pub token: String,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,9 +112,14 @@ pub fn token_routes(state: AuthApiState) -> Router {
             post(create_token_handler).get(list_tokens_handler),
         )
         .route("/tokens/:token_id", get(get_token_handler))
-        .route("/tokens/verify", post(verify_token_handler))
         .route("/tokens/stats", get(get_token_stats_handler))
         .route("/tokens/:token_id/revoke", post(revoke_token_handler))
+        .with_state(state)
+}
+
+pub fn public_token_routes(state: AuthApiState) -> Router {
+    Router::new()
+        .route("/tokens/verify", post(verify_token_handler))
         .with_state(state)
 }
 
@@ -266,20 +272,16 @@ pub async fn issue_access_token_from_user_token(
 
 async fn verify_token_handler(
     State(state): State<AuthApiState>,
-    Extension(session_token): Extension<ValidatedToken>,
     Json(request): Json<VerifyTokenRequest>,
 ) -> Result<Json<VerifyTokenResponse>, ApiErrorResponse> {
-    if !session_token.has_any_scope(&[
-        TokenScope::TokensRead,
-        TokenScope::TenantAdmin,
-        TokenScope::Admin,
-    ]) {
-        return Err(ApiErrorResponse::forbidden(
-            "Missing required scope: tokens:read",
-        ));
-    }
+    let token = request
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiErrorResponse::invalid_request("Missing required field: token"))?;
 
-    let validated = match validate_paseto_token(&request.token, &TOKEN_SECRET_KEY, "en") {
+    let validated = match validate_paseto_token(token, &TOKEN_SECRET_KEY, "en") {
         Ok(token) => token,
         Err(_) => return Ok(Json(invalid_token_response())),
     };
@@ -290,23 +292,8 @@ async fn verify_token_handler(
         .await
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
 
-    if is_blacklisted || validated.is_expired() || validated.tenant_id != session_token.tenant_id {
-        return Ok(Json(VerifyTokenResponse {
-            valid: false,
-            token_id: Some(validated.token_id),
-            user_id: Some(validated.user_id),
-            tenant_id: Some(validated.tenant_id),
-            scopes: Some(
-                validated
-                    .scopes
-                    .into_iter()
-                    .map(|scope| scope.as_str().to_string())
-                    .collect(),
-            ),
-            expires_at: Some(validated.expires_at),
-            subject_type: Some(validated.subject_type),
-            issued_from: Some(validated.issued_from),
-        }));
+    if is_blacklisted || validated.is_expired() {
+        return Ok(Json(verify_token_response(false, &validated)));
     }
 
     if let Some(metadata) = state
@@ -315,23 +302,8 @@ async fn verify_token_handler(
         .await
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
     {
-        if metadata.tenant_id.to_string() != session_token.tenant_id || !metadata.is_active() {
-            return Ok(Json(VerifyTokenResponse {
-                valid: false,
-                token_id: Some(validated.token_id),
-                user_id: Some(validated.user_id),
-                tenant_id: Some(validated.tenant_id),
-                scopes: Some(
-                    validated
-                        .scopes
-                        .into_iter()
-                        .map(|scope| scope.as_str().to_string())
-                        .collect(),
-                ),
-                expires_at: Some(validated.expires_at),
-                subject_type: Some(validated.subject_type),
-                issued_from: Some(validated.issued_from),
-            }));
+        if !metadata.is_active() {
+            return Ok(Json(verify_token_response(false, &validated)));
         }
 
         let _ = state
@@ -340,22 +312,26 @@ async fn verify_token_handler(
             .await;
     }
 
-    Ok(Json(VerifyTokenResponse {
-        valid: true,
-        token_id: Some(validated.token_id),
-        user_id: Some(validated.user_id),
-        tenant_id: Some(validated.tenant_id),
+    Ok(Json(verify_token_response(true, &validated)))
+}
+
+fn verify_token_response(valid: bool, validated: &ValidatedToken) -> VerifyTokenResponse {
+    VerifyTokenResponse {
+        valid,
+        token_id: Some(validated.token_id.clone()),
+        user_id: Some(validated.user_id.clone()),
+        tenant_id: Some(validated.tenant_id.clone()),
         scopes: Some(
             validated
                 .scopes
-                .into_iter()
+                .iter()
                 .map(|scope| scope.as_str().to_string())
                 .collect(),
         ),
         expires_at: Some(validated.expires_at),
-        subject_type: Some(validated.subject_type),
-        issued_from: Some(validated.issued_from),
-    }))
+        subject_type: Some(validated.subject_type.clone()),
+        issued_from: Some(validated.issued_from.clone()),
+    }
 }
 
 async fn revoke_token_handler(
@@ -908,9 +884,8 @@ mod tests {
 
         let verified = verify_token_handler(
             State(test_state()),
-            Extension(session_token(vec![TokenScope::TokensRead])),
             Json(VerifyTokenRequest {
-                token: created.access_token,
+                token: Some(created.access_token),
             }),
         )
         .await
@@ -934,6 +909,18 @@ mod tests {
             verified.scopes.unwrap_or_default(),
             vec!["credential:read".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn verify_token_without_token_field_returns_invalid_request() {
+        let error = verify_token_handler(
+            State(test_state()),
+            Json(VerifyTokenRequest { token: None }),
+        )
+        .await
+        .expect_err("missing token field must fail");
+
+        assert_eq!(error.error, "invalid_request");
     }
 
     #[tokio::test]
