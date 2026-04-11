@@ -51,7 +51,9 @@ pub struct UpdateServiceAccountRequest {
 pub struct CreateServiceAccountTokenRequest {
     pub scopes: Vec<String>,
     #[serde(default)]
-    pub ttl_seconds: Option<u64>,
+    pub ttl_seconds: Option<i64>,
+    #[serde(default)]
+    pub expires_in: Option<i64>,
     #[serde(default)]
     pub display_name: Option<String>,
 }
@@ -300,10 +302,7 @@ async fn create_service_account_token_handler(
         ));
     }
 
-    let ttl_seconds = request
-        .ttl_seconds
-        .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
-        .clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS);
+    let ttl_seconds = resolve_service_account_token_ttl(&request)?;
     let claims = TokenClaims::new(
         format!("{}:{}", service_account.tenant_id, service_account.id),
         service_account.tenant_id.to_string(),
@@ -444,6 +443,30 @@ fn map_service_account(item: ServiceAccount) -> ServiceAccountResponse {
     }
 }
 
+#[allow(clippy::result_large_err)]
+fn resolve_service_account_token_ttl(
+    request: &CreateServiceAccountTokenRequest,
+) -> Result<u64, ApiErrorResponse> {
+    let raw_ttl = match (request.ttl_seconds, request.expires_in) {
+        (Some(ttl_seconds), Some(expires_in)) if ttl_seconds != expires_in => {
+            return Err(ApiErrorResponse::invalid_request(
+                "ttl_seconds and expires_in must match when both are provided",
+            ));
+        }
+        (Some(ttl_seconds), _) => ttl_seconds,
+        (_, Some(expires_in)) => expires_in,
+        (None, None) => return Ok(DEFAULT_TOKEN_TTL_SECONDS),
+    };
+
+    if raw_ttl < 0 {
+        return Err(ApiErrorResponse::invalid_request(
+            "ttl_seconds/expires_in cannot be negative",
+        ));
+    }
+
+    Ok((raw_ttl as u64).clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS))
+}
+
 fn map_auth_error(error: crate::auth::AuthError) -> ApiErrorResponse {
     match error {
         crate::auth::AuthError::ServiceAccountNotFound(_)
@@ -569,5 +592,77 @@ mod tests {
         );
         assert_eq!(error.error, "forbidden");
         assert!(error.message.contains("another tenant"));
+    }
+
+    #[test]
+    fn test_resolve_service_account_token_ttl_defaults_when_missing() {
+        let request = CreateServiceAccountTokenRequest {
+            scopes: vec!["credential:read".to_string()],
+            ttl_seconds: None,
+            expires_in: None,
+            display_name: None,
+        };
+
+        assert_eq!(
+            resolve_service_account_token_ttl(&request).expect("should use default ttl"),
+            DEFAULT_TOKEN_TTL_SECONDS
+        );
+    }
+
+    #[test]
+    fn test_resolve_service_account_token_ttl_supports_expires_in_alias() {
+        let request = CreateServiceAccountTokenRequest {
+            scopes: vec!["credential:read".to_string()],
+            ttl_seconds: None,
+            expires_in: Some(120),
+            display_name: None,
+        };
+
+        assert_eq!(
+            resolve_service_account_token_ttl(&request).expect("should parse expires_in"),
+            MIN_TOKEN_TTL_SECONDS
+        );
+    }
+
+    #[test]
+    fn test_resolve_service_account_token_ttl_rejects_negative_ttl_seconds() {
+        let request = CreateServiceAccountTokenRequest {
+            scopes: vec!["credential:read".to_string()],
+            ttl_seconds: Some(-1),
+            expires_in: None,
+            display_name: None,
+        };
+
+        let err = resolve_service_account_token_ttl(&request).expect_err("must reject negative");
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("cannot be negative"));
+    }
+
+    #[test]
+    fn test_resolve_service_account_token_ttl_rejects_negative_expires_in() {
+        let request = CreateServiceAccountTokenRequest {
+            scopes: vec!["credential:read".to_string()],
+            ttl_seconds: None,
+            expires_in: Some(-1),
+            display_name: None,
+        };
+
+        let err = resolve_service_account_token_ttl(&request).expect_err("must reject negative");
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("cannot be negative"));
+    }
+
+    #[test]
+    fn test_resolve_service_account_token_ttl_rejects_conflicting_fields() {
+        let request = CreateServiceAccountTokenRequest {
+            scopes: vec!["credential:read".to_string()],
+            ttl_seconds: Some(300),
+            expires_in: Some(600),
+            display_name: None,
+        };
+
+        let err = resolve_service_account_token_ttl(&request).expect_err("must reject mismatch");
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("must match"));
     }
 }
