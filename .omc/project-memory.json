@@ -504,21 +504,21 @@
   },
   "hotPaths": [
     {
+      "path": "src/api/tokens.rs",
+      "accessCount": 73,
+      "lastAccessed": 1775912718959,
+      "type": "file"
+    },
+    {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 53,
-      "lastAccessed": 1775902626379,
+      "accessCount": 69,
+      "lastAccessed": 1775912906933,
       "type": "file"
     },
     {
       "path": "src/auth/service.rs",
-      "accessCount": 49,
-      "lastAccessed": 1775901750652,
-      "type": "file"
-    },
-    {
-      "path": "src/api/tokens.rs",
-      "accessCount": 44,
-      "lastAccessed": 1775902477426,
+      "accessCount": 53,
+      "lastAccessed": 1775912845411,
       "type": "file"
     },
     {
@@ -529,8 +529,14 @@
     },
     {
       "path": "src/api/middleware.rs",
-      "accessCount": 25,
-      "lastAccessed": 1775902580451,
+      "accessCount": 31,
+      "lastAccessed": 1775912710911,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/response.rs",
+      "accessCount": 26,
+      "lastAccessed": 1775905893926,
       "type": "directory"
     },
     {
@@ -546,51 +552,51 @@
       "type": "file"
     },
     {
-      "path": "src/api/response.rs",
-      "accessCount": 19,
-      "lastAccessed": 1775901647867,
-      "type": "directory"
-    },
-    {
       "path": "src/api/credentials.rs",
-      "accessCount": 16,
-      "lastAccessed": 1775900594333,
-      "type": "file"
-    },
-    {
-      "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
-      "accessCount": 14,
-      "lastAccessed": 1775882017575,
+      "accessCount": 17,
+      "lastAccessed": 1775912676352,
       "type": "file"
     },
     {
       "path": "tests",
-      "accessCount": 13,
-      "lastAccessed": 1775901568199,
+      "accessCount": 16,
+      "lastAccessed": 1775905964835,
       "type": "directory"
     },
     {
+      "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
+      "accessCount": 15,
+      "lastAccessed": 1775907120819,
+      "type": "file"
+    },
+    {
       "path": "src/api/auth.rs",
-      "accessCount": 12,
-      "lastAccessed": 1775899470797,
+      "accessCount": 15,
+      "lastAccessed": 1775912828754,
       "type": "directory"
     },
     {
       "path": "src/main.rs",
-      "accessCount": 12,
-      "lastAccessed": 1775901955811,
+      "accessCount": 14,
+      "lastAccessed": 1775912652238,
       "type": "directory"
     },
     {
       "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
-      "accessCount": 10,
-      "lastAccessed": 1775888689350,
+      "accessCount": 11,
+      "lastAccessed": 1775907211692,
       "type": "directory"
     },
     {
       "path": "src/auth",
-      "accessCount": 10,
-      "lastAccessed": 1775901962688,
+      "accessCount": 11,
+      "lastAccessed": 1775912517093,
+      "type": "directory"
+    },
+    {
+      "path": "src/api",
+      "accessCount": 11,
+      "lastAccessed": 1775912667261,
       "type": "directory"
     },
     {
@@ -600,15 +606,15 @@
       "type": "file"
     },
     {
-      "path": "src/api",
-      "accessCount": 6,
-      "lastAccessed": 1775900584324,
-      "type": "directory"
+      "path": "src/api/routes.rs",
+      "accessCount": 7,
+      "lastAccessed": 1775912645170,
+      "type": "file"
     },
     {
-      "path": "src/api/routes.rs",
+      "path": "frontend/src/shared/api/services.ts",
       "accessCount": 5,
-      "lastAccessed": 1775901760414,
+      "lastAccessed": 1775907278995,
       "type": "file"
     },
     {
@@ -621,12 +627,6 @@
       "path": "cli/src/commands/config.ts",
       "accessCount": 4,
       "lastAccessed": 1775882136562,
-      "type": "file"
-    },
-    {
-      "path": "frontend/src/shared/api/services.ts",
-      "accessCount": 4,
-      "lastAccessed": 1775885545387,
       "type": "file"
     },
     {
@@ -673,8 +673,20 @@
     },
     {
       "path": "frontend/src",
-      "accessCount": 2,
-      "lastAccessed": 1775879429076,
+      "accessCount": 3,
+      "lastAccessed": 1775907021856,
+      "type": "directory"
+    },
+    {
+      "path": "frontend/src/shared/i18n/format.ts",
+      "accessCount": 3,
+      "lastAccessed": 1775907127326,
+      "type": "file"
+    },
+    {
+      "path": "src/auth/error.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775912584626,
       "type": "directory"
     },
     {
@@ -702,10 +714,16 @@
       "type": "file"
     },
     {
-      "path": "src/auth/error.rs",
+      "path": "frontend/src/shared/api",
       "accessCount": 2,
-      "lastAccessed": 1775896994712,
+      "lastAccessed": 1775907235871,
       "type": "directory"
+    },
+    {
+      "path": "frontend/src/shared/api/hooks.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775907266104,
+      "type": "file"
     },
     {
       "path": "frontend/src/shared/i18n/useI18n.ts",
@@ -717,12 +735,6 @@
       "path": "frontend/src/shared/i18n/context.ts",
       "accessCount": 1,
       "lastAccessed": 1775879470534,
-      "type": "file"
-    },
-    {
-      "path": "frontend/src/shared/i18n/format.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775879470587,
       "type": "file"
     },
     {
@@ -762,22 +774,10 @@
       "type": "file"
     },
     {
-      "path": "frontend/src/shared/api/hooks.ts",
-      "accessCount": 1,
-      "lastAccessed": 1775883049091,
-      "type": "file"
-    },
-    {
       "path": "frontend/src/features/dashboard/pages/DashboardPage.tsx",
       "accessCount": 1,
       "lastAccessed": 1775883080716,
       "type": "file"
-    },
-    {
-      "path": "frontend/src/shared/api",
-      "accessCount": 1,
-      "lastAccessed": 1775883345926,
-      "type": "directory"
     },
     {
       "path": "frontend/src/shared/api/client.ts",
