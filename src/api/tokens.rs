@@ -27,6 +27,7 @@ pub(crate) const TOKEN_SECRET_KEY: [u8; 32] = [0u8; 32];
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateTokenRequest {
+    #[serde(default)]
     pub scopes: Vec<String>,
     #[serde(default)]
     pub expires_in: Option<u64>,
@@ -941,6 +942,54 @@ mod tests {
         .0;
 
         assert_eq!(response.expires_in, MAX_TOKEN_TTL_SECONDS);
+    }
+
+    #[test]
+    fn create_token_request_deserializes_without_scopes_as_empty() {
+        let request: CreateTokenRequest = serde_json::from_value(json!({"expires_in": 300}))
+            .expect("missing scopes should deserialize as empty");
+        assert!(request.scopes.is_empty());
+        assert_eq!(request.expires_in, Some(300));
+    }
+
+    #[tokio::test]
+    async fn create_token_missing_scopes_returns_400_invalid_request() {
+        let request: CreateTokenRequest =
+            serde_json::from_value(json!({})).expect("missing scopes should deserialize");
+
+        let err = create_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(request),
+        )
+        .await
+        .expect_err("missing scopes must be rejected as invalid_request");
+
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("At least one scope is required"));
+    }
+
+    #[tokio::test]
+    async fn create_token_empty_scopes_returns_400_invalid_request() {
+        let err = create_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec![],
+                expires_in: None,
+            }),
+        )
+        .await
+        .expect_err("empty scopes must be rejected as invalid_request");
+
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("At least one scope is required"));
     }
 
     #[tokio::test]
