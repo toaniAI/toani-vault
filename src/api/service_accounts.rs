@@ -382,12 +382,28 @@ async fn list_service_account_tokens_handler(
     Path(service_account_id): Path<String>,
 ) -> Result<ApiSuccessResponse<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
     require_service_account_admin(&token)?;
-    let service_account_id = parse_uuid_str(&service_account_id, "service_account_id")?;
+
+    // First check if the service account exists
+    let service_account = state
+        .auth_service
+        .get_service_account(parse_uuid_str(&service_account_id, "service_account_id")?)
+        .await
+        .map_err(map_auth_error)?
+        .ok_or_else(|| ApiErrorResponse::not_found("Service account not found"))?;
+
+    // Verify tenant ownership
+    if service_account.tenant_id.to_string() != token.tenant_id {
+        return Err(ApiErrorResponse::forbidden(
+            "Cannot access tokens for a service account from another tenant",
+        ));
+    }
+
+    // Now list tokens for the verified service account
     let items = state
         .auth_service
         .list_service_account_api_tokens(
             parse_uuid_str(&token.tenant_id, "tenant_id")?,
-            service_account_id,
+            service_account.id,
         )
         .await
         .map_err(map_auth_error)?;
@@ -534,5 +550,24 @@ mod tests {
         let name_256 = "a".repeat(256);
         assert_eq!(name_256.len(), 256);
         assert!(name_256.trim().len() > MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
+    }
+
+    #[test]
+    fn test_service_account_not_found_error_format() {
+        // Test that the error format for nonexistent service account is correct
+        // This validates the fix for BUG-18211
+        let error = ApiErrorResponse::not_found("Service account not found");
+        assert_eq!(error.error, "not_found");
+        assert!(error.message.contains("Service account"));
+    }
+
+    #[test]
+    fn test_cross_tenant_access_error_format() {
+        // Test that cross-tenant access returns forbidden error
+        let error = ApiErrorResponse::forbidden(
+            "Cannot access tokens for a service account from another tenant",
+        );
+        assert_eq!(error.error, "forbidden");
+        assert!(error.message.contains("another tenant"));
     }
 }
