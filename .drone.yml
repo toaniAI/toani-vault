@@ -151,7 +151,7 @@ steps:
       - test -f nsjail-3.6.tar.gz
 
   - name: check-runtime-base-image
-    image: gcr.io/go-containerregistry/crane:debug
+    image: curlimages/curl:8.12.1
     pull: if-not-exists
     depends_on:
       - verify-nsjail-archive
@@ -163,9 +163,11 @@ steps:
     commands:
       - |
         sh -eu -c '
-          runtime_base_image="hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6"
-          crane auth login hub.bitkinetic.com -u "$REPO_USER" -p "$REPO_PWD"
-          if crane manifest "$runtime_base_image" >/dev/null 2>&1; then
+          manifest_url="https://hub.bitkinetic.com/v2/zkme/credbridge-runtime-sandbox/manifests/jammy-sgx2.28.100.1-nsjail3.6"
+          if curl -fsSI \
+            -u "$REPO_USER:$REPO_PWD" \
+            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+            "$manifest_url" >/dev/null 2>&1; then
             echo "present" > .runtime-base-image.status
           else
             echo "missing" > .runtime-base-image.status

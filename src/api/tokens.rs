@@ -956,8 +956,8 @@ mod tests {
         assert!(result.is_err());
 
         let err = result.unwrap_err();
-        // 验证错误码是 NotFound (404) 而非 InternalError (500)
-        assert_eq!(err.code, crate::api::response::ErrorCode::NotFound);
+        // 验证错误代码是 "not_found" (404) 而非 "internal_error" (500)
+        assert_eq!(err.error, "not_found");
     }
 
     #[test]
@@ -966,7 +966,7 @@ mod tests {
         assert!(result.is_err());
 
         let err = result.unwrap_err();
-        assert_eq!(err.code, crate::api::response::ErrorCode::NotFound);
+        assert_eq!(err.error, "not_found");
     }
 
     #[test]
@@ -975,7 +975,7 @@ mod tests {
         assert!(result.is_err());
 
         let err = result.unwrap_err();
-        assert_eq!(err.code, crate::api::response::ErrorCode::NotFound);
+        assert_eq!(err.error, "not_found");
     }
 
     #[test]
