@@ -751,6 +751,64 @@ async fn test_decrypt_expired_credential_returns_422() {
     assert_eq!(body_json["error"], "credential_expired");
 }
 
+/// BUG-18156: 测试租户A解密租户B的凭证应返回403而非500
+/// 跨租户隔离违规应返回业务错误（403 Forbidden），而非内部服务器错误
+#[tokio::test]
+async fn test_decrypt_cross_tenant_credential_returns_403() {
+    let state = setup_test_state().await;
+    let tenant_b = TenantId::new("tenant_b");
+    let user_b = UserId::new("user_b");
+
+    // 租户B创建一条凭证
+    let entry = state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: tenant_b.clone(),
+                user_id: user_b.clone(),
+                service_id: ServiceId::new("test_service"),
+                credential_type: CredentialType::ApiKey,
+                expires_at: None,
+            },
+            create_test_payload(),
+        )
+        .expect("创建凭证失败");
+
+    // 租户A的token（缺少credential:decrypt scope，需要跨租户访问租户B的凭证）
+    let token_a = create_test_token("tenant_a", "user_a", vec![TokenScope::CredentialDecrypt]);
+
+    let app = test_router(state, token_a);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/credentials/{}/decrypt",
+            entry.credential_id.0
+        ))
+        .header("Content-Type", "application/json")
+        .body(Body::from(r#"{"reason": "cross-tenant test"}"#))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // 应返回 403 Forbidden，而非 500 Internal Server Error
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "BUG-18156: 跨租户解密应返回 403，而不是 {:?}",
+        response.status()
+    );
+
+    // 验证错误响应体
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["error"], "forbidden");
+    assert!(!body_json["message"].as_str().unwrap().is_empty());
+}
+
 /// BUG-18099: 测试创建凭证时 credential_type 字段缺失返回 400
 #[tokio::test]
 async fn test_create_credential_missing_credential_type_returns_400() {

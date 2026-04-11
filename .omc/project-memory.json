@@ -510,6 +510,12 @@
       "type": "directory"
     },
     {
+      "path": "zentao/my-bug-todo.md",
+      "accessCount": 26,
+      "lastAccessed": 1775891890935,
+      "type": "file"
+    },
+    {
       "path": "src/auth/service.rs",
       "accessCount": 21,
       "lastAccessed": 1775886144395,
@@ -522,28 +528,28 @@
       "type": "file"
     },
     {
-      "path": "zentao/my-bug-todo.md",
-      "accessCount": 19,
-      "lastAccessed": 1775888716234,
-      "type": "file"
-    },
-    {
       "path": "src/api/middleware.rs",
       "accessCount": 18,
       "lastAccessed": 1775885164953,
       "type": "directory"
     },
     {
+      "path": "",
+      "accessCount": 16,
+      "lastAccessed": 1775889436193,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/credentials.rs",
+      "accessCount": 15,
+      "lastAccessed": 1775891698563,
+      "type": "file"
+    },
+    {
       "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
       "accessCount": 14,
       "lastAccessed": 1775882017575,
       "type": "file"
-    },
-    {
-      "path": "",
-      "accessCount": 10,
-      "lastAccessed": 1775883096320,
-      "type": "directory"
     },
     {
       "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
@@ -565,8 +571,20 @@
     },
     {
       "path": "src/main.rs",
+      "accessCount": 8,
+      "lastAccessed": 1775891263945,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/response.rs",
       "accessCount": 5,
-      "lastAccessed": 1775884787524,
+      "lastAccessed": 1775889412340,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/auth.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775891579566,
       "type": "directory"
     },
     {
@@ -580,12 +598,6 @@
       "accessCount": 4,
       "lastAccessed": 1775882136562,
       "type": "file"
-    },
-    {
-      "path": "src/api/response.rs",
-      "accessCount": 4,
-      "lastAccessed": 1775885363905,
-      "type": "directory"
     },
     {
       "path": "frontend/src/shared/api/services.ts",
@@ -630,15 +642,15 @@
       "type": "directory"
     },
     {
-      "path": "src/api/auth.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775885342621,
-      "type": "directory"
-    },
-    {
       "path": "zentao/18159.md",
       "accessCount": 3,
       "lastAccessed": 1775888538380,
+      "type": "file"
+    },
+    {
+      "path": "src/api/mod.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775891533115,
       "type": "file"
     },
     {
@@ -664,6 +676,30 @@
       "accessCount": 2,
       "lastAccessed": 1775888446069,
       "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 2,
+      "lastAccessed": 1775889640954,
+      "type": "directory"
+    },
+    {
+      "path": "zentao/18156.md",
+      "accessCount": 2,
+      "lastAccessed": 1775890056529,
+      "type": "file"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775891238517,
+      "type": "file"
+    },
+    {
+      "path": "src/api",
+      "accessCount": 2,
+      "lastAccessed": 1775891253112,
+      "type": "directory"
     },
     {
       "path": "frontend/src/shared/i18n/useI18n.ts",
@@ -720,12 +756,6 @@
       "type": "file"
     },
     {
-      "path": "src/api/routes.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775883048842,
-      "type": "file"
-    },
-    {
       "path": "frontend/src/shared/api/hooks.ts",
       "accessCount": 1,
       "lastAccessed": 1775883049091,
@@ -744,18 +774,6 @@
       "type": "directory"
     },
     {
-      "path": "src/api",
-      "accessCount": 1,
-      "lastAccessed": 1775883373833,
-      "type": "directory"
-    },
-    {
-      "path": "src/api/mod.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775883386182,
-      "type": "file"
-    },
-    {
       "path": "frontend/src/shared/api/client.ts",
       "accessCount": 1,
       "lastAccessed": 1775883447355,
@@ -772,12 +790,6 @@
       "accessCount": 1,
       "lastAccessed": 1775883476629,
       "type": "file"
-    },
-    {
-      "path": "tests",
-      "accessCount": 1,
-      "lastAccessed": 1775884625435,
-      "type": "directory"
     },
     {
       "path": "src/auth/error.rs",
