@@ -15,7 +15,10 @@ export async function runConfig(
       const next: CliConfig = {
         ...config,
         baseUrl: (options.url as string | undefined) ?? config.baseUrl,
-        token: options.token as string | undefined,
+        // 当 --token 作为全局参数传入时，options.token 为 undefined，
+        // 但 config.token 已在 index.ts 的 runtimeConfig 中被设置。
+        // 这里需要回退到 config.token 以保留全局参数传入的值。
+        token: (options.token as string | undefined) ?? config.token,
         automationToken: undefined,
         sessionToken: undefined,
         currentTenantId: options["tenant-id"] as string | undefined,
