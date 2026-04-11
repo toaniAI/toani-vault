@@ -948,4 +948,49 @@ mod tests {
                 .expect("blacklist lookup should succeed")
         );
     }
+
+    // BUG-18204: 非法 UUID 应返回 404 而非 500
+    #[test]
+    fn parse_uuid_str_invalid_returns_not_found() {
+        let result = parse_uuid_str("not-a-uuid", "service_account_id");
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        // 验证错误码是 NotFound (404) 而非 InternalError (500)
+        assert_eq!(err.code, crate::api::response::ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn parse_uuid_str_empty_returns_not_found() {
+        let result = parse_uuid_str("", "token_id");
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert_eq!(err.code, crate::api::response::ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn parse_uuid_str_partial_uuid_returns_not_found() {
+        let result = parse_uuid_str("123e4567-e89b-12d3", "service_account_id");
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert_eq!(err.code, crate::api::response::ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn parse_uuid_str_valid_uuid_succeeds() {
+        let valid_uuid = Uuid::new_v4().to_string();
+        let result = parse_uuid_str(&valid_uuid, "service_account_id");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().to_string(), valid_uuid);
+    }
+
+    #[test]
+    fn parse_uuid_str_uuid_v7_succeeds() {
+        let uuid_v7 = Uuid::now_v7().to_string();
+        let result = parse_uuid_str(&uuid_v7, "token_id");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().to_string(), uuid_v7);
+    }
 }
