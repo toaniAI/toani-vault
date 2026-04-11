@@ -49,6 +49,7 @@ pub struct UpdateServiceAccountRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateServiceAccountTokenRequest {
+    #[serde(default)]
     pub scopes: Vec<String>,
     #[serde(default)]
     pub ttl_seconds: Option<i64>,
@@ -259,21 +260,6 @@ async fn create_service_account_token_handler(
     Json(request): Json<CreateServiceAccountTokenRequest>,
 ) -> Result<ApiSuccessResponse<CreatedTokenResponse>, ApiErrorResponse> {
     require_service_account_admin(&token)?;
-    if request.scopes.is_empty() {
-        return Err(ApiErrorResponse::invalid_request(
-            "At least one scope is required",
-        ));
-    }
-
-    let granted_scopes = request
-        .scopes
-        .iter()
-        .map(|scope| {
-            TokenScope::parse(scope)
-                .map(|parsed| parsed.as_str().to_string())
-                .ok_or_else(|| ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
 
     let service_account = state
         .auth_service
@@ -292,8 +278,10 @@ async fn create_service_account_token_handler(
             "Inactive service accounts cannot issue tokens",
         ));
     }
-    if request
-        .scopes
+
+    let granted_scopes = parse_and_validate_requested_scopes(&request.scopes)?;
+
+    if granted_scopes
         .iter()
         .any(|scope| !service_account.scope_ceiling.contains(scope))
     {
@@ -467,6 +455,24 @@ fn resolve_service_account_token_ttl(
     Ok((raw_ttl as u64).clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS))
 }
 
+#[allow(clippy::result_large_err)]
+fn parse_and_validate_requested_scopes(scopes: &[String]) -> Result<Vec<String>, ApiErrorResponse> {
+    if scopes.is_empty() {
+        return Err(ApiErrorResponse::invalid_request(
+            "At least one scope is required",
+        ));
+    }
+
+    scopes
+        .iter()
+        .map(|scope| {
+            TokenScope::parse(scope)
+                .map(|parsed| parsed.as_str().to_string())
+                .ok_or_else(|| ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}")))
+        })
+        .collect::<Result<Vec<_>, _>>()
+}
+
 fn map_auth_error(error: crate::auth::AuthError) -> ApiErrorResponse {
     match error {
         crate::auth::AuthError::ServiceAccountNotFound(_)
@@ -483,6 +489,7 @@ fn map_auth_error(error: crate::auth::AuthError) -> ApiErrorResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::collections::HashMap;
 
     /// Internal constant for testing - mirrors the handler constant
@@ -664,5 +671,39 @@ mod tests {
         let err = resolve_service_account_token_ttl(&request).expect_err("must reject mismatch");
         assert_eq!(err.error, "invalid_request");
         assert!(err.message.contains("must match"));
+    }
+
+    #[test]
+    fn test_create_service_account_token_request_deserializes_without_scopes() {
+        let request: CreateServiceAccountTokenRequest =
+            serde_json::from_value(json!({"expires_in": 300}))
+                .expect("missing scopes should deserialize as empty");
+        assert!(request.scopes.is_empty());
+        assert_eq!(request.expires_in, Some(300));
+    }
+
+    #[test]
+    fn test_parse_and_validate_requested_scopes_rejects_empty() {
+        let err = parse_and_validate_requested_scopes(&[]).expect_err("must reject empty scopes");
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("At least one scope"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_requested_scopes_rejects_invalid_scope() {
+        let err = parse_and_validate_requested_scopes(&[String::from("bad:scope")])
+            .expect_err("must reject invalid scope");
+        assert_eq!(err.error, "invalid_request");
+        assert!(err.message.contains("Invalid scope"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_requested_scopes_accepts_valid_scopes() {
+        let scopes = parse_and_validate_requested_scopes(&[
+            String::from("credential:read"),
+            String::from("credential:write"),
+        ])
+        .expect("valid scopes should pass");
+        assert_eq!(scopes, vec!["credential:read", "credential:write"]);
     }
 }
