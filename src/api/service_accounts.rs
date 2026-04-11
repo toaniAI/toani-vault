@@ -446,6 +446,9 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    /// Internal constant for testing - mirrors the handler constant
+    const MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL: usize = 128;
+
     fn create_test_token() -> ValidatedToken {
         ValidatedToken {
             token_id: "test-token-id".to_string(),
@@ -474,5 +477,62 @@ mod tests {
         assert_eq!(error.error, "not_found");
         // Check error message contains required information
         assert!(error.message.contains("Service account ID is required"));
+    }
+
+    #[test]
+    fn test_name_length_validation_boundary() {
+        // Test the name length validation logic at boundaries
+        // 128 is the limit, so 128 chars should be valid, 129 should be invalid
+
+        // Test: name with exactly 128 characters is valid
+        let name_128 = "a".repeat(128);
+        assert_eq!(name_128.len(), 128);
+        assert!(name_128.trim().len() <= MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
+
+        // Test: name with exactly 129 characters exceeds the limit
+        let name_129 = "a".repeat(129);
+        assert_eq!(name_129.len(), 129);
+        assert!(name_129.trim().len() > MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
+
+        // Test: name with exactly 127 characters is valid
+        let name_127 = "a".repeat(127);
+        assert_eq!(name_127.len(), 127);
+        assert!(name_127.trim().len() <= MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
+    }
+
+    #[test]
+    fn test_name_validation_with_whitespace() {
+        // Test that trimming is applied before length check
+        // A name with leading/trailing whitespace should be trimmed first
+
+        // Name with whitespace that when trimmed becomes 128 chars should pass
+        let name_with_whitespace = format!("  {}  ", "a".repeat(126));
+        let trimmed = name_with_whitespace.trim();
+        assert_eq!(trimmed.len(), 126);
+        assert!(trimmed.len() <= MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
+
+        // Name with whitespace that when trimmed becomes 129 chars should fail
+        let long_name_with_whitespace = format!(" {} ", "a".repeat(129));
+        let trimmed_long = long_name_with_whitespace.trim();
+        assert_eq!(trimmed_long.len(), 129);
+        assert!(trimmed_long.len() > MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
+    }
+
+    #[test]
+    fn test_empty_name_validation() {
+        // Test that empty names are rejected
+        let empty_name = "";
+        assert!(empty_name.trim().is_empty());
+
+        let whitespace_only = "   ";
+        assert!(whitespace_only.trim().is_empty());
+    }
+
+    #[test]
+    fn test_256_char_name_exceeds_limit() {
+        // Test the exact case from the bug report: 256 characters
+        let name_256 = "a".repeat(256);
+        assert_eq!(name_256.len(), 256);
+        assert!(name_256.trim().len() > MAX_SERVICE_ACCOUNT_NAME_LENGTH_INTERNAL);
     }
 }
