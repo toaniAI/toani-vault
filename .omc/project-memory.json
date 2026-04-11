@@ -504,14 +504,14 @@
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 60,
-      "lastAccessed": 1775876779899,
+      "accessCount": 63,
+      "lastAccessed": 1775877558123,
       "type": "file"
     },
     {
       "path": "src/main.rs",
-      "accessCount": 43,
-      "lastAccessed": 1775875268084,
+      "accessCount": 44,
+      "lastAccessed": 1775877412589,
       "type": "file"
     },
     {
@@ -522,20 +522,26 @@
     },
     {
       "path": "src",
-      "accessCount": 21,
-      "lastAccessed": 1775873641652,
+      "accessCount": 23,
+      "lastAccessed": 1775877416804,
       "type": "directory"
     },
     {
       "path": "",
-      "accessCount": 19,
-      "lastAccessed": 1775875307060,
+      "accessCount": 21,
+      "lastAccessed": 1775877379793,
       "type": "directory"
     },
     {
       "path": "src/api",
       "accessCount": 19,
       "lastAccessed": 1775876678254,
+      "type": "directory"
+    },
+    {
+      "path": "frontend/src",
+      "accessCount": 16,
+      "lastAccessed": 1775877396271,
       "type": "directory"
     },
     {
@@ -555,12 +561,6 @@
       "accessCount": 12,
       "lastAccessed": 1775828507350,
       "type": "file"
-    },
-    {
-      "path": "frontend/src",
-      "accessCount": 11,
-      "lastAccessed": 1775839203797,
-      "type": "directory"
     },
     {
       "path": "frontend/src/app/router-components.tsx",
@@ -623,21 +623,27 @@
       "type": "file"
     },
     {
+      "path": "frontend/src/shared/auth/logout.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775877361967,
+      "type": "file"
+    },
+    {
       "path": "frontend/src/shared/stores/authStore.ts",
       "accessCount": 3,
       "lastAccessed": 1775828275167,
       "type": "file"
     },
     {
-      "path": "frontend/src/shared/auth/logout.ts",
-      "accessCount": 3,
-      "lastAccessed": 1775828275220,
-      "type": "file"
-    },
-    {
       "path": "frontend/src/shared/auth/sessionTokens.ts",
       "accessCount": 3,
       "lastAccessed": 1775828296101,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/app/PrivyAuthProvider.tsx",
+      "accessCount": 3,
+      "lastAccessed": 1775877388452,
       "type": "file"
     },
     {
@@ -674,12 +680,6 @@
       "path": "frontend/src/app/router.tsx",
       "accessCount": 2,
       "lastAccessed": 1775828308186,
-      "type": "file"
-    },
-    {
-      "path": "frontend/src/app/PrivyAuthProvider.tsx",
-      "accessCount": 2,
-      "lastAccessed": 1775828324394,
       "type": "file"
     },
     {

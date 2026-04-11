@@ -70,6 +70,28 @@ RUN set -eu; \
     rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware
 
+FROM ubuntu:22.04 AS nsjail-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    bison \
+    flex \
+    g++ \
+    git \
+    libnl-route-3-dev \
+    libprotobuf-dev \
+    make \
+    pkg-config \
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/google/nsjail.git /tmp/nsjail \
+    && cd /tmp/nsjail \
+    && git submodule update --init \
+    && make -j"$(nproc)" \
+    && strip nsjail
+
 FROM ubuntu:22.04
 
 WORKDIR /app
@@ -83,6 +105,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     libssl3 \
     libc-bin \
+    libnl-route-3-200 \
+    libprotobuf23 \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
@@ -107,6 +131,7 @@ COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
 COPY --from=builder /app/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so /app/libcredbridge_sgx_urts_bridge.so
 COPY --from=builder /app/migrations /app/migrations
+COPY --from=nsjail-builder /tmp/nsjail/nsjail /usr/local/bin/nsjail
 COPY docker/scripts/healthcheck.sh /app/healthcheck.sh
 COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 
@@ -114,9 +139,10 @@ RUN mkdir -p /app/data/sealed /app/config \
     && useradd -m -u 1000 appuser \
     && cp /etc/sgx_default_qcnl.conf /app/config/sgx_default_qcnl.conf \
     && ln -sf /app/config/sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf \
+    && chmod +x /usr/local/bin/nsjail \
+    && ln -sf /usr/local/bin/nsjail /usr/bin/nsjail \
     && chmod +x /app/healthcheck.sh /app/runtime-preflight.sh \
     && chown -R appuser:appuser /app
-USER appuser
 
 EXPOSE 8080
 
