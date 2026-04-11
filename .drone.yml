@@ -133,6 +133,12 @@ steps:
 kind: pipeline
 type: docker
 name: backend-build-deploy
+environment:
+  DOCKER_BUILDKIT: "1"
+  DOCKER_HOST: tcp://docker:2375
+  SGX_RUNTIME_BASE_REPO: hub.bitkinetic.com/zkme/credbridge-runtime-sandbox
+  SGX_RUNTIME_BASE_TAG: jammy-sgx2.28.100.1-nsjail3.6
+  APP_IMAGE_REPO: hub.bitkinetic.com/zkme/credbridge
 trigger:
   ref:
     - refs/heads/branch_dev
@@ -143,6 +149,14 @@ trigger:
     exclude:
       - frontend/**
 
+services:
+  - name: docker
+    image: docker:27-dind
+    privileged: true
+    command:
+      - --host=tcp://0.0.0.0:2375
+      - --tls=false
+
 steps:
   - name: verify-nsjail-archive
     image: alpine:3.21
@@ -150,27 +164,73 @@ steps:
     commands:
       - test -f nsjail-3.6.tar.gz
 
-  - name: docker-build
-    image: plugins/docker
+  - name: ensure-runtime-base-image
+    image: docker:27-cli
     pull: if-not-exists
     depends_on:
       - verify-nsjail-archive
     environment:
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+    commands:
+      - |
+        sh -eu -c '
+          runtime_base_image="${SGX_RUNTIME_BASE_REPO}:${SGX_RUNTIME_BASE_TAG}"
+
+          until docker info >/dev/null 2>&1; do
+            sleep 1
+          done
+
+          echo "$REPO_PWD" | docker login hub.bitkinetic.com -u "$REPO_USER" --password-stdin
+
+          if docker manifest inspect "$runtime_base_image" >/dev/null 2>&1; then
+            echo "runtime base image already exists: $runtime_base_image"
+            exit 0
+          fi
+
+          docker build \
+            -f docker/base/runtime.Dockerfile \
+            -t "$runtime_base_image" \
+            .
+
+          docker push "$runtime_base_image"
+        '
+
+  - name: docker-build
+    image: docker:27-cli
+    pull: if-not-exists
+    depends_on:
+      - ensure-runtime-base-image
+    environment:
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
       SGX_SIGNING_KEY:
         from_secret: sgx-signing-key
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/zkme/credbridge
-      tags: alpha-${DRONE_BUILD_NUMBER}
-      purge: true
-      username:
-        from_secret: docker-hub-username
-      password:
-        from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
-      build_args_from_env:
-        - SGX_SIGNING_KEY
+    commands:
+      - |
+        sh -eu -c '
+          runtime_base_image="${SGX_RUNTIME_BASE_REPO}:${SGX_RUNTIME_BASE_TAG}"
+          app_image="${APP_IMAGE_REPO}:alpha-${DRONE_BUILD_NUMBER}"
+
+          until docker info >/dev/null 2>&1; do
+            sleep 1
+          done
+
+          echo "$REPO_PWD" | docker login hub.bitkinetic.com -u "$REPO_USER" --password-stdin
+
+          docker build \
+            --build-arg SGX_SIGNING_KEY="$SGX_SIGNING_KEY" \
+            --build-arg RUNTIME_BASE_IMAGE="$runtime_base_image" \
+            -f Dockerfile \
+            -t "$app_image" \
+            .
+
+          docker push "$app_image"
+        '
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6

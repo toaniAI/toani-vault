@@ -70,74 +70,19 @@ RUN set -eu; \
     rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware
 
-FROM ubuntu:22.04 AS nsjail-builder
+ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6
 
-ARG NSJAIL_ARCHIVE=nsjail-3.6.tar.gz
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    autoconf \
-    automake \
-    bison \
-    ca-certificates \
-    flex \
-    g++ \
-    libnl-route-3-dev \
-    libprotobuf-dev \
-    make \
-    pkg-config \
-    protobuf-compiler \
-    tar \
-    && update-ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY ${NSJAIL_ARCHIVE} /tmp/nsjail.tar.gz
-
-RUN mkdir -p /tmp/nsjail-src \
-    && tar -xzf /tmp/nsjail.tar.gz -C /tmp/nsjail-src --strip-components=1 \
-    && cd /tmp/nsjail-src \
-    && make -j"$(nproc)" \
-    && strip nsjail
-
-FROM ubuntu:22.04
+FROM ${RUNTIME_BASE_IMAGE}
 
 WORKDIR /app
 
 ENV SEALED_STORAGE_PATH=/app/data/sealed
 ENV SGX_AESM_SOCKET_PATH=/var/run/aesmd/aesm.socket
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    gnupg \
-    libssl3 \
-    libc-bin \
-    libnl-route-3-200 \
-    libprotobuf23 \
-    procps \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    mkdir -p /usr/share/keyrings /etc/apt/sources.list.d; \
-    curl -fsSL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key \
-      | gpg --dearmor -o /usr/share/keyrings/intel-sgx-keyring.gpg; \
-    echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-keyring.gpg] https://download.01.org/intel-sgx/sgx_repo/ubuntu jammy main' \
-      > /etc/apt/sources.list.d/intel-sgx.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-      libsgx-enclave-common \
-      libsgx-urts \
-      libsgx-dcap-ql \
-      libsgx-dcap-quote-verify \
-      libsgx-quote-ex \
-      libsgx-dcap-default-qpl \
-      sgx-aesm-service; \
-    rm -rf /var/lib/apt/lists/*
-
 COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
 COPY --from=builder /app/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so /app/libcredbridge_sgx_urts_bridge.so
 COPY --from=builder /app/migrations /app/migrations
-COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail
 COPY docker/scripts/healthcheck.sh /app/healthcheck.sh
 COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 
@@ -145,8 +90,6 @@ RUN mkdir -p /app/data/sealed /app/config \
     && useradd -m -u 1000 appuser \
     && cp /etc/sgx_default_qcnl.conf /app/config/sgx_default_qcnl.conf \
     && ln -sf /app/config/sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf \
-    && chmod +x /usr/local/bin/nsjail \
-    && ln -sf /usr/local/bin/nsjail /usr/bin/nsjail \
     && chmod +x /app/healthcheck.sh /app/runtime-preflight.sh \
     && chown -R appuser:appuser /app
 

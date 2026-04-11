@@ -617,7 +617,7 @@ fn normalize_ttl(expires_in: Option<u64>) -> u64 {
 #[allow(clippy::result_large_err)]
 pub(crate) fn parse_uuid_str(value: &str, field: &str) -> Result<Uuid, ApiErrorResponse> {
     Uuid::parse_str(value)
-        .map_err(|_| ApiErrorResponse::internal_error(format!("Invalid UUID in {field}")))
+        .map_err(|_| ApiErrorResponse::not_found(format!("Invalid {field}: resource not found")))
 }
 
 #[allow(clippy::result_large_err)]
