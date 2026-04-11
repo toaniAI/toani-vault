@@ -628,6 +628,48 @@ async fn test_get_nonexistent_credential_returns_404() {
     assert_eq!(body_json["message"], "凭证不存在");
 }
 
+/// 测试删除不存在的凭证应返回 404 而非 200
+/// 复现 BUG-18174: 删除凭证-不存在ID返回404，预期返回200实际应返回404
+#[tokio::test]
+async fn test_delete_nonexistent_credential_returns_404() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let app = test_router(state, token);
+
+    // 对不存在的凭证 ID 发起删除请求
+    let request = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/credentials/00000000-0000-0000-0000-000000000001")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // 预期返回 404 Not Found，而非 200 OK
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "BUG-18174: 删除不存在的凭证应返回 404，实际返回 {:?}",
+        response.status()
+    );
+
+    // 验证错误响应体
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(
+        body_json["error"], "not_found",
+        "BUG-18174: 响应体应包含 error=not_found"
+    );
+    assert_eq!(
+        body_json["message"], "凭证不存在",
+        "BUG-18174: 响应体 message 应为 '凭证不存在'"
+    );
+}
+
 /// 测试解密过期凭证应返回 422 而非 500
 /// 复现 BUG-18105: 解密凭证，凭证已过期应该返回422，实际返回500
 #[tokio::test]

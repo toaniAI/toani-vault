@@ -39,7 +39,7 @@
 ```
 
 **失败状态**:
-- `500 Internal Server Error`: DCAP/内部序列化失败
+- `500 Internal Server Error`: DCAP 锁获取失败或内部序列化失败
 - `503 Service Unavailable`: 当前没有可用 quote
 
 ## 验证 Quote
@@ -79,6 +79,7 @@
 
 **失败状态**:
 - `400 Bad Request`: `quote_b64` 不是合法 base64
+- `500 Internal Server Error`: DCAP 锁获取失败
 
 ## 获取认证报告
 
@@ -146,8 +147,8 @@
 注意：这里返回的 `nonce` 是 hex 字符串。
 
 **失败状态**:
-- `503 Service Unavailable`: enclave 未运行或 challenge store 不可用
-- `500 Internal Server Error`: 其他内部错误
+- `503 Service Unavailable`: enclave 未运行或 quote 生成失败
+- `500 Internal Server Error`: challenge 创建持久化失败、DCAP 锁失败或其他内部错误
 
 ## 验证挑战响应
 
@@ -192,6 +193,7 @@
 
 **失败状态**:
 - `400 Bad Request`: `quote_b64` 不是合法 base64
+- `500 Internal Server Error`: challenge store 读取失败或 DCAP 锁获取失败
 
 ## 获取认证状态
 

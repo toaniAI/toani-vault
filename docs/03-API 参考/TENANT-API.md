@@ -4,10 +4,13 @@
 
 ## 重要说明
 
-当前 tenant 模块的 handler 层并没有统一执行 `tenant:*` 或 `admin` scope 校验。
+当前 tenant 路由整体挂在受保护路由组下，因此所有 `/api/v1/tenants*` 请求都需要先通过路由级认证中间件。
 
-- `POST /api/v1/tenants` 需要 `Extension<ValidatedToken>`，因为实现要从当前 token 里读取 `user_id`
-- 其余租户 handler 当前代码里普遍没有直接读取 token 或执行 scope 校验
+同时，tenant 模块的 handler 层并没有统一执行 `tenant:*` 或 `admin` scope 校验。当前真实情况是：
+
+- 所有 `/api/v1/tenants*` 端点都要求已认证请求
+- `POST /api/v1/tenants` 还会显式读取 `Extension<ValidatedToken>` 中的 `user_id`
+- 其余 tenant handler 大多没有再做 handler 级 scope 校验
 
 这不是推荐的安全模型，而是当前代码行为。文档按实现记录，不按理想设计记录。
 
@@ -136,7 +139,8 @@
 **Endpoint**: `GET /api/v1/tenants`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 
 **成功响应 (200 OK)**:
 
@@ -168,7 +172,8 @@
 **Endpoint**: `GET /api/v1/tenants/:id`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 
 **成功响应 (200 OK)**:
 
@@ -199,7 +204,8 @@
 **Endpoint**: `GET /api/v1/tenants/:id/config`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 
 **成功响应 (200 OK)**:
 
@@ -261,7 +267,8 @@
 **Endpoint**: `PUT /api/v1/tenants/:id/config`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 - 支持部分更新
 - 更新时 `updated_by` 由 handler 固定写为 `api_user`
 
@@ -297,7 +304,8 @@
 **Endpoint**: `POST /api/v1/tenants/:id/activate`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 
 **成功响应 (200 OK)**:
 
@@ -321,7 +329,8 @@
 **Endpoint**: `POST /api/v1/tenants/:id/suspend`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 - 请求体可以是任意 JSON；handler 只会尝试读取可选的 `reason` 字符串
 
 **请求体**:
@@ -356,7 +365,8 @@
 **Endpoint**: `DELETE /api/v1/tenants/:id`
 
 **当前实现要求**:
-- 当前 handler 未显式校验认证或 scope
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 
 **成功响应**:
 - `204 No Content`

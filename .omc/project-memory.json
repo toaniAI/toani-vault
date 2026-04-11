@@ -498,14 +498,14 @@
   "hotPaths": [
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 71,
-      "lastAccessed": 1775875232781,
+      "accessCount": 73,
+      "lastAccessed": 1775876216047,
       "type": "file"
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 56,
-      "lastAccessed": 1775875708574,
+      "accessCount": 60,
+      "lastAccessed": 1775876779899,
       "type": "file"
     },
     {
@@ -516,8 +516,8 @@
     },
     {
       "path": "tests/credentials_api_tests.rs",
-      "accessCount": 27,
-      "lastAccessed": 1775868846149,
+      "accessCount": 36,
+      "lastAccessed": 1775876662387,
       "type": "directory"
     },
     {
@@ -534,9 +534,21 @@
     },
     {
       "path": "src/api",
-      "accessCount": 17,
-      "lastAccessed": 1775874850508,
+      "accessCount": 19,
+      "lastAccessed": 1775876678254,
       "type": "directory"
+    },
+    {
+      "path": "src/vault",
+      "accessCount": 15,
+      "lastAccessed": 1775876694869,
+      "type": "directory"
+    },
+    {
+      "path": "src/vault/storage.rs",
+      "accessCount": 13,
+      "lastAccessed": 1775876703583,
+      "type": "file"
     },
     {
       "path": "frontend/src/shared/api/client.ts",
@@ -545,22 +557,10 @@
       "type": "file"
     },
     {
-      "path": "src/vault",
-      "accessCount": 12,
-      "lastAccessed": 1775875181598,
-      "type": "directory"
-    },
-    {
       "path": "frontend/src",
       "accessCount": 11,
       "lastAccessed": 1775839203797,
       "type": "directory"
-    },
-    {
-      "path": "src/vault/storage.rs",
-      "accessCount": 11,
-      "lastAccessed": 1775875291414,
-      "type": "file"
     },
     {
       "path": "frontend/src/app/router-components.tsx",
@@ -599,6 +599,12 @@
       "type": "file"
     },
     {
+      "path": "tests",
+      "accessCount": 6,
+      "lastAccessed": 1775876662332,
+      "type": "directory"
+    },
+    {
       "path": "zentao/18171.md",
       "accessCount": 5,
       "lastAccessed": 1775834450098,
@@ -633,12 +639,6 @@
       "accessCount": 3,
       "lastAccessed": 1775828296101,
       "type": "file"
-    },
-    {
-      "path": "tests",
-      "accessCount": 3,
-      "lastAccessed": 1775873852204,
-      "type": "directory"
     },
     {
       "path": "CLAUDE.md",

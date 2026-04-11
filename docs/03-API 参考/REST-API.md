@@ -13,6 +13,7 @@
 
 ## 目录
 
+- [API 根](#api-根)
 - [健康检查](#健康检查)
 - [认证与用户](#认证与用户)
 - [Token 管理](#token-管理)
@@ -24,6 +25,12 @@
 - [审计日志](#审计日志)
 - [Sandbox](#sandbox)
 - [专项文档](#专项文档)
+
+## API 根
+
+### `GET /api/v1/`
+
+返回 API 根说明与可发现性信息。
 
 ## 健康检查
 
@@ -141,7 +148,9 @@
 
 **认证**:
 - 需要用户 token
+- 需要 active membership
 - 需要 `tokens:write` 或 `admin`
+- 请求 `scopes` 必须是当前 token scopes 的子集
 
 **请求体**:
 
@@ -480,7 +489,9 @@
 
 **认证**:
 - 需要用户 token
+- 需要 active membership
 - 需要 `tokens:write` 或 `admin`
+- 请求 `scopes` 必须是当前 token scopes 的子集
 
 **请求体**:
 
@@ -512,13 +523,22 @@
 
 ### `GET /api/v1/tokens`
 
+**认证**:
+- 需要 `tokens:read`、`tenant:admin` 或 `admin`
+
 返回当前可见 token 元数据数组 `Vec<TokenMetadataResponse>`。
 
 ### `GET /api/v1/tokens/:token_id`
 
+**认证**:
+- 需要 `tokens:read`、`tenant:admin` 或 `admin`
+
 返回单个 `TokenMetadataResponse`。
 
 ### `POST /api/v1/tokens/verify`
+
+**认证**:
+- 需要 `tokens:read`、`tenant:admin` 或 `admin`
 
 **请求体**:
 
@@ -560,6 +580,11 @@
 
 ### `POST /api/v1/tokens/:token_id/revoke`
 
+**认证**:
+- 撤销自己的 token：不要求额外 `tokens:*` 权限
+- 撤销他人的 token：需要 `tokens:revoke`、`tenant:admin` 或 `admin`
+- session token 需要通过 `/api/v1/auth/logout` 撤销
+
 **响应**:
 
 ```json
@@ -582,7 +607,9 @@
 
 **认证**:
 - 需要用户 token
+- 需要 active membership
 - 需要 `tokens:write` 或 `admin`
+- 请求 `scopes` 必须同时是当前 membership scopes 和当前 token scopes 的子集
 
 **请求体**:
 
@@ -601,11 +628,11 @@
 ```json
 {
   "token_value": "v4.local.xxx",
-  "token_preview": "cb_****",
+  "token_preview": "v4.local.xxx123456...",
   "token_id": "550e8400-e29b-41d4-a716-446655440000",
   "token_kind": "user_automation",
   "token_name": "Nightly Sync",
-  "token_prefix": "cb_xxxx",
+  "token_prefix": "v4.local.xxx123456",
   "token_type": "user_access_token",
   "subject_type": "user",
   "subject_id": "550e8400-e29b-41d4-a716-446655440001",
@@ -652,9 +679,17 @@
         "level": "info",
         "is_read": false,
         "created_at": "2026-04-11T10:00:00Z"
+      },
+      {
+        "id": "audit-tenant-id",
+        "title": "Audit Stream Active",
+        "message": "审计日志链路已同步，最近操作可在审计页面查看。",
+        "level": "success",
+        "is_read": true,
+        "created_at": "2026-04-11T09:50:00Z"
       }
     ],
-    "total": 1
+    "total": 2
   }
 }
 ```
@@ -1122,7 +1157,8 @@
 
 - 创建 session: 需要 `sandbox:write` 且同时需要 `credential:decrypt`
 - 读取 session/stats: `sandbox:read`
-- pause/resume/close/export/execute: `sandbox:write`
+- `execute` / `screenshot` / `export`: `sandbox:execute`
+- `pause` / `resume` / `close`: `sandbox:write`
 
 ### `POST /api/v1/sandbox/sessions`
 
@@ -1138,7 +1174,7 @@
 }
 ```
 
-`credential_id` 在当前请求模型中是可选字段。
+`credential_id` 在 Rust 请求模型里是 `Option<Uuid>`，但 handler 会在运行时校验缺失并报错，因此当前 API 契约应将其视为必填。
 
 **响应**: `ApiSuccessResponse<CreateSessionResponse>`，状态码 `201 Created`。
 
