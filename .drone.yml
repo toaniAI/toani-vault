@@ -69,8 +69,10 @@ trigger:
   ref:
     - refs/heads/branch_dev
     - refs/heads/branch_test
+    - refs/tags/*
   event:
     - push
+    - tag
   paths:
     exclude:
       - frontend/**
@@ -90,6 +92,10 @@ steps:
         from_secret: docker-hub-password
       context: ./
       dockerfile: Dockerfile
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6
@@ -134,6 +140,24 @@ steps:
     when:
       ref:
         - refs/heads/branch_test
+
+  - name: docker-build-pd
+    image: plugins/docker
+    pull: if-not-exists
+    settings:
+      registry: hub.bitkinetic.com
+      repo: hub.bitkinetic.com/zkme/credbridge
+      tags: ${DRONE_TAG}
+      purge: true
+      username:
+        from_secret: docker-hub-username
+      password:
+        from_secret: docker-hub-password
+      context: ./
+      dockerfile: Dockerfile
+    when:
+      ref:
+        - refs/tags/*
 
 ---
 kind: secret
