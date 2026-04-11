@@ -164,14 +164,26 @@ steps:
       - apk add --no-cache curl >/dev/null
       - export MANIFEST_URL="https://hub.bitkinetic.com/v2/zkme/credbridge-runtime-sandbox/manifests/jammy-sgx2.28.100.1-nsjail3.6"
       - |
-        if curl -fsSI \
+        HTTP_CODE="$(curl -sS -L \
           -u "$REPO_USER:$REPO_PWD" \
           -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-          "$MANIFEST_URL" >/dev/null 2>&1; then
-          echo present > .runtime-base-image.status
-        else
-          echo missing > .runtime-base-image.status
-        fi
+          -o /dev/null \
+          -w '%{http_code}' \
+          "$MANIFEST_URL")"
+        case "$HTTP_CODE" in
+          200)
+            echo present > .runtime-base-image.status
+            echo "runtime base image already exists"
+            ;;
+          404)
+            echo missing > .runtime-base-image.status
+            echo "runtime base image not found"
+            ;;
+          *)
+            echo "runtime base image check failed with HTTP $HTTP_CODE" >&2
+            exit 1
+            ;;
+        esac
 
   - name: build-runtime-base-image
     image: gcr.io/kaniko-project/executor:debug

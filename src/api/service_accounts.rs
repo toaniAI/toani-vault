@@ -101,6 +101,12 @@ async fn create_service_account_handler(
             "Service account name is required",
         ));
     }
+    const MAX_SERVICE_ACCOUNT_NAME_LENGTH: usize = 128;
+    if request.name.trim().len() > MAX_SERVICE_ACCOUNT_NAME_LENGTH {
+        return Err(ApiErrorResponse::invalid_request(
+            "Service account name must be 128 characters or less",
+        ));
+    }
 
     let service_account = ServiceAccount::new(
         parse_uuid_str(&token.tenant_id, "tenant_id")?,
@@ -208,6 +214,12 @@ async fn update_service_account_handler(
         if name.trim().is_empty() {
             return Err(ApiErrorResponse::invalid_request(
                 "Service account name cannot be empty",
+            ));
+        }
+        const MAX_SERVICE_ACCOUNT_NAME_LENGTH: usize = 128;
+        if name.trim().len() > MAX_SERVICE_ACCOUNT_NAME_LENGTH {
+            return Err(ApiErrorResponse::invalid_request(
+                "Service account name must be 128 characters or less",
             ));
         }
         item.name = name.trim().to_string();
