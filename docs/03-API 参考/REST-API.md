@@ -6,7 +6,7 @@
 
 - 基础业务路径为 `/api/v1`
 - 不同模块的响应包装并不统一
-- 认证、Token、Service Account、部分用户管理与部分 Sandbox 接口使用 `ApiSuccessResponse<T>`
+- 认证中的部分接口、Service Account、部分用户管理与部分 Sandbox 接口使用 `ApiSuccessResponse<T>`
 - 凭证、版本、部分 auth 接口返回直接业务对象
 - 审计、租户、attestation 使用各自的自定义响应结构
 - 如果文档与代码冲突，以源码结构体和测试为准
