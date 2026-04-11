@@ -525,6 +525,10 @@ async fn get_token_handler(
         ));
     }
 
+    let token_id = Uuid::parse_str(&token_id)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid token_id format"))?
+        .to_string();
+
     let subject_id = parse_uuid_str(&token.user_id, "user_id")?;
     let is_tenant_admin = token.has_any_scope(&[TokenScope::Admin, TokenScope::TenantAdmin]);
     let item = state
@@ -1084,5 +1088,38 @@ mod tests {
         let err = result.unwrap_err();
         // session token 撤销自己应返回 400
         assert_eq!(err.error, "invalid_request");
+    }
+
+    #[tokio::test]
+    async fn get_token_invalid_uuid_returns_400_invalid_request() {
+        let result = get_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![TokenScope::TokensRead])),
+            Path("not-a-valid-uuid".to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "invalid_request");
+        assert_eq!(err.message, "Invalid token_id format");
+    }
+
+    #[tokio::test]
+    async fn get_token_valid_uuid_not_found_returns_404() {
+        let result = get_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensRead,
+                TokenScope::TenantAdmin,
+            ])),
+            Path(Uuid::new_v4().to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "not_found");
+        assert_eq!(err.message, "Token metadata not found");
     }
 }
