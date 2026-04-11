@@ -395,6 +395,7 @@ async fn create_service_account_token_handler(
         .await;
 
     Ok(ApiSuccessResponse::new(CreatedTokenResponse {
+        token: access_token.clone(),
         access_token,
         token_id,
         token_type: "Bearer".to_string(),

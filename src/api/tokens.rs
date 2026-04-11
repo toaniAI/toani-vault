@@ -36,6 +36,7 @@ pub struct CreateTokenRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct CreatedTokenResponse {
     pub access_token: String,
+    pub token: String,
     pub token_id: String,
     pub token_type: String,
     pub subject_type: String,
@@ -252,6 +253,7 @@ pub async fn issue_access_token_from_user_token(
         .await;
 
     Ok(CreatedTokenResponse {
+        token: access_token.clone(),
         access_token,
         token_id: claims.jti.clone(),
         token_type: "Bearer".to_string(),
@@ -817,10 +819,32 @@ mod tests {
         .0;
 
         assert!(response.access_token.starts_with("v4.local."));
+        assert_eq!(response.token, response.access_token);
         assert_eq!(response.scope, "credential:read audit:read");
         assert_eq!(response.expires_in, 3600);
         assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
         assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_ACCESS_TOKEN);
+    }
+
+    #[tokio::test]
+    async fn create_token_response_includes_token_alias_matching_access_token() {
+        let response = create_token_handler(
+            State(test_state()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(3600),
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert!(!response.token.is_empty());
+        assert_eq!(response.token, response.access_token);
     }
 
     #[tokio::test]
