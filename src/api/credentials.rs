@@ -1007,8 +1007,12 @@ pub async fn update_credential(
     State(state): State<AppState>,
     Extension(token): Extension<ValidatedToken>,
     Path(id): Path<String>,
-    Json(request): Json<UpdateCredentialApiRequest>,
+    payload: Result<Json<UpdateCredentialApiRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<UpdateCredentialApiResponse>, ApiError> {
+    // 处理 JSON 反序列化错误（如必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) =
+        payload.map_err(|e| ApiError::new("invalid_request", format!("请求体解析失败: {e}")))?;
+
     // 验证 Scope: credential:write
     require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 

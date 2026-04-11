@@ -5,11 +5,14 @@
 ## 目录
 
 - [健康检查 API](#健康检查-api)
-- [认证](#认证)
+- [认证 API](#认证-api)
 - [凭证管理 API](#凭证管理-api)
 - [Token API](#token-api)
+- [Service Account API](#service-account-api)
+- [租户管理 API](#租户管理-api)
 - [沙箱会话 API](#沙箱会话-api)
 - [审计日志 API](#审计日志-api)
+- [远程认证 API](#远程认证-api)
 - [错误处理](#错误处理)
 
 ---
@@ -132,26 +135,504 @@ TEE_MODE=simulation cargo run
 
 ---
 
-## 认证
+## 认证 API
 
-所有 API 请求必须在 `Authorization` 头中包含 Bearer Token：
+提供用户认证、会话管理、成员管理和邀请功能。
 
+- [创建会话](#创建会话)
+- [创建访问令牌](#创建访问令牌)
+- [获取当前用户信息](#获取当前用户信息)
+- [获取用户成员资格](#获取用户成员资格)
+- [注销会话](#注销会话)
+- [获取 MFA 状态](#获取-mfa-状态)
+- [同步 MFA 状态](#同步-mfa-状态)
+- [创建邀请](#创建邀请)
+- [获取邀请列表](#获取邀请列表)
+- [撤销邀请](#撤销邀请)
+- [消费邀请](#消费邀请)
+- [完成用户引导](#完成用户引导)
+- [列出成员](#列出成员)
+- [更新成员角色](#更新成员角色)
+- [移除成员](#移除成员)
+
+### 创建会话
+
+使用 Privy Token 创建会话，自动创建/更新用户和成员资格。
+
+**Endpoint**: `POST /api/v1/auth/session`
+
+**认证**: 需要 Privy Access Token
+
+**请求头**:
 ```http
-Authorization: Bearer <paseto_v4_local_token>
+Authorization: Bearer <privy_token>
+Content-Type: application/json
 ```
 
-### Token Scope 权限
+**请求体**:
 
-| Scope                | 权限说明                    |
-| -------------------- | --------------------------- |
-| `credential:read`    | 读取凭证元数据              |
-| `credential:decrypt` | 解密凭证获取明文            |
-| `credential:write`   | 创建/更新凭证               |
-| `sandbox:read`       | 读取沙箱会话信息            |
-| `sandbox:write`      | 创建/暂停/恢复/关闭沙箱会话 |
-| `sandbox:execute`    | 在沙箱中执行操作            |
-| `audit:read`         | 读取审计日志                |
-| `admin`              | 所有管理权限                |
+```json
+{
+  "invitation_token": "inv_xxx",
+  "onboarding_completed": false
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `invitation_token` | string | 否 | 邀请 Token（如果有） |
+| `onboarding_completed` | bool | 否 | 是否已完成引导 |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "access_token": "v4.local.xxx",
+  "token_type": "Bearer",
+  "expires_in": 7200,
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "user@example.com",
+    "wallet_address": "0x...",
+    "status": "active"
+  },
+  "tenant": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "My Tenant"
+  },
+  "membership": {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "role": "owner",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### 创建访问令牌
+
+从当前 User Bearer 创建 API Access Token。
+
+**Endpoint**: `POST /api/v1/auth/access-token`
+
+**Scope**: `tokens:write` 或 `admin`
+
+**请求体**:
+
+```json
+{
+  "scopes": ["credential:read", "credential:write"],
+  "expires_in": 900
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `scopes` | array | 是 | 请求的权限范围列表 |
+| `expires_in` | u64 | 否 | Token 有效期（秒），默认 900 |
+
+**响应 (201 Created)**:
+
+```json
+{
+  "access_token": "v4.local.xxx",
+  "token_id": "550e8400-e29b-41d4-a716-446655440000",
+  "token_type": "Bearer",
+  "subject_type": "user",
+  "issued_from": "access_token",
+  "display_name": null,
+  "expires_in": 900,
+  "scope": "credential:read credential:write",
+  "granted_scopes": ["credential:read", "credential:write"],
+  "issued_at": 1709990400,
+  "expires_at": 1709991300,
+  "revoked_at": null
+}
+```
+
+---
+
+### 获取当前用户信息
+
+获取当前登录用户的详细信息，包含租户上下文。
+
+**Endpoint**: `GET /api/v1/auth/me`
+
+**认证**: 需要 Bearer Token
+
+**响应 (200 OK)**:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "user@example.com",
+  "wallet_address": "0x...",
+  "name": "John Doe",
+  "avatar_url": "https://...",
+  "status": "active",
+  "mfa_status": "enabled",
+  "created_at": "2024-01-15T10:30:00Z",
+  "last_login_at": "2024-03-01T12:00:00Z",
+  "default_tenant_id": "550e8400-e29b-41d4-a716-446655440001"
+}
+```
+
+---
+
+### 获取用户成员资格
+
+获取当前用户在所有租户中的成员资格列表。
+
+**Endpoint**: `GET /api/v1/auth/memberships`
+
+**认证**: 需要 Bearer Token
+
+**响应 (200 OK)**:
+
+```json
+{
+  "memberships": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+      "tenant_name": "My Tenant",
+      "role": "owner",
+      "status": "active",
+      "joined_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 注销会话
+
+撤销当前会话，使 Token 失效。
+
+**Endpoint**: `POST /api/v1/auth/logout`
+
+**认证**: 需要 Bearer Token
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "message": "Logged out successfully"
+}
+```
+
+---
+
+### 获取 MFA 状态
+
+获取当前用户的 MFA（多因素认证）状态。
+
+**Endpoint**: `GET /api/v1/auth/mfa-status`
+
+**认证**: 需要 Bearer Token
+
+**响应 (200 OK)**:
+
+```json
+{
+  "enabled": true,
+  "methods": ["totp", "sms"],
+  "last_verified_at": "2024-03-01T12:00:00Z"
+}
+```
+
+---
+
+### 同步 MFA 状态
+
+从 Privy 同步 MFA 状态到本地。
+
+**Endpoint**: `POST /api/v1/auth/mfa-status/sync`
+
+**认证**: 需要 Privy Token
+
+**请求体**:
+
+```json
+{
+  "privy_token": "..."
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "mfa_status": "enabled",
+  "synced_at": "2024-03-01T12:00:00Z"
+}
+```
+
+---
+
+### 创建邀请
+
+创建租户成员邀请（邮箱/钱包/开放链接）。
+
+**Endpoint**: `POST /api/v1/invitations`
+
+**Scope**: `invitations:write` 或 `admin`
+
+**请求体**:
+
+```json
+{
+  "invitee_type": "email",
+  "invitee_value": "user@example.com",
+  "role": "member",
+  "expires_in_hours": 168
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `invitee_type` | string | 是 | 邀请类型：`email`/`wallet`/`open` |
+| `invitee_value` | string | 否 | 邮箱或钱包地址（open 类型可为空） |
+| `role` | string | 是 | 角色：`owner`/`admin`/`member`/`readonly` |
+| `expires_in_hours` | u32 | 否 | 有效期（小时），默认 168 |
+
+**响应 (201 Created)**:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "token_hash": "abc123...",
+  "invitee_type": "email",
+  "invitee_email": "user@example.com",
+  "role": "member",
+  "status": "pending",
+  "expires_at": "2024-03-08T12:00:00Z",
+  "created_at": "2024-03-01T12:00:00Z"
+}
+```
+
+---
+
+### 获取邀请列表
+
+获取当前租户的所有邀请。
+
+**Endpoint**: `GET /api/v1/invitations`
+
+**Scope**: `invitations:read` 或 `admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "invitations": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "invitee_type": "email",
+      "invitee_email": "user@example.com",
+      "role": "member",
+      "status": "pending",
+      "expires_at": "2024-03-08T12:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 撤销邀请
+
+撤销指定的邀请，使其失效。
+
+**Endpoint**: `POST /api/v1/invitations/:invitation_id/revoke`
+
+**Scope**: `invitations:write` 或 `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `invitation_id` | string | 邀请 ID |
+
+**请求体**:
+
+```json
+{
+  "reason": "不再需要访问"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `reason` | string | 否 | 撤销原因 |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "invitation_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "revoked",
+  "revoked_at": "2024-03-01T12:00:00Z"
+}
+```
+
+---
+
+### 消费邀请
+
+接受邀请并创建成员资格。
+
+**Endpoint**: `POST /api/v1/invitations/consume`
+
+**认证**: 需要 Privy Token
+
+**请求体**:
+
+```json
+{
+  "invitation_token": "inv_xxx",
+  "privy_token": "..."
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "membership": {
+    "id": "550e8400-e29b-41d4-a716-446655440002",
+    "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+    "role": "member",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### 完成用户引导
+
+标记用户引导流程已完成。
+
+**Endpoint**: `POST /api/v1/users/me/onboarding`
+
+**认证**: 需要 Bearer Token
+
+**请求体**:
+
+```json
+{
+  "steps_completed": ["profile", "mfa", "tenant_setup"]
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "onboarding_completed": true,
+  "completed_at": "2024-03-01T12:00:00Z"
+}
+```
+
+---
+
+### 列出成员
+
+获取当前租户的所有成员列表。
+
+**Endpoint**: `GET /api/v1/members`
+
+**Scope**: `members:read` 或 `admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "members": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "role": "owner",
+      "status": "active",
+      "joined_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 更新成员角色
+
+更新租户成员的角色。
+
+**Endpoint**: `PATCH /api/v1/members/:membership_id/role`
+
+**Scope**: `members:write` 或 `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `membership_id` | string | 成员资格 ID |
+
+**请求体**:
+
+```json
+{
+  "role": "admin"
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440002",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "role": "admin",
+  "status": "active",
+  "updated_at": "2024-03-01T12:00:00Z"
+}
+```
+
+---
+
+### 移除成员
+
+从租户中移除成员。
+
+**Endpoint**: `DELETE /api/v1/members/:membership_id`
+
+**Scope**: `members:write` 或 `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `membership_id` | string | 成员资格 ID |
+
+**响应 (204 No Content)**:
+
+无响应体
 
 ---
 
@@ -622,7 +1103,284 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ---
 
-## 沙箱会话 API
+## Service Account API
+
+Service Account 是独立的主体 (`subject_type=service_account`)，用于自动化和集成场景。
+
+- [创建 Service Account](#创建-service-account)
+- [列出 Service Accounts](#列出-service-accounts)
+- [获取 Service Account 详情](#获取-service-account-详情)
+- [更新 Service Account](#更新-service-account)
+- [创建 Service Account Token](#创建-service-account-token)
+- [列出 Service Account Tokens](#列出-service-account-tokens)
+
+### 创建 Service Account
+
+创建新的 Service Account。
+
+**Endpoint**: `POST /api/v1/service-accounts`
+
+**Scope**: `admin` 或 `tenant:admin`
+
+**请求体**:
+
+```json
+{
+  "name": "ci-cd-service",
+  "description": "CI/CD 部署服务账号",
+  "scope_ceiling": ["credential:read", "credential:write"]
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 是 | Service Account 名称 |
+| `description` | string | 否 | 描述 |
+| `scope_ceiling` | array | 否 | 允许的最大权限范围 |
+
+**响应 (201 Created)**:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+  "name": "ci-cd-service",
+  "description": "CI/CD 部署服务账号",
+  "role": "service_account",
+  "scope_ceiling": ["credential:read", "credential:write"],
+  "status": "active",
+  "created_by": "550e8400-e29b-41d4-a716-446655440002",
+  "created_at": "2024-03-01T12:00:00Z",
+  "updated_at": "2024-03-01T12:00:00Z",
+  "deleted_at": null
+}
+```
+
+---
+
+### 列出 Service Accounts
+
+获取当前租户的所有 Service Accounts。
+
+**Endpoint**: `GET /api/v1/service-accounts`
+
+**Scope**: `admin` 或 `tenant:admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+      "name": "ci-cd-service",
+      "description": "CI/CD 部署服务账号",
+      "role": "service_account",
+      "scope_ceiling": ["credential:read", "credential:write"],
+      "status": "active",
+      "created_by": "550e8400-e29b-41d4-a716-446655440002",
+      "created_at": "2024-03-01T12:00:00Z",
+      "updated_at": "2024-03-01T12:00:00Z",
+      "deleted_at": null
+    }
+  ]
+}
+```
+
+---
+
+### 获取 Service Account 详情
+
+获取指定 Service Account 的详细信息。
+
+**Endpoint**: `GET /api/v1/service-accounts/:id`
+
+**Scope**: `admin` 或 `tenant:admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | Service Account ID |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+  "name": "ci-cd-service",
+  "description": "CI/CD 部署服务账号",
+  "role": "service_account",
+  "scope_ceiling": ["credential:read", "credential:write"],
+  "status": "active",
+  "created_by": "550e8400-e29b-41d4-a716-446655440002",
+  "created_at": "2024-03-01T12:00:00Z",
+  "updated_at": "2024-03-01T12:00:00Z",
+  "deleted_at": null
+}
+```
+
+---
+
+### 更新 Service Account
+
+更新 Service Account 信息。
+
+**Endpoint**: `PATCH /api/v1/service-accounts/:id`
+
+**Scope**: `admin` 或 `tenant:admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | Service Account ID |
+
+**请求体**:
+
+```json
+{
+  "name": "updated-name",
+  "description": "Updated description",
+  "status": "inactive",
+  "scope_ceiling": ["credential:read"]
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 否 | 新名称 |
+| `description` | string | 否 | 新描述 |
+| `status` | string | 否 | 状态：`active`/`inactive` |
+| `scope_ceiling` | array | 否 | 新的权限范围上限 |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+  "name": "updated-name",
+  "description": "Updated description",
+  "role": "service_account",
+  "scope_ceiling": ["credential:read"],
+  "status": "inactive",
+  "created_by": "550e8400-e29b-41d4-a716-446655440002",
+  "created_at": "2024-03-01T12:00:00Z",
+  "updated_at": "2024-03-01T12:30:00Z",
+  "deleted_at": null
+}
+```
+
+---
+
+### 创建 Service Account Token
+
+为 Service Account 创建访问 Token。
+
+**Endpoint**: `POST /api/v1/service-accounts/:id/tokens`
+
+**Scope**: `admin` 或 `tenant:admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | Service Account ID |
+
+**请求体**:
+
+```json
+{
+  "scopes": ["credential:read"],
+  "ttl_seconds": 3600,
+  "display_name": "Production Token"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `scopes` | array | 是 | Token 权限范围（必须是 scope_ceiling 子集） |
+| `ttl_seconds` | u64 | 否 | Token 有效期（秒），默认 3600 |
+| `display_name` | string | 否 | Token 显示名称 |
+
+**响应 (201 Created)**:
+
+```json
+{
+  "access_token": "v4.local.xxx",
+  "token_id": "550e8400-e29b-41d4-a716-446655440003",
+  "token_type": "Bearer",
+  "subject_type": "service_account",
+  "issued_from": "service_account",
+  "display_name": "Production Token",
+  "expires_in": 3600,
+  "scope": "credential:read",
+  "granted_scopes": ["credential:read"],
+  "issued_at": 1709990400,
+  "expires_at": 1709994000,
+  "revoked_at": null
+}
+```
+
+---
+
+### 列出 Service Account Tokens
+
+获取 Service Account 的所有 Token 元数据列表。
+
+**Endpoint**: `GET /api/v1/service-accounts/:id/tokens`
+
+**Scope**: `admin` 或 `tenant:admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | Service Account ID |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "data": [
+    {
+      "token_id": "550e8400-e29b-41d4-a716-446655440003",
+      "token_kind": "service_account",
+      "token_name": null,
+      "token_prefix": null,
+      "token_type": "service_account_token",
+      "subject_type": "service_account",
+      "subject_id": "550e8400-e29b-41d4-a716-446655440000",
+      "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+      "issued_from": "service_account",
+      "session_id": null,
+      "membership_id": null,
+      "display_name": "Production Token",
+      "description": null,
+      "granted_scopes": ["credential:read"],
+      "issued_membership_role_snapshot": null,
+      "permission_source": null,
+      "created_via": null,
+      "revoked_reason": null,
+      "expires_at": "2024-03-01T13:00:00Z",
+      "revoked_at": null,
+      "created_at": "2024-03-01T12:00:00Z",
+      "last_used_at": null
+    }
+  ]
+}
+```
+
+---
 
 沙箱会话 API 提供 TEE 安全执行环境，用于安全地执行浏览器自动化操作。
 
@@ -954,7 +1712,429 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ---
 
-## 审计日志 API
+## 租户管理 API
+
+提供租户生命周期管理和配置管理功能。
+
+- [创建租户](#创建租户)
+- [列出租户](#列出租户)
+- [获取租户信息](#获取租户信息)
+- [删除租户](#删除租户)
+- [获取租户配置](#获取租户配置)
+- [更新租户配置](#更新租户配置)
+- [激活租户](#激活租户)
+- [暂停租户](#暂停租户)
+
+### 创建租户
+
+创建新的租户，当前用户自动成为所有者。
+
+**Endpoint**: `POST /api/v1/tenants`
+
+**Scope**: `admin`
+
+**请求体**:
+
+```json
+{
+  "name": "My Organization",
+  "description": "Production tenant",
+  "owner_user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "config": {
+    "feature_flags": {
+      "enable_credential_encryption": true,
+      "enable_audit_logging": true
+    },
+    "quota_limits": {
+      "max_credentials": 1000,
+      "max_tokens_per_user": 10
+    }
+  }
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 是 | 租户名称（唯一） |
+| `description` | string | 否 | 租户描述 |
+| `owner_user_id` | string | 否 | 所有者用户 ID（默认为当前用户） |
+| `config` | object | 否 | 初始配置 |
+
+**响应 (201 Created)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "My Organization",
+    "status": "active",
+    "tier": "pro",
+    "created_at": "2024-03-01T12:00:00Z",
+    "updated_at": "2024-03-01T12:00:00Z"
+  },
+  "initialization": [
+    {
+      "step": "schema_creation",
+      "success": true,
+      "error": null
+    },
+    {
+      "step": "config_initialization",
+      "success": true,
+      "error": null
+    }
+  ],
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### 列出租户
+
+获取所有租户列表（管理员）。
+
+**Endpoint**: `GET /api/v1/tenants`
+
+**Scope**: `admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "tenants": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440001",
+        "name": "My Organization",
+        "status": "active",
+        "tier": "pro",
+        "created_at": "2024-03-01T12:00:00Z",
+        "updated_at": "2024-03-01T12:00:00Z"
+      }
+    ],
+    "total": 1
+  },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### 获取租户信息
+
+获取指定租户的详细信息。
+
+**Endpoint**: `GET /api/v1/tenants/:id`
+
+**Scope**: `tenant:read` 或 `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 租户 ID |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "name": "My Organization",
+    "status": "active",
+    "tier": "pro",
+    "created_at": "2024-03-01T12:00:00Z",
+    "updated_at": "2024-03-01T12:00:00Z"
+  },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### 删除租户
+
+删除指定租户（软删除）。
+
+**Endpoint**: `DELETE /api/v1/tenants/:id`
+
+**Scope**: `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 租户 ID |
+
+**响应 (204 No Content)**:
+
+无响应体
+
+---
+
+### 获取租户配置
+
+获取租户的完整配置信息。
+
+**Endpoint**: `GET /api/v1/tenants/:id/config`
+
+**Scope**: `tenant:read` 或 `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 租户 ID |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+    "feature_flags": {
+      "enable_credential_encryption": true,
+      "enable_audit_logging": true,
+      "enable_token_revocation": true,
+      "enable_mfa": true,
+      "enable_remote_attestation": true,
+      "enable_auto_rotation": false,
+      "allow_cors": true,
+      "enable_ip_whitelist": false,
+      "enable_webhooks": false,
+      "enable_sso": false,
+      "enable_custom_crypto": false,
+      "enable_advanced_audit": false
+    },
+    "quota_limits": {
+      "max_credentials": 1000,
+      "max_tokens_per_user": 10,
+      "max_requests_per_minute": 1000,
+      "max_users": 100,
+      "max_connectors": 10,
+      "max_webhooks": 5,
+      "storage_quota_mb": 1024,
+      "audit_retention_days": 90,
+      "max_token_ttl_seconds": 86400,
+      "max_batch_size": 100
+    },
+    "settings": {
+      "token_ttl_seconds": 7200,
+      "session_timeout_seconds": 3600,
+      "max_login_attempts": 5,
+      "lockout_duration_seconds": 900,
+      "password_min_length": 12,
+      "require_password_complexity": true,
+      "require_mfa": false,
+      "timezone": "UTC",
+      "language": "zh-CN"
+    },
+    "version": 1,
+    "updated_at": "2024-03-01T12:00:00Z",
+    "updated_by": "admin"
+  },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### 更新租户配置
+
+更新租户的配置信息（部分更新）。
+
+**Endpoint**: `PUT /api/v1/tenants/:id/config`
+
+**Scope**: `tenant:write` 或 `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 租户 ID |
+
+**请求体**:
+
+```json
+{
+  "feature_flags": {
+    "enable_mfa": true,
+    "enable_webhooks": true
+  },
+  "quota_limits": {
+    "max_credentials": 2000,
+    "max_users": 200
+  },
+  "settings": {
+    "require_mfa": true,
+    "timezone": "Asia/Shanghai"
+  }
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `feature_flags` | object | 否 | 功能开关更新 |
+| `quota_limits` | object | 否 | 配额限制更新 |
+| `settings` | object | 否 | 设置更新 |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "tenant_id": "550e8400-e29b-41d4-a716-446655440001",
+    "feature_flags": {
+      "enable_credential_encryption": true,
+      "enable_audit_logging": true,
+      "enable_token_revocation": true,
+      "enable_mfa": true,
+      "enable_remote_attestation": true,
+      "enable_auto_rotation": false,
+      "allow_cors": true,
+      "enable_ip_whitelist": false,
+      "enable_webhooks": true,
+      "enable_sso": false,
+      "enable_custom_crypto": false,
+      "enable_advanced_audit": false
+    },
+    "quota_limits": {
+      "max_credentials": 2000,
+      "max_tokens_per_user": 10,
+      "max_requests_per_minute": 1000,
+      "max_users": 200,
+      "max_connectors": 10,
+      "max_webhooks": 5,
+      "storage_quota_mb": 1024,
+      "audit_retention_days": 90,
+      "max_token_ttl_seconds": 86400,
+      "max_batch_size": 100
+    },
+    "settings": {
+      "token_ttl_seconds": 7200,
+      "session_timeout_seconds": 3600,
+      "max_login_attempts": 5,
+      "lockout_duration_seconds": 900,
+      "password_min_length": 12,
+      "require_password_complexity": true,
+      "require_mfa": true,
+      "timezone": "Asia/Shanghai",
+      "language": "zh-CN"
+    },
+    "version": 2,
+    "updated_at": "2024-03-01T12:30:00Z",
+    "updated_by": "api_user"
+  },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:30:00Z"
+  }
+}
+```
+
+---
+
+### 激活租户
+
+激活已暂停的租户。
+
+**Endpoint**: `POST /api/v1/tenants/:id/activate`
+
+**Scope**: `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 租户 ID |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "status": "active",
+    "activated_at": "2024-03-01T12:00:00Z"
+  },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### 暂停租户
+
+暂停租户（禁止访问）。
+
+**Endpoint**: `POST /api/v1/tenants/:id/suspend`
+
+**Scope**: `admin`
+
+**路径参数**:
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 租户 ID |
+
+**请求体**:
+
+```json
+{
+  "reason": "Security investigation"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `reason` | string | 否 | 暂停原因 |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "status": "suspended",
+    "suspended_at": "2024-03-01T12:00:00Z"
+  },
+  "meta": {
+    "request_id": "550e8400-e29b-41d4-a716-446655440002",
+    "timestamp": "2024-03-01T12:00:00Z"
+  }
+}
+```
+
+---
 
 - [查询审计日志](#查询审计日志)
 - [获取审计日志详情](#获取审计日志详情)
@@ -1276,7 +2456,298 @@ id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrencl
 
 ---
 
-## 错误处理
+## 远程认证 API
+
+提供 TEE（可信执行环境）远程认证功能，用于验证运行环境的真实性和完整性。
+
+- [获取当前 Quote](#获取当前-quote)
+- [验证 Quote](#验证-quote)
+- [获取认证报告](#获取认证报告)
+- [创建认证挑战](#创建认证挑战)
+- [验证挑战响应](#验证挑战响应)
+- [获取认证状态](#获取认证状态)
+- [刷新 Quote](#刷新-quote)
+- [认证健康检查](#认证健康检查)
+
+### 获取当前 Quote
+
+获取当前运行环境的 SGX Quote。
+
+**Endpoint**: `GET /api/v1/attestation/quote`
+
+**Scope**: `admin` 或 `audit:read`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "quote": "base64_encoded_quote_data",
+  "quote_version": 3,
+  "tee_type": "SGX",
+  "timestamp": 1709990400
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `quote` | string | Base64 编码的 Quote 数据 |
+| `quote_version` | u32 | Quote 版本 |
+| `tee_type` | string | TEE 类型（SGX/TDX） |
+| `timestamp` | u64 | 生成时间戳 |
+
+---
+
+### 验证 Quote
+
+验证指定的 Quote 是否有效。
+
+**Endpoint**: `POST /api/v1/attestation/verify`
+
+**Scope**: `admin`
+
+**请求体**:
+
+```json
+{
+  "quote": "base64_encoded_quote_data",
+  "nonce": "random_nonce_value"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `quote` | string | 是 | Base64 编码的 Quote 数据 |
+| `nonce` | string | 否 | 随机数，防止重放攻击 |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "valid": true,
+  "verification_result": {
+    "signature_valid": true,
+    "mrenclave": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "mrsigner": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "report_data": "...",
+    "tcb_level": "upToDate",
+    "advisory_ids": []
+  }
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `valid` | bool | Quote 是否有效 |
+| `verification_result.signature_valid` | bool | 签名验证结果 |
+| `verification_result.mrenclave` | string | MRENCLAVE 测量值 |
+| `verification_result.mrsigner` | string | MRSIGNER 值 |
+| `verification_result.tcb_level` | string | TCB 级别 |
+| `verification_result.advisory_ids` | array | 安全公告 ID 列表 |
+
+---
+
+### 获取认证报告
+
+获取完整的认证报告，包含验证证明。
+
+**Endpoint**: `GET /api/v1/attestation/report`
+
+**Scope**: `admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "report_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": 1709990400,
+  "tee_info": {
+    "tee_type": "SGX",
+    "mrenclave": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "mrsigner": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "isv_prod_id": 1,
+    "isv_svn": 1
+  },
+  "verification": {
+    "status": "verified",
+    "verified_at": 1709990400,
+    "verifier": "Intel DCAP"
+  }
+}
+```
+
+---
+
+### 创建认证挑战
+
+创建新的认证挑战（挑战-响应协议）。
+
+**Endpoint**: `POST /api/v1/attestation/challenge`
+
+**Scope**: `admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "challenge_id": "550e8400-e29b-41d4-a716-446655440001",
+  "nonce": "random_32_byte_nonce_base64",
+  "quote": "base64_encoded_quote_with_nonce",
+  "expires_at": 1709994000
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `challenge_id` | string | 挑战 ID |
+| `nonce` | string | Base64 编码的随机数 |
+| `quote` | string | 包含 nonce 的 Quote |
+| `expires_at` | u64 | 挑战过期时间 |
+
+---
+
+### 验证挑战响应
+
+验证客户端的挑战响应。
+
+**Endpoint**: `POST /api/v1/attestation/verify-response`
+
+**Scope**: `admin`
+
+**请求体**:
+
+```json
+{
+  "challenge_id": "550e8400-e29b-41d4-a716-446655440001",
+  "response": "base64_encoded_response_data",
+  "client_quote": "base64_encoded_client_quote"
+}
+```
+
+**请求字段说明**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `challenge_id` | string | 是 | 挑战 ID |
+| `response` | string | 是 | 客户端响应数据 |
+| `client_quote` | string | 是 | 客户端 Quote |
+
+**响应 (200 OK)**:
+
+```json
+{
+  "valid": true,
+  "challenge_id": "550e8400-e29b-41d4-a716-446655440001",
+  "verified_at": 1709990400,
+  "verification_details": {
+    "nonce_match": true,
+    "quote_valid": true,
+    "tcb_up_to_date": true
+  }
+}
+```
+
+---
+
+### 获取认证状态
+
+获取当前认证子系统的状态。
+
+**Endpoint**: `GET /api/v1/attestation/status`
+
+**Scope**: `admin` 或 `audit:read`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "status": "ready",
+  "tee_mode": "hardware",
+  "capabilities": {
+    "dcap_enabled": true,
+    "epid_enabled": false,
+    "quote_generation": true,
+    "quote_verification": true
+  },
+  "last_quote_generated_at": 1709990400,
+  "quote_valid_until": 1709997600
+}
+```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `status` | string | 认证状态：`ready`/`error`/`simulation` |
+| `tee_mode` | string | TEE 模式：`hardware`/`simulation` |
+| `capabilities.dcap_enabled` | bool | DCAP 是否启用 |
+| `capabilities.epid_enabled` | bool | EPID 是否启用 |
+| `capabilities.quote_generation` | bool | 是否支持 Quote 生成 |
+| `capabilities.quote_verification` | bool | 是否支持 Quote 验证 |
+
+---
+
+### 刷新 Quote
+
+刷新当前的 Quote。
+
+**Endpoint**: `POST /api/v1/attestation/refresh`
+
+**Scope**: `admin`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "quote": "base64_encoded_new_quote",
+  "timestamp": 1709990400,
+  "message": "Quote refreshed successfully"
+}
+```
+
+---
+
+### 认证健康检查
+
+检查认证子系统的健康状态。
+
+**Endpoint**: `GET /api/v1/attestation/health`
+
+**认证**: 不需要
+
+**响应 (200 OK)**:
+
+```json
+{
+  "healthy": true,
+  "tee_available": true,
+  "dcap_available": true,
+  "pcs_reachable": true,
+  "message": "Attestation subsystem is healthy"
+}
+```
+
+**响应 (503 Service Unavailable)**:
+
+```json
+{
+  "healthy": false,
+  "tee_available": false,
+  "dcap_available": false,
+  "pcs_reachable": false,
+  "message": "TEE not available"
+}
+```
+
+---
 
 ### 错误响应格式
 

@@ -14,8 +14,8 @@ use crate::auth::{
     ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType, MembershipStatus, TenantMembership,
 };
 use crate::token::{
-    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, PasetoToken,
-    TOKEN_ISSUED_FROM_AUTOMATION, TokenClaims,
+    MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, PasetoToken, TOKEN_ISSUED_FROM_AUTOMATION,
+    TokenClaims,
 };
 use axum::{
     Extension, Json, Router,
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 
 const AUTOMATION_TOKEN_KIND: &str = "user_automation";
 const AUTOMATION_PERMISSION_SOURCE: &str = "membership_subset";
+const AUTOMATION_DEFAULT_TOKEN_TTL_SECONDS: u64 = 86_400;
 const CREATED_VIA_PROFILE: &str = "profile_dashboard";
 const CREATED_VIA_CLI: &str = "cli";
 const CREATED_VIA_SDK: &str = "sdk";
@@ -86,10 +87,7 @@ async fn create_automation_token_handler(
     }
 
     let granted_scopes = validate_scope_subset(&request.scopes, &membership, &token)?;
-    let ttl_seconds = request
-        .ttl_seconds
-        .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
-        .clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS);
+    let ttl_seconds = normalize_automation_ttl(request.ttl_seconds);
     let mut claims = TokenClaims::new(
         token.subject.clone(),
         token.tenant_id.clone(),
@@ -361,6 +359,12 @@ fn build_token_prefix(token_value: &str) -> String {
     token_value.chars().take(18).collect()
 }
 
+fn normalize_automation_ttl(ttl_seconds: Option<u64>) -> u64 {
+    ttl_seconds
+        .unwrap_or(AUTOMATION_DEFAULT_TOKEN_TTL_SECONDS)
+        .clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS)
+}
+
 fn build_token_preview(token_prefix: Option<&str>) -> String {
     format!("{}...", token_prefix.unwrap_or("v4.local"))
 }
@@ -481,5 +485,25 @@ mod tests {
             .expect_err("missing token scope must fail");
         assert_eq!(error.error, "forbidden");
         assert!(error.message.contains("Missing required scope"));
+    }
+
+    #[test]
+    fn normalize_automation_ttl_defaults_to_24_hours() {
+        assert_eq!(
+            normalize_automation_ttl(None),
+            AUTOMATION_DEFAULT_TOKEN_TTL_SECONDS
+        );
+    }
+
+    #[test]
+    fn normalize_automation_ttl_clamps_to_min_and_max() {
+        assert_eq!(
+            normalize_automation_ttl(Some(MIN_TOKEN_TTL_SECONDS.saturating_sub(1))),
+            MIN_TOKEN_TTL_SECONDS
+        );
+        assert_eq!(
+            normalize_automation_ttl(Some(MAX_TOKEN_TTL_SECONDS.saturating_add(1))),
+            MAX_TOKEN_TTL_SECONDS
+        );
     }
 }

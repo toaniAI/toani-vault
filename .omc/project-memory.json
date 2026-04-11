@@ -498,20 +498,38 @@
   "hotPaths": [
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 45,
-      "lastAccessed": 1775866730560,
+      "accessCount": 55,
+      "lastAccessed": 1775871919863,
       "type": "file"
     },
     {
       "path": "zentao/my-bug-todo.md",
+      "accessCount": 49,
+      "lastAccessed": 1775872491794,
+      "type": "file"
+    },
+    {
+      "path": "src/main.rs",
       "accessCount": 40,
-      "lastAccessed": 1775868157278,
+      "lastAccessed": 1775872452403,
       "type": "file"
     },
     {
       "path": "tests/credentials_api_tests.rs",
-      "accessCount": 26,
-      "lastAccessed": 1775868047287,
+      "accessCount": 27,
+      "lastAccessed": 1775868846149,
+      "type": "directory"
+    },
+    {
+      "path": "src",
+      "accessCount": 20,
+      "lastAccessed": 1775872024795,
+      "type": "directory"
+    },
+    {
+      "path": "",
+      "accessCount": 17,
+      "lastAccessed": 1775870874701,
       "type": "directory"
     },
     {
@@ -521,16 +539,10 @@
       "type": "file"
     },
     {
-      "path": "src",
+      "path": "src/api",
       "accessCount": 12,
-      "lastAccessed": 1775866711158,
+      "lastAccessed": 1775872804827,
       "type": "directory"
-    },
-    {
-      "path": "src/main.rs",
-      "accessCount": 11,
-      "lastAccessed": 1775838002127,
-      "type": "file"
     },
     {
       "path": "frontend/src",
@@ -545,21 +557,39 @@
       "type": "file"
     },
     {
+      "path": "src/vault",
+      "accessCount": 9,
+      "lastAccessed": 1775870834444,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 9,
+      "lastAccessed": 1775872847628,
+      "type": "file"
+    },
+    {
       "path": "frontend/src/shared/api/hooks.ts",
       "accessCount": 8,
       "lastAccessed": 1775828275256,
       "type": "file"
     },
     {
-      "path": "src/vault",
-      "accessCount": 8,
-      "lastAccessed": 1775829506587,
-      "type": "directory"
+      "path": "Cargo.toml",
+      "accessCount": 7,
+      "lastAccessed": 1775871983912,
+      "type": "file"
     },
     {
       "path": "zentao/18173.md",
       "accessCount": 6,
       "lastAccessed": 1775831009878,
+      "type": "file"
+    },
+    {
+      "path": "src/vault/storage.rs",
+      "accessCount": 6,
+      "lastAccessed": 1775871192019,
       "type": "file"
     },
     {
@@ -569,21 +599,9 @@
       "type": "file"
     },
     {
-      "path": "src/api/routes.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775866720929,
-      "type": "file"
-    },
-    {
       "path": "src/vault/models.rs",
-      "accessCount": 4,
-      "lastAccessed": 1775829156704,
-      "type": "file"
-    },
-    {
-      "path": "src/vault/storage.rs",
-      "accessCount": 4,
-      "lastAccessed": 1775829455634,
+      "accessCount": 5,
+      "lastAccessed": 1775870819834,
       "type": "file"
     },
     {
@@ -597,18 +615,6 @@
       "accessCount": 4,
       "lastAccessed": 1775835768602,
       "type": "file"
-    },
-    {
-      "path": "src/api",
-      "accessCount": 4,
-      "lastAccessed": 1775866730474,
-      "type": "directory"
-    },
-    {
-      "path": "",
-      "accessCount": 4,
-      "lastAccessed": 1775866798408,
-      "type": "directory"
     },
     {
       "path": "frontend/src/shared/stores/authStore.ts",
@@ -674,12 +680,6 @@
       "path": "frontend/src/shared/api/queryClient.ts",
       "accessCount": 2,
       "lastAccessed": 1775828324451,
-      "type": "file"
-    },
-    {
-      "path": "Cargo.toml",
-      "accessCount": 2,
-      "lastAccessed": 1775836829383,
       "type": "file"
     },
     {
