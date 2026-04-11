@@ -159,6 +159,23 @@ steps:
       ref:
         - refs/tags/*
 
+  - name: apply push to online
+    image: hub.bitkinetic.com/public/deploy:v1
+    pull: if-not-exists
+    depends_on:
+      - docker-build-pd
+    environment:
+      DEPLOY_AUTH_KEY:
+        from_secret: deploy-auth-key
+      DEPLOY_SERVER:
+        from_secret: deploy-base-url
+      OBJECT: zkme
+    commands:
+      - app call -d
+    when:
+      ref:
+        - refs/tags/*
+
 ---
 kind: secret
 name: docker-hub-username
@@ -179,3 +196,17 @@ name: kube-config
 get:
   path: drone-helm-secret
   name: config
+
+---
+kind: secret
+name: deploy-auth-key
+get:
+  path: drone-deploy-auth-key
+  name: auth-key
+
+---
+kind: secret
+name: deploy-base-url
+get:
+  path: drone-deploy-auth-key
+  name: deploy-base-url
