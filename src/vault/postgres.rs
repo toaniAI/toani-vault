@@ -150,14 +150,19 @@ impl PostgresStorageBackend {
             .map_err(|e| VaultError::SerializationError(format!("payload deserialize failed: {e}")))
     }
 
-    fn credential_type_from_str(value: &str) -> CredentialType {
+    fn credential_type_from_str(value: &str) -> Result<CredentialType, VaultError> {
         match value {
-            "username_password" => CredentialType::UsernamePassword,
-            "oauth_refresh" | "oauth_token" | "o_auth_refresh" => CredentialType::OAuthRefresh,
-            "api_key" => CredentialType::ApiKey,
-            "session_cookie" => CredentialType::SessionCookie,
-            "kyc_document" => CredentialType::KycDocument,
-            _ => CredentialType::ApiKey,
+            "username_password" => Ok(CredentialType::UsernamePassword),
+            "oauth_refresh" | "oauth_token" | "o_auth_refresh" => Ok(CredentialType::OAuthRefresh),
+            "api_key" => Ok(CredentialType::ApiKey),
+            "session_cookie" => Ok(CredentialType::SessionCookie),
+            "kyc_document" => Ok(CredentialType::KycDocument),
+            "client_certificate" => Ok(CredentialType::ClientCertificate),
+            "ssh_key" => Ok(CredentialType::SshKey),
+            "database_connection" => Ok(CredentialType::DatabaseConnection),
+            other => Err(VaultError::StorageError(format!(
+                "未知 credential_type: {other}"
+            ))),
         }
     }
 
@@ -202,7 +207,7 @@ impl PostgresStorageBackend {
                 row.try_get::<String, _>("service_id")
                     .map_err(|e| VaultError::StorageError(format!("读取 service_id 失败: {e}")))?,
             ),
-            credential_type: Self::credential_type_from_str(&credential_type),
+            credential_type: Self::credential_type_from_str(&credential_type)?,
             created_at: created_at.timestamp() as u64,
             updated_at: updated_at.timestamp() as u64,
             expires_at: expires_at.map(|ts| ts.timestamp() as u64),
@@ -597,5 +602,31 @@ mod tests {
         let restored = PostgresStorageBackend::payload_from_json(json).unwrap();
         assert_eq!(payload.algorithm, restored.algorithm);
         assert_eq!(payload.ciphertext, restored.ciphertext);
+    }
+
+    #[test]
+    fn credential_type_from_str_supports_extended_types() {
+        assert_eq!(
+            PostgresStorageBackend::credential_type_from_str("client_certificate").unwrap(),
+            CredentialType::ClientCertificate
+        );
+        assert_eq!(
+            PostgresStorageBackend::credential_type_from_str("ssh_key").unwrap(),
+            CredentialType::SshKey
+        );
+        assert_eq!(
+            PostgresStorageBackend::credential_type_from_str("database_connection").unwrap(),
+            CredentialType::DatabaseConnection
+        );
+    }
+
+    #[test]
+    fn credential_type_from_str_rejects_unknown_type() {
+        let err = PostgresStorageBackend::credential_type_from_str("future_type")
+            .expect_err("unknown credential type should fail");
+        match err {
+            VaultError::StorageError(msg) => assert!(msg.contains("future_type")),
+            other => panic!("expected storage error, got {other:?}"),
+        }
     }
 }
