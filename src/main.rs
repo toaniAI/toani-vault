@@ -15,13 +15,17 @@
 //! - `CREDBRIDGE_RATE_LIMIT_REQUESTS` - Rate limit requests per window (default: 100)
 //! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS` - Rate limit window in seconds (default: 60)
 
-use axum::{Extension, Json, Router, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Extension, Json, Router, ServiceExt, extract::Request, http::StatusCode,
+    response::IntoResponse, routing::get,
+};
 use serde::Serialize;
 use serde_json::json;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower::Layer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::{self, TraceLayer};
@@ -283,7 +287,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_state = initialize_app_state(&config).await?;
 
     // 构建路由
-    let app = build_router(app_state, &config);
+    let router = build_router(app_state, &config);
+
+    // 使用 NormalizePathLayer 包装整个 Router
+    // 这样路径规范化在路由匹配之前执行
+    let app = NormalizePathLayer::trim_trailing_slash().layer(router);
 
     // 绑定地址并启动服务器
     let addr = config.socket_addr();
@@ -298,7 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("");
 
     // 启动服务器
-    axum::serve(listener, app).await?;
+    axum::serve(listener, ServiceExt::<Request>::into_make_service(app)).await?;
 
     Ok(())
 }
@@ -673,8 +681,6 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         .layer(Extension(app_state.rate_limit_state.clone()))
         // 添加配置扩展
         .layer(Extension(app_state))
-        // 路径规范化：自动去除末尾斜杠（最先执行，在路由匹配之前）
-        .layer(NormalizePathLayer::trim_trailing_slash())
 }
 
 /// 创建 CORS 层
