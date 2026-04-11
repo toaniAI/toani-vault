@@ -505,8 +505,8 @@
   "hotPaths": [
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 33,
-      "lastAccessed": 1775895252738,
+      "accessCount": 36,
+      "lastAccessed": 1775896307910,
       "type": "file"
     },
     {
@@ -517,14 +517,14 @@
     },
     {
       "path": "src/auth/service.rs",
-      "accessCount": 21,
-      "lastAccessed": 1775886144395,
+      "accessCount": 32,
+      "lastAccessed": 1775896624792,
       "type": "file"
     },
     {
       "path": "src/api/tokens.rs",
-      "accessCount": 21,
-      "lastAccessed": 1775895582450,
+      "accessCount": 23,
+      "lastAccessed": 1775896364645,
       "type": "file"
     },
     {
@@ -541,8 +541,8 @@
     },
     {
       "path": "",
-      "accessCount": 16,
-      "lastAccessed": 1775889436193,
+      "accessCount": 17,
+      "lastAccessed": 1775896419541,
       "type": "directory"
     },
     {
@@ -571,8 +571,14 @@
     },
     {
       "path": "tests",
+      "accessCount": 10,
+      "lastAccessed": 1775896402702,
+      "type": "directory"
+    },
+    {
+      "path": "src/main.rs",
       "accessCount": 9,
-      "lastAccessed": 1775895382799,
+      "lastAccessed": 1775896457010,
       "type": "directory"
     },
     {
@@ -580,12 +586,6 @@
       "accessCount": 8,
       "lastAccessed": 1775887762708,
       "type": "file"
-    },
-    {
-      "path": "src/main.rs",
-      "accessCount": 8,
-      "lastAccessed": 1775891263945,
-      "type": "directory"
     },
     {
       "path": "src/api/auth.rs",
@@ -610,6 +610,12 @@
       "accessCount": 4,
       "lastAccessed": 1775885545387,
       "type": "file"
+    },
+    {
+      "path": "src/auth",
+      "accessCount": 4,
+      "lastAccessed": 1775896344240,
+      "type": "directory"
     },
     {
       "path": "zentao/18162.md",
@@ -642,12 +648,6 @@
       "type": "file"
     },
     {
-      "path": "src/auth",
-      "accessCount": 3,
-      "lastAccessed": 1775885018027,
-      "type": "directory"
-    },
-    {
       "path": "zentao/18159.md",
       "accessCount": 3,
       "lastAccessed": 1775888538380,
@@ -664,6 +664,12 @@
       "accessCount": 3,
       "lastAccessed": 1775894239486,
       "type": "directory"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775896322322,
+      "type": "file"
     },
     {
       "path": "frontend/src",
@@ -693,12 +699,6 @@
       "path": "zentao/18156.md",
       "accessCount": 2,
       "lastAccessed": 1775890056529,
-      "type": "file"
-    },
-    {
-      "path": "src/api/routes.rs",
-      "accessCount": 2,
-      "lastAccessed": 1775891238517,
       "type": "file"
     },
     {
