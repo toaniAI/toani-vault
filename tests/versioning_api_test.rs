@@ -11,21 +11,27 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 
 use tokio::sync::Mutex;
+use vault_service::EncryptedPayload;
 use vault_service::api::credentials::{
     AppState, AuditLogger, DefaultAuditLogger, create_credential, delete_credential,
     get_credential, list_credentials, update_credential,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::api::versions::{get_version_detail, get_version_history, rollback_credential};
+use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
+use vault_service::models::CredentialType;
 use vault_service::tee::{Enclave, EnclaveConfig};
-use vault_service::vault::storage::CredentialVault;
+use vault_service::vault::storage::{
+    CredentialVault, create_credential as create_vault_credential,
+};
 
 /// 设置测试状态
 async fn setup_test_state() -> AppState {
@@ -102,6 +108,17 @@ fn test_versioning_router(state: AppState, token: ValidatedToken) -> axum::Route
         )
         .layer(axum::Extension(token))
         .with_state(state)
+}
+
+fn create_test_payload(seed: u8) -> EncryptedPayload {
+    EncryptedPayload::new(
+        constants::PROTOCOL_VERSION,
+        constants::ALGORITHM_AES_256_GCM,
+        constants::KDF_HKDF_SHA256,
+        vec![seed; constants::NONCE_LENGTH],
+        vec![seed; constants::AUTH_TAG_LENGTH],
+        vec![seed, seed.saturating_add(1), seed.saturating_add(2)],
+    )
 }
 
 /// AC-1: 更新凭证 API 需要 write scope
@@ -307,6 +324,61 @@ async fn test_rollback_with_valid_request_format() {
     let response = app.oneshot(request).await.unwrap();
     // 凭证不存在或回滚失败，但不应该是 403
     assert_ne!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// BUG-18187: 回滚到不存在的目标版本应返回 404/not_found，而不是 500
+#[tokio::test]
+async fn test_rollback_missing_target_version_returns_404_not_found() {
+    let state = setup_test_state().await;
+    let token = create_test_token(
+        "tenant_18187",
+        "user_18187",
+        vec![TokenScope::CredentialWrite],
+    );
+
+    let created = create_vault_credential(
+        state.vault.as_ref(),
+        "tenant_18187",
+        "user_18187",
+        "svc_rollback",
+        CredentialType::ApiKey,
+        create_test_payload(1),
+        None,
+    )
+    .expect("should create test credential");
+
+    state
+        .vault
+        .update_credential_with_version(
+            &created.credential_id,
+            &vault_service::vault::models::TenantId::new("tenant_18187"),
+            &vault_service::vault::models::UserId::new("user_18187"),
+            create_test_payload(2),
+            Some("prepare version history".to_string()),
+        )
+        .expect("should create historical version");
+
+    let app = test_versioning_router(state, token);
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/credentials/{}/rollback",
+            created.credential_id.as_str()
+        ))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            r#"{"target_version": 99, "reason": "missing target version"}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["error"], "not_found");
 }
 
 /// AC-10: 更新请求格式验证 - 缺少 plaintext_data
