@@ -263,17 +263,15 @@ steps:
       - deploy-dev
     commands:
       - |
-        sh -eu -c '
-          commit_message=$(printf "%s" "${DRONE_COMMIT_MESSAGE:-}" \
-            | tr "\r\n" "  " \
-            | sed "s/\\\\/\\\\\\\\/g; s/\\\"/\\\\\\\"/g")
+        commit_message=$(printf "%s" "${DRONE_COMMIT_MESSAGE:-}" \
+          | tr "\r\n" "  " \
+          | sed 's/\\/\\\\/g; s/"/\\"/g')
 
-          printf "%s" \
-            "{\"msg_type\":\"text\",\"content\":{\"text\":\"部署\nCredBridge dev 部署成功\n仓库: ${DRONE_REPO}\n分支: ${DRONE_BRANCH}\n构建号: ${DRONE_BUILD_NUMBER}\n提交: ${DRONE_COMMIT_SHA}\n提交说明: ${commit_message}\n链接: ${DRONE_BUILD_LINK}\"}}" \
-            | curl -fsSL -X POST -H "Content-Type: application/json" \
-                --data-binary @- \
-                https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
-        '
+        printf "%s" \
+          "{\"msg_type\":\"text\",\"content\":{\"text\":\"部署\\nCredBridge dev 部署成功\\n仓库: ${DRONE_REPO}\\n分支: ${DRONE_BRANCH}\\n构建号: ${DRONE_BUILD_NUMBER}\\n提交: ${DRONE_COMMIT_SHA}\\n提交说明: ${commit_message}\\n链接: ${DRONE_BUILD_LINK}\"}}" \
+          | curl -fsSL -X POST -H "Content-Type: application/json" \
+              --data-binary @- \
+              https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
     when:
       ref:
         - refs/heads/branch_dev

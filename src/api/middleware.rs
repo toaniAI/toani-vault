@@ -484,11 +484,16 @@ async fn validate_token(
             AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
         })?
     {
+        let mut params = I18nParams::new();
+        params.insert(
+            "reason".to_string(),
+            Value::String("Token has been revoked".to_string()),
+        );
         return Err(AuthError::new(
             "revoked_token",
             locale,
             "errors.auth.invalid_token",
-            I18nParams::new(),
+            params,
         ));
     }
 
@@ -497,11 +502,17 @@ async fn validate_token(
         .await
     {
         if metadata.revoked_at.is_some() {
+            let mut params = I18nParams::new();
+            let reason = metadata
+                .revoked_reason
+                .clone()
+                .unwrap_or_else(|| "Token has been revoked".to_string());
+            params.insert("reason".to_string(), Value::String(reason));
             return Err(AuthError::new(
                 "revoked_token",
                 locale,
                 "errors.auth.invalid_token",
-                I18nParams::new(),
+                params,
             ));
         }
 
