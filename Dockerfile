@@ -72,6 +72,8 @@ RUN cargo build --release --features tee-hardware
 
 FROM ubuntu:22.04 AS nsjail-builder
 
+ARG NSJAIL_ARCHIVE=nsjail-3.6.tar.gz
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
@@ -79,18 +81,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     flex \
     g++ \
-    git \
     libnl-route-3-dev \
     libprotobuf-dev \
     make \
     pkg-config \
     protobuf-compiler \
+    tar \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://13510069434:241928710979428209bee4d5c1998c35adb10ee5@git.bitkinetic.com/ai/nsjail.git /tmp/nsjail \
-    && cd /tmp/nsjail \
-    && git submodule update --init \
+COPY ${NSJAIL_ARCHIVE} /tmp/nsjail.tar.gz
+
+RUN mkdir -p /tmp/nsjail-src \
+    && tar -xzf /tmp/nsjail.tar.gz -C /tmp/nsjail-src --strip-components=1 \
+    && cd /tmp/nsjail-src \
     && make -j"$(nproc)" \
     && strip nsjail
 
@@ -133,7 +137,7 @@ COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
 COPY --from=builder /app/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so /app/libcredbridge_sgx_urts_bridge.so
 COPY --from=builder /app/migrations /app/migrations
-COPY --from=nsjail-builder /tmp/nsjail/nsjail /usr/local/bin/nsjail
+COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail
 COPY docker/scripts/healthcheck.sh /app/healthcheck.sh
 COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 

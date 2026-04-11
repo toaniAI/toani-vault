@@ -36,6 +36,7 @@ benches/
 
 # Build artifacts
 *.tar.gz
+!nsjail-3.6.tar.gz
 *.zip
 *.deb
 *.rpm

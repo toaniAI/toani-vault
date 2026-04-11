@@ -144,9 +144,17 @@ trigger:
       - frontend/**
 
 steps:
+  - name: verify-nsjail-archive
+    image: alpine:3.21
+    pull: if-not-exists
+    commands:
+      - test -f nsjail-3.6.tar.gz
+
   - name: docker-build
     image: plugins/docker
     pull: if-not-exists
+    depends_on:
+      - verify-nsjail-archive
     environment:
       SGX_SIGNING_KEY:
         from_secret: sgx-signing-key
