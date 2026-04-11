@@ -498,14 +498,14 @@
   "hotPaths": [
     {
       "path": "src/api/credentials.rs",
-      "accessCount": 55,
-      "lastAccessed": 1775871919863,
+      "accessCount": 59,
+      "lastAccessed": 1775873775335,
       "type": "file"
     },
     {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 49,
-      "lastAccessed": 1775872491794,
+      "accessCount": 50,
+      "lastAccessed": 1775873575746,
       "type": "file"
     },
     {
@@ -522,8 +522,8 @@
     },
     {
       "path": "src",
-      "accessCount": 20,
-      "lastAccessed": 1775872024795,
+      "accessCount": 21,
+      "lastAccessed": 1775873641652,
       "type": "directory"
     },
     {
@@ -533,16 +533,16 @@
       "type": "directory"
     },
     {
+      "path": "src/api",
+      "accessCount": 15,
+      "lastAccessed": 1775873811786,
+      "type": "directory"
+    },
+    {
       "path": "frontend/src/shared/api/client.ts",
       "accessCount": 12,
       "lastAccessed": 1775828507350,
       "type": "file"
-    },
-    {
-      "path": "src/api",
-      "accessCount": 12,
-      "lastAccessed": 1775872804827,
-      "type": "directory"
     },
     {
       "path": "frontend/src",
@@ -593,15 +593,15 @@
       "type": "file"
     },
     {
-      "path": "zentao/18171.md",
-      "accessCount": 5,
-      "lastAccessed": 1775834450098,
+      "path": "src/vault/models.rs",
+      "accessCount": 6,
+      "lastAccessed": 1775873648465,
       "type": "file"
     },
     {
-      "path": "src/vault/models.rs",
+      "path": "zentao/18171.md",
       "accessCount": 5,
-      "lastAccessed": 1775870819834,
+      "lastAccessed": 1775834450098,
       "type": "file"
     },
     {
@@ -633,6 +633,12 @@
       "accessCount": 3,
       "lastAccessed": 1775828296101,
       "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 3,
+      "lastAccessed": 1775873852204,
+      "type": "directory"
     },
     {
       "path": "CLAUDE.md",
@@ -764,12 +770,6 @@
       "path": "zentao",
       "accessCount": 1,
       "lastAccessed": 1775829427564,
-      "type": "directory"
-    },
-    {
-      "path": "tests",
-      "accessCount": 1,
-      "lastAccessed": 1775830795482,
       "type": "directory"
     },
     {
