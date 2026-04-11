@@ -363,13 +363,17 @@ async fn revoke_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Path(token_id): Path<String>,
 ) -> Result<Json<RevokeTokenResponse>, ApiErrorResponse> {
-    if token.session_id() == Some(token.token_id.as_str()) {
+    // Calculate is_self first to determine appropriate error for session tokens
+    let is_self = token.token_id == token_id;
+
+    // Session tokens can only revoke OTHER tokens (with proper permissions),
+    // not themselves. Self-revocation must go through /auth/logout.
+    if is_self && token.session_id() == Some(token.token_id.as_str()) {
         return Err(ApiErrorResponse::invalid_request(
             "Session tokens must be revoked via /auth/logout",
         ));
     }
 
-    let is_self = token.token_id == token_id;
     let can_revoke_others = token.has_any_scope(&[
         TokenScope::TokensRevoke,
         TokenScope::TenantAdmin,
@@ -992,5 +996,53 @@ mod tests {
         let result = parse_uuid_str(&uuid_v7, "token_id");
         assert!(result.is_ok());
         assert_eq!(result.unwrap().to_string(), uuid_v7);
+    }
+
+    // BUG-18200: Session token 撤销不存在的 token 应返回 404 而非 400
+    #[tokio::test]
+    async fn revoke_nonexistent_token_with_revoke_scope_returns_404() {
+        let state = test_state();
+        let nonexistent_token_id = "00000000-0000-0000-0000-000000000001";
+
+        // 创建一个有 revoke 权限的 session token
+        let token = session_token(vec![TokenScope::TokensRevoke, TokenScope::TenantAdmin]);
+
+        let result = revoke_token_handler(
+            State(state),
+            Extension(token),
+            Path(nonexistent_token_id.to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // 验证返回 404 而非 400 (invalid_request)
+        assert_eq!(err.error, "not_found");
+        assert_eq!(err.message, "Token metadata not found");
+    }
+
+    // BUG-18200: 确保 session token 撤销自己仍返回 400
+    #[tokio::test]
+    async fn revoke_self_session_token_returns_400() {
+        let state = test_state();
+        let token = session_token(vec![TokenScope::TokensRevoke]);
+
+        // session_token 的 session_id 是 "00000000-0000-0000-0000-000000000789"
+        // token_id 是 "00000000-0000-0000-0000-000000000123"
+        // 设置 token_id 与 session_id 相同来模拟撤销自己的 session token
+        let mut self_token = token.clone();
+        self_token.token_id = "00000000-0000-0000-0000-000000000789".to_string();
+
+        let result = revoke_token_handler(
+            State(state),
+            Extension(self_token),
+            Path("00000000-0000-0000-0000-000000000789".to_string()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // session token 撤销自己应返回 400
+        assert_eq!(err.error, "invalid_request");
     }
 }
