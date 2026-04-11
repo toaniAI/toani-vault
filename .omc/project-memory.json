@@ -504,9 +504,15 @@
   },
   "hotPaths": [
     {
+      "path": "src/auth/service.rs",
+      "accessCount": 39,
+      "lastAccessed": 1775896964916,
+      "type": "file"
+    },
+    {
       "path": "zentao/my-bug-todo.md",
-      "accessCount": 36,
-      "lastAccessed": 1775896307910,
+      "accessCount": 38,
+      "lastAccessed": 1775897449202,
       "type": "file"
     },
     {
@@ -516,15 +522,15 @@
       "type": "directory"
     },
     {
-      "path": "src/auth/service.rs",
-      "accessCount": 32,
-      "lastAccessed": 1775896624792,
-      "type": "file"
-    },
-    {
       "path": "src/api/tokens.rs",
       "accessCount": 23,
       "lastAccessed": 1775896364645,
+      "type": "file"
+    },
+    {
+      "path": "src/auth/models.rs",
+      "accessCount": 22,
+      "lastAccessed": 1775896943807,
       "type": "file"
     },
     {
@@ -534,15 +540,9 @@
       "type": "directory"
     },
     {
-      "path": "src/auth/models.rs",
-      "accessCount": 19,
-      "lastAccessed": 1775885619337,
-      "type": "file"
-    },
-    {
       "path": "",
-      "accessCount": 17,
-      "lastAccessed": 1775896419541,
+      "accessCount": 20,
+      "lastAccessed": 1775896767958,
       "type": "directory"
     },
     {
@@ -559,8 +559,8 @@
     },
     {
       "path": "src/api/response.rs",
-      "accessCount": 13,
-      "lastAccessed": 1775895560691,
+      "accessCount": 14,
+      "lastAccessed": 1775897204018,
       "type": "directory"
     },
     {
@@ -577,8 +577,14 @@
     },
     {
       "path": "src/main.rs",
-      "accessCount": 9,
-      "lastAccessed": 1775896457010,
+      "accessCount": 10,
+      "lastAccessed": 1775896840094,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/auth.rs",
+      "accessCount": 10,
+      "lastAccessed": 1775897084179,
       "type": "directory"
     },
     {
@@ -588,9 +594,9 @@
       "type": "file"
     },
     {
-      "path": "src/api/auth.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775891579566,
+      "path": "src/auth",
+      "accessCount": 7,
+      "lastAccessed": 1775896981939,
       "type": "directory"
     },
     {
@@ -612,9 +618,9 @@
       "type": "file"
     },
     {
-      "path": "src/auth",
+      "path": "src/api",
       "accessCount": 4,
-      "lastAccessed": 1775896344240,
+      "lastAccessed": 1775897075178,
       "type": "directory"
     },
     {
@@ -660,12 +666,6 @@
       "type": "file"
     },
     {
-      "path": "src/api",
-      "accessCount": 3,
-      "lastAccessed": 1775894239486,
-      "type": "directory"
-    },
-    {
       "path": "src/api/routes.rs",
       "accessCount": 3,
       "lastAccessed": 1775896322322,
@@ -700,6 +700,12 @@
       "accessCount": 2,
       "lastAccessed": 1775890056529,
       "type": "file"
+    },
+    {
+      "path": "src/auth/error.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775896994712,
+      "type": "directory"
     },
     {
       "path": "frontend/src/shared/i18n/useI18n.ts",
@@ -790,12 +796,6 @@
       "accessCount": 1,
       "lastAccessed": 1775883476629,
       "type": "file"
-    },
-    {
-      "path": "src/auth/error.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775885035662,
-      "type": "directory"
     },
     {
       "path": "zentao/archived/18161.md",
