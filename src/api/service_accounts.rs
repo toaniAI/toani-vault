@@ -90,6 +90,11 @@ pub fn service_account_routes(state: AuthApiState) -> Router {
             "/service-accounts/:service_account_id/tokens",
             post(create_service_account_token_handler).get(list_service_account_tokens_handler),
         )
+        .route(
+            "/service-accounts/tokens",
+            post(create_service_account_token_missing_id_handler)
+                .get(list_service_account_tokens_missing_id_handler),
+        )
         .with_state(state)
 }
 
@@ -168,6 +173,26 @@ async fn update_service_account_missing_id_handler(
 ) -> Result<ApiSuccessResponse<ServiceAccountResponse>, ApiErrorResponse> {
     Err(ApiErrorResponse::not_found(
         "Service account ID is required for update operation",
+    ))
+}
+
+/// Handler for POST /service-accounts/tokens (missing service account ID).
+/// Returns 404 Not Found because token creation requires a specific service account ID.
+async fn create_service_account_token_missing_id_handler(
+    Extension(_token): Extension<ValidatedToken>,
+) -> Result<ApiSuccessResponse<CreatedTokenResponse>, ApiErrorResponse> {
+    Err(ApiErrorResponse::not_found(
+        "Service account ID is required for token creation operation",
+    ))
+}
+
+/// Handler for GET /service-accounts/tokens (missing service account ID).
+/// Returns 404 Not Found because token listing requires a specific service account ID.
+async fn list_service_account_tokens_missing_id_handler(
+    Extension(_token): Extension<ValidatedToken>,
+) -> Result<ApiSuccessResponse<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
+    Err(ApiErrorResponse::not_found(
+        "Service account ID is required for token listing operation",
     ))
 }
 
@@ -522,6 +547,28 @@ mod tests {
         // Check error code is "not_found"
         assert_eq!(error.error, "not_found");
         // Check error message contains required information
+        assert!(error.message.contains("Service account ID is required"));
+    }
+
+    #[tokio::test]
+    async fn test_create_service_account_token_missing_id_returns_404() {
+        let result =
+            create_service_account_token_missing_id_handler(Extension(create_test_token())).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(error.error, "not_found");
+        assert!(error.message.contains("Service account ID is required"));
+    }
+
+    #[tokio::test]
+    async fn test_list_service_account_tokens_missing_id_returns_404() {
+        let result =
+            list_service_account_tokens_missing_id_handler(Extension(create_test_token())).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(error.error, "not_found");
         assert!(error.message.contains("Service account ID is required"));
     }
 
