@@ -381,6 +381,36 @@ async fn test_rollback_missing_target_version_returns_404_not_found() {
     assert_eq!(payload["error"], "not_found");
 }
 
+/// BUG-18186: 回滚不存在的凭证应返回 404/not_found，而不是 500
+#[tokio::test]
+async fn test_rollback_missing_credential_returns_404_not_found() {
+    let state = setup_test_state().await;
+    let token = create_test_token(
+        "tenant_18186",
+        "user_18186",
+        vec![TokenScope::CredentialWrite],
+    );
+
+    let app = test_versioning_router(state, token);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials/00000000-0000-0000-0000-000000000000/rollback")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            r#"{"target_version": 1, "reason": "missing credential"}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["error"], "not_found");
+}
+
 /// AC-10: 更新请求格式验证 - 缺少 plaintext_data
 #[tokio::test]
 async fn test_update_credential_request_format() {
