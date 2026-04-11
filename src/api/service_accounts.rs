@@ -1,6 +1,6 @@
 use axum::{
     Extension, Json, Router,
-    extract::{Path, State},
+    extract::{Path, State, rejection::JsonRejection},
     routing::{get, post},
 };
 use chrono::Utc;
@@ -36,6 +36,7 @@ pub struct CreateServiceAccountRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateServiceAccountRequest {
     #[serde(default)]
     pub name: Option<String>,
@@ -45,6 +46,15 @@ pub struct UpdateServiceAccountRequest {
     pub status: Option<String>,
     #[serde(default)]
     pub scope_ceiling: Option<Vec<String>>,
+}
+
+impl UpdateServiceAccountRequest {
+    fn is_empty_patch(&self) -> bool {
+        self.name.is_none()
+            && self.description.is_none()
+            && self.status.is_none()
+            && self.scope_ceiling.is_none()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -222,9 +232,17 @@ async fn update_service_account_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
     Path(service_account_id): Path<String>,
-    Json(request): Json<UpdateServiceAccountRequest>,
+    payload: Result<Json<UpdateServiceAccountRequest>, JsonRejection>,
 ) -> Result<ApiSuccessResponse<ServiceAccountResponse>, ApiErrorResponse> {
     require_service_account_admin(&token)?;
+    let Json(request) = payload.map_err(map_update_request_rejection)?;
+
+    if request.is_empty_patch() {
+        return Err(ApiErrorResponse::invalid_request(
+            "At least one updatable field is required",
+        ));
+    }
+
     let mut item = state
         .auth_service
         .get_service_account(parse_uuid_str(&service_account_id, "service_account_id")?)
@@ -276,6 +294,10 @@ async fn update_service_account_handler(
         .map_err(map_auth_error)?;
 
     Ok(ApiSuccessResponse::new(map_service_account(updated)))
+}
+
+fn map_update_request_rejection(error: JsonRejection) -> ApiErrorResponse {
+    ApiErrorResponse::invalid_request(format!("Invalid service account update payload: {error}"))
 }
 
 async fn create_service_account_token_handler(
@@ -727,6 +749,42 @@ mod tests {
                 .expect("missing scopes should deserialize as empty");
         assert!(request.scopes.is_empty());
         assert_eq!(request.expires_in, Some(300));
+    }
+
+    #[test]
+    fn test_update_service_account_request_rejects_unknown_scopes_field() {
+        let err = serde_json::from_value::<UpdateServiceAccountRequest>(
+            json!({"scopes": "not-an-array"}),
+        )
+        .expect_err("unknown field should be rejected");
+
+        assert!(err.to_string().contains("unknown field `scopes`"));
+    }
+
+    #[test]
+    fn test_update_service_account_request_rejects_invalid_scope_ceiling_type() {
+        let err =
+            serde_json::from_value::<UpdateServiceAccountRequest>(json!({"scope_ceiling": "bad"}))
+                .expect_err("invalid type should be rejected");
+
+        assert!(err.to_string().contains("invalid type"));
+    }
+
+    #[test]
+    fn test_update_service_account_request_detects_empty_patch() {
+        let request: UpdateServiceAccountRequest =
+            serde_json::from_value(json!({})).expect("empty object should deserialize");
+
+        assert!(request.is_empty_patch());
+    }
+
+    #[test]
+    fn test_update_service_account_request_non_empty_patch() {
+        let request: UpdateServiceAccountRequest =
+            serde_json::from_value(json!({"scope_ceiling": ["credential:read"]}))
+                .expect("valid update payload should deserialize");
+
+        assert!(!request.is_empty_patch());
     }
 
     #[test]
