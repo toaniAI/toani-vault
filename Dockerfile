@@ -76,6 +76,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     bison \
+    ca-certificates \
     flex \
     g++ \
     git \
@@ -84,9 +85,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     pkg-config \
     protobuf-compiler \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/google/nsjail.git /tmp/nsjail \
+RUN git clone https://git.bitkinetic.com/ai/nsjail.git /tmp/nsjail \
     && cd /tmp/nsjail \
     && git submodule update --init \
     && make -j"$(nproc)" \
