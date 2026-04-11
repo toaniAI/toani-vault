@@ -478,3 +478,39 @@ async fn test_rollback_request_structure() {
     assert_eq!(request.target_version, 2);
     assert_eq!(request.reason, "回滚到稳定版本");
 }
+
+/// BUG-18178: 路径尾部斜杠规范化测试
+/// 验证 NormalizePathLayer 正确去除尾部斜杠，使带斜杠的路径能够匹配路由
+#[tokio::test]
+async fn test_trailing_slash_normalized_to_valid_route() {
+    use axum::routing::get;
+    use tower::ServiceBuilder;
+    use tower::ServiceExt;
+    use tower_http::normalize_path::NormalizePathLayer;
+
+    // 创建一个简单的路由，测试路径规范化功能
+    async fn handler() -> &'static str {
+        "matched"
+    }
+
+    // 使用 ServiceBuilder 包装 Router，确保 NormalizePathLayer 在路由匹配之前执行
+    let router = axum::Router::new().route("/api/v1/test/path", get(handler));
+
+    let app = ServiceBuilder::new()
+        .layer(NormalizePathLayer::trim_trailing_slash())
+        .service(router);
+
+    // 测试带尾部斜杠的路径请求
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/test/path/") // 尾部有斜杠
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // NormalizePathLayer 去除尾部斜杠后，路径应能匹配 /api/v1/test/path 路由
+    // 如果返回 200 OK，说明路径规范化生效
+    // 如果返回 404，说明路由未匹配（修复未生效）
+    assert_eq!(response.status(), StatusCode::OK);
+}

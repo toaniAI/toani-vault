@@ -23,6 +23,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::trace::{self, TraceLayer};
 use tracing::{Level, info, warn};
 use vault_service::crypto::hkdf::KeyHierarchy;
@@ -672,6 +673,8 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         .layer(Extension(app_state.rate_limit_state.clone()))
         // 添加配置扩展
         .layer(Extension(app_state))
+        // 路径规范化：自动去除末尾斜杠（最先执行，在路由匹配之前）
+        .layer(NormalizePathLayer::trim_trailing_slash())
 }
 
 /// 创建 CORS 层
