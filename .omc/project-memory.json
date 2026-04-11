@@ -505,8 +505,8 @@
   "hotPaths": [
     {
       "path": "frontend/src/shared/i18n/messages.ts",
-      "accessCount": 22,
-      "lastAccessed": 1775880003102,
+      "accessCount": 24,
+      "lastAccessed": 1775887695043,
       "type": "directory"
     },
     {
@@ -528,15 +528,15 @@
       "type": "directory"
     },
     {
-      "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
-      "accessCount": 14,
-      "lastAccessed": 1775882017575,
+      "path": "zentao/my-bug-todo.md",
+      "accessCount": 16,
+      "lastAccessed": 1775887762801,
       "type": "file"
     },
     {
-      "path": "zentao/my-bug-todo.md",
+      "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
       "accessCount": 14,
-      "lastAccessed": 1775886706516,
+      "lastAccessed": 1775882017575,
       "type": "file"
     },
     {
@@ -553,8 +553,8 @@
     },
     {
       "path": "zentao/18160.md",
-      "accessCount": 7,
-      "lastAccessed": 1775886700676,
+      "accessCount": 8,
+      "lastAccessed": 1775887762708,
       "type": "file"
     },
     {
@@ -646,6 +646,12 @@
       "accessCount": 2,
       "lastAccessed": 1775884432887,
       "type": "file"
+    },
+    {
+      "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
+      "accessCount": 2,
+      "lastAccessed": 1775887688046,
+      "type": "directory"
     },
     {
       "path": "frontend/src/shared/i18n/useI18n.ts",
@@ -771,6 +777,18 @@
       "path": "zentao/archived/18161.md",
       "accessCount": 1,
       "lastAccessed": 1775887490176,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18159.md",
+      "accessCount": 1,
+      "lastAccessed": 1775887664898,
+      "type": "file"
+    },
+    {
+      "path": "src/models/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775887672782,
       "type": "file"
     }
   ],
