@@ -8,6 +8,7 @@
 
 use crate::api::credentials::{ApiError, AppState};
 use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
+use crate::vault::VaultError;
 use crate::vault::models::{CredentialId, TenantId, UserId};
 use crate::vault::version::{
     RollbackRequest, RollbackResponse, VersionDetail, VersionHistory, VersionMetadata,
@@ -16,6 +17,17 @@ use crate::vault::version::{
 use axum::extract::{Path, State};
 use axum::{Extension, Json};
 use chrono::Utc;
+
+fn map_rollback_vault_error(e: VaultError) -> ApiError {
+    match e {
+        VaultError::VersionNotFound { .. } | VaultError::CredentialNotFound(_) => {
+            ApiError::new("not_found", e.to_string())
+        }
+        VaultError::TenantIsolationViolation { .. } => ApiError::new("forbidden", e.to_string()),
+        VaultError::InvalidVersion { .. } => ApiError::new("invalid_request", e.to_string()),
+        _ => ApiError::new("internal_error", e.to_string()),
+    }
+}
 
 /// 获取版本历史
 pub async fn get_version_history(
@@ -139,7 +151,7 @@ pub async fn rollback_credential(
             request.target_version,
             &request.reason,
         )
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
+        .map_err(map_rollback_vault_error)?;
 
     Ok(Json(RollbackResponse {
         credential_id: id,
@@ -154,11 +166,38 @@ pub async fn rollback_credential(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vault::VaultError;
 
     #[test]
     fn test_version_api_scopes() {
         // 验证版本控制 API 需要的 Scope
         assert!(matches!(TokenScope::CredentialRead, _));
         assert!(matches!(TokenScope::CredentialWrite, _));
+    }
+
+    #[test]
+    fn rollback_maps_version_not_found_to_not_found() {
+        let err = map_rollback_vault_error(VaultError::VersionNotFound {
+            credential_id: "cred-1".to_string(),
+            version: 99,
+        });
+        assert_eq!(err.error, "not_found");
+    }
+
+    #[test]
+    fn rollback_maps_tenant_isolation_to_forbidden() {
+        let err = map_rollback_vault_error(VaultError::TenantIsolationViolation {
+            user_id: "u1".to_string(),
+            tenant_id: "t1".to_string(),
+        });
+        assert_eq!(err.error, "forbidden");
+    }
+
+    #[test]
+    fn rollback_maps_invalid_version_to_invalid_request() {
+        let err = map_rollback_vault_error(VaultError::InvalidVersion {
+            message: "bad version".to_string(),
+        });
+        assert_eq!(err.error, "invalid_request");
     }
 }

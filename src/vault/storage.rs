@@ -787,8 +787,8 @@ impl CredentialVault {
 
         let current_version = entry.version;
 
-        // 验证目标版本
-        if target_version < 1 || target_version >= current_version {
+        // 0 或负数(经 u32 仅剩 0) 属于非法版本号；当前版本号不可作为回滚目标。
+        if target_version < 1 || target_version == current_version {
             return Err(VaultError::InvalidVersion {
                 message: format!("无效的目标版本: {target_version}, 当前版本: {current_version}"),
             });
@@ -1304,6 +1304,55 @@ mod tests {
                     .exists(&CredentialId::from_string(id).unwrap())
                     .unwrap()
             );
+        }
+    }
+
+    #[test]
+    fn rollback_missing_target_version_returns_version_not_found() {
+        let vault = CredentialVault::new_in_memory();
+        let tenant_id = TenantId::new("tenant_rollback");
+        let user_id = UserId::new("user_rollback");
+
+        let created = create_credential(
+            &vault,
+            "tenant_rollback",
+            "user_rollback",
+            "service",
+            CredentialType::ApiKey,
+            create_test_payload(),
+            None,
+        )
+        .expect("credential should be created");
+
+        vault
+            .update_credential_with_version(
+                &created.credential_id,
+                &tenant_id,
+                &UserId::from_hash(user_id.hash()),
+                EncryptedPayload::new(
+                    constants::PROTOCOL_VERSION,
+                    constants::ALGORITHM_AES_256_GCM,
+                    constants::KDF_HKDF_SHA256,
+                    vec![1u8; constants::NONCE_LENGTH],
+                    vec![2u8; constants::AUTH_TAG_LENGTH],
+                    vec![9, 8, 7, 6],
+                ),
+                Some("version bump".to_string()),
+            )
+            .expect("version update should succeed");
+
+        let result = vault.rollback_credential(
+            &created.credential_id,
+            &tenant_id,
+            &UserId::from_hash(user_id.hash()),
+            99,
+            "repro missing target version",
+        );
+
+        match result {
+            Err(VaultError::VersionNotFound { version, .. }) => assert_eq!(version, 99),
+            Err(other) => panic!("expected VersionNotFound, got: {other}"),
+            Ok(_) => panic!("expected error for missing target version"),
         }
     }
 }
