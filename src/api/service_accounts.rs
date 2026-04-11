@@ -75,7 +75,9 @@ pub fn service_account_routes(state: AuthApiState) -> Router {
     Router::new()
         .route(
             "/service-accounts",
-            post(create_service_account_handler).get(list_service_accounts_handler),
+            post(create_service_account_handler)
+                .get(list_service_accounts_handler)
+                .patch(update_service_account_missing_id_handler),
         )
         .route(
             "/service-accounts/:service_account_id",
@@ -147,6 +149,16 @@ async fn list_service_accounts_handler(
 
     Ok(ApiSuccessResponse::new(
         items.into_iter().map(map_service_account).collect(),
+    ))
+}
+
+/// Handler for PATCH /service-accounts (missing ID).
+/// Returns 404 Not Found because a specific service account ID is required for update.
+async fn update_service_account_missing_id_handler(
+    Extension(_token): Extension<ValidatedToken>,
+) -> Result<ApiSuccessResponse<ServiceAccountResponse>, ApiErrorResponse> {
+    Err(ApiErrorResponse::not_found(
+        "Service account ID is required for update operation",
     ))
 }
 
@@ -414,5 +426,41 @@ fn map_auth_error(error: crate::auth::AuthError) -> ApiErrorResponse {
             ApiErrorResponse::conflict(error.to_string())
         }
         _ => ApiErrorResponse::internal_error(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_token() -> ValidatedToken {
+        ValidatedToken {
+            token_id: "test-token-id".to_string(),
+            subject: "test-tenant:test-user".to_string(),
+            tenant_id: "test-tenant".to_string(),
+            user_id: "test-user".to_string(),
+            expires_at: 9999999999,
+            scopes: vec![TokenScope::TenantAdmin],
+            issued_at: 0,
+            membership_id: None,
+            metadata: HashMap::new(),
+            subject_type: "user".to_string(),
+            issued_from: "profile".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_service_account_missing_id_returns_404() {
+        // Test that the missing ID handler returns 404 Not Found
+        let result =
+            update_service_account_missing_id_handler(Extension(create_test_token())).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        // Check error code is "not_found"
+        assert_eq!(error.error, "not_found");
+        // Check error message contains required information
+        assert!(error.message.contains("Service account ID is required"));
     }
 }
