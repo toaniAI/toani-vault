@@ -31,7 +31,7 @@ use crate::vault::models::{CredentialId, TenantId, UserId, VaultEntry, VaultErro
 use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
-    extract::{Path, State, WebSocketUpgrade},
+    extract::{Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -160,6 +160,16 @@ pub struct CreateSessionResponse {
     /// 过期时间
     pub expires_at: String,
 }
+
+/// 会话列表查询参数
+#[derive(Debug, Deserialize)]
+pub struct ListSessionsQuery {
+    /// 按状态过滤（可选）
+    pub status: Option<String>,
+}
+
+/// 会话状态白名单（用于校验查询参数）
+const VALID_SESSION_STATUSES: &[&str] = &["creating", "ready", "executing", "paused", "closed"];
 
 /// 会话列表响应
 #[derive(Debug, Serialize)]
@@ -387,11 +397,28 @@ pub async fn create_session(
 pub async fn list_sessions(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
+    Query(query): Query<ListSessionsQuery>,
 ) -> Response {
     // 验证 Scope: sandbox:read
     if let Err(e) = check_scope(&token, TokenScope::SandboxRead).await {
         return e;
     }
+
+    // 校验 status 参数（如果提供）
+    let status_filter: Option<String> = if let Some(status) = query.status {
+        let status_lower = status.to_lowercase();
+        if !VALID_SESSION_STATUSES.contains(&status_lower.as_str()) {
+            return ApiErrorResponse::invalid_request(format!(
+                "invalid status '{}', must be one of: {}",
+                status,
+                VALID_SESSION_STATUSES.join(", ")
+            ))
+            .into_response();
+        }
+        Some(status_lower)
+    } else {
+        None
+    };
 
     let tenant_id = parse_uuid(&token.tenant_id);
 
@@ -400,6 +427,14 @@ pub async fn list_sessions(
             Ok(records) => {
                 let sessions = records
                     .into_iter()
+                    .filter(|record| {
+                        // 如果指定了 status 过滤，只返回匹配的会话
+                        if let Some(ref filter) = status_filter {
+                            record.status.to_lowercase() == *filter
+                        } else {
+                            true
+                        }
+                    })
                     .map(|record| SessionSummary {
                         session_id: record.session_id.into(),
                         sandbox_id: record.sandbox_id,
@@ -433,11 +468,18 @@ pub async fn list_sessions(
             if context.tenant_id != tenant_id {
                 continue;
             }
+            // 如果指定了 status 过滤，只返回匹配的会话
+            let session_status = session.status().await.to_string();
+            if let Some(ref filter) = status_filter {
+                if session_status.to_lowercase() != *filter {
+                    continue;
+                }
+            }
             sessions.push(SessionSummary {
                 session_id: context.session_id.into(),
                 sandbox_id: context.sandbox_id.into(),
                 credential_id: context.credential_id,
-                status: session.status().await.to_string(),
+                status: session_status,
                 original_intent: context.original_intent.clone(),
                 created_at: context.created_at.to_string(),
                 expires_at: context.expires_at.to_string(),
@@ -1760,6 +1802,104 @@ mod tests {
         assert_eq!(
             values.get("refresh_token").map(String::as_str),
             Some("rt_123")
+        );
+    }
+
+    // ==================== ListSessionsQuery status 校验测试 ====================
+
+    #[test]
+    fn test_valid_session_statuses_contains_all_expected_values() {
+        assert!(VALID_SESSION_STATUSES.contains(&"creating"));
+        assert!(VALID_SESSION_STATUSES.contains(&"ready"));
+        assert!(VALID_SESSION_STATUSES.contains(&"executing"));
+        assert!(VALID_SESSION_STATUSES.contains(&"paused"));
+        assert!(VALID_SESSION_STATUSES.contains(&"closed"));
+    }
+
+    #[test]
+    fn test_valid_session_statuses_rejects_running() {
+        // "running" 不是合法状态，应该不在白名单中
+        assert!(!VALID_SESSION_STATUSES.contains(&"running"));
+    }
+
+    #[test]
+    fn test_valid_session_statuses_rejects_expired() {
+        // "expired" 不是合法状态枚举值（虽然可能出现在数据库记录中）
+        assert!(!VALID_SESSION_STATUSES.contains(&"expired"));
+    }
+
+    #[test]
+    fn test_list_sessions_query_deserializes_without_status() {
+        let json = serde_json::json!({});
+        let query: ListSessionsQuery =
+            serde_json::from_value(json).expect("empty object should deserialize");
+        assert!(query.status.is_none());
+    }
+
+    #[test]
+    fn test_list_sessions_query_deserializes_with_valid_status() {
+        let json = serde_json::json!({ "status": "ready" });
+        let query: ListSessionsQuery =
+            serde_json::from_value(json).expect("status=ready should deserialize");
+        assert_eq!(query.status, Some("ready".to_string()));
+    }
+
+    #[test]
+    fn test_list_sessions_query_deserializes_with_invalid_status() {
+        // 查询参数解析不做校验，校验在 handler 中进行
+        let json = serde_json::json!({ "status": "running" });
+        let query: ListSessionsQuery =
+            serde_json::from_value(json).expect("status=running should deserialize");
+        assert_eq!(query.status, Some("running".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_status_returns_400_invalid_request() {
+        // 构造一个非法 status 的请求响应
+        let status = "running";
+        let status_lower = status.to_lowercase();
+        assert!(
+            !VALID_SESSION_STATUSES.contains(&status_lower.as_str()),
+            "running should not be a valid status"
+        );
+
+        // 模拟 handler 中的校验逻辑返回的错误
+        let response = ApiErrorResponse::invalid_request(format!(
+            "invalid status '{}', must be one of: {}",
+            status,
+            VALID_SESSION_STATUSES.join(", ")
+        ))
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+
+        assert_eq!(body["error"], "invalid_request");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("invalid status"),
+            "message should mention invalid status"
+        );
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("running"),
+            "message should mention the invalid value"
+        );
+        // 验证白名单状态值在错误消息中
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("creating"),
+            "message should show valid statuses"
         );
     }
 }
