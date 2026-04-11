@@ -510,6 +510,24 @@
       "type": "directory"
     },
     {
+      "path": "src/auth/service.rs",
+      "accessCount": 21,
+      "lastAccessed": 1775886144395,
+      "type": "file"
+    },
+    {
+      "path": "src/auth/models.rs",
+      "accessCount": 19,
+      "lastAccessed": 1775885619337,
+      "type": "file"
+    },
+    {
+      "path": "src/api/middleware.rs",
+      "accessCount": 18,
+      "lastAccessed": 1775885164953,
+      "type": "directory"
+    },
+    {
       "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
       "accessCount": 14,
       "lastAccessed": 1775882017575,
@@ -517,8 +535,32 @@
     },
     {
       "path": "zentao/my-bug-todo.md",
+      "accessCount": 13,
+      "lastAccessed": 1775885702831,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 10,
+      "lastAccessed": 1775883096320,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/tokens.rs",
       "accessCount": 8,
-      "lastAccessed": 1775882094603,
+      "lastAccessed": 1775885619273,
+      "type": "file"
+    },
+    {
+      "path": "src/main.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775884787524,
+      "type": "directory"
+    },
+    {
+      "path": "zentao/18160.md",
+      "accessCount": 5,
+      "lastAccessed": 1775885710091,
       "type": "file"
     },
     {
@@ -534,10 +576,16 @@
       "type": "file"
     },
     {
-      "path": "",
-      "accessCount": 3,
-      "lastAccessed": 1775879414646,
+      "path": "src/api/response.rs",
+      "accessCount": 4,
+      "lastAccessed": 1775885363905,
       "type": "directory"
+    },
+    {
+      "path": "frontend/src/shared/api/services.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775885545387,
+      "type": "file"
     },
     {
       "path": "zentao/18162.md",
@@ -558,21 +606,45 @@
       "type": "file"
     },
     {
+      "path": "zentao/18161.md",
+      "accessCount": 3,
+      "lastAccessed": 1775883006460,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/types.ts",
+      "accessCount": 3,
+      "lastAccessed": 1775884425810,
+      "type": "file"
+    },
+    {
+      "path": "src/auth",
+      "accessCount": 3,
+      "lastAccessed": 1775885018027,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/auth.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775885342621,
+      "type": "directory"
+    },
+    {
       "path": "frontend/src",
       "accessCount": 2,
       "lastAccessed": 1775879429076,
       "type": "directory"
     },
     {
-      "path": "zentao/18161.md",
-      "accessCount": 2,
-      "lastAccessed": 1775881996806,
-      "type": "file"
-    },
-    {
       "path": "cli/src/config/store.ts",
       "accessCount": 2,
       "lastAccessed": 1775882231198,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/dashboardStats.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775884432887,
       "type": "file"
     },
     {
@@ -628,6 +700,72 @@
       "accessCount": 1,
       "lastAccessed": 1775881979578,
       "type": "file"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775883048842,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/hooks.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775883049091,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/features/dashboard/pages/DashboardPage.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1775883080716,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api",
+      "accessCount": 1,
+      "lastAccessed": 1775883345926,
+      "type": "directory"
+    },
+    {
+      "path": "src/api",
+      "accessCount": 1,
+      "lastAccessed": 1775883373833,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775883386182,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/client.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775883447355,
+      "type": "file"
+    },
+    {
+      "path": "migrations/20260409143000_add_service_accounts_and_api_tokens.sql",
+      "accessCount": 1,
+      "lastAccessed": 1775883476596,
+      "type": "file"
+    },
+    {
+      "path": "migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql",
+      "accessCount": 1,
+      "lastAccessed": 1775883476629,
+      "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 1,
+      "lastAccessed": 1775884625435,
+      "type": "directory"
+    },
+    {
+      "path": "src/auth/error.rs",
+      "accessCount": 1,
+      "lastAccessed": 1775885035662,
+      "type": "directory"
     }
   ],
   "userDirectives": []

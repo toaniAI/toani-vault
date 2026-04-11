@@ -88,7 +88,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://git.bitkinetic.com/ai/nsjail.git /tmp/nsjail \
+RUN git clone https://13510069434:241928710979428209bee4d5c1998c35adb10ee5@git.bitkinetic.com/ai/nsjail.git /tmp/nsjail \
     && cd /tmp/nsjail \
     && git submodule update --init \
     && make -j"$(nproc)" \

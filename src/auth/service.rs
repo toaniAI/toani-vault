@@ -1050,7 +1050,7 @@ impl AuthServiceImpl {
             r#"
             SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
-                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1077,7 +1077,7 @@ impl AuthServiceImpl {
             r#"
             SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
-                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1106,7 +1106,7 @@ impl AuthServiceImpl {
             r#"
             SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
-                   ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
