@@ -1122,4 +1122,55 @@ mod tests {
         assert_eq!(err.error, "not_found");
         assert_eq!(err.message, "Token metadata not found");
     }
+
+    // BUG-18195: /api/v1/tokens 响应契约应为顶层数组而不是 {data,total}
+    #[test]
+    fn token_list_response_serializes_as_top_level_array() {
+        let item = TokenMetadataResponse {
+            token_id: Uuid::new_v4().to_string(),
+            token_kind: "user_access_token".to_string(),
+            token_name: Some("token-1".to_string()),
+            token_prefix: Some("cb_".to_string()),
+            token_type: "user_access_token".to_string(),
+            subject_type: "user".to_string(),
+            subject_id: Uuid::new_v4().to_string(),
+            tenant_id: Uuid::new_v4().to_string(),
+            issued_from: TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string(),
+            session_id: Some(Uuid::new_v4().to_string()),
+            membership_id: Some(Uuid::new_v4().to_string()),
+            display_name: Some("CredBridge CLI".to_string()),
+            description: Some("regression fixture".to_string()),
+            granted_scopes: vec!["tokens:read".to_string()],
+            issued_membership_role_snapshot: Some("tenant_admin".to_string()),
+            permission_source: Some("membership".to_string()),
+            created_via: Some("api".to_string()),
+            revoked_reason: None,
+            expires_at: "2026-01-01T00:00:00Z".to_string(),
+            revoked_at: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            last_used_at: None,
+        };
+
+        let payload =
+            serde_json::to_value(vec![item]).expect("token list payload should serialize");
+        let list = payload
+            .as_array()
+            .expect("token list payload must be a top-level array");
+        assert_eq!(list.len(), 1);
+        assert!(payload.get("data").is_none());
+        assert!(payload.get("total").is_none());
+    }
+
+    #[test]
+    fn empty_token_list_serializes_to_empty_array() {
+        let payload = serde_json::to_value(Vec::<TokenMetadataResponse>::new())
+            .expect("empty token list should serialize");
+        let list = payload
+            .as_array()
+            .expect("empty token list payload must be an array");
+
+        assert!(list.is_empty());
+        assert!(payload.get("data").is_none());
+        assert!(payload.get("total").is_none());
+    }
 }
