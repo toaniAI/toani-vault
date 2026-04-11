@@ -151,7 +151,7 @@ steps:
       - test -f nsjail-3.6.tar.gz
 
   - name: check-runtime-base-image
-    image: curlimages/curl:8.12.1
+    image: alpine:3.21
     pull: if-not-exists
     depends_on:
       - verify-nsjail-archive
@@ -163,6 +163,7 @@ steps:
     commands:
       - |
         sh -eu -c '
+          apk add --no-cache curl >/dev/null
           manifest_url="https://hub.bitkinetic.com/v2/zkme/credbridge-runtime-sandbox/manifests/jammy-sgx2.28.100.1-nsjail3.6"
           if curl -fsSI \
             -u "$REPO_USER:$REPO_PWD" \
