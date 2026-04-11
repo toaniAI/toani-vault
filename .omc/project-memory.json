@@ -505,8 +505,8 @@
   "hotPaths": [
     {
       "path": "frontend/src/shared/i18n/messages.ts",
-      "accessCount": 27,
-      "lastAccessed": 1775888474149,
+      "accessCount": 32,
+      "lastAccessed": 1775888584567,
       "type": "directory"
     },
     {
@@ -522,16 +522,16 @@
       "type": "file"
     },
     {
+      "path": "zentao/my-bug-todo.md",
+      "accessCount": 19,
+      "lastAccessed": 1775888716234,
+      "type": "file"
+    },
+    {
       "path": "src/api/middleware.rs",
       "accessCount": 18,
       "lastAccessed": 1775885164953,
       "type": "directory"
-    },
-    {
-      "path": "zentao/my-bug-todo.md",
-      "accessCount": 17,
-      "lastAccessed": 1775888435824,
-      "type": "file"
     },
     {
       "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
@@ -546,6 +546,12 @@
       "type": "directory"
     },
     {
+      "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
+      "accessCount": 10,
+      "lastAccessed": 1775888689350,
+      "type": "directory"
+    },
+    {
       "path": "src/api/tokens.rs",
       "accessCount": 8,
       "lastAccessed": 1775885619273,
@@ -556,12 +562,6 @@
       "accessCount": 8,
       "lastAccessed": 1775887762708,
       "type": "file"
-    },
-    {
-      "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
-      "accessCount": 7,
-      "lastAccessed": 1775888489469,
-      "type": "directory"
     },
     {
       "path": "src/main.rs",
@@ -636,6 +636,12 @@
       "type": "directory"
     },
     {
+      "path": "zentao/18159.md",
+      "accessCount": 3,
+      "lastAccessed": 1775888538380,
+      "type": "file"
+    },
+    {
       "path": "frontend/src",
       "accessCount": 2,
       "lastAccessed": 1775879429076,
@@ -651,12 +657,6 @@
       "path": "frontend/src/shared/api/dashboardStats.ts",
       "accessCount": 2,
       "lastAccessed": 1775884432887,
-      "type": "file"
-    },
-    {
-      "path": "zentao/18159.md",
-      "accessCount": 2,
-      "lastAccessed": 1775888435599,
       "type": "file"
     },
     {
