@@ -67,10 +67,17 @@ pub async fn get_version_history(
 pub async fn get_version_detail(
     State(state): State<AppState>,
     Extension(token): Extension<ValidatedToken>,
-    Path((id, version)): Path<(String, u32)>,
+    Path((id, version_str)): Path<(String, String)>,
 ) -> Result<Json<VersionDetail>, ApiError> {
     // 验证 Scope: credential:read
     require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
+
+    let version: u32 = version_str.parse().map_err(|_| {
+        ApiError::new(
+            "invalid_request",
+            format!("version 必须为非负整数，收到: {version_str}"),
+        )
+    })?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;

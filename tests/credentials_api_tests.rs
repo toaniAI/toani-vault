@@ -18,6 +18,7 @@ use vault_service::api::credentials::{
     delete_credential, get_credential, list_credentials,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
+use vault_service::api::versions::{get_version_detail, get_version_history};
 use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
@@ -919,5 +920,60 @@ async fn test_list_credentials_page_size_exceeds_max_returns_400() {
             .as_str()
             .unwrap()
             .contains("page_size must be between 1 and 100")
+    );
+}
+
+/// BUG-18179: 测试获取凭证指定版本时，version 为非整数返回 400 + {"error":"invalid_request"}
+#[tokio::test]
+async fn test_get_version_detail_non_integer_version_returns_400() {
+    use axum::routing::get;
+
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+
+    // 构建包含版本路由的 app
+    let app = axum::Router::new()
+        .route("/api/v1/credentials/:id/versions", get(get_version_history))
+        .route(
+            "/api/v1/credentials/:id/versions/:version",
+            get(get_version_detail),
+        )
+        .layer(axum::Extension(token))
+        .with_state(state);
+
+    // 发送 version 为非整数的请求
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials/test-credential-id/versions/not_int")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // 预期返回 400
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "BUG-18179: version 为非整数时应返回 400，而不是 {:?}",
+        response.status()
+    );
+
+    // 验证响应体包含 {"error":"invalid_request"}
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_str = String::from_utf8_lossy(&body);
+
+    // BUG-18179: 先打印实际响应体以便诊断
+    eprintln!("BUG-18179 raw response body: {}", body_str);
+
+    let json: serde_json::Value = serde_json::from_slice(&body)
+        .unwrap_or_else(|_| panic!("BUG-18179: 响应体不是有效 JSON，实际内容: {}", body_str));
+
+    assert_eq!(
+        json["error"].as_str(),
+        Some("invalid_request"),
+        "BUG-18179: 响应体应包含 error=invalid_request，实际: {:?}",
+        json.get("error")
     );
 }
