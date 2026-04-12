@@ -2138,6 +2138,13 @@ impl AuthService for AuthServiceImpl {
         created_by: Uuid,
         expires_hours: i64,
     ) -> Result<(TenantInvitation, String), AuthError> {
+        // Defensive validation: expires_hours must be positive
+        if expires_hours < 1 {
+            return Err(AuthError::InvalidRequest(
+                "expires_hours must be a positive integer (minimum 1 hour)".to_string(),
+            ));
+        }
+
         // 1. 验证创建者权限
         let creator_membership = self
             .get_active_membership(created_by, tenant_id)

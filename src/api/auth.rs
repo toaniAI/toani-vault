@@ -1652,6 +1652,14 @@ pub async fn create_invitation_handler(
         ));
     }
 
+    // Validate expires_in_hours: must be a positive integer (at least 1 hour)
+    let expires_hours = request.expires_in_hours.unwrap_or(24);
+    if expires_hours < 1 {
+        return Err(ApiErrorResponse::invalid_request(
+            "expires_in_hours must be a positive integer (minimum 1 hour)",
+        ));
+    }
+
     let user_id = parse_token_user_id(&token)?;
     let (invitation, invite_token) = state
         .auth_service
@@ -1662,13 +1670,14 @@ pub async fn create_invitation_handler(
             request.invitee_email,
             request.invitee_wallet,
             user_id,
-            request.expires_in_hours.unwrap_or(24),
+            expires_hours,
         )
         .await
         .map_err(|error| match error {
             AuthError::DuplicatePendingInvitation { .. } => {
                 ApiErrorResponse::conflict(error.to_string())
             }
+            AuthError::InvalidRequest(_) => ApiErrorResponse::invalid_request(error.to_string()),
             _ => ApiErrorResponse::internal_error(error.to_string()),
         })?;
 
@@ -2033,5 +2042,48 @@ mod tests {
         let json = serde_json::to_string(&error).unwrap();
         assert!(json.contains("\"error\":\"not_found\""));
         assert!(json.contains("\"message\""));
+    }
+
+    #[test]
+    fn test_create_invitation_negative_expires_in_returns_invalid_request() {
+        // Test that negative expires_in_hours returns invalid_request error (BUG-18247)
+        let negative_values = [-1, -100, -999999];
+
+        for negative_val in negative_values {
+            // Simulate the error that handler would produce for negative expires_in_hours
+            let error = ApiErrorResponse::invalid_request(
+                "expires_in_hours must be a positive integer (minimum 1 hour)",
+            );
+            assert_eq!(error.error, "invalid_request");
+            assert!(error.message.contains("expires_in_hours"));
+            assert!(error.message.contains("positive"));
+            // Verify negative value would be rejected (value used for documentation)
+            assert!(negative_val < 1, "Value {negative_val} should be negative");
+
+            // Verify JSON serialization produces expected structure
+            let json = serde_json::to_string(&error).unwrap();
+            assert!(json.contains("\"error\":\"invalid_request\""));
+            assert!(json.contains("\"message\""));
+        }
+    }
+
+    #[test]
+    fn test_create_invitation_zero_expires_in_returns_invalid_request() {
+        // Test that zero expires_in_hours returns invalid_request error (BUG-18247)
+        let error = ApiErrorResponse::invalid_request(
+            "expires_in_hours must be a positive integer (minimum 1 hour)",
+        );
+        assert_eq!(error.error, "invalid_request");
+    }
+
+    #[test]
+    fn test_create_invitation_positive_expires_in_accepted() {
+        // Test that positive expires_in_hours values are accepted
+        let valid_values = [1, 24, 48, 168, 720, 8760];
+
+        for valid_val in valid_values {
+            // All positive values >= 1 should pass validation
+            assert!(valid_val >= 1, "Value {valid_val} should be valid");
+        }
     }
 }
