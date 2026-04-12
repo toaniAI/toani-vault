@@ -126,9 +126,13 @@ impl AuthApiState {
 // ============================================================================
 
 /// 创建会话请求（从 Privy Token）
+/// 支持 `privy_access_token` 和 `privy_token` 两种字段名（兼容性别名）
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSessionRequest {
     /// Privy Access Token
+    /// 支持两种字段名：`privy_access_token`（推荐）和 `privy_token`（兼容别名）
+    #[serde(alias = "privy_token")]
     pub privy_access_token: String,
     /// 邀请 Token（可选，用于首次加入租户）
     #[serde(default)]
@@ -248,7 +252,19 @@ pub struct CreateSessionResponse {
 
 /// 获取当前用户响应
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GetCurrentUserResponse {
+    /// 用户 ID（顶层字段，兼容自动化用例）
+    pub user_id: Uuid,
+    /// 租户 ID（顶层字段，兼容自动化用例）
+    pub tenant_id: Option<Uuid>,
+    /// 用户名（顶层字段，兼容自动化用例）
+    /// 来源优先级：主身份邮箱 > 主身份钱包地址 > user.id 字符串
+    pub username: String,
+    /// 权限范围（顶层字段，兼容自动化用例）
+    pub scopes: Vec<String>,
+    /// 语言偏好（顶层字段，兼容自动化用例）
+    pub locale: String,
     /// 用户 Profile
     pub user: UserProfile,
     /// 当前租户信息（可选）
@@ -779,8 +795,40 @@ fn parse_token_user_id(token: &ValidatedToken) -> Result<Uuid, ApiErrorResponse>
 pub async fn create_session_handler(
     State(state): State<AuthApiState>,
     locale: ResolvedLocale,
-    Json(request): Json<CreateSessionRequest>,
+    payload: Result<Json<CreateSessionRequest>, JsonRejection>,
 ) -> Response {
+    // 处理 JSON 反序列化错误（如必填字段缺失、未知字段），返回 400 而不是默认的 422
+    let Json(request) = match payload {
+        Ok(json) => json,
+        Err(rejection) => {
+            return auth_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                &locale,
+                "errors.auth.invalid_request",
+                I18nParams::from([("detail".to_string(), json!(rejection.body_text()))]),
+            );
+        }
+    };
+
+    // 校验 privy_access_token 长度上限（防止超长输入攻击）
+    const PRIVY_TOKEN_MAX_LENGTH: usize = 2048; // Privy token 通常不超过 1KB，设置 2KB 上限
+    if request.privy_access_token.len() > PRIVY_TOKEN_MAX_LENGTH {
+        tracing::warn!(
+            target: "auth::session",
+            "[SESSION REJECTED] privy_access_token too long: length={}, max={}",
+            request.privy_access_token.len(),
+            PRIVY_TOKEN_MAX_LENGTH
+        );
+        return auth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &locale,
+            "errors.auth.token_too_long",
+            I18nParams::default(),
+        );
+    }
+
     // [DIAGNOSTIC] 记录进入 session handler
     let token_preview = if request.privy_access_token.len() > 20 {
         format!("{}...", &request.privy_access_token[..20])
@@ -1034,6 +1082,22 @@ pub async fn get_current_user_handler(
     };
 
     // 5. 构建响应
+    // 提取 username：优先主身份邮箱，其次主身份钱包地址，最后 user.id
+    let username = identities
+        .iter()
+        .find(|i| i.is_primary)
+        .and_then(|i| i.email.clone().or(i.wallet_address.clone()))
+        .unwrap_or_else(|| user.id.to_string());
+
+    // 提取 scopes：从当前成员资格获取，否则空数组
+    let scopes: Vec<String> = current_membership
+        .as_ref()
+        .map(|m| m.scopes.clone())
+        .unwrap_or_default();
+
+    // 提取 tenant_id：从当前成员资格获取
+    let response_tenant_id = current_membership.as_ref().map(|m| m.tenant_id);
+
     let user_profile = map_user_profile(&user, identities);
     let memberships_info = memberships.iter().map(map_membership_info).collect();
     let current_tenant = current_membership.map(map_tenant_info);
@@ -1042,6 +1106,11 @@ pub async fn get_current_user_handler(
     let mut response = (
         StatusCode::OK,
         Json(GetCurrentUserResponse {
+            user_id: user.id,
+            tenant_id: response_tenant_id,
+            username,
+            scopes,
+            locale: locale.as_str().to_string(),
             user: user_profile,
             current_tenant,
             current_membership: current_membership_info,
@@ -1835,6 +1904,108 @@ mod tests {
         assert!(json.contains("default_tenant_id"));
     }
 
+    /// 测试 GetCurrentUserResponse 包含 BUG-18238 要求的顶层字段
+    /// 确保响应体包含 user_id、tenant_id、username、scopes、locale
+    #[test]
+    fn test_get_current_user_response_has_required_top_level_fields() {
+        let user_profile = UserProfile {
+            id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+            display_name: Some("Test User".to_string()),
+            status: "active".to_string(),
+            onboarding_completed: true,
+            default_tenant_id: Some(Uuid::nil()),
+            identities: vec![IdentityInfo {
+                provider: "privy".to_string(),
+                subject: "did:privy:test".to_string(),
+                email: Some("user@example.com".to_string()),
+                wallet_address: None,
+                is_verified: true,
+                is_primary: true,
+            }],
+        };
+
+        let membership_for_current = MembershipInfo {
+            id: Uuid::nil(),
+            tenant_id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+            role: "admin".to_string(),
+            status: "active".to_string(),
+            scopes: vec!["admin".to_string(), "credential:read".to_string()],
+            joined_at: None,
+        };
+
+        let membership_for_list = MembershipInfo {
+            id: Uuid::nil(),
+            tenant_id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+            role: "admin".to_string(),
+            status: "active".to_string(),
+            scopes: vec!["admin".to_string(), "credential:read".to_string()],
+            joined_at: None,
+        };
+
+        let response = GetCurrentUserResponse {
+            user_id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+            tenant_id: Some(Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap()),
+            username: "user@example.com".to_string(),
+            scopes: vec!["admin".to_string()],
+            locale: "en-US".to_string(),
+            user: user_profile,
+            current_tenant: Some(TenantInfo {
+                id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+                name: Some("Test Tenant".to_string()),
+            }),
+            current_membership: Some(membership_for_current),
+            memberships: vec![membership_for_list],
+            mfa_status: "not_required".to_string(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+
+        // 验证顶层字段存在且类型正确
+        assert!(json.contains("\"userId\":\"00000000-0000-0000-0000-000000000001\""));
+        assert!(json.contains("\"tenantId\":\"00000000-0000-0000-0000-000000000002\""));
+        assert!(json.contains("\"username\":\"user@example.com\""));
+        assert!(json.contains("\"scopes\":[\"admin\"]"));
+        assert!(json.contains("\"locale\":\"en-US\""));
+
+        // 验证 camelCase 序列化生效（renamed_all = "camelCase"）
+        assert!(json.contains("userId"));
+        assert!(json.contains("tenantId"));
+        assert!(!json.contains("user_id")); // 不应该有 snake_case
+    }
+
+    /// 测试 GetCurrentUserResponse 当 tenant_id 缺失时的处理
+    #[test]
+    fn test_get_current_user_response_handles_missing_tenant() {
+        let user_profile = UserProfile {
+            id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+            display_name: None,
+            status: "active".to_string(),
+            onboarding_completed: false,
+            default_tenant_id: None,
+            identities: vec![],
+        };
+
+        let response = GetCurrentUserResponse {
+            user_id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+            tenant_id: None, // 无租户场景
+            username: "00000000-0000-0000-0000-000000000001".to_string(), // 回退到 user_id
+            scopes: vec![],  // 无权限范围
+            locale: "zh-CN".to_string(),
+            user: user_profile,
+            current_tenant: None,
+            current_membership: None,
+            memberships: vec![],
+            mfa_status: "not_required".to_string(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+
+        // tenant_id 为 null 时应正确序列化
+        assert!(json.contains("\"tenantId\":null"));
+        // scopes 为空数组时应正确序列化
+        assert!(json.contains("\"scopes\":[]"));
+    }
+
     #[test]
     fn test_session_info_serialization() {
         let info = SessionInfo {
@@ -2491,5 +2662,96 @@ mod tests {
             let result: Result<UpdateUserProfileRequest, _> = serde_json::from_value(json.clone());
             assert!(result.is_ok(), "valid request {json} should be accepted");
         }
+    }
+
+    // ============================================================================
+    // BUG-18237 测试：创建 Session 参数校验
+    // ============================================================================
+
+    /// 测试 CreateSessionRequest 接受 privy_access_token 字段名（推荐）
+    #[test]
+    fn test_create_session_request_accepts_privy_access_token() {
+        let json = serde_json::json!({"privy_access_token": "valid_token_here"});
+        let result: Result<CreateSessionRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_ok(),
+            "privy_access_token should be accepted, but got error: {:?}",
+            result.err()
+        );
+        let request = result.unwrap();
+        assert_eq!(request.privy_access_token, "valid_token_here");
+    }
+
+    /// 测试 CreateSessionRequest 接受 privy_token 字段名（兼容别名）
+    /// BUG-18237: 支持两种字段名以兼容现有自动化用例
+    #[test]
+    fn test_create_session_request_accepts_privy_token_alias() {
+        let json = serde_json::json!({"privy_token": "valid_token_here"});
+        let result: Result<CreateSessionRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_ok(),
+            "privy_token alias should be accepted, but got error: {:?}",
+            result.err()
+        );
+        let request = result.unwrap();
+        assert_eq!(request.privy_access_token, "valid_token_here");
+    }
+
+    /// 测试 CreateSessionRequest 拒绝未知字段
+    /// BUG-18237: deny_unknown_fields 确保未知字段触发 serde 错误
+    #[test]
+    fn test_create_session_request_rejects_unknown_fields() {
+        let json = serde_json::json!({"unknown_field": "value", "privy_access_token": "token"});
+        let result: Result<CreateSessionRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, but got success: {:?}",
+            result.ok()
+        );
+        let error = result.err().unwrap();
+        // serde 错误消息应包含 "unknown field"
+        assert!(
+            error.to_string().contains("unknown field"),
+            "error message should mention unknown field, got: {error}"
+        );
+    }
+
+    /// 测试 CreateSessionRequest 拒绝缺少 token 字段
+    /// BUG-18237: 缺少字段应由 serde 捕获，返回 400 invalid_request
+    #[test]
+    fn test_create_session_request_rejects_missing_token() {
+        let json = serde_json::json!({});
+        let result: Result<CreateSessionRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "missing token field should be rejected, but got success: {:?}",
+            result.ok()
+        );
+        let error = result.err().unwrap();
+        // serde 错误消息应包含 "missing field"
+        assert!(
+            error.to_string().contains("missing field"),
+            "error message should mention missing field, got: {error}"
+        );
+    }
+
+    /// 测试 CreateSessionRequest 接受可选 invitation_token
+    #[test]
+    fn test_create_session_request_accepts_optional_invitation_token() {
+        // 有 invitation_token
+        let json_with =
+            serde_json::json!({"privy_access_token": "token", "invitation_token": "invite_code"});
+        let result_with: Result<CreateSessionRequest, _> = serde_json::from_value(json_with);
+        assert!(result_with.is_ok());
+        assert_eq!(
+            result_with.unwrap().invitation_token,
+            Some("invite_code".to_string())
+        );
+
+        // 无 invitation_token（默认 None）
+        let json_without = serde_json::json!({"privy_access_token": "token"});
+        let result_without: Result<CreateSessionRequest, _> = serde_json::from_value(json_without);
+        assert!(result_without.is_ok());
+        assert_eq!(result_without.unwrap().invitation_token, None);
     }
 }
