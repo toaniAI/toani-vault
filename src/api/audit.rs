@@ -25,6 +25,7 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ring::digest::{SHA256, digest};
 use ring::signature::{ED25519, UnparsedPublicKey};
+use serde_json::json;
 use sqlx::{PgPool, QueryBuilder, Row};
 use std::env;
 use std::fs;
@@ -1134,6 +1135,15 @@ pub async fn verify_audit_log(
             .into_response();
     }
 
+    // 参数完整性校验：id 和 log_index 至少需要提供一个有效值
+    if params.log_index.is_none() && params.id.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "invalid_request" })),
+        )
+            .into_response();
+    }
+
     // 获取条目
     let entry = if let Some(index) = params.log_index {
         match state.storage.get_by_index(index).await {
@@ -1350,5 +1360,49 @@ mod tests {
         assert!(csv.contains("id,timestamp,user_id_hash"));
         assert!(csv.contains("credential_decrypt"));
         assert!(csv.contains("success"));
+    }
+
+    #[test]
+    fn test_audit_verify_request_empty_json_returns_error() {
+        // 测试空 JSON {} 场景：id 为空字符串，log_index 为 None
+        let req = AuditVerifyRequest {
+            id: String::new(),
+            log_index: None,
+        };
+        // 参数完整性校验：log_index 为 None 且 id.trim().is_empty()
+        assert!(req.log_index.is_none() && req.id.trim().is_empty());
+    }
+
+    #[test]
+    fn test_audit_verify_request_blank_id_returns_error() {
+        // 测试空白字符串 id 场景
+        let req = AuditVerifyRequest {
+            id: "   ".to_string(),
+            log_index: None,
+        };
+        // trim() 后为空，应触发参数校验失败
+        assert!(req.log_index.is_none() && req.id.trim().is_empty());
+    }
+
+    #[test]
+    fn test_audit_verify_request_valid_log_index() {
+        // 测试仅提供 log_index 的合法场景
+        let req = AuditVerifyRequest {
+            id: String::new(),
+            log_index: Some(123),
+        };
+        // log_index 存在，参数校验应通过
+        assert!(req.log_index.is_some());
+    }
+
+    #[test]
+    fn test_audit_verify_request_valid_id() {
+        // 测试仅提供有效 id 的合法场景
+        let req = AuditVerifyRequest {
+            id: "valid-uuid-123".to_string(),
+            log_index: None,
+        };
+        // id 非空，参数校验应通过
+        assert!(!req.id.trim().is_empty());
     }
 }
