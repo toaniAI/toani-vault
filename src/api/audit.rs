@@ -17,7 +17,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{OriginalUri, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -753,10 +753,29 @@ fn extract_token_from_request(req: &axum::extract::Request) -> Option<&Validated
 /// 查询审计日志列表
 ///
 /// GET /api/v1/audit/logs
+///
+/// BUG-18229: 检测原始请求路径是否以尾斜杠结尾，防止 NormalizePathLayer
+/// 将 `/audit/logs/` 归一化后错误命中列表路由返回 200 OK。
+/// 如果原始路径带尾斜杠，返回 400 Bad Request + {"error":"invalid_request"}。
 pub async fn list_audit_logs(
     State(state): State<AuditApiState>,
+    OriginalUri(original_uri): OriginalUri,
     req: axum::extract::Request,
 ) -> Response {
+    // BUG-18229: 检测原始请求路径是否以尾斜杠结尾
+    // NormalizePathLayer 会将 /audit/logs/ 归一化为 /audit/logs
+    // 但原始 URI 保留了尾斜杠，用于判断是否是"缺少详情 id"的请求
+    let original_path = original_uri.path();
+    if original_path.ends_with('/') {
+        // 路径以尾斜杠结尾，表示请求的是 `/audit/logs/` 而非 `/audit/logs`
+        // 这对应于"缺少详情路径参数 id"的语义，应返回 400
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "invalid_request" })),
+        )
+            .into_response();
+    }
+
     // 从查询参数解析
     let params: Query<AuditLogQueryRequest> = match Query::try_from_uri(req.uri()) {
         Ok(p) => p,

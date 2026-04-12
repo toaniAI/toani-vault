@@ -1018,3 +1018,81 @@ fn test_audit_filter_creation() {
     assert_eq!(filter.outcome, Some(Outcome::Success));
     assert_eq!(filter.service, Some("vault-service".to_string()));
 }
+
+// BUG-18229: 获取审计日志详情路径缺少id应返回400而非200
+// 测试验证 GET /audit/logs/（带尾斜杠）返回 400 Bad Request
+use axum::extract::OriginalUri;
+use tower::Layer;
+use tower_http::normalize_path::NormalizePathLayer;
+
+/// 创建带 NormalizePathLayer 的测试应用（模拟真实服务链路）
+/// BUG-18229: 在 NormalizePathLayer 之前使用 MapRequestLayer 保存原始 URI
+fn create_test_app_with_normalize_path() -> impl tower::Service<
+    axum::extract::Request,
+    Response = axum::response::Response,
+    Error = std::convert::Infallible,
+> + Clone
++ Send
++ Sync
++ 'static {
+    let storage = create_test_storage();
+    let verifier_public_key = storage.recorder().public_key().to_vec();
+    let state = AuditApiState {
+        storage: std::sync::Arc::new(MemoryAuditStorageAdapter::new(storage)),
+        verifier_public_key,
+    };
+    // BUG-18229: 使用 MapRequestLayer 保存原始 URI，然后 NormalizePathLayer 去除尾斜杠
+    // Layer 执行顺序：最后添加的 layer 先执行
+    // 我们需要：preserve_original_uri 先执行（保存原始 URI），然后 NormalizePath 执行（修改 URI）
+    // 所以：preserve_original_uri.layer(NormalizePathLayer.layer(router))
+    // 这样请求流程是：preserve_original_uri（保存原始URI） -> NormalizePath（去除尾斜杠） -> router
+    let preserve_original_uri =
+        tower::util::MapRequestLayer::new(|mut req: axum::extract::Request| {
+            let original_uri = OriginalUri(req.uri().clone());
+            req.extensions_mut().insert(original_uri);
+            req
+        });
+    let normalized_router = NormalizePathLayer::trim_trailing_slash().layer(audit_routes(state));
+    preserve_original_uri.layer(normalized_router)
+}
+
+#[tokio::test]
+async fn test_audit_logs_trailing_slash_returns_400() {
+    // BUG-18229: GET /audit/logs/ 缺少详情路径参数 id 应返回 400
+    // NormalizePathLayer 会将 /audit/logs/ 归一化为 /audit/logs
+    // 但 handler 应检测原始 URI 并返回 400
+    let app = create_test_app_with_normalize_path();
+
+    let request = Request::builder()
+        .uri("/audit/logs/")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // 验证响应体包含 error: invalid_request
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(data["error"], "invalid_request");
+}
+
+#[tokio::test]
+async fn test_audit_logs_without_trailing_slash_returns_200() {
+    // 验证正常列表查询仍返回 200
+    let app = create_test_app_with_normalize_path();
+
+    let request = Request::builder()
+        .uri("/audit/logs")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}

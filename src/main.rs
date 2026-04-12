@@ -32,6 +32,10 @@ use tower_http::trace::{self, TraceLayer};
 use tracing::{Level, info, warn};
 use vault_service::crypto::hkdf::KeyHierarchy;
 
+// BUG-18229: 使用 tower::util::MapRequestLayer 在 NormalizePathLayer 之前保存原始 URI
+// 使 handler 能够检测原始请求路径是否以尾斜杠结尾
+use axum::extract::OriginalUri;
+
 // CredBridge internal modules
 use vault_service::api::{
     API_BASE_PATH,
@@ -289,9 +293,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 构建路由
     let router = build_router(app_state, &config);
 
-    // 使用 NormalizePathLayer 包装整个 Router
-    // 这样路径规范化在路由匹配之前执行
-    let app = NormalizePathLayer::trim_trailing_slash().layer(router);
+    // BUG-18229: 使用 tower::util::MapRequestLayer 在 NormalizePathLayer 之前保存原始 URI
+    // Layer 执行顺序：最后添加的 layer 先执行
+    // 我们需要：preserve_original_uri 先执行（保存原始 URI），然后 NormalizePath 执行（修改 URI）
+    // 所以：preserve_original_uri.layer(NormalizePathLayer.layer(router))
+    // 这样请求流程是：preserve_original_uri（保存原始URI） -> NormalizePath（去除尾斜杠） -> router
+    let preserve_original_uri =
+        tower::util::MapRequestLayer::new(|mut req: axum::extract::Request| {
+            // Save original URI before any path normalization
+            let original_uri = OriginalUri(req.uri().clone());
+            req.extensions_mut().insert(original_uri);
+            req
+        });
+    let normalized_router = NormalizePathLayer::trim_trailing_slash().layer(router);
+    let app = preserve_original_uri.layer(normalized_router);
 
     // 绑定地址并启动服务器
     let addr = config.socket_addr();
