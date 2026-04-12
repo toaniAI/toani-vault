@@ -122,6 +122,9 @@ pub struct TenantConfigResponse {
 #[derive(Debug, Serialize)]
 pub struct TenantConfigData {
     pub tenant_id: String,
+    pub tier: String,
+    pub max_credentials: u64,
+    pub max_sandbox_sessions: u64,
     pub feature_flags: FeatureFlagsDto,
     pub quota_limits: QuotaLimitsDto,
     pub settings: TenantSettingsDto,
@@ -179,6 +182,7 @@ pub struct QuotaLimitsDto {
     pub audit_retention_days: u64,
     pub max_token_ttl_seconds: u64,
     pub max_batch_size: u64,
+    pub max_sandbox_sessions: u64,
 }
 
 impl From<&QuotaLimits> for QuotaLimitsDto {
@@ -194,6 +198,7 @@ impl From<&QuotaLimits> for QuotaLimitsDto {
             audit_retention_days: limits.audit_retention_days,
             max_token_ttl_seconds: limits.max_token_ttl_seconds,
             max_batch_size: limits.max_batch_size,
+            max_sandbox_sessions: limits.max_sandbox_sessions,
         }
     }
 }
@@ -325,6 +330,8 @@ pub struct QuotaLimitsUpdate {
     pub max_token_ttl_seconds: Option<u64>,
     #[serde(default)]
     pub max_batch_size: Option<u64>,
+    #[serde(default)]
+    pub max_sandbox_sessions: Option<u64>,
 }
 
 impl QuotaLimitsUpdate {
@@ -346,6 +353,9 @@ impl QuotaLimitsUpdate {
                 .max_token_ttl_seconds
                 .unwrap_or(base.max_token_ttl_seconds),
             max_batch_size: self.max_batch_size.unwrap_or(base.max_batch_size),
+            max_sandbox_sessions: self
+                .max_sandbox_sessions
+                .unwrap_or(base.max_sandbox_sessions),
         }
     }
 }
@@ -667,6 +677,9 @@ pub async fn get_tenant_config_handler<S: TenantConfigStore + Clone + Send + Syn
                 success: true,
                 data: TenantConfigData {
                     tenant_id: tenant_id.to_string(),
+                    tier: get_tier_from_config(&config),
+                    max_credentials: config.quota_limits.max_credentials,
+                    max_sandbox_sessions: config.quota_limits.max_sandbox_sessions,
                     feature_flags: FeatureFlagsDto::from(&config.feature_flags),
                     quota_limits: QuotaLimitsDto::from(&config.quota_limits),
                     settings: TenantSettingsDto::from(&config.settings),
@@ -782,6 +795,9 @@ pub async fn update_tenant_config_handler<S: TenantConfigStore + Clone + Send + 
                 success: true,
                 data: TenantConfigData {
                     tenant_id: tenant_id.to_string(),
+                    tier: get_tier_from_config(&config),
+                    max_credentials: config.quota_limits.max_credentials,
+                    max_sandbox_sessions: config.quota_limits.max_sandbox_sessions,
                     feature_flags: FeatureFlagsDto::from(&config.feature_flags),
                     quota_limits: QuotaLimitsDto::from(&config.quota_limits),
                     settings: TenantSettingsDto::from(&config.settings),
@@ -1457,5 +1473,80 @@ mod tests {
             .unwrap();
         let payload: Value = serde_json::from_slice(&body).unwrap();
         assert!(payload["success"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn get_config_valid_tenant_returns_all_required_fields() {
+        // BUG-18263 回归测试：GET /tenants/:id/config 返回 200 时，
+        // 响应体 data 层必须包含 tier、max_credentials、max_sandbox_sessions 三个顶层字段
+        use crate::tenant::TenantConfigManager;
+
+        let store = MemoryTenantConfigStore::new();
+        let config_manager = TenantConfigManager::new(store.clone());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let tenant = Tenant::new("bug-18263-test");
+        let tenant_id = tenant.id.clone();
+        tenant_service.upsert_tenant(tenant).await.unwrap();
+
+        // 创建专业版配置（有明确的 tier 特征）
+        let config = TenantConfig::pro_tier();
+        config_manager
+            .create_config(&tenant_id, config.clone())
+            .await
+            .unwrap();
+
+        let tenant_manager = TenantManager::new_simple(store);
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let request = Request::builder()
+            .method("GET")
+            .uri(format!("/tenants/{tenant_id}/config"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        // 验证成功标志
+        assert!(payload["success"].as_bool().unwrap());
+
+        // 验证 data 层包含三个必需的顶层字段
+        let data = &payload["data"];
+        assert!(data.get("tier").is_some(), "data.tier field missing");
+        assert!(
+            data.get("max_credentials").is_some(),
+            "data.max_credentials field missing"
+        );
+        assert!(
+            data.get("max_sandbox_sessions").is_some(),
+            "data.max_sandbox_sessions field missing"
+        );
+
+        // 验证字段值正确性
+        assert_eq!(data["tier"].as_str().unwrap(), "pro");
+        assert_eq!(
+            data["max_credentials"].as_u64().unwrap(),
+            config.quota_limits.max_credentials
+        );
+        assert_eq!(
+            data["max_sandbox_sessions"].as_u64().unwrap(),
+            config.quota_limits.max_sandbox_sessions
+        );
+
+        // 验证一致性：data.max_credentials == data.quota_limits.max_credentials
+        assert_eq!(
+            data["max_credentials"].as_u64().unwrap(),
+            data["quota_limits"]["max_credentials"].as_u64().unwrap()
+        );
+        assert_eq!(
+            data["max_sandbox_sessions"].as_u64().unwrap(),
+            data["quota_limits"]["max_sandbox_sessions"].as_u64().unwrap()
+        );
     }
 }

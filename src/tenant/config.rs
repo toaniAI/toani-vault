@@ -281,6 +281,9 @@ pub struct QuotaLimits {
     /// 批量操作最大数量
     #[serde(default = "default_max_batch_size")]
     pub max_batch_size: u64,
+    /// 最大沙箱会话数
+    #[serde(default = "default_max_sandbox_sessions")]
+    pub max_sandbox_sessions: u64,
 }
 
 fn default_max_credentials() -> u64 {
@@ -313,6 +316,9 @@ fn default_max_token_ttl_seconds() -> u64 {
 fn default_max_batch_size() -> u64 {
     100
 }
+fn default_max_sandbox_sessions() -> u64 {
+    10
+}
 
 impl Default for QuotaLimits {
     fn default() -> Self {
@@ -327,6 +333,7 @@ impl Default for QuotaLimits {
             audit_retention_days: default_audit_retention_days(),
             max_token_ttl_seconds: default_max_token_ttl_seconds(),
             max_batch_size: default_max_batch_size(),
+            max_sandbox_sessions: default_max_sandbox_sessions(),
         }
     }
 }
@@ -345,6 +352,7 @@ impl QuotaLimits {
             audit_retention_days: 7,
             max_token_ttl_seconds: 3600,
             max_batch_size: 10,
+            max_sandbox_sessions: 5,
         }
     }
 
@@ -361,6 +369,7 @@ impl QuotaLimits {
             audit_retention_days: 90,
             max_token_ttl_seconds: 604_800,
             max_batch_size: 500,
+            max_sandbox_sessions: 50,
         }
     }
 
@@ -377,6 +386,7 @@ impl QuotaLimits {
             audit_retention_days: 365,
             max_token_ttl_seconds: 2_592_000,
             max_batch_size: 1000,
+            max_sandbox_sessions: 500,
         }
     }
 
