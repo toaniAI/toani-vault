@@ -27,6 +27,8 @@ use crate::config::PrivyConfig;
 use crate::crypto::constant_time::ct_compare;
 use crate::tenant::{TenantConfigStore, TenantManager, TenantService};
 
+const MAX_DISPLAY_NAME_CHARS: usize = 128;
+
 /// 认证服务 Trait
 ///
 /// 定义认证服务的核心接口。
@@ -496,6 +498,18 @@ impl AuthServiceImpl {
             .clone()
             .or(user.display_name.clone())
             .unwrap_or_else(|| format!("Default Tenant for {}", user.id))
+    }
+
+    fn validate_display_name(display_name: Option<&str>) -> Result<(), AuthError> {
+        if let Some(display_name) = display_name {
+            if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+                return Err(AuthError::InvalidRequest(
+                    "display_name must be 128 characters or fewer".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     fn require_pool(&self) -> Result<&PgPool, AuthError> {
@@ -2449,6 +2463,7 @@ impl AuthService for AuthServiceImpl {
         onboarding_completed: Option<bool>,
     ) -> Result<User, AuthError> {
         self.get_user(user_id).await?;
+        Self::validate_display_name(display_name.as_deref())?;
 
         self.update_user_record(
             user_id,
@@ -2878,5 +2893,28 @@ mod tests {
 
         let name = AuthServiceImpl::build_default_tenant_name(&response, &user);
         assert_eq!(name, format!("Default Tenant for {}", user.id));
+    }
+
+    #[test]
+    fn test_validate_display_name_accepts_valid_lengths() {
+        assert!(AuthServiceImpl::validate_display_name(None).is_ok());
+        assert!(
+            AuthServiceImpl::validate_display_name(Some(&"A".repeat(MAX_DISPLAY_NAME_CHARS)))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_validate_display_name_rejects_overlong_input() {
+        let error =
+            AuthServiceImpl::validate_display_name(Some(&"A".repeat(MAX_DISPLAY_NAME_CHARS + 1)))
+                .expect_err("expected overlong display_name to fail");
+
+        match error {
+            AuthError::InvalidRequest(message) => {
+                assert!(message.contains("display_name"));
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
     }
 }

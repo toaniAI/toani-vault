@@ -360,6 +360,8 @@ pub struct CompleteOnboardingRequest {
     pub display_name: Option<String>,
 }
 
+const MAX_DISPLAY_NAME_CHARS: usize = 128;
+
 #[derive(Debug, Deserialize)]
 pub struct TenantScopedQuery {
     pub tenant_id: Uuid,
@@ -1340,6 +1342,10 @@ pub async fn update_current_user_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<UpdateUserProfileRequest>,
 ) -> Result<ApiSuccessResponse<serde_json::Value>, ApiErrorResponse> {
+    if let Some(error) = validate_display_name(request.display_name.as_deref()) {
+        return Err(error);
+    }
+
     let user_id = parse_token_user_id(&token)?;
     let user = state
         .auth_service
@@ -1350,7 +1356,7 @@ pub async fn update_current_user_handler(
             None,
         )
         .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+        .map_err(map_update_user_error)?;
     let identities = state
         .auth_service
         .get_user_identities(user_id)
@@ -1385,12 +1391,16 @@ pub async fn complete_onboarding_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CompleteOnboardingRequest>,
 ) -> Result<ApiSuccessResponse<FrontendUserProfile>, ApiErrorResponse> {
+    if let Some(error) = validate_display_name(request.display_name.as_deref()) {
+        return Err(error);
+    }
+
     let user_id = parse_token_user_id(&token)?;
     let user = state
         .auth_service
         .update_user(user_id, request.display_name, None, Some(true))
         .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+        .map_err(map_update_user_error)?;
     let identities = state
         .auth_service
         .get_user_identities(user_id)
@@ -1400,6 +1410,25 @@ pub async fn complete_onboarding_handler(
     Ok(ApiSuccessResponse::new(map_frontend_user_profile(
         &user, identities,
     )))
+}
+
+fn validate_display_name(display_name: Option<&str>) -> Option<ApiErrorResponse> {
+    if let Some(display_name) = display_name {
+        if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+            return Some(ApiErrorResponse::invalid_request(
+                "display_name must be 128 characters or fewer",
+            ));
+        }
+    }
+
+    None
+}
+
+fn map_update_user_error(error: AuthError) -> ApiErrorResponse {
+    match error {
+        AuthError::InvalidRequest(message) => ApiErrorResponse::invalid_request(message),
+        _ => ApiErrorResponse::internal_error(error.to_string()),
+    }
 }
 
 pub async fn list_members_handler(
@@ -1762,6 +1791,20 @@ mod tests {
         assert!(json.contains("userId"));
         assert!(json.contains("joinedAt"));
         assert!(json.contains("createdAt"));
+    }
+
+    #[test]
+    fn test_validate_display_name_accepts_valid_lengths() {
+        assert!(validate_display_name(None).is_none());
+        assert!(validate_display_name(Some(&"A".repeat(MAX_DISPLAY_NAME_CHARS))).is_none());
+    }
+
+    #[test]
+    fn test_validate_display_name_rejects_overlong_input() {
+        let error = validate_display_name(Some(&"A".repeat(MAX_DISPLAY_NAME_CHARS + 1)))
+            .expect("expected overlong display_name to be rejected");
+        assert_eq!(error.error, "invalid_request");
+        assert!(error.message.contains("display_name"));
     }
 
     fn make_membership(tenant_id: Uuid) -> TenantMembership {

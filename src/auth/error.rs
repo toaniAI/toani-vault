@@ -140,6 +140,10 @@ pub enum AuthError {
     #[error("成员资格状态不允许操作: {status}")]
     InvalidMembershipStatus { status: String },
 
+    /// 无效请求参数
+    #[error("无效请求参数: {0}")]
+    InvalidRequest(String),
+
     /// 数据库错误
     #[error("数据库错误: {0}")]
     DatabaseError(#[from] sqlx::Error),
@@ -188,6 +192,7 @@ impl AuthError {
                 | AuthError::InsufficientPermissions { .. }
                 | AuthError::InvalidUserStatus { .. }
                 | AuthError::InvalidMembershipStatus { .. }
+                | AuthError::InvalidRequest(_)
         )
     }
 
@@ -229,6 +234,7 @@ impl AuthError {
 
             AuthError::InvalidUserStatus { .. } => 400,
             AuthError::InvalidMembershipStatus { .. } => 400,
+            AuthError::InvalidRequest(_) => 400,
             AuthError::SerializationError(_) => 400,
             AuthError::ConfigError(_) => 400,
 
