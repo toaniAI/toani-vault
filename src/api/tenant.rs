@@ -1004,6 +1004,25 @@ async fn suspend_tenant_missing_id_handler() -> (StatusCode, Json<serde_json::Va
     )
 }
 
+/// 兜底处理器：POST /tenants/activate 缺少租户ID时返回404
+/// 防止被 /tenants/:id 动态段误匹配为 405 Method Not Allowed
+async fn activate_tenant_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "success": false,
+            "error": {
+                "code": "TENANT_NOT_FOUND",
+                "message": "租户不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
 /// 从配置推断租户层级
 fn get_tier_from_config(config: &TenantConfig) -> String {
     if config.feature_flags.enable_sso {
@@ -1032,6 +1051,10 @@ pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
             get(get_tenant_config_handler::<S>).put(update_tenant_config_handler::<S>),
         )
         .route("/tenants/suspend", post(suspend_tenant_missing_id_handler))
+        .route(
+            "/tenants/activate",
+            post(activate_tenant_missing_id_handler),
+        )
         .route("/tenants/:id/activate", post(activate_tenant_handler::<S>))
         .route("/tenants/:id/suspend", post(suspend_tenant_handler::<S>))
 }
@@ -1090,6 +1113,32 @@ mod tests {
         assert_eq!(result.max_users, 500);
         // 其他字段保持默认值
         assert_eq!(result.max_tokens_per_user, base.max_tokens_per_user);
+    }
+
+    #[tokio::test]
+    async fn activate_missing_tenant_id_returns_not_found() {
+        // BUG-18268 回归测试：POST /tenants/activate 缺少租户ID应返回404，
+        // 而不是被 /tenants/:id 动态段误匹配为 405 Method Not Allowed
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/tenants/activate")
+            .header("content-type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
     }
 
     #[tokio::test]
