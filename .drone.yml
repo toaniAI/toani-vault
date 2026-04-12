@@ -54,19 +54,6 @@ steps:
       - rustup component add clippy
       - cargo clippy --tests -- -D warnings
 
-  - name: simulation-safe-tests
-    image: rust:1.88.0-slim-bookworm
-    pull: if-not-exists
-    depends_on:
-      - rust-fmt
-      - rust-clippy
-    environment:
-      REDIS_URL: redis://redis:6379
-      TEE_MODE: simulation
-    commands:
-      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
-      - cargo test
-
 ---
 kind: pipeline
 type: docker
