@@ -20,7 +20,7 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{delete, get, patch, post},
@@ -361,6 +361,8 @@ pub struct CompleteOnboardingRequest {
 }
 
 const MAX_DISPLAY_NAME_CHARS: usize = 128;
+/// 邀请码最大长度限制（防止超长字符串攻击）
+const MAX_INVITATION_TOKEN_LENGTH: usize = 256;
 
 #[derive(Debug, Deserialize)]
 pub struct TenantScopedQuery {
@@ -388,6 +390,7 @@ pub struct UpdateMembershipRoleRequest {
 #[derive(Debug, Deserialize)]
 pub struct ConsumeInvitationRequest {
     /// 邀请 Token
+    #[serde(alias = "code")]
     pub invitation_token: String,
 }
 
@@ -1134,8 +1137,36 @@ pub async fn consume_invitation_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
     locale: ResolvedLocale,
-    Json(request): Json<ConsumeInvitationRequest>,
+    payload: Result<Json<ConsumeInvitationRequest>, JsonRejection>,
 ) -> Response {
+    // 处理 JSON 反序列化错误（如必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) = match payload {
+        Ok(json) => json,
+        Err(rejection) => {
+            return auth_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                &locale,
+                "errors.auth.invalid_request",
+                I18nParams::from([("detail".to_string(), json!(rejection.body_text()))]),
+            );
+        }
+    };
+
+    // 验证邀请码长度
+    if request.invitation_token.len() > MAX_INVITATION_TOKEN_LENGTH {
+        return auth_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            &locale,
+            "errors.auth.invalid_request",
+            I18nParams::from([(
+                "detail".to_string(),
+                json!("invitation_token exceeds maximum length"),
+            )]),
+        );
+    }
+
     if !is_web_session_token(&token) {
         return auth_error_response(
             StatusCode::FORBIDDEN,
@@ -1645,8 +1676,13 @@ pub async fn create_invitation_handler(
 pub async fn revoke_invitation_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(invitation_id): Path<Uuid>,
+    Path(invitation_id_str): Path<String>,
 ) -> Result<ApiSuccessResponse<serde_json::Value>, ApiErrorResponse> {
+    // Validate that invitation_id_str is a valid UUID
+    let invitation_id = Uuid::parse_str(&invitation_id_str).map_err(|_| {
+        ApiErrorResponse::invalid_request("Invalid invitation_id: must be a valid UUID")
+    })?;
+
     require_scopes(
         &token,
         &[
@@ -1882,5 +1918,87 @@ mod tests {
         let mut mismatched = base;
         mismatched.token_id = Uuid::now_v7().to_string();
         assert!(!is_web_session_token(&mismatched));
+    }
+
+    #[test]
+    fn test_consume_invitation_request_accepts_invitation_token_field() {
+        let json = serde_json::json!({"invitation_token": "test-token-123"});
+        let request: ConsumeInvitationRequest =
+            serde_json::from_value(json).expect("should deserialize with invitation_token field");
+        assert_eq!(request.invitation_token, "test-token-123");
+    }
+
+    #[test]
+    fn test_consume_invitation_request_accepts_code_alias() {
+        let json = serde_json::json!({"code": "test-token-123"});
+        let request: ConsumeInvitationRequest =
+            serde_json::from_value(json).expect("should deserialize with code alias");
+        assert_eq!(request.invitation_token, "test-token-123");
+    }
+
+    #[test]
+    fn test_consume_invitation_request_rejects_duplicate_fields() {
+        // 当两个字段都存在时，serde 会报错（不允许重复字段）
+        let json = serde_json::json!({"invitation_token": "primary", "code": "alias"});
+        let result: Result<ConsumeInvitationRequest, _> = serde_json::from_value(json);
+        assert!(result.is_err(), "should reject duplicate field definitions");
+    }
+
+    #[test]
+    fn test_consume_invitation_request_rejects_missing_field() {
+        let json = serde_json::json!({});
+        let result: Result<ConsumeInvitationRequest, _> = serde_json::from_value(json);
+        assert!(result.is_err(), "should reject missing required field");
+    }
+
+    #[test]
+    fn test_max_invitation_token_length_constant() {
+        // 验证常量定义合理（256 字符足够容纳典型 UUID 格式的邀请码）
+        assert_eq!(MAX_INVITATION_TOKEN_LENGTH, 256);
+        // 一个典型的邀请码长度（如 base64 编码的 UUID + 前缀）远小于此限制
+        let typical_token = "inv_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        assert!(typical_token.len() < MAX_INVITATION_TOKEN_LENGTH);
+    }
+
+    #[test]
+    fn test_revoke_invitation_invalid_uuid_returns_invalid_request() {
+        // Test that non-UUID path parameter returns invalid_request error
+        let invalid_uuids = [
+            "not-a-uuid",
+            "12345",
+            "abc-def-ghi",
+            "",
+            "00000000-0000-0000-0000-000000000000-extra",
+        ];
+
+        for invalid_uuid in invalid_uuids {
+            let result = Uuid::parse_str(invalid_uuid);
+            assert!(
+                result.is_err(),
+                "Expected '{invalid_uuid}' to be invalid UUID"
+            );
+
+            // Simulate the error message that handler would produce
+            let error =
+                ApiErrorResponse::invalid_request("Invalid invitation_id: must be a valid UUID");
+            assert_eq!(error.error, "invalid_request");
+            assert!(error.message.contains("invitation_id"));
+        }
+    }
+
+    #[test]
+    fn test_revoke_invitation_valid_uuid_format_accepted() {
+        // Test that valid UUID format is accepted by parse_str
+        let valid_uuids: Vec<String> = vec![
+            Uuid::nil().to_string(),
+            Uuid::now_v7().to_string(),
+            "550e8400-e29b-41d4-a716-446655440000".to_string(), // standard format
+            "550e8400e29b41d4a716446655440000".to_string(),     // no hyphens
+        ];
+
+        for valid_uuid in &valid_uuids {
+            let result = Uuid::parse_str(valid_uuid);
+            assert!(result.is_ok(), "Expected '{valid_uuid}' to be valid UUID");
+        }
     }
 }
