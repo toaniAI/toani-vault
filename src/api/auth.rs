@@ -2440,6 +2440,44 @@ mod tests {
     }
 
     #[test]
+    fn test_update_user_profile_request_rejects_snake_case_display_name() {
+        // BUG-18239: snake_case 的 display_name 应被拒绝（期望 camelCase: displayName）
+        let overlong_name = "a".repeat(256);
+        let json = serde_json::json!({"display_name": overlong_name});
+        let result: Result<UpdateUserProfileRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "snake_case display_name should be rejected as unknown field, but got success: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn test_update_user_profile_request_rejects_overlong_display_name() {
+        // BUG-18239: 超长 displayName 应在 handler 层被长度校验拒绝
+        // 注意：serde 层会先通过（字段名正确），然后 handler 的 validate_display_name 会返回 400
+        let overlong_name = "a".repeat(256);
+        let json = serde_json::json!({"displayName": overlong_name});
+        let result: Result<UpdateUserProfileRequest, _> = serde_json::from_value(json);
+        // serde 应通过（字段名正确）
+        assert!(
+            result.is_ok(),
+            "camelCase displayName should be accepted by serde, but got error: {:?}",
+            result.err()
+        );
+        // 但 validate_display_name 应返回错误
+        let request = result.unwrap();
+        let validation_error = validate_display_name(request.display_name.as_deref());
+        assert!(
+            validation_error.is_some(),
+            "overlong displayName (256 chars) should be rejected by validate_display_name"
+        );
+        let error = validation_error.unwrap();
+        assert_eq!(error.error, "invalid_request");
+        assert!(error.message.contains("128"));
+    }
+
+    #[test]
     fn test_update_user_profile_request_accepts_partial_fields() {
         // 部分字段应被接受（都是 Option，注意 camelCase）
         let json_cases = [
