@@ -264,7 +264,7 @@ steps:
       - |
         commit_message=$(printf "%s" "${DRONE_COMMIT_MESSAGE:-}" \
           | tr "\r\n" "  " \
-          | sed 's/\\/\\\\/g; s/"/\\"/g')
+          | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
 
         printf "%s" \
           "{\"msg_type\":\"text\",\"content\":{\"text\":\"部署\\nCredBridge dev 部署成功\\n仓库: ${DRONE_REPO}\\n分支: ${DRONE_BRANCH}\\n构建号: ${DRONE_BUILD_NUMBER}\\n提交: ${DRONE_COMMIT_SHA}\\n提交说明: ${commit_message}\\n链接: ${DRONE_BUILD_LINK}\"}}" \
