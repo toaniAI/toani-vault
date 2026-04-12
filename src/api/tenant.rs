@@ -1598,4 +1598,72 @@ mod tests {
                 .unwrap()
         );
     }
+
+    #[tokio::test]
+    async fn delete_tenant_registered_route_returns_business_404_for_nonexistent_tenant() {
+        // BUG-18261 回归测试：DELETE /tenants/:id 是已注册的受保护接口，
+        // 对不存在租户应返回业务层 404（带 TENANT_NOT_FOUND JSON body），
+        // 证明路由确实已注册，而非"路由未注册返回框架 404"。
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        // 使用一个有效的 UUID 格式但租户不存在
+        let tenant_id = "11111111-1111-1111-1111-111111111111";
+        let mut request = Request::builder()
+            .method("DELETE")
+            .uri(format!("/tenants/{tenant_id}"))
+            .body(Body::empty())
+            .unwrap();
+        // 模拟有效 Token 绕过认证层，测试业务逻辑
+        request.extensions_mut().insert(ValidatedToken::mock(
+            tenant_id,
+            "test-user",
+            vec![TokenScope::TenantAdmin],
+        ));
+
+        let response = app.oneshot(request).await.unwrap();
+        // 路由已注册，租户不存在 => 业务层 404（非框架 404）
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        // 业务层 404 必须返回 TENANT_NOT_FOUND code
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn unregistered_delete_path_returns_axum_404() {
+        // BUG-18261 辅助测试：真正未注册的 DELETE 路径应返回 Axum 框架 404，
+        // 与业务层 404 区分，证明框架正确区分"路由不存在"与"业务错误"。
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let tenant_id = "11111111-1111-1111-1111-111111111111";
+        let request = Request::builder()
+            .method("DELETE")
+            .uri(format!("/tenants/{tenant_id}/not-exist"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        // 路由未注册 => Axum 框架 404
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        // 框架 404 通常没有 JSON body 或无 TENANT_NOT_FOUND code
+        // 如果有 JSON，不应包含我们定义的 TENANT_NOT_FOUND
+        if !body.is_empty() {
+            if let Ok(payload) = serde_json::from_slice::<Value>(&body) {
+                assert_ne!(payload["error"]["code"], "TENANT_NOT_FOUND");
+            }
+        }
+    }
 }
