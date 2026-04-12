@@ -25,7 +25,7 @@ use crate::audit::AuditRecorder;
 use crate::auth::privy::JwksVerifier;
 use crate::config::PrivyConfig;
 use crate::crypto::constant_time::ct_compare;
-use crate::tenant::{TenantConfigStore, TenantManager};
+use crate::tenant::{TenantConfigStore, TenantManager, TenantService};
 
 /// 认证服务 Trait
 ///
@@ -400,29 +400,34 @@ pub struct AuthServiceImpl {
 
     /// Privy 配置
     privy_config: Option<PrivyConfig>,
+
+    /// 租户服务（用于创建默认租户）
+    tenant_service: Option<std::sync::Arc<dyn TenantService>>,
 }
 
 impl AuthServiceImpl {
     /// 创建新的认证服务实例
     pub fn new<S: TenantConfigStore>(
         db_pool: Option<PgPool>,
-        _tenant_manager: TenantManager<S>,
+        tenant_manager: TenantManager<S>,
     ) -> Self {
         Self {
             db_pool,
             audit_recorder: None,
             jwks_verifier: None,
             privy_config: None,
+            tenant_service: Some(tenant_manager.tenant_storage()),
         }
     }
 
     /// 创建无数据库的认证服务实例（使用内存存储）
-    pub fn new_in_memory<S: TenantConfigStore>(_tenant_manager: TenantManager<S>) -> Self {
+    pub fn new_in_memory<S: TenantConfigStore>(tenant_manager: TenantManager<S>) -> Self {
         Self {
             db_pool: None,
             audit_recorder: None,
             jwks_verifier: None,
             privy_config: None,
+            tenant_service: Some(tenant_manager.tenant_storage()),
         }
     }
 
@@ -438,6 +443,15 @@ impl AuthServiceImpl {
         if !config.mock_enabled {
             self.jwks_verifier = Some(JwksVerifier::new(config));
         }
+        self
+    }
+
+    /// 设置租户服务
+    pub fn with_tenant_service(
+        mut self,
+        tenant_service: std::sync::Arc<dyn TenantService>,
+    ) -> Self {
+        self.tenant_service = Some(tenant_service);
         self
     }
 
@@ -468,6 +482,20 @@ impl AuthServiceImpl {
     fn verify_token_hash(token: &str, expected_hash: &str) -> bool {
         let computed_hash = Self::hash_token(token);
         ct_compare(computed_hash.as_bytes(), expected_hash.as_bytes())
+    }
+
+    /// 根据本地外部身份映射判断是否需要首次登录初始化。
+    fn should_initialize_default_tenant(existing_identity: Option<&ExternalIdentity>) -> bool {
+        existing_identity.is_none()
+    }
+
+    /// 生成首次登录默认租户名。
+    fn build_default_tenant_name(privy_response: &PrivyAuthResponse, user: &User) -> String {
+        privy_response
+            .email
+            .clone()
+            .or(user.display_name.clone())
+            .unwrap_or_else(|| format!("Default Tenant for {}", user.id))
     }
 
     fn require_pool(&self) -> Result<&PgPool, AuthError> {
@@ -1906,6 +1934,8 @@ impl AuthService for AuthServiceImpl {
         let existing_identity = self
             .query_external_identity(IdentityProvider::Privy, &privy_response.did)
             .await?;
+        let is_first_login =
+            AuthServiceImpl::should_initialize_default_tenant(existing_identity.as_ref());
 
         // 3. 如果外部身份已存在，返回关联用户
         if let Some(identity) = existing_identity {
@@ -1975,14 +2005,59 @@ impl AuthService for AuthServiceImpl {
 
         self.create_external_identity_record(&identity).await?;
 
-        // 7. 记录审计日志
+        // 7. 为首次登录用户创建默认租户和 Owner membership
+        let mut default_tenant_created = false;
+        if is_first_login {
+            let tenant_service = self.tenant_service.as_ref().ok_or_else(|| {
+                AuthError::InternalError(
+                    "Tenant service unavailable for first-login initialization".to_string(),
+                )
+            })?;
+
+            let tenant_name = AuthServiceImpl::build_default_tenant_name(&privy_response, &user);
+
+            // 创建租户请求（不设置 owner_user_id，稍后手动创建 membership）
+            let create_request = crate::tenant::service::CreateTenantRequest::new(&tenant_name)
+                .without_owner_binding()
+                .with_tier("free");
+
+            // 创建租户
+            let tenant_result = tenant_service
+                .create_tenant(create_request, Some(user.id.to_string()))
+                .await
+                .map_err(|e| {
+                    AuthError::InternalError(format!("Failed to create default tenant: {e}"))
+                })?;
+
+            // 更新用户的 default_tenant_id
+            let tenant_id_uuid = uuid::Uuid::parse_str(tenant_result.tenant.id.as_str())
+                .map_err(|e| AuthError::InternalError(format!("Invalid tenant ID: {e}")))?;
+
+            self.create_membership_record(&TenantMembership::new_owner(tenant_id_uuid, user.id))
+                .await?;
+
+            user = self
+                .update_user_record(user.id, None, Some(Some(tenant_id_uuid)), None, None)
+                .await?;
+
+            default_tenant_created = true;
+            tracing::info!(
+                target: "auth::session",
+                user_id = %user.id,
+                tenant_id = %tenant_result.tenant.id,
+                "Created default tenant and Owner membership for first-login user"
+            );
+        }
+
+        // 8. 记录审计日志
         self.audit_log(
             AuthEventType::UserCreated,
             Some(user.id),
             Some(serde_json::json!({
                 "provider": "privy",
                 "did": privy_response.did,
-                "is_new_user": privy_response.is_new_user,
+                "is_new_user": is_first_login,
+                "default_tenant_created": default_tenant_created,
             })),
         )
         .await?;
@@ -2743,5 +2818,65 @@ mod tests {
         let membership = TenantMembership::new_owner(Uuid::nil(), Uuid::nil());
         assert!(membership.has_scope("tenant:read"));
         assert!(membership.has_scope("credential:write"));
+    }
+
+    #[test]
+    fn test_should_initialize_default_tenant_for_first_login() {
+        assert!(AuthServiceImpl::should_initialize_default_tenant(None));
+
+        let existing_identity = ExternalIdentity::new(
+            Uuid::now_v7(),
+            IdentityProvider::Privy,
+            "did:privy:existing",
+        );
+        assert!(!AuthServiceImpl::should_initialize_default_tenant(Some(
+            &existing_identity
+        )));
+    }
+
+    #[test]
+    fn test_build_default_tenant_name_prefers_email_then_display_name() {
+        let user = User::new().with_display_name("Display Name");
+        let from_email = PrivyAuthResponse {
+            did: "did:privy:1".to_string(),
+            wallet_address: None,
+            email: Some("owner@example.com".to_string()),
+            name: Some("Alice".to_string()),
+            profile: None,
+            is_new_user: false,
+        };
+        assert_eq!(
+            AuthServiceImpl::build_default_tenant_name(&from_email, &user),
+            "owner@example.com"
+        );
+
+        let from_display_name = PrivyAuthResponse {
+            did: "did:privy:2".to_string(),
+            wallet_address: None,
+            email: None,
+            name: Some("Alice".to_string()),
+            profile: None,
+            is_new_user: false,
+        };
+        assert_eq!(
+            AuthServiceImpl::build_default_tenant_name(&from_display_name, &user),
+            "Display Name"
+        );
+    }
+
+    #[test]
+    fn test_build_default_tenant_name_falls_back_to_user_id() {
+        let user = User::new();
+        let response = PrivyAuthResponse {
+            did: "did:privy:3".to_string(),
+            wallet_address: None,
+            email: None,
+            name: None,
+            profile: None,
+            is_new_user: false,
+        };
+
+        let name = AuthServiceImpl::build_default_tenant_name(&response, &user);
+        assert_eq!(name, format!("Default Tenant for {}", user.id));
     }
 }

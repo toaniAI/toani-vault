@@ -923,6 +923,11 @@ impl<S: TenantConfigStore> TenantManager<S> {
         }
     }
 
+    /// 获取租户存储服务
+    pub fn tenant_storage(&self) -> std::sync::Arc<dyn TenantService> {
+        self.tenant_storage.clone()
+    }
+
     /// 创建新租户
     pub async fn create_tenant(
         &self,
