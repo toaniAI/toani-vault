@@ -30,6 +30,7 @@
 //! | `forbidden` | 403 | 权限不足 |
 //! | `not_found` | 404 | 资源不存在 |
 //! | `conflict` | 409 | 资源冲突 |
+//! | `unprocessable_entity` | 422 | 请求体缺少必填字段或字段类型错误 |
 //! | `rate_limited` | 429 | 请求过于频繁 |
 //! | `internal_error` | 500 | 服务器内部错误 |
 //! | `service_unavailable` | 503 | 服务暂不可用 |
@@ -62,6 +63,8 @@ pub enum ErrorCode {
     CredentialNotFound,
     /// 资源冲突
     Conflict,
+    /// 请求体缺少必填字段或字段类型错误
+    UnprocessableEntity,
     /// 请求过于频繁
     RateLimited,
     /// 服务器内部错误
@@ -86,6 +89,7 @@ impl ErrorCode {
             ErrorCode::NotFound => "not_found",
             ErrorCode::CredentialNotFound => "credential_not_found",
             ErrorCode::Conflict => "conflict",
+            ErrorCode::UnprocessableEntity => "unprocessable_entity",
             ErrorCode::RateLimited => "rate_limited",
             ErrorCode::InternalError => "internal_error",
             ErrorCode::ServiceUnavailable => "service_unavailable",
@@ -104,6 +108,7 @@ impl ErrorCode {
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::CredentialNotFound => StatusCode::NOT_FOUND,
             ErrorCode::Conflict => StatusCode::CONFLICT,
+            ErrorCode::UnprocessableEntity => StatusCode::UNPROCESSABLE_ENTITY,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             ErrorCode::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -192,6 +197,11 @@ impl ApiErrorResponse {
         Self::new(ErrorCode::Conflict, message)
     }
 
+    /// 创建无法处理的实体错误（缺少必填字段或字段类型错误）
+    pub fn unprocessable_entity(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::UnprocessableEntity, message)
+    }
+
     /// 创建速率限制错误
     pub fn rate_limited(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::RateLimited, message)
@@ -252,6 +262,7 @@ impl ErrorCode {
             "not_found" => Some(ErrorCode::NotFound),
             "credential_not_found" => Some(ErrorCode::CredentialNotFound),
             "conflict" => Some(ErrorCode::Conflict),
+            "unprocessable_entity" => Some(ErrorCode::UnprocessableEntity),
             "rate_limited" => Some(ErrorCode::RateLimited),
             "internal_error" => Some(ErrorCode::InternalError),
             "service_unavailable" => Some(ErrorCode::ServiceUnavailable),

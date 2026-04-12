@@ -1057,6 +1057,35 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn revoke_other_token_without_permission_returns_403() {
+        let state = test_state();
+        let token = session_token(vec![TokenScope::CredentialRead]);
+        let target_token_id = "00000000-0000-0000-0000-000000000999".to_string();
+
+        let result = revoke_token_handler(
+            State(state.clone()),
+            Extension(token),
+            Path(target_token_id.clone()),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "forbidden");
+        assert_eq!(
+            err.message,
+            "Can only revoke the current token unless you have admin revoke permissions"
+        );
+        assert!(
+            !state
+                .token_store
+                .is_blacklisted(&target_token_id)
+                .await
+                .expect("blacklist lookup should succeed")
+        );
+    }
+
     // BUG-18204: 非法 UUID 应返回 404 而非 500
     #[test]
     fn parse_uuid_str_invalid_returns_not_found() {

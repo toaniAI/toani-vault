@@ -354,7 +354,7 @@ pub async fn create_session(
 
     let credential_id = match validate_create_session_credential_id(request.credential_id) {
         Ok(credential_id) => credential_id,
-        Err(message) => return ApiErrorResponse::invalid_request(message).into_response(),
+        Err(message) => return ApiErrorResponse::unprocessable_entity(message).into_response(),
     };
 
     if let Err(error) = ensure_credential_exists(state.vault.as_ref(), &token, credential_id) {
@@ -1710,19 +1710,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_validate_create_session_credential_id_missing_returns_400_invalid_request() {
+    async fn test_validate_create_session_credential_id_missing_returns_422_unprocessable_entity() {
         let message = validate_create_session_credential_id(None)
-            .expect_err("missing credential_id should return invalid_request response");
-        let response = ApiErrorResponse::invalid_request(message).into_response();
+            .expect_err("missing credential_id should return unprocessable_entity response");
+        let response = ApiErrorResponse::unprocessable_entity(message).into_response();
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
         let body_bytes = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response body");
         let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
 
-        assert_eq!(body["error"], "invalid_request");
+        assert_eq!(body["error"], "unprocessable_entity");
         assert!(
             body["message"]
                 .as_str()
