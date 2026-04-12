@@ -979,8 +979,12 @@ pub async fn export_audit_logs(
     }
 
     // 验证参数
-    if let Err(e) = params.validate() {
-        return (StatusCode::BAD_REQUEST, Json(AuditExportResponse::error(e))).into_response();
+    if let Err(_e) = params.validate() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "invalid_request" })),
+        )
+            .into_response();
     }
 
     // 构建过滤器

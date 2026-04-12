@@ -691,7 +691,7 @@ async fn test_get_audit_log_detail_forbidden() {
 async fn test_export_audit_logs_json() {
     let app = create_test_app();
 
-    let request_body = r#"{"format": "json"}"#;
+    let request_body = r#"{"format": "json", "start_time": 0, "end_time": 86400000}"#;
     let request = Request::builder()
         .uri("/audit/export")
         .method("POST")
@@ -709,7 +709,7 @@ async fn test_export_audit_logs_json() {
 async fn test_export_audit_logs_csv() {
     let app = create_test_app();
 
-    let request_body = r#"{"format": "csv"}"#;
+    let request_body = r#"{"format": "csv", "start_time": 0, "end_time": 86400000}"#;
     let request = Request::builder()
         .uri("/audit/export")
         .method("POST")
@@ -768,10 +768,57 @@ async fn test_export_audit_logs_invalid_time_range() {
 }
 
 #[tokio::test]
+async fn test_export_audit_logs_missing_end_time() {
+    let app = create_test_app();
+
+    // 缺少 end_time 应返回 400 Bad Request
+    let request_body = r#"{"format": "json", "start_time": 1735689600000}"#;
+    let request = Request::builder()
+        .uri("/audit/export")
+        .method("POST")
+        .header("Authorization", "Bearer test_token")
+        .header("Content-Type", "application/json")
+        .extension(create_audit_token())
+        .body(Body::from(request_body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    // 验证响应体包含 error: invalid_request
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(data["error"], "invalid_request");
+}
+
+#[tokio::test]
+async fn test_export_audit_logs_missing_start_time() {
+    let app = create_test_app();
+
+    // 缺少 start_time 也应返回 400 Bad Request
+    let request_body = r#"{"format": "json", "end_time": 1735689600000}"#;
+    let request = Request::builder()
+        .uri("/audit/export")
+        .method("POST")
+        .header("Authorization", "Bearer test_token")
+        .header("Content-Type", "application/json")
+        .extension(create_audit_token())
+        .body(Body::from(request_body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    // 验证响应体包含 error: invalid_request
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let data: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(data["error"], "invalid_request");
+}
+
+#[tokio::test]
 async fn test_export_audit_logs_forbidden() {
     let app = create_test_app();
 
-    let request_body = r#"{"format": "json"}"#;
+    // 需要提供合法的时间参数才能通过参数校验，然后触发权限检查
+    let request_body = r#"{"format": "json", "start_time": 0, "end_time": 86400000}"#;
     let request = Request::builder()
         .uri("/audit/export")
         .method("POST")
@@ -895,7 +942,7 @@ async fn test_admin_can_access_all_endpoints() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // 测试导出
-    let request_body = r#"{"format": "json"}"#;
+    let request_body = r#"{"format": "json", "start_time": 0, "end_time": 86400000}"#;
     let request = Request::builder()
         .uri("/audit/export")
         .method("POST")

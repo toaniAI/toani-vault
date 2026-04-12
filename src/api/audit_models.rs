@@ -431,6 +431,14 @@ impl AuditExportRequest {
 
     /// 验证请求参数
     pub fn validate(&self) -> Result<(), String> {
+        // 验证必填字段：start_time 和 end_time 都必须提供
+        if self.start_time.is_none() {
+            return Err("start_time 是必填字段".to_string());
+        }
+        if self.end_time.is_none() {
+            return Err("end_time 是必填字段".to_string());
+        }
+
         // 验证时间范围
         if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
             if start > end {
@@ -716,6 +724,31 @@ mod tests {
 
     #[test]
     fn test_audit_export_request_validation() {
+        // 测试缺少 end_time
+        let req = AuditExportRequest {
+            start_time: Some(1000),
+            end_time: None,
+            format: ExportFormat::Csv,
+            user_id_hash: None,
+            action: None,
+        };
+        assert!(req.validate().is_err());
+
+        // 测试缺少 start_time
+        let req = AuditExportRequest {
+            start_time: None,
+            end_time: Some(2000),
+            format: ExportFormat::Csv,
+            user_id_hash: None,
+            action: None,
+        };
+        assert!(req.validate().is_err());
+
+        // 测试缺少两个时间字段
+        let req = AuditExportRequest::new();
+        assert!(req.validate().is_err());
+
+        // 测试开始时间大于结束时间
         let req = AuditExportRequest::new().with_time_range(2000, 1000);
         assert!(req.validate().is_err());
 
@@ -725,6 +758,7 @@ mod tests {
         let req = AuditExportRequest::new().with_time_range(start, end);
         assert!(req.validate().is_err());
 
+        // 测试合法时间范围
         let req = AuditExportRequest::new().with_time_range(1000, 2000);
         assert!(req.validate().is_ok());
     }
