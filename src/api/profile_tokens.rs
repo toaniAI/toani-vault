@@ -19,7 +19,7 @@ use crate::token::{
 };
 use axum::{
     Extension, Json, Router,
-    extract::{Path, State},
+    extract::{Path, State, rejection::JsonRejection},
     routing::{get, post},
 };
 use chrono::Utc;
@@ -69,11 +69,19 @@ pub fn profile_token_routes(state: AuthApiState) -> Router {
         .with_state(state)
 }
 
+/// 映射 JSON 反序列化错误为 invalid_request，确保返回 400 而不是 422
+fn map_create_request_rejection(error: JsonRejection) -> ApiErrorResponse {
+    ApiErrorResponse::invalid_request(format!("Invalid automation token request payload: {error}"))
+}
+
 async fn create_automation_token_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
-    Json(request): Json<CreateAutomationTokenRequest>,
+    payload: Result<Json<CreateAutomationTokenRequest>, JsonRejection>,
 ) -> Result<Json<CreateAutomationTokenResponse>, ApiErrorResponse> {
+    // 处理 JSON 反序列化错误（如必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) = payload.map_err(map_create_request_rejection)?;
+
     ensure_user_token_manager(&token, &[TokenScope::TokensWrite, TokenScope::Admin])?;
     let membership = load_active_membership(&state, &token).await?;
 
@@ -504,6 +512,24 @@ mod tests {
         assert_eq!(
             normalize_automation_ttl(Some(MAX_TOKEN_TTL_SECONDS.saturating_add(1))),
             MAX_TOKEN_TTL_SECONDS
+        );
+    }
+
+    #[test]
+    fn map_create_request_rejection_returns_invalid_request() {
+        // 使用 MissingJsonContentType 测试 rejection 映射逻辑
+        let rejection = JsonRejection::MissingJsonContentType(
+            axum::extract::rejection::MissingJsonContentType::default(),
+        );
+        let response = map_create_request_rejection(rejection);
+
+        // 验证错误结构符合预期：error 为 invalid_request
+        assert_eq!(response.error, "invalid_request");
+        // 验证消息包含关键信息
+        assert!(
+            response
+                .message
+                .contains("Invalid automation token request payload")
         );
     }
 }
