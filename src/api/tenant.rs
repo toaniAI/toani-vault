@@ -21,7 +21,7 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::{Path, State},
+    extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
     routing::{get, post},
 };
@@ -230,6 +230,7 @@ impl From<&TenantSettings> for TenantSettingsDto {
 
 /// 更新配置请求
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateConfigRequest {
     #[serde(default)]
     pub feature_flags: Option<FeatureFlagsUpdate>,
@@ -690,12 +691,25 @@ pub async fn get_tenant_config_handler<S: TenantConfigStore + Clone + Send + Syn
     }
 }
 
+/// 映射 JSON 反序列化错误为 invalid_request
+fn map_config_update_rejection(error: JsonRejection) -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({
+            "success": false,
+            "error": "invalid_request",
+            "message": format!("Invalid tenant config update payload: {error}")
+        })),
+    )
+}
+
 /// 更新租户配置处理器
 pub async fn update_tenant_config_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
     Path(tenant_id): Path<String>,
-    Json(request): Json<UpdateConfigRequest>,
+    payload: Result<Json<UpdateConfigRequest>, JsonRejection>,
 ) -> Result<Json<TenantConfigResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let Json(request) = payload.map_err(map_config_update_rejection)?;
     let tenant_id = TenantIdType::from(tenant_id);
 
     // 先获取当前配置以进行部分更新
@@ -1219,5 +1233,86 @@ mod tests {
             .unwrap();
         let payload: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn update_config_with_unknown_field_returns_400() {
+        // BUG-18267 回归测试：PUT /tenants/:id/config 传入未知字段（如非法 tier）
+        // 应返回 400 Bad Request，而非静默忽略并返回 200
+        use crate::tenant::TenantConfigManager;
+
+        let store = MemoryTenantConfigStore::new();
+        let config_manager = TenantConfigManager::new(store.clone());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let tenant = Tenant::new("bug-18267-test");
+        let tenant_id = tenant.id.clone();
+        tenant_service.upsert_tenant(tenant).await.unwrap();
+
+        // 创建初始配置
+        config_manager
+            .create_config(&tenant_id, TenantConfig::default())
+            .await
+            .unwrap();
+
+        let tenant_manager = TenantManager::new_simple(store);
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        // 发送包含非法 tier 字段的请求
+        let request = Request::builder()
+            .method("PUT")
+            .uri(format!("/tenants/{tenant_id}/config"))
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"tier":"invalid_tier_value"}"#))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "invalid_request");
+    }
+
+    #[tokio::test]
+    async fn update_config_with_valid_fields_still_works() {
+        // 验证合法配置字段更新不受 deny_unknown_fields 影响
+        use crate::tenant::TenantConfigManager;
+
+        let store = MemoryTenantConfigStore::new();
+        let config_manager = TenantConfigManager::new(store.clone());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let tenant = Tenant::new("bug-18267-valid");
+        let tenant_id = tenant.id.clone();
+        tenant_service.upsert_tenant(tenant).await.unwrap();
+
+        // 创建初始配置
+        config_manager
+            .create_config(&tenant_id, TenantConfig::default())
+            .await
+            .unwrap();
+
+        let tenant_manager = TenantManager::new_simple(store);
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        // 发送合法的配置更新
+        let request = Request::builder()
+            .method("PUT")
+            .uri(format!("/tenants/{tenant_id}/config"))
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"quota_limits":{"max_credentials":500}}"#))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert!(payload["success"].as_bool().unwrap());
     }
 }
