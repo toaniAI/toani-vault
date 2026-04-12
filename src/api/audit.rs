@@ -822,8 +822,8 @@ pub async fn list_audit_logs(
 
     // 构建过滤器
     let filter = AuditFilter {
-        start_time: params.start_time,
-        end_time: params.end_time,
+        start_time: params.start_time.map(|t| t.as_millis()),
+        end_time: params.end_time.map(|t| t.as_millis()),
         user_id_hash: params.user_id_hash.clone(),
         action: params.action,
         risk_tier: params.risk_tier,

@@ -18,14 +18,114 @@ use serde::{Deserialize, Serialize};
 use crate::audit::events::{AuditAction, Outcome, RiskTier};
 use crate::audit::recorder::SignedAuditEntry;
 
+/// 支持多种时间格式的自定义类型
+///
+/// 可接受：
+/// - Unix 时间戳毫秒（数字，如 `1735689600000`）
+/// - ISO 8601 字符串（如 `2026-06-01T12:00:00.000Z`）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FlexibleTime(u64);
+
+impl FlexibleTime {
+    /// 获取毫秒时间戳
+    pub fn as_millis(&self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for FlexibleTime {
+    fn from(ms: u64) -> Self {
+        Self(ms)
+    }
+}
+
+impl From<FlexibleTime> for u64 {
+    fn from(time: FlexibleTime) -> u64 {
+        time.0
+    }
+}
+
+impl Serialize for FlexibleTime {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u64(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for FlexibleTime {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // 先尝试解析为通用值
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        match value {
+            // 数字格式：直接作为毫秒时间戳
+            serde_json::Value::Number(n) => {
+                if let Some(ms) = n.as_u64() {
+                    Ok(Self(ms))
+                } else if let Some(f) = n.as_f64() {
+                    // 处理可能传入的浮点数（截断为整数）
+                    Ok(Self(f as u64))
+                } else {
+                    Err(Error::custom("时间戳必须是正整数或有效的 ISO 8601 字符串"))
+                }
+            }
+            // 字符串格式：解析 ISO 8601
+            serde_json::Value::String(s) => {
+                // 尝试解析 ISO 8601 格式
+                parse_iso8601_to_millis(&s).map(Self).map_err(Error::custom)
+            }
+            // 其他格式不支持
+            _ => Err(Error::custom("时间必须是数字时间戳或 ISO 8601 字符串")),
+        }
+    }
+}
+
+/// 解析 ISO 8601 时间字符串为毫秒时间戳
+///
+/// 支持格式：
+/// - `2026-06-01T12:00:00.000Z`
+/// - `2026-06-01T12:00:00Z`
+/// - `2026-06-01T12:00:00+08:00`
+fn parse_iso8601_to_millis(s: &str) -> Result<u64, String> {
+    // 尝试使用 chrono 解析 RFC3339 格式
+    use chrono::DateTime;
+
+    // 尝试解析为 RFC3339/ISO 8601
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        // 转换为 UTC 时间戳（毫秒）
+        let ts = dt.timestamp_millis();
+        if ts >= 0 {
+            return Ok(ts as u64);
+        } else {
+            return Err("ISO 8601 时间不能为负数".to_string());
+        }
+    }
+
+    // 尝试解析纯数字字符串（可能是毫秒时间戳）
+    if let Ok(ms) = s.parse::<u64>() {
+        return Ok(ms);
+    }
+
+    Err(format!(
+        "无法解析时间格式: '{s}', 请使用毫秒时间戳或 ISO 8601 格式 (如 2026-06-01T12:00:00.000Z)"
+    ))
+}
+
 /// 审计日志查询请求参数
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuditLogQueryRequest {
-    /// 开始时间（Unix 时间戳毫秒）
-    pub start_time: Option<u64>,
-    /// 结束时间（Unix 时间戳毫秒）
-    pub end_time: Option<u64>,
+    /// 开始时间（支持 Unix 时间戳毫秒或 ISO 8601 字符串）
+    pub start_time: Option<FlexibleTime>,
+    /// 结束时间（支持 Unix 时间戳毫秒或 ISO 8601 字符串）
+    pub end_time: Option<FlexibleTime>,
     /// 用户 ID 哈希
     pub user_id_hash: Option<String>,
     /// 操作类型
@@ -62,7 +162,7 @@ impl AuditLogQueryRequest {
     pub fn validate(&self) -> Result<(), String> {
         // 验证时间范围
         if let (Some(start), Some(end)) = (self.start_time, self.end_time)
-            && start > end
+            && start.as_millis() > end.as_millis()
         {
             return Err("开始时间不能大于结束时间".to_string());
         }
@@ -87,13 +187,13 @@ impl AuditLogQueryRequest {
 
     /// 设置开始时间
     pub fn with_start_time(mut self, time: u64) -> Self {
-        self.start_time = Some(time);
+        self.start_time = Some(FlexibleTime::from(time));
         self
     }
 
     /// 设置结束时间
     pub fn with_end_time(mut self, time: u64) -> Self {
-        self.end_time = Some(time);
+        self.end_time = Some(FlexibleTime::from(time));
         self
     }
 
@@ -778,5 +878,118 @@ mod tests {
     #[test]
     fn test_export_format_default() {
         assert_eq!(ExportFormat::default(), ExportFormat::Json);
+    }
+
+    // BUG-18228: 测试 FlexibleTime 支持多种时间格式
+    #[test]
+    fn test_flexible_time_from_u64() {
+        let time = FlexibleTime::from(1735689600000u64);
+        assert_eq!(time.as_millis(), 1735689600000);
+    }
+
+    #[test]
+    fn test_flexible_time_deserialize_number() {
+        // 数字格式：直接作为毫秒时间戳
+        let json = r#"1735689600000"#;
+        let time: FlexibleTime = serde_json::from_str(json).unwrap();
+        assert_eq!(time.as_millis(), 1735689600000);
+    }
+
+    #[test]
+    fn test_flexible_time_deserialize_iso8601_string() {
+        // ISO 8601 字符串格式 - JSON 字符串需要双引号包裹
+        let json = r#""2026-06-01T12:00:00.000Z""#;
+        let time: FlexibleTime = serde_json::from_str(json).unwrap();
+        // 验证解析成功，时间戳应为正数
+        assert!(time.as_millis() > 0);
+        // 验证可以通过 chrono 反向验证
+        use chrono::TimeZone;
+        let dt = chrono::Utc
+            .timestamp_millis_opt(time.as_millis() as i64)
+            .single()
+            .unwrap();
+        assert_eq!(
+            dt.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            "2026-06-01T12:00:00"
+        );
+    }
+
+    #[test]
+    fn test_flexible_time_deserialize_iso8601_with_timezone() {
+        // ISO 8601 带时区偏移 - JSON 字符串需要双引号包裹
+        let json = r#""2026-06-01T12:00:00+08:00""#;
+        let time: FlexibleTime = serde_json::from_str(json).unwrap();
+        // 验证解析成功
+        assert!(time.as_millis() > 0);
+        // UTC 时间应该是 2026-06-01T04:00:00Z (减去8小时偏移)
+        use chrono::TimeZone;
+        let dt = chrono::Utc
+            .timestamp_millis_opt(time.as_millis() as i64)
+            .single()
+            .unwrap();
+        assert_eq!(
+            dt.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            "2026-06-01T04:00:00"
+        );
+    }
+
+    #[test]
+    fn test_flexible_time_deserialize_number_string() {
+        // 纯数字字符串（作为毫秒时间戳）
+        let json = r#"1735689600000"#;
+        let time: FlexibleTime = serde_json::from_str(json).unwrap();
+        assert_eq!(time.as_millis(), 1735689600000);
+    }
+
+    #[test]
+    fn test_flexible_time_serialize() {
+        let time = FlexibleTime::from(1735689600000u64);
+        let json = serde_json::to_string(&time).unwrap();
+        assert_eq!(json, "1735689600000");
+    }
+
+    #[test]
+    fn test_flexible_time_invalid_format() {
+        // 无效格式应返回错误
+        let json = r#"invalid-time"#;
+        let result: Result<FlexibleTime, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_audit_log_query_request_iso8601_same_time() {
+        // BUG-18228: 测试 ISO 8601 同瞬时间（start_time == end_time）应被视为合法零宽窗口
+        // 模拟 URL 查询参数解析场景
+        let query_json = r#"{"start_time":"2026-06-01T12:00:00.000Z","end_time":"2026-06-01T12:00:00.000Z","page":1,"page_size":20}"#;
+        let req: AuditLogQueryRequest = serde_json::from_str(query_json).unwrap();
+
+        // 验证两个时间相等
+        assert_eq!(
+            req.start_time.unwrap().as_millis(),
+            req.end_time.unwrap().as_millis()
+        );
+
+        // 验证参数校验通过（同瞬时间应视为合法）
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_audit_log_query_request_mixed_formats() {
+        // 测试混合格式：毫秒时间戳 + ISO 8601
+        let query_json = r#"{"start_time":1735689600000,"end_time":"2026-06-01T12:00:00.000Z","page":1,"page_size":20}"#;
+        let req: AuditLogQueryRequest = serde_json::from_str(query_json).unwrap();
+
+        // 1735689600000 = 2025-01-01T00:00:00Z
+        // 2026-06-01T12:00:00Z = 1751366400000
+        // start < end，校验应通过
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_audit_log_query_request_start_greater_than_end() {
+        // 起始时间大于结束时间应校验失败
+        let query_json = r#"{"start_time":"2026-06-01T12:00:00.000Z","end_time":"2026-01-01T00:00:00.000Z","page":1,"page_size":20}"#;
+        let req: AuditLogQueryRequest = serde_json::from_str(query_json).unwrap();
+        assert!(req.validate().is_err());
     }
 }
