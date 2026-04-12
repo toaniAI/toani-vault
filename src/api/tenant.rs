@@ -987,6 +987,23 @@ pub async fn delete_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 
     }
 }
 
+async fn suspend_tenant_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "success": false,
+            "error": {
+                "code": "TENANT_NOT_FOUND",
+                "message": "租户不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
 /// 从配置推断租户层级
 fn get_tier_from_config(config: &TenantConfig) -> String {
     if config.feature_flags.enable_sso {
@@ -1014,6 +1031,7 @@ pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
             "/tenants/:id/config",
             get(get_tenant_config_handler::<S>).put(update_tenant_config_handler::<S>),
         )
+        .route("/tenants/suspend", post(suspend_tenant_missing_id_handler))
         .route("/tenants/:id/activate", post(activate_tenant_handler::<S>))
         .route("/tenants/:id/suspend", post(suspend_tenant_handler::<S>))
 }
@@ -1021,6 +1039,14 @@ pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{body::Body, http::Request};
+    use serde_json::Value;
+    use tower::ServiceExt;
+
+    use crate::{
+        api::middleware::{TokenScope, ValidatedToken},
+        tenant::{MemoryTenantConfigStore, MemoryTenantStorage, TenantService},
+    };
 
     #[test]
     fn test_get_tier_from_config() {
@@ -1064,5 +1090,85 @@ mod tests {
         assert_eq!(result.max_users, 500);
         // 其他字段保持默认值
         assert_eq!(result.max_tokens_per_user, base.max_tokens_per_user);
+    }
+
+    #[tokio::test]
+    async fn suspend_missing_tenant_id_returns_not_found() {
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/tenants/suspend")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"reason":"missing-id"}"#))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn suspend_existing_tenant_path_still_works() {
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let tenant = Tenant::new("bug-18270");
+        let tenant_id = tenant.id.to_string();
+        tenant_service.upsert_tenant(tenant).await.unwrap();
+
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(format!("/tenants/{tenant_id}/suspend"))
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"reason":"explicit-id"}"#))
+            .unwrap();
+        request.extensions_mut().insert(ValidatedToken::mock(
+            &tenant_id,
+            "test-user",
+            vec![TokenScope::TenantAdmin],
+        ));
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn activate_zero_uuid_returns_not_found() {
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let zero_uuid = "00000000-0000-0000-0000-000000000000";
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(format!("/tenants/{zero_uuid}/activate"))
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(ValidatedToken::mock(
+            zero_uuid,
+            "test-user",
+            vec![TokenScope::TenantAdmin],
+        ));
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
     }
 }
