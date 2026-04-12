@@ -1173,6 +1173,25 @@ async fn delete_tenant_missing_id_handler() -> (StatusCode, Json<serde_json::Val
     )
 }
 
+/// 兜底处理器：GET /tenants/ 缺少租户ID时返回404
+/// BUG-18258: 防止路径归一化后命中列表路由返回 200 OK
+async fn get_tenant_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "success": false,
+            "error": {
+                "code": "TENANT_NOT_FOUND",
+                "message": "租户不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
 /// 从配置推断租户层级
 fn get_tier_from_config(config: &TenantConfig) -> String {
     if config.feature_flags.enable_sso {
@@ -1195,6 +1214,8 @@ pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
                 // BUG-18260: DELETE /tenants 缺少租户ID时返回404，而非405 Method Not Allowed
                 .delete(delete_tenant_missing_id_handler),
         )
+        // BUG-18258: GET /tenants/ 缺少租户ID时返回404，防止归一化后命中列表路由
+        .route("/tenants/", get(get_tenant_missing_id_handler))
         .route(
             "/tenants/:id",
             get(get_tenant_handler::<S>).delete(delete_tenant_handler::<S>),
@@ -1337,6 +1358,31 @@ mod tests {
         let request = Request::builder()
             .method("DELETE")
             .uri("/tenants")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn get_tenant_missing_trailing_slash_returns_not_found() {
+        // BUG-18258 回归测试：GET /tenants/ 缺少租户ID应返回404，
+        // 而不是被路径归一化后命中列表路由返回 200 OK
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let request = Request::builder()
+            .method("GET")
+            .uri("/tenants/")
             .body(Body::empty())
             .unwrap();
 
