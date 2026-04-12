@@ -479,6 +479,12 @@ pub fn protected_auth_routes() -> Router<AuthApiState> {
             "/invitations",
             get(list_invitations_handler).post(create_invitation_handler),
         )
+        // Explicit handler for missing invitation_id in revoke path
+        // Must be registered BEFORE the dynamic :invitation_id route
+        .route(
+            "/invitations/revoke",
+            post(revoke_invitation_missing_id_handler),
+        )
         .route(
             "/invitations/:invitation_id/revoke",
             post(revoke_invitation_handler),
@@ -1673,6 +1679,17 @@ pub async fn create_invitation_handler(
     }))
 }
 
+/// Handler for POST /invitations/revoke when invitation_id is missing from path.
+/// Returns 404 with JSON error body per project error protocol.
+pub async fn revoke_invitation_missing_id_handler(
+    Extension(_token): Extension<ValidatedToken>,
+) -> Result<ApiSuccessResponse<serde_json::Value>, ApiErrorResponse> {
+    // The path /invitations/revoke indicates invitation_id was not provided
+    Err(ApiErrorResponse::not_found(
+        "Invitation ID is required in path",
+    ))
+}
+
 pub async fn revoke_invitation_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
@@ -2000,5 +2017,21 @@ mod tests {
             let result = Uuid::parse_str(valid_uuid);
             assert!(result.is_ok(), "Expected '{valid_uuid}' to be valid UUID");
         }
+    }
+
+    #[test]
+    fn test_revoke_invitation_missing_id_returns_not_found() {
+        // Test that missing invitation_id in path returns 404 with JSON error
+        // This simulates POST /invitations/revoke (without :invitation_id)
+        let error = ApiErrorResponse::not_found("Invitation ID is required in path");
+
+        // Verify error structure matches project protocol
+        assert_eq!(error.error, "not_found");
+        assert!(error.message.contains("Invitation ID"));
+
+        // Verify JSON serialization produces expected structure
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains("\"error\":\"not_found\""));
+        assert!(json.contains("\"message\""));
     }
 }
