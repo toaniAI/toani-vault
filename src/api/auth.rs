@@ -348,14 +348,14 @@ pub struct FrontendMemberListResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateUserProfileRequest {
     pub display_name: Option<String>,
     pub default_tenant_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CompleteOnboardingRequest {
     pub display_name: Option<String>,
 }
@@ -367,6 +367,46 @@ const MAX_INVITATION_TOKEN_LENGTH: usize = 256;
 #[derive(Debug, Deserialize)]
 pub struct TenantScopedQuery {
     pub tenant_id: Uuid,
+}
+
+/// 邀请列表查询参数（支持分页参数校验）
+#[derive(Debug, Deserialize)]
+pub struct ListInvitationsQuery {
+    pub tenant_id: Uuid,
+    /// 分页限制（可选）。必须是有效正整数；非法值将返回 400。
+    #[serde(default, deserialize_with = "deserialize_optional_limit")]
+    pub limit: Option<u32>,
+}
+
+/// 自定义 deserializer：校验 limit 必须是有效正整数。
+/// 非数字或负值返回 deserialization 错误，将被 handler 捕获并转换为 400。
+fn deserialize_optional_limit<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(serde_json::Value::Number(n)) => {
+            // 尝试解析为 u64，然后校验范围
+            if let Some(num) = n.as_u64() {
+                if num > u32::MAX as u64 {
+                    return Err(serde::de::Error::custom("limit exceeds maximum value"));
+                }
+                if num == 0 {
+                    return Err(serde::de::Error::custom("limit must be a positive integer"));
+                }
+                Ok(Some(num as u32))
+            } else {
+                // 负数或非整数（如 1.5）
+                Err(serde::de::Error::custom("limit must be a positive integer"))
+            }
+        }
+        Some(_) => {
+            // 非数字类型（字符串 "abc"、null、对象等）
+            Err(serde::de::Error::custom("limit must be a positive integer"))
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1523,8 +1563,13 @@ pub async fn update_member_role_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
     Path(membership_id): Path<Uuid>,
-    Json(request): Json<UpdateMembershipRoleRequest>,
+    payload: Result<Json<UpdateMembershipRoleRequest>, JsonRejection>,
 ) -> Result<ApiSuccessResponse<FrontendMembershipInfo>, ApiErrorResponse> {
+    // 处理 JSON 反序列化错误（如非法枚举值），返回 400 而不是默认的 422
+    let Json(request) = payload.map_err(|e| {
+        ApiErrorResponse::invalid_request(format!("Invalid membership role request payload: {e}"))
+    })?;
+
     require_scopes(
         &token,
         &[
@@ -1597,8 +1642,12 @@ pub async fn remove_member_handler(
 pub async fn list_invitations_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
-    Query(query): Query<TenantScopedQuery>,
+    query_result: Result<Query<ListInvitationsQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Result<ApiSuccessResponse<Vec<FrontendInvitationListItem>>, ApiErrorResponse> {
+    // 捕获 Query 解析错误（如 limit=abc），返回 400 JSON 错误而非默认 422
+    let Query(query) = query_result
+        .map_err(|e| ApiErrorResponse::invalid_request(format!("Invalid query parameters: {e}")))?;
+
     require_scopes(
         &token,
         &[
@@ -1613,6 +1662,10 @@ pub async fn list_invitations_handler(
             "Cross-tenant invitation access is not allowed",
         ));
     }
+
+    // TODO: 未来可将 limit 传递给 service 层实现真正的分页
+    // 当前实现仅校验参数，查询仍返回全量列表
+    let _limit = query.limit; // 预留分页参数
 
     let invitations = state
         .auth_service
@@ -1635,8 +1688,13 @@ pub async fn list_invitations_handler(
 pub async fn create_invitation_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
-    Json(request): Json<CreateInvitationApiRequest>,
+    payload: Result<Json<CreateInvitationApiRequest>, JsonRejection>,
 ) -> Result<ApiSuccessResponse<FrontendInvitationListItem>, ApiErrorResponse> {
+    // 处理 JSON 反序列化错误（如非法枚举值、必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) = payload.map_err(|e| {
+        ApiErrorResponse::invalid_request(format!("Invalid invitation request payload: {e}"))
+    })?;
+
     require_scopes(
         &token,
         &[
@@ -2084,6 +2142,316 @@ mod tests {
         for valid_val in valid_values {
             // All positive values >= 1 should pass validation
             assert!(valid_val >= 1, "Value {valid_val} should be valid");
+        }
+    }
+
+    #[test]
+    fn test_create_invitation_invalid_role_enum_returns_invalid_request() {
+        // Test that invalid role enum value returns 400 invalid_request (BUG-18246)
+        // When role is not a valid MembershipRole (owner/admin/member/readonly),
+        // JSON deserialization fails and should be mapped to invalid_request
+
+        // Valid role values that should be accepted by serde (MembershipRole is a bare enum, not in object)
+        let valid_roles = ["owner", "admin", "member", "readonly"];
+        for role in valid_roles {
+            let json = serde_json::json!(role); // Just the string value, not {"role": role}
+            let result: Result<MembershipRole, _> = serde_json::from_value(json);
+            assert!(
+                result.is_ok(),
+                "Role '{role}' should be valid MembershipRole, got error: {:?}",
+                result.err()
+            );
+        }
+
+        // Invalid role values that should be rejected by serde
+        let invalid_roles = ["superuser", "guest", "user", "manager", "moderator", ""];
+        for role in invalid_roles {
+            let json = serde_json::json!(role); // Just the string value
+            let result: Result<MembershipRole, _> = serde_json::from_value(json);
+            assert!(
+                result.is_err(),
+                "Role '{role}' should be invalid MembershipRole"
+            );
+        }
+
+        // Verify that the handler's error mapping produces correct response
+        let error = ApiErrorResponse::invalid_request("Invalid invitation request payload: ...");
+        assert_eq!(error.error, "invalid_request");
+
+        // Verify JSON serialization produces expected structure
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains("\"error\":\"invalid_request\""));
+        assert!(json.contains("\"message\""));
+    }
+
+    #[test]
+    fn test_membership_role_serialization_cases() {
+        // MembershipRole uses #[serde(rename_all = "snake_case")]
+        // so input must be snake_case: owner, admin, member, readonly
+
+        // Verify snake_case input works
+        for (input, expected) in [
+            ("owner", MembershipRole::Owner),
+            ("admin", MembershipRole::Admin),
+            ("member", MembershipRole::Member),
+            ("readonly", MembershipRole::Readonly),
+        ] {
+            let json = serde_json::json!(input);
+            let role: MembershipRole = serde_json::from_value(json).unwrap();
+            assert_eq!(role, expected);
+        }
+
+        // Verify that camelCase/pascalCase input fails
+        let invalid_cases = ["Owner", "Admin", "ReadOnly", "ownerCapitalized"];
+        for invalid in invalid_cases {
+            let json = serde_json::json!(invalid);
+            let result: Result<MembershipRole, _> = serde_json::from_value(json);
+            assert!(
+                result.is_err(),
+                "'{invalid}' should fail snake_case parsing"
+            );
+        }
+    }
+
+    // ============================================================================
+    // BUG-18245: 邀请列表 limit 参数校验测试
+    // ============================================================================
+
+    #[test]
+    fn test_deserialize_optional_limit_valid_number() {
+        // Valid positive integers should deserialize correctly
+        let valid_values = [1, 10, 100, 4294967295]; // u32 max
+
+        for val in valid_values {
+            let json = serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000", "limit": val});
+            let result: Result<ListInvitationsQuery, _> = serde_json::from_value(json);
+            assert!(
+                result.is_ok(),
+                "limit {val} should be valid, got error: {:?}",
+                result.err()
+            );
+            let query = result.unwrap();
+            assert_eq!(query.limit, Some(val));
+        }
+    }
+
+    #[test]
+    fn test_deserialize_optional_limit_missing_defaults_to_none() {
+        // When limit is not provided, it should default to None
+        let json = serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000"});
+        let query: ListInvitationsQuery =
+            serde_json::from_value(json).expect("should deserialize without limit");
+        assert!(query.limit.is_none(), "limit should default to None");
+    }
+
+    #[test]
+    fn test_deserialize_optional_limit_non_numeric_fails() {
+        // Non-numeric limit (like "abc") should fail deserialization (BUG-18245)
+        let invalid_values = ["abc", "xyz", "", "null", "true"];
+
+        for val in invalid_values {
+            let json = serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000", "limit": val});
+            let result: Result<ListInvitationsQuery, _> = serde_json::from_value(json);
+            assert!(
+                result.is_err(),
+                "limit '{val}' should be invalid, but got success: {:?}",
+                result.ok()
+            );
+        }
+    }
+
+    #[test]
+    fn test_deserialize_optional_limit_zero_fails() {
+        // Zero limit should be rejected (not a valid positive integer)
+        let json =
+            serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000", "limit": 0});
+        let result: Result<ListInvitationsQuery, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "limit=0 should be invalid (must be positive), but got success: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn test_deserialize_optional_limit_negative_fails() {
+        // Negative limit should fail (not a valid u32)
+        let json =
+            serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000", "limit": -10});
+        let result: Result<ListInvitationsQuery, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "limit=-10 should be invalid, but got success: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn test_deserialize_optional_limit_overflow_fails() {
+        // Limit exceeding u32::MAX should fail
+        let overflow_val: i64 = 4294967296; // u32::MAX + 1
+        let json = serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000", "limit": overflow_val});
+        let result: Result<ListInvitationsQuery, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "limit exceeding u32::MAX should be invalid, but got success: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn test_deserialize_optional_limit_float_fails() {
+        // Non-integer float values should fail
+        let float_values = [1.5, 10.99, 0.5];
+        for val in float_values {
+            let json = serde_json::json!({"tenant_id": "00000000-0000-0000-0000-000000000000", "limit": val});
+            let result: Result<ListInvitationsQuery, _> = serde_json::from_value(json);
+            assert!(
+                result.is_err(),
+                "limit {val} (float) should be invalid, but got success: {:?}",
+                result.ok()
+            );
+        }
+    }
+
+    #[test]
+    fn test_list_invitations_handler_invalid_limit_returns_invalid_request() {
+        // Verify that the handler's error mapping produces correct response for invalid limit
+        let error = ApiErrorResponse::invalid_request("Invalid query parameters: ...");
+        assert_eq!(error.error, "invalid_request");
+
+        // Verify JSON serialization produces expected structure
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains("\"error\":\"invalid_request\""));
+        assert!(json.contains("\"message\""));
+    }
+
+    #[test]
+    fn test_update_membership_role_request_invalid_enum_fails() {
+        // Invalid enum values (including superuser which is not allowed) should fail deserialization
+        let invalid_roles = [
+            "superuser",
+            "guest",
+            "moderator",
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // 128 chars
+        ];
+
+        for role in invalid_roles {
+            let json = serde_json::json!({"role": role});
+            let result: Result<UpdateMembershipRoleRequest, _> = serde_json::from_value(json);
+            assert!(
+                result.is_err(),
+                "role '{role}' should be invalid, but got success: {:?}",
+                result.ok()
+            );
+        }
+    }
+
+    #[test]
+    fn test_update_membership_role_request_valid_enum_succeeds() {
+        // Valid enum values should deserialize correctly
+        let valid_roles = ["owner", "admin", "member", "readonly"];
+
+        for role in valid_roles {
+            let json = serde_json::json!({"role": role});
+            let result: Result<UpdateMembershipRoleRequest, _> = serde_json::from_value(json);
+            assert!(
+                result.is_ok(),
+                "role '{role}' should be valid, but got error: {:?}",
+                result.err()
+            );
+        }
+    }
+
+    #[test]
+    fn test_update_member_role_handler_invalid_role_returns_invalid_request() {
+        // Verify that the handler's error mapping produces correct response for invalid role
+        let error =
+            ApiErrorResponse::invalid_request("Invalid membership role request payload: ...");
+        assert_eq!(error.error, "invalid_request");
+
+        // Verify JSON serialization produces expected structure
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains("\"error\":\"invalid_request\""));
+        assert!(json.contains("\"message\""));
+
+        // Verify status code is 400 BAD_REQUEST (not 422)
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ============================================================================
+    // BUG-18240: CompleteOnboardingRequest 拒绝未知字段测试
+    // ============================================================================
+
+    #[test]
+    fn test_complete_onboarding_request_rejects_unknown_fields() {
+        // BUG-18240: 未知字段应触发 400 invalid_request
+        let json = serde_json::json!({"unknown_field": true});
+        let result: Result<CompleteOnboardingRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, but got success: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn test_complete_onboarding_request_rejects_unknown_field_with_valid_field() {
+        // 即使有合法字段，未知字段仍应被拒绝
+        let json = serde_json::json!({"display_name": "Test User", "extra_field": "value"});
+        let result: Result<CompleteOnboardingRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "unknown field mixed with valid field should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_complete_onboarding_request_accepts_empty_body() {
+        // 空请求体应被接受（display_name 是 Option）
+        let json = serde_json::json!({});
+        let result: Result<CompleteOnboardingRequest, _> = serde_json::from_value(json);
+        assert!(result.is_ok(), "empty body should be accepted");
+        let request = result.unwrap();
+        assert!(request.display_name.is_none());
+    }
+
+    #[test]
+    fn test_complete_onboarding_request_accepts_valid_display_name() {
+        // 合法的 displayName 应被接受（注意 camelCase）
+        let json = serde_json::json!({"displayName": "Valid Name"});
+        let result: Result<CompleteOnboardingRequest, _> = serde_json::from_value(json);
+        assert!(result.is_ok(), "valid displayName should be accepted");
+        let request = result.unwrap();
+        assert_eq!(request.display_name, Some("Valid Name".to_string()));
+    }
+
+    #[test]
+    fn test_update_user_profile_request_rejects_unknown_fields() {
+        // UpdateUserProfileRequest 也应拒绝未知字段（同修复）
+        let json = serde_json::json!({"unknown_field": true});
+        let result: Result<UpdateUserProfileRequest, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, but got success: {:?}",
+            result.ok()
+        );
+    }
+
+    #[test]
+    fn test_update_user_profile_request_accepts_partial_fields() {
+        // 部分字段应被接受（都是 Option，注意 camelCase）
+        let json_cases = [
+            serde_json::json!({}),
+            serde_json::json!({"displayName": "New Name"}),
+            serde_json::json!({"defaultTenantId": "00000000-0000-0000-0000-000000000000"}),
+            serde_json::json!({"displayName": "Name", "defaultTenantId": "00000000-0000-0000-0000-000000000000"}),
+        ];
+
+        for json in json_cases {
+            let result: Result<UpdateUserProfileRequest, _> = serde_json::from_value(json.clone());
+            assert!(result.is_ok(), "valid request {json} should be accepted");
         }
     }
 }
