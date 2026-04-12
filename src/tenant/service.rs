@@ -742,11 +742,16 @@ impl TenantService for PostgresTenantStorage {
         _deleted_by: Option<String>,
     ) -> Result<(), TenantConfigError> {
         let tenant_uuid = Self::parse_tenant_uuid(tenant_id)?;
-        sqlx::query("UPDATE tenants SET status = 'deleted', updated_at = NOW() WHERE id = $1")
+        // BUG-18262: 检查实际删除的行数，避免"未命中也算成功"的误判
+        let result = sqlx::query("UPDATE tenants SET status = 'deleted', updated_at = NOW() WHERE id = $1 AND status != 'deleted'")
             .bind(tenant_uuid)
             .execute(self.db_pool.pool())
             .await
             .map_err(|error| TenantConfigError::StorageError(error.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(TenantConfigError::NotFound(tenant_id.clone()));
+        }
         Ok(())
     }
 

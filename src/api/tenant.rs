@@ -1001,6 +1001,27 @@ pub async fn delete_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     let tenant_id = TenantIdType::from(tenant_id);
 
+    // BUG-18262: 全零 UUID 是保留的系统租户标识，外部 API 应视作不存在并返回 404
+    // 防止数据库中存在的 system tenant (id=00000000-...) 被误当作普通租户删除
+    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str()) {
+        if uuid == uuid::Uuid::nil() {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false,
+                    "error": {
+                        "code": "TENANT_NOT_FOUND",
+                        "message": "租户不存在"
+                    },
+                    "meta": {
+                        "request_id": uuid::Uuid::now_v7().to_string(),
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }
+                })),
+            ));
+        }
+    }
+
     match state
         .tenant_service
         .delete_tenant(&tenant_id, Some("api_user".to_string()))
@@ -1395,6 +1416,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_zero_uuid_returns_not_found() {
+        // BUG-18262 回归测试：DELETE /tenants/00000000-... 必须返回 404，
+        // 因为全零 UUID 是保留的系统租户标识，不应被当作普通租户删除
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let zero_uuid = "00000000-0000-0000-0000-000000000000";
+        let request = Request::builder()
+            .method("DELETE")
+            .uri(format!("/tenants/{zero_uuid}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
+    }
+
+    #[tokio::test]
     async fn update_config_with_unknown_field_returns_400() {
         // BUG-18267 回归测试：PUT /tenants/:id/config 传入未知字段（如非法 tier）
         // 应返回 400 Bad Request，而非静默忽略并返回 200
@@ -1546,7 +1593,9 @@ mod tests {
         );
         assert_eq!(
             data["max_sandbox_sessions"].as_u64().unwrap(),
-            data["quota_limits"]["max_sandbox_sessions"].as_u64().unwrap()
+            data["quota_limits"]["max_sandbox_sessions"]
+                .as_u64()
+                .unwrap()
         );
     }
 }
