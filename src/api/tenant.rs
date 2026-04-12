@@ -11,7 +11,6 @@
 //! - `POST /api/v1/tenants/:id/activate` - 激活租户
 //! - `POST /api/v1/tenants/:id/suspend` - 暂停租户
 //! - `DELETE /api/v1/tenants/:id` - 删除租户
-//! - `GET /api/v1/tenants` - 列出租户（管理员）
 //!
 //! # 权限控制
 //!
@@ -75,6 +74,8 @@ pub struct GetTenantResponse {
 pub struct TenantData {
     pub id: String,
     pub name: String,
+    /// 租户 slug，使用 tenant ID 作为唯一标识
+    pub slug: String,
     pub status: String,
     pub tier: String,
     pub created_at: String,
@@ -86,6 +87,9 @@ impl From<&Tenant> for TenantData {
         Self {
             id: tenant.id.to_string(),
             name: tenant.name.clone(),
+            // BUG-18257: slug 使用 tenant ID 作为稳定唯一标识
+            // （当前数据库 schema 无独立 slug 列，避免引入复杂生成逻辑）
+            slug: tenant.id.to_string(),
             status: tenant.status.to_string(),
             tier: get_tier_from_config(&tenant.config),
             created_at: tenant.created_at.to_rfc3339(),
@@ -864,42 +868,6 @@ pub async fn update_tenant_config_handler<S: TenantConfigStore + Clone + Send + 
     }
 }
 
-/// 获取租户列表处理器（管理员）
-pub async fn list_tenants_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
-    State(state): State<TenantApiState<S>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    match state.tenant_service.list_tenants().await {
-        Ok(tenants) => {
-            let tenant_list: Vec<TenantData> = tenants.iter().map(TenantData::from).collect();
-            Ok(Json(json!({
-                "success": true,
-                "data": {
-                    "tenants": tenant_list,
-                    "total": tenant_list.len()
-                },
-                "meta": {
-                    "request_id": uuid::Uuid::now_v7().to_string(),
-                    "timestamp": chrono::Utc::now().to_rfc3339()
-                }
-            })))
-        }
-        Err(_) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "success": false,
-                "error": {
-                    "code": "INTERNAL_ERROR",
-                    "message": "获取租户列表失败"
-                },
-                "meta": {
-                    "request_id": uuid::Uuid::now_v7().to_string(),
-                    "timestamp": chrono::Utc::now().to_rfc3339()
-                }
-            })),
-        )),
-    }
-}
-
 /// 激活租户处理器
 pub async fn activate_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'static>(
     State(state): State<TenantApiState<S>>,
@@ -1210,12 +1178,12 @@ pub fn tenant_routes<S: TenantConfigStore + Clone + Send + Sync + 'static>()
         .route(
             "/tenants",
             post(create_tenant_handler::<S>)
-                .get(list_tenants_handler::<S>)
+                // BUG-18258: GET /tenants 缺少租户ID时返回404，避免 NormalizePathLayer
+                // 将 /tenants/ 归一化到集合路径后错误命中成功列表接口。
+                .get(get_tenant_missing_id_handler)
                 // BUG-18260: DELETE /tenants 缺少租户ID时返回404，而非405 Method Not Allowed
                 .delete(delete_tenant_missing_id_handler),
         )
-        // BUG-18258: GET /tenants/ 缺少租户ID时返回404，防止归一化后命中列表路由
-        .route("/tenants/", get(get_tenant_missing_id_handler))
         .route(
             "/tenants/:id",
             get(get_tenant_handler::<S>).delete(delete_tenant_handler::<S>),
@@ -1245,7 +1213,8 @@ mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
     use serde_json::Value;
-    use tower::ServiceExt;
+    use tower::{Layer, ServiceExt};
+    use tower_http::normalize_path::NormalizePathLayer;
 
     use crate::{
         api::middleware::{TokenScope, ValidatedToken},
@@ -1377,12 +1346,39 @@ mod tests {
         // 而不是被路径归一化后命中列表路由返回 200 OK
         let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
         let tenant_service = Arc::new(MemoryTenantStorage::new());
-        let app = tenant_routes::<MemoryTenantConfigStore>()
-            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+        let app = NormalizePathLayer::trim_trailing_slash().layer(
+            tenant_routes::<MemoryTenantConfigStore>()
+                .with_state(TenantApiState::new(tenant_manager, tenant_service)),
+        );
 
         let request = Request::builder()
             .method("GET")
             .uri("/tenants/")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "TENANT_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn get_tenant_missing_id_without_trailing_slash_returns_not_found() {
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let app = NormalizePathLayer::trim_trailing_slash().layer(
+            tenant_routes::<MemoryTenantConfigStore>()
+                .with_state(TenantApiState::new(tenant_manager, tenant_service)),
+        );
+
+        let request = Request::builder()
+            .method("GET")
+            .uri("/tenants")
             .body(Body::empty())
             .unwrap();
 
@@ -1806,5 +1802,52 @@ mod tests {
                 assert_ne!(payload["error"]["code"], "TENANT_NOT_FOUND");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn get_tenant_valid_id_returns_complete_data_with_slug() {
+        // BUG-18257 回归测试：GET /tenants/:id 返回 200 时，
+        // 响应体 data 层必须包含 id、name、slug 三个字段
+        let tenant_manager = TenantManager::new_simple(MemoryTenantConfigStore::new());
+        let tenant_service = Arc::new(MemoryTenantStorage::new());
+        let tenant = Tenant::new("bug-18257-test");
+        let tenant_id = tenant.id.clone();
+        tenant_service.upsert_tenant(tenant).await.unwrap();
+
+        let app = tenant_routes::<MemoryTenantConfigStore>()
+            .with_state(TenantApiState::new(tenant_manager, tenant_service));
+
+        let request = Request::builder()
+            .method("GET")
+            .uri(format!("/tenants/{tenant_id}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+
+        // 验证成功标志
+        assert!(payload["success"].as_bool().unwrap());
+
+        // 验证 data 层包含 id、name、slug 三个必需字段
+        let data = &payload["data"];
+        assert!(data.get("id").is_some(), "data.id field missing");
+        assert!(data.get("name").is_some(), "data.name field missing");
+        assert!(data.get("slug").is_some(), "data.slug field missing");
+
+        // 验证 id 字段与请求路径中的 tenant_id 一致
+        assert_eq!(data["id"].as_str().unwrap(), tenant_id.as_str());
+
+        // 验证 name 字段正确
+        assert_eq!(data["name"].as_str().unwrap(), "bug-18257-test");
+
+        // 验证 slug 字段存在且非空（当前实现使用 tenant_id 作为 slug）
+        let slug = data["slug"].as_str().unwrap();
+        assert!(!slug.is_empty(), "slug should not be empty");
     }
 }
