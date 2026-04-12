@@ -532,4 +532,395 @@ mod tests {
                 .contains("Invalid automation token request payload")
         );
     }
+
+    /// 回归测试：验证 GET /profile/automation-tokens 是已注册路由
+    /// 该路由应返回业务层响应（权限错误 403 或成功 200），而非 Axum 默认 404
+    /// 相关 BUG: BUG-18253（测试预期误判为"未注册路由"）
+    #[tokio::test]
+    async fn list_automation_tokens_registered_route_returns_business_response() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        // 创建 mock auth service
+        use crate::auth::service::MfaStatusSnapshot;
+        use crate::auth::{
+            ApiTokenMetadata, AuthError, AuthEventType, AuthService, AuthSession,
+            CreateUserRequest, ExternalIdentity, IdentityProvider, InviteeType, MembershipRole,
+            ServiceAccount, TenantInvitation, TenantMembership, User,
+        };
+        use async_trait::async_trait;
+
+        struct MockAuthServiceForRouteTest;
+
+        #[async_trait]
+        impl AuthService for MockAuthServiceForRouteTest {
+            async fn create_user_from_privy(&self, _: &str) -> Result<User, AuthError> {
+                Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
+            }
+            async fn get_or_create_external_identity(
+                &self,
+                _: Uuid,
+                _: IdentityProvider,
+                _: &str,
+                _: Option<serde_json::Value>,
+            ) -> Result<ExternalIdentity, AuthError> {
+                unimplemented!()
+            }
+            async fn create_tenant_invitation(
+                &self,
+                _: Uuid,
+                _: MembershipRole,
+                _: InviteeType,
+                _: Option<String>,
+                _: Option<String>,
+                _: Uuid,
+                _: i64,
+            ) -> Result<(TenantInvitation, String), AuthError> {
+                unimplemented!()
+            }
+            async fn consume_invitation(
+                &self,
+                _: &str,
+                _: Uuid,
+            ) -> Result<TenantMembership, AuthError> {
+                unimplemented!()
+            }
+            async fn create_session(
+                &self,
+                _: Uuid,
+                _: Option<Uuid>,
+                _: CreateUserRequest,
+            ) -> Result<(AuthSession, String), AuthError> {
+                unimplemented!()
+            }
+            async fn get_active_membership(
+                &self,
+                _: Uuid,
+                _: Uuid,
+            ) -> Result<Option<TenantMembership>, AuthError> {
+                Ok(None)
+            }
+            async fn audit_log(
+                &self,
+                _: AuthEventType,
+                _: Option<Uuid>,
+                _: Option<serde_json::Value>,
+            ) -> Result<(), AuthError> {
+                Ok(())
+            }
+            async fn verify_session(&self, _: &str) -> Result<AuthSession, AuthError> {
+                unimplemented!()
+            }
+            async fn revoke_session(&self, _: Uuid, _: &str) -> Result<(), AuthError> {
+                Ok(())
+            }
+            async fn get_user(&self, _: Uuid) -> Result<User, AuthError> {
+                unimplemented!()
+            }
+            async fn get_user_identities(
+                &self,
+                _: Uuid,
+            ) -> Result<Vec<ExternalIdentity>, AuthError> {
+                Ok(vec![])
+            }
+            async fn get_user_memberships(
+                &self,
+                _: Uuid,
+            ) -> Result<Vec<TenantMembership>, AuthError> {
+                Ok(vec![])
+            }
+            async fn sync_mfa_status(
+                &self,
+                _: Uuid,
+                _: &str,
+            ) -> Result<MfaStatusSnapshot, AuthError> {
+                Ok(MfaStatusSnapshot::default())
+            }
+            async fn get_mfa_status(&self, _: Uuid) -> Result<MfaStatusSnapshot, AuthError> {
+                Ok(MfaStatusSnapshot::default())
+            }
+            async fn create_api_token_metadata(
+                &self,
+                metadata: &ApiTokenMetadata,
+            ) -> Result<ApiTokenMetadata, AuthError> {
+                Ok(metadata.clone())
+            }
+            async fn list_api_tokens(&self, _: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+                Ok(vec![])
+            }
+            async fn list_service_account_api_tokens(
+                &self,
+                _: Uuid,
+                _: Uuid,
+            ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+                Ok(vec![])
+            }
+            async fn get_api_token_metadata(
+                &self,
+                _: &str,
+            ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+                Ok(None)
+            }
+            async fn revoke_api_token_metadata(
+                &self,
+                _: &str,
+                _: chrono::DateTime<chrono::Utc>,
+            ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+                Ok(None)
+            }
+            async fn mark_api_token_used(
+                &self,
+                _: &str,
+                _: chrono::DateTime<chrono::Utc>,
+            ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+                Ok(None)
+            }
+            async fn create_service_account(
+                &self,
+                sa: &ServiceAccount,
+            ) -> Result<ServiceAccount, AuthError> {
+                Ok(sa.clone())
+            }
+            async fn get_membership_by_id(
+                &self,
+                _: Uuid,
+            ) -> Result<Option<TenantMembership>, AuthError> {
+                Ok(None)
+            }
+        }
+
+        let auth_service = Arc::new(MockAuthServiceForRouteTest);
+        let state = AuthApiState::new(auth_service);
+
+        // 构建一个没有 tokens:read scope 的 token，预期会被拒绝
+        let tenant_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let token = ValidatedToken::mock(
+            &tenant_id.to_string(),
+            &user_id.to_string(),
+            vec![TokenScope::CredentialRead], // 没有 TokensRead scope
+        );
+
+        // 构建路由并注入 token
+        let app = profile_token_routes(state.clone()).layer(axum::Extension(token));
+
+        // 发送请求到已注册路由
+        let request = Request::builder()
+            .method("GET")
+            .uri("/profile/automation-tokens")
+            .header("Content-Type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        // 关键断言：已注册路由绝不会返回 Axum 默认 404（无错误体的纯 404）
+        // 它应该返回业务层错误（403 forbidden）或成功响应（200）
+        let status = response.status();
+        assert_ne!(
+            status,
+            StatusCode::NOT_FOUND,
+            "GET /profile/automation-tokens 是已注册路由，不应返回 Axum 默认 404"
+        );
+
+        // 预期返回 403（权限不足）而非 404
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "缺少 tokens:read scope 应返回 403 forbidden，而非 404"
+        );
+    }
+
+    /// 回归测试：验证未注册路径返回 Axum 默认 404
+    /// 与已注册路由形成对照，确保路由语义清晰可辨
+    /// 相关 BUG: BUG-18253（测试预期误判为"未注册路由"）
+    #[tokio::test]
+    async fn unregistered_profile_tokens_path_returns_axum_404() {
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        // 创建 mock auth service
+        use crate::auth::service::MfaStatusSnapshot;
+        use crate::auth::{
+            ApiTokenMetadata, AuthError, AuthEventType, AuthService, AuthSession,
+            CreateUserRequest, ExternalIdentity, IdentityProvider, InviteeType, MembershipRole,
+            ServiceAccount, TenantInvitation, TenantMembership, User,
+        };
+        use async_trait::async_trait;
+
+        struct MockAuthServiceForRouteTest;
+
+        #[async_trait]
+        impl AuthService for MockAuthServiceForRouteTest {
+            async fn create_user_from_privy(&self, _: &str) -> Result<User, AuthError> {
+                Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
+            }
+            async fn get_or_create_external_identity(
+                &self,
+                _: Uuid,
+                _: IdentityProvider,
+                _: &str,
+                _: Option<serde_json::Value>,
+            ) -> Result<ExternalIdentity, AuthError> {
+                unimplemented!()
+            }
+            async fn create_tenant_invitation(
+                &self,
+                _: Uuid,
+                _: MembershipRole,
+                _: InviteeType,
+                _: Option<String>,
+                _: Option<String>,
+                _: Uuid,
+                _: i64,
+            ) -> Result<(TenantInvitation, String), AuthError> {
+                unimplemented!()
+            }
+            async fn consume_invitation(
+                &self,
+                _: &str,
+                _: Uuid,
+            ) -> Result<TenantMembership, AuthError> {
+                unimplemented!()
+            }
+            async fn create_session(
+                &self,
+                _: Uuid,
+                _: Option<Uuid>,
+                _: CreateUserRequest,
+            ) -> Result<(AuthSession, String), AuthError> {
+                unimplemented!()
+            }
+            async fn get_active_membership(
+                &self,
+                _: Uuid,
+                _: Uuid,
+            ) -> Result<Option<TenantMembership>, AuthError> {
+                Ok(None)
+            }
+            async fn audit_log(
+                &self,
+                _: AuthEventType,
+                _: Option<Uuid>,
+                _: Option<serde_json::Value>,
+            ) -> Result<(), AuthError> {
+                Ok(())
+            }
+            async fn verify_session(&self, _: &str) -> Result<AuthSession, AuthError> {
+                unimplemented!()
+            }
+            async fn revoke_session(&self, _: Uuid, _: &str) -> Result<(), AuthError> {
+                Ok(())
+            }
+            async fn get_user(&self, _: Uuid) -> Result<User, AuthError> {
+                unimplemented!()
+            }
+            async fn get_user_identities(
+                &self,
+                _: Uuid,
+            ) -> Result<Vec<ExternalIdentity>, AuthError> {
+                Ok(vec![])
+            }
+            async fn get_user_memberships(
+                &self,
+                _: Uuid,
+            ) -> Result<Vec<TenantMembership>, AuthError> {
+                Ok(vec![])
+            }
+            async fn sync_mfa_status(
+                &self,
+                _: Uuid,
+                _: &str,
+            ) -> Result<MfaStatusSnapshot, AuthError> {
+                Ok(MfaStatusSnapshot::default())
+            }
+            async fn get_mfa_status(&self, _: Uuid) -> Result<MfaStatusSnapshot, AuthError> {
+                Ok(MfaStatusSnapshot::default())
+            }
+            async fn create_api_token_metadata(
+                &self,
+                metadata: &ApiTokenMetadata,
+            ) -> Result<ApiTokenMetadata, AuthError> {
+                Ok(metadata.clone())
+            }
+            async fn list_api_tokens(&self, _: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+                Ok(vec![])
+            }
+            async fn list_service_account_api_tokens(
+                &self,
+                _: Uuid,
+                _: Uuid,
+            ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+                Ok(vec![])
+            }
+            async fn get_api_token_metadata(
+                &self,
+                _: &str,
+            ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+                Ok(None)
+            }
+            async fn revoke_api_token_metadata(
+                &self,
+                _: &str,
+                _: chrono::DateTime<chrono::Utc>,
+            ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+                Ok(None)
+            }
+            async fn mark_api_token_used(
+                &self,
+                _: &str,
+                _: chrono::DateTime<chrono::Utc>,
+            ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+                Ok(None)
+            }
+            async fn create_service_account(
+                &self,
+                sa: &ServiceAccount,
+            ) -> Result<ServiceAccount, AuthError> {
+                Ok(sa.clone())
+            }
+            async fn get_membership_by_id(
+                &self,
+                _: Uuid,
+            ) -> Result<Option<TenantMembership>, AuthError> {
+                Ok(None)
+            }
+        }
+
+        let auth_service = Arc::new(MockAuthServiceForRouteTest);
+        let state = AuthApiState::new(auth_service);
+
+        let tenant_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let token = ValidatedToken::mock(
+            &tenant_id.to_string(),
+            &user_id.to_string(),
+            vec![TokenScope::Admin], // 有 admin scope
+        );
+
+        let app = profile_token_routes(state.clone()).layer(axum::Extension(token));
+
+        // 发送请求到真正未注册的路径（完全不匹配任何路由前缀）
+        // profile_token_routes 只注册 /profile/automation-tokens 相关路径
+        // /automation-tokens （缺少 profile 前缀）绝对未注册
+        let request = Request::builder()
+            .method("GET")
+            .uri("/automation-tokens") // 缺少 profile 前缀，绝对未注册
+            .header("Content-Type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        // 关键断言：未注册路径必须返回 Axum 默认 404
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "未注册路径必须返回 Axum 默认 404"
+        );
+    }
 }
