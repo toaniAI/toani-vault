@@ -549,26 +549,31 @@ impl NsjailConfig {
         args
     }
 
-    /// 生成 seccomp BPF 字符串
+    /// 生成 seccomp kafel 策略字符串（供 nsjail --seccomp_string 使用）
     fn generate_seccomp_bpf(&self) -> String {
-        // 简化的 seccomp 策略
-        // 实际实现中需要更完整的 BPF 程序
         let denylist = &self.sandbox.security.seccomp.denylist;
-        let policy = match self.sandbox.security.seccomp.default_policy {
-            SeccompPolicy::Browser => "POLICY browser {",
-            SeccompPolicy::Minimal => "POLICY minimal {",
-            SeccompPolicy::Network => "POLICY network {",
-            SeccompPolicy::Custom => "POLICY custom {",
+        let policy_name = match self.sandbox.security.seccomp.default_policy {
+            SeccompPolicy::Browser => "browser",
+            SeccompPolicy::Minimal => "minimal",
+            SeccompPolicy::Network => "network",
+            SeccompPolicy::Custom => "custom",
         };
 
-        let mut bpf = format!("{policy}\n");
+        let mut bpf = format!("POLICY {policy_name} {{\n");
 
-        // 添加拒绝的系统调用
-        for syscall in denylist {
-            bpf.push_str(&format!("  DENY {syscall}\n"));
+        if !denylist.is_empty() {
+            // kafel DENY 块语法：DENY { syscall1, syscall2, ... }
+            let deny_list: Vec<&str> = denylist.iter().map(|s| s.as_str()).collect();
+            bpf.push_str("  DENY {\n");
+            for syscall in &deny_list {
+                bpf.push_str(&format!("    {syscall},\n"));
+            }
+            bpf.push_str("  }\n");
         }
 
-        bpf.push_str("  ALLOW_ALL\n}");
+        bpf.push_str("}\n");
+        // kafel 策略结尾：指定默认行为
+        bpf.push_str(&format!("USE {policy_name} DEFAULT ALLOW\n"));
         bpf
     }
 }
