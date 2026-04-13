@@ -42,8 +42,8 @@ impl SandboxBrowserRuntime {
                 .map_err(SandboxError::Io)?;
         }
 
-        let script_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("frontend/scripts/sandbox_executor.cjs");
+        let script_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/tee/sandbox/scripts/sandbox_executor.cjs");
         let mut env = HashMap::new();
         env.insert("HOME".to_string(), home_dir.to_string_lossy().to_string());
         env.insert("TMPDIR".to_string(), tmp_dir.to_string_lossy().to_string());

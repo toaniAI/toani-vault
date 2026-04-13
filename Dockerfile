@@ -83,7 +83,7 @@ COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
 COPY --from=builder /app/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so /app/libcredbridge_sgx_urts_bridge.so
 COPY --from=builder /app/migrations /app/migrations
-COPY frontend/scripts /app/frontend/scripts
+COPY --from=builder /app/src/tee/sandbox/scripts /app/src/tee/sandbox/scripts
 COPY docker/scripts/healthcheck.sh /app/healthcheck.sh
 COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 
