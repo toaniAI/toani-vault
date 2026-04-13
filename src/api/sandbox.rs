@@ -500,12 +500,20 @@ pub async fn list_sessions(
 pub async fn get_session(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:read
     if let Err(e) = check_scope(&token, TokenScope::SandboxRead).await {
         return e;
     }
+
+    // BUG-18222: 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
     let tenant_id = parse_uuid(&token.tenant_id);
@@ -571,13 +579,21 @@ pub async fn get_session(
 pub async fn execute_operation(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Json(request): Json<ExecuteOperationRequest>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
     if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
+
+    // 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
 
@@ -651,12 +667,20 @@ pub async fn execute_operation(
 pub async fn pause_session(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:write
     if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
         return e;
     }
+
+    // BUG-18223: 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
 
@@ -690,12 +714,20 @@ pub async fn pause_session(
 pub async fn resume_session(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:write
     if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
         return e;
     }
+
+    // BUG-18224: 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
 
@@ -729,12 +761,20 @@ pub async fn resume_session(
 pub async fn close_session(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:write
     if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
         return e;
     }
+
+    // BUG-18226: 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
 
@@ -757,12 +797,20 @@ pub async fn close_session(
 pub async fn take_screenshot(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
     if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
+
+    // BUG-18227 已修复: 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
 
@@ -805,13 +853,21 @@ pub async fn take_screenshot(
 pub async fn export_data(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<Uuid>,
+    Path(id_str): Path<String>,
     Json(request): Json<ExportDataRequest>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
     if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
+
+    // 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    let id = Uuid::parse_str(&id_str)
+        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
+    let id = match id {
+        Ok(uuid) => uuid,
+        Err(e) => return e.into_response(),
+    };
 
     let session_id = SessionId::from(id);
 
@@ -1516,15 +1572,7 @@ async fn resume_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
     (
         StatusCode::NOT_FOUND,
         Json(serde_json::json!({
-            "success": false,
-            "error": {
-                "code": "SESSION_NOT_FOUND",
-                "message": "沙箱会话不存在"
-            },
-            "meta": {
-                "request_id": uuid::Uuid::now_v7().to_string(),
-                "timestamp": chrono::Utc::now().to_rfc3339()
-            }
+            "error": "not_found"
         })),
     )
 }
@@ -1567,6 +1615,17 @@ async fn export_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
     )
 }
 
+/// 兜底处理器：DELETE /sandbox/sessions 缺少会话ID时返回404
+/// BUG-18225: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn close_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "error": "not_found"
+        })),
+    )
+}
+
 // ==================== 路由构建 ====================
 
 /// 构建沙箱 API 路由
@@ -1577,6 +1636,8 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         // 会话管理
         .route("/sandbox/sessions", post(create_session))
         .route("/sandbox/sessions", get(list_sessions))
+        // BUG-18225: 缺少会话ID的DELETE路径兜底，返回404而非405
+        .route("/sandbox/sessions", delete(close_missing_id_handler))
         .route("/sandbox/sessions/:id", get(get_session))
         .route("/sandbox/sessions/:id/execute", post(execute_operation))
         .route("/sandbox/operations/:operation_id", get(get_operation))
@@ -2128,6 +2189,193 @@ mod tests {
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let payload: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(payload["error"]["code"], "SESSION_NOT_FOUND");
+        assert_eq!(payload["error"], "not_found");
+    }
+
+    // ==================== BUG-18225 回归测试：缺少会话ID返回404而非405 ====================
+
+    #[tokio::test]
+    async fn test_close_missing_session_id_returns_not_found() {
+        // BUG-18225 回归测试：DELETE /sandbox/sessions 缺少会话ID应返回404，
+        // 而不是被框架拦截返回 405 Method Not Allowed
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app = sandbox_routes().with_state(state);
+
+        // 测试不带尾随斜杠
+        let request = Request::builder()
+            .method("DELETE")
+            .uri("/sandbox/sessions")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "DELETE /sandbox/sessions 应返回 404 Not Found"
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload["error"], "not_found",
+            "响应体应包含 error=not_found"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_close_missing_session_id_with_trailing_slash_returns_not_found() {
+        // BUG-18225 回归测试：DELETE /sandbox/sessions/ 带尾随斜杠应同样返回404
+        // 需要使用 NormalizePathLayer 模拟真实服务器的尾随斜杠归一化行为
+        use tower::Layer;
+        use tower::ServiceExt;
+        use tower_http::normalize_path::NormalizePathLayer;
+
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app =
+            NormalizePathLayer::trim_trailing_slash().layer(sandbox_routes().with_state(state));
+
+        // 测试带尾随斜杠，NormalizePathLayer 会将其归一化为 /sandbox/sessions
+        let request = Request::builder()
+            .method("DELETE")
+            .uri("/sandbox/sessions/")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "DELETE /sandbox/sessions/ 应返回 404 Not Found"
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload["error"], "not_found",
+            "响应体应包含 error=not_found"
+        );
+    }
+
+    // ==================== BUG-18226 回归测试：非UUID路径参数返回400 invalid_request ====================
+
+    #[test]
+    fn test_close_session_invalid_uuid_returns_invalid_request() {
+        // BUG-18226 回归测试：DELETE /sandbox/sessions/not-a-uuid 应返回 400 + {"error":"invalid_request"}
+        let invalid_uuids = [
+            "not-a-uuid",
+            "123",
+            "abc-def-ghi",
+            "",
+            "00000000-0000-0000-",
+        ];
+
+        for invalid_uuid in invalid_uuids {
+            assert!(
+                Uuid::parse_str(invalid_uuid).is_err(),
+                "'{invalid_uuid}' should fail UUID parsing"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_close_session_invalid_uuid_route_returns_invalid_request() {
+        // BUG-18226 回归测试：真实路由 DELETE /sandbox/sessions/not-a-uuid 应返回
+        // 400 + {"error":"invalid_request"}，且不会进入会话关闭逻辑
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/sandbox/sessions/not-a-uuid")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+
+        assert_eq!(payload["error"], "invalid_request");
+        assert!(
+            payload["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("UUID"),
+            "error message should mention UUID"
+        );
+    }
+
+    #[test]
+    fn test_get_session_invalid_uuid_returns_invalid_request() {
+        // BUG-18222: GET /sandbox/sessions/not-a-uuid 应返回 400 invalid_request
+        let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
+        assert_eq!(error.error, "invalid_request");
+
+        // 验证 JSON 序列化包含正确字段
+        let json = serde_json::to_string(&error).unwrap();
+        assert!(json.contains("\"error\":\"invalid_request\""));
+        assert!(json.contains("\"message\""));
+    }
+
+    #[test]
+    fn test_pause_session_invalid_uuid_returns_invalid_request() {
+        // BUG-18223: POST /sandbox/sessions/not-a-uuid/pause 应返回 400 invalid_request
+        let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
+        assert_eq!(error.error, "invalid_request");
+    }
+
+    #[test]
+    fn test_resume_session_invalid_uuid_returns_invalid_request() {
+        // BUG-18224: POST /sandbox/sessions/not-a-uuid/resume 应返回 400 invalid_request
+        let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
+        assert_eq!(error.error, "invalid_request");
+    }
+
+    #[test]
+    fn test_screenshot_invalid_uuid_returns_invalid_request() {
+        // BUG-18227 (补充): POST /sandbox/sessions/not-a-uuid/screenshot 非UUID路径参数返回 400
+        let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
+        assert_eq!(error.error, "invalid_request");
     }
 }
