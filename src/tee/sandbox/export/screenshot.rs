@@ -992,7 +992,7 @@ mod tests {
             };
 
             let result = service.capture(request).await;
-            assert!(result.is_ok(), "Failed for format: {:?}", format);
+            assert!(result.is_ok(), "Failed for format: {format:?}");
         }
     }
 

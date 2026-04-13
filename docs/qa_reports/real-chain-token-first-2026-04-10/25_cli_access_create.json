@@ -1,0 +1,14 @@
+{
+  "accessToken": "v4.local.Tdw5MES3v4eKYD4X8uLeLaR5gf0xeZX-dwQdejLizlSyySuuBA2tTfOc8nHb-8_-iVv8vcq_HQLavGTEv35yLZTjubZFwXYNnLNf3LlxFFO6JauR2RvXip5odnDu9COxVb9EbBbR5CG3C92li4XAJxHmSL2eWTZuiW93XyScAiLqy3VsuLQa8gqYT30UWjiwEaZi8SeDKW3X_0Eynqpuoy36MqdiJXaSsvmFAn9hTTKgFRPKm58Z5Lsyeh78cpSPSjnUVuiacWMYUe-SRecYV8-NgDlBebqaYk3cfF6AiEvEKypd-PE_jp7A-rD3pKoh58iTjL4yAqOKJPMO_30xk7pHTH42Xw3VS4hy5lIJTKwIQrHq-LUmeLWtEBbFvcUHr-ozR9ZupWPbIpqyfMvJeTaOhLBrqw_rzjzvOSwvOvLHG1PVUQO7oUbNQ76ljknP1vCthpUbfNe9juF1NJk5l_rj-Pvgq4yyJJpUGSOepVPKa1vZval6GiaqAvHGWPe1t6dmLDhtSFkuLAF8QYuXOSssv9LKEsrw6OA4VctevKHYhJPQ6t_Hk2h_FPuewBioRZitCVYseNX5WypuG_kBUD56QHIoOnHcxVvgRRqTfh5WPh3vxPV-PY5DbXjTjcwW8mouxv5d96g5JzT4DpCApW8ECGVzPKtW_Bwa-nr6rl5OzmmhCSVfaV2-vH9ceEYLilJbX3h5N4rDU0h9yn7SQ9yiyjDBog",
+  "tokenId": "019d767b-dded-7282-a6ec-665295cbd7e5",
+  "tokenType": "Bearer",
+  "subjectType": "user",
+  "issuedFrom": "access_token",
+  "displayName": null,
+  "expiresAt": 1775809622,
+  "expiresIn": 300,
+  "grantedScopes": [
+    "tokens:read"
+  ],
+  "stored": true
+}

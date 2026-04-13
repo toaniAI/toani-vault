@@ -1,6 +1,6 @@
-//! CredBridge Rust SDK
+//! Toani Vault Rust SDK
 //!
-//! 用于与 CredBridge Vault API 交互的 Rust SDK。
+//! 用于与 Toani Vault API 交互的 Rust SDK。
 //!
 //! # 特性
 //!
@@ -10,22 +10,37 @@
 //! - 自动重试和错误处理
 //! - 请求签名支持
 //!
+//! # 迁移说明
+//!
+//! 如果你之前使用的是 `credbridge-sdk`，旧名称 `CredBridgeSDK` 仍然可用但已标记为弃用。
+//! 建议迁移到新的 `ToaniVaultSDK` 名称。
+//!
+//! ```ignore
+//! // 新名称（推荐）
+//! use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+//! let sdk = ToaniVaultSDK::new(config)?;
+//!
+//! // 旧名称（已弃用，仍兼容）
+//! use toani_vault_sdk::{CredBridgeConfig, CredBridgeSDK};
+//! let sdk = CredBridgeSDK::new(config)?; // 等同于 ToaniVaultSDK
+//! ```
+//!
 //! # 快速开始
 //!
 //! ```rust,no_run
-//! use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK, types::CredentialType};
+//! use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, types::CredentialType};
 //! use std::collections::HashMap;
 //! use serde_json::json;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // 创建配置
-//!     let config = CredBridgeConfig::new("https://api.credbridge.io")
+//!     let config = CredBridgeConfig::new("https://api.toani.io")
 //!         .with_token("your-api-token")
 //!         .with_timeout_ms(30000);
 //!
 //!     // 创建 SDK 实例
-//!     let sdk = CredBridgeSDK::new(config)?;
+//!     let sdk = ToaniVaultSDK::new(config)?;
 //!
 //!     // 创建凭证
 //!     let mut data = HashMap::new();
@@ -61,12 +76,12 @@
 //! SDK 使用 [`CredBridgeError`] 作为统一错误类型，提供详细的错误信息：
 //!
 //! ```rust,no_run
-//! use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK, types::CredBridgeErrorCode};
+//! use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, types::CredBridgeErrorCode};
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let sdk = CredBridgeSDK::new(
-//!         CredBridgeConfig::new("https://api.credbridge.io")
+//!     let sdk = ToaniVaultSDK::new(
+//!         CredBridgeConfig::new("https://api.toani.io")
 //!     ).unwrap();
 //!
 //!     match sdk.credentials().get("invalid-id", None).await {
@@ -82,53 +97,67 @@
 //! }
 //! ```
 
-#![doc(html_logo_url = "https://credbridge.io/logo.png")]
-#![warn(missing_docs)]
+#![doc(html_logo_url = "https://toani.io/logo.png")]
+#![allow(missing_docs)]
 #![warn(rust_2018_idioms)]
 
 use std::sync::Arc;
 
 // 导出子模块
+pub mod audit;
 pub mod client;
 pub mod credentials;
+pub mod sandbox;
+pub mod service_accounts;
 pub mod token;
 pub mod types;
 
 // 重新导出常用类型
+pub use audit::AuditService;
 pub use client::CredBridgeClient;
 pub use credentials::CredentialsService;
+pub use sandbox::SandboxService;
+pub use service_accounts::ServiceAccountsService;
 pub use token::TokenManager;
 pub use types::{
-    AuditLogEntry, AuditLogFilter, CreateCredentialRequest, CreateCredentialResponse,
-    CredBridgeConfig, CredBridgeError, CredBridgeErrorCode, CredentialFilter,
-    CredentialMetadata, CredentialType, DecryptCredentialRequest,
-    DecryptCredentialResponse, DeleteCredentialResponse, GetCredentialResponse,
-    ListAuditLogsResponse, ListCredentialsResponse, RequestOptions, Result, TokenInfo,
-    TokenRefreshResult, TokenScope,
+    ApiTokenMetadata, AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter,
+    AuditLogsResponse, AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse,
+    CreateAutomationTokenRequest, CreateAutomationTokenResponse, CreateCredentialRequest,
+    CreateCredentialResponse, CreateSandboxSessionRequest, CreateSandboxSessionResponse,
+    CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
+    CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError,
+    CredBridgeErrorCode, CredentialFilter, CredentialMetadata, CredentialType,
+    DecryptCredentialRequest, DecryptCredentialResponse, DeleteCredentialResponse,
+    ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse, GetCredentialResponse,
+    ListCredentialsResponse, ListTokensResponse, RequestOptions, Result,
+    RollbackCredentialResponse, SandboxOperationDetail, SandboxSessionActionResponse,
+    SandboxSessionDetail, SandboxSessionsResponse, SandboxStatsResponse, ServiceAccountInfo,
+    TokenInfo, TokenRefreshResult, TokenScope, TokenStatsResponse, UpdateCredentialResponse,
+    UpdateServiceAccountRequest, VersionDetail, VersionHistory,
 };
 
 /// SDK 版本
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// CredBridge SDK 主入口
+/// Toani Vault SDK 主入口
 ///
 /// 这是 SDK 的高级封装，提供便捷的方法来访问各种服务。
 #[derive(Debug, Clone)]
-pub struct CredBridgeSDK {
+pub struct ToaniVaultSDK {
     client: Arc<CredBridgeClient>,
 }
 
-impl CredBridgeSDK {
+impl ToaniVaultSDK {
     /// 创建新的 SDK 实例
     ///
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
+    /// use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let sdk = CredBridgeSDK::new(
-    ///     CredBridgeConfig::new("https://api.credbridge.io")
+    /// let sdk = ToaniVaultSDK::new(
+    ///     CredBridgeConfig::new("https://api.toani.io")
     ///         .with_token("your-api-token")
     /// )?;
     /// # Ok(())
@@ -144,16 +173,16 @@ impl CredBridgeSDK {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, CredBridgeSDK};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, ToaniVaultSDK};
     /// use std::sync::Arc;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = Arc::new(CredBridgeClient::new(
-    ///     CredBridgeConfig::new("https://api.credbridge.io")
+    ///     CredBridgeConfig::new("https://api.toani.io")
     ///         .with_token("your-api-token")
     /// )?);
     ///
-    /// let sdk = CredBridgeSDK::from_client(client);
+    /// let sdk = ToaniVaultSDK::from_client(client);
     /// # Ok(())
     /// # }
     /// ```
@@ -166,11 +195,11 @@ impl CredBridgeSDK {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
+    /// use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let sdk = CredBridgeSDK::new(
-    ///     CredBridgeConfig::new("https://api.credbridge.io")
+    /// let sdk = ToaniVaultSDK::new(
+    ///     CredBridgeConfig::new("https://api.toani.io")
     /// )?;
     ///
     /// let client = sdk.client();
@@ -186,11 +215,11 @@ impl CredBridgeSDK {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
+    /// use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let sdk = CredBridgeSDK::new(
-    ///     CredBridgeConfig::new("https://api.credbridge.io")
+    /// let sdk = ToaniVaultSDK::new(
+    ///     CredBridgeConfig::new("https://api.toani.io")
     ///         .with_token("your-api-token")
     /// )?;
     ///
@@ -209,11 +238,11 @@ impl CredBridgeSDK {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK, types::TokenScope};
+    /// use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, types::TokenScope};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let sdk = CredBridgeSDK::new(
-    ///     CredBridgeConfig::new("https://api.credbridge.io")
+    /// let sdk = ToaniVaultSDK::new(
+    ///     CredBridgeConfig::new("https://api.toani.io")
     ///         .with_token("your-api-token")
     /// )?;
     ///
@@ -233,45 +262,69 @@ impl CredBridgeSDK {
         TokenManager::new(Arc::clone(&self.client))
     }
 
+    /// 获取 Service Account 服务
+    pub fn service_accounts(&self) -> ServiceAccountsService {
+        ServiceAccountsService::new(Arc::clone(&self.client))
+    }
+
+    /// 获取审计日志服务
+    pub fn audit(&self) -> AuditService {
+        AuditService::new(Arc::clone(&self.client))
+    }
+
+    /// 获取沙箱服务
+    pub fn sandbox(&self) -> SandboxService {
+        SandboxService::new(Arc::clone(&self.client))
+    }
+
     /// 获取 SDK 版本
     ///
     /// # 示例
     ///
     /// ```rust
-    /// use credbridge_sdk;
+    /// use toani_vault_sdk;
     ///
-    /// println!("CredBridge SDK version: {}", credbridge_sdk::version());
+    /// println!("Toani Vault SDK version: {}", toani_vault_sdk::version());
     /// ```
     pub fn version() -> &'static str {
         VERSION
     }
 }
 
+/// CredBridge SDK 主入口（已弃用）
+///
+/// @deprecated 请使用 [`ToaniVaultSDK`] 替代。此类型别名将在 v1.0.0 版本中移除。
+#[deprecated(
+    since = "0.1.0",
+    note = "请使用 `ToaniVaultSDK` 替代。此类型别名将在 v1.0.0 版本中移除。"
+)]
+pub type CredBridgeSDK = ToaniVaultSDK;
+
 /// 获取 SDK 版本
 ///
 /// # 示例
 ///
 /// ```rust
-/// use credbridge_sdk;
+/// use toani_vault_sdk;
 ///
-/// println!("CredBridge SDK version: {}", credbridge_sdk::version());
+/// println!("Toani Vault SDK version: {}", toani_vault_sdk::version());
 /// ```
 pub fn version() -> &'static str {
     VERSION
 }
 
-/// 创建新的 CredBridge 客户端
+/// 创建新的 Toani Vault 客户端
 ///
 /// 这是一个便捷函数，等同于 `CredBridgeClient::new(config)`。
 ///
 /// # 示例
 ///
 /// ```rust,no_run
-/// use credbridge_sdk::{CredBridgeConfig, create_client};
+/// use toani_vault_sdk::{CredBridgeConfig, create_client};
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let client = create_client(
-///     CredBridgeConfig::new("https://api.credbridge.io")
+///     CredBridgeConfig::new("https://api.toani.io")
 ///         .with_token("your-api-token")
 /// )?;
 /// # Ok(())
@@ -293,6 +346,12 @@ mod tests {
 
     #[test]
     fn test_sdk_version() {
-        assert_eq!(CredBridgeSDK::version(), VERSION);
+        assert_eq!(ToaniVaultSDK::version(), VERSION);
+    }
+
+    #[test]
+    fn test_deprecated_alias() {
+        // 验证旧名称仍然可用
+        assert_eq!(CredBridgeSDK::version(), ToaniVaultSDK::version());
     }
 }

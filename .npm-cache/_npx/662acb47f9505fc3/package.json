@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@agentdeskai/browser-tools-mcp": "^1.2.1"
+  },
+  "_npx": {
+    "packages": [
+      "@agentdeskai/browser-tools-mcp@latest"
+    ]
+  }
+}

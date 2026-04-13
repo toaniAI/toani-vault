@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::env;
+use std::path::{Path, PathBuf};
 
 /// 沙箱配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,10 +32,73 @@ impl Default for SandboxConfig {
             security: SecurityConfig::default(),
             timeout_secs: 300,
             working_dir: PathBuf::from("/tmp/sandbox"),
-            nsjail_path: PathBuf::from("/usr/bin/nsjail"),
+            nsjail_path: resolve_nsjail_path(),
             env_vars: HashMap::new(),
         }
     }
+}
+
+impl SandboxConfig {
+    /// 从环境变量加载沙箱配置。
+    ///
+    /// 当前仅覆盖开发环境里最容易漂移的 nsjail 路径，其余字段保持默认值。
+    pub fn from_env() -> Self {
+        let mut config = Self {
+            nsjail_path: resolve_nsjail_path(),
+            ..Self::default()
+        };
+
+        if let Some(enabled) = env_bool("CREDBRIDGE_SANDBOX_CGROUP_ENABLED") {
+            config.security.cgroup.enabled = enabled;
+        }
+
+        if let Some(required) = env_bool("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED") {
+            config.security.cgroup.required = required;
+        }
+
+        if let Ok(root) = env::var("CREDBRIDGE_SANDBOX_CGROUP_ROOT") {
+            let trimmed = root.trim();
+            if !trimmed.is_empty() {
+                config.security.cgroup.cgroup_root = PathBuf::from(trimmed);
+            }
+        }
+
+        config
+    }
+}
+
+fn resolve_nsjail_path() -> PathBuf {
+    for env_name in ["CREDBRIDGE_SANDBOX_NSJAIL_PATH", "NSJAIL_PATH"] {
+        if let Ok(path) = env::var(env_name) {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed);
+            }
+        }
+    }
+
+    for candidate in [
+        Path::new("/usr/bin/nsjail"),
+        Path::new("/usr/local/bin/nsjail"),
+    ] {
+        if candidate.exists() {
+            return candidate.to_path_buf();
+        }
+    }
+
+    PathBuf::from("/usr/bin/nsjail")
+}
+
+fn env_bool(name: &str) -> Option<bool> {
+    env::var(name).ok().and_then(|value| match value.trim() {
+        "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON" => Some(true),
+        "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF" => Some(false),
+        _ => None,
+    })
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// 沙箱池配置
@@ -223,6 +287,12 @@ pub enum MountType {
 /// cgroup 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CgroupConfig {
+    /// 是否启用 cgroup 资源限制
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// cgroup 初始化失败时是否阻止沙箱启动
+    #[serde(default)]
+    pub required: bool,
     /// cgroup 版本
     pub version: CgroupVersion,
     /// cgroup 根路径
@@ -234,6 +304,8 @@ pub struct CgroupConfig {
 impl Default for CgroupConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
+            required: false,
             version: CgroupVersion::V2,
             cgroup_root: PathBuf::from("/sys/fs/cgroup"),
             controllers: vec![
@@ -437,7 +509,11 @@ impl NsjailConfig {
 
         // Mount points
         for mount in &ns.mount_points {
-            args.push("--bindmount_ro".to_string());
+            match (mount.mount_type, mount.read_only) {
+                (MountType::Bind, true) => args.push("--bindmount_ro".to_string()),
+                (MountType::Bind, false) => args.push("--bindmount".to_string()),
+                _ => args.push("--bindmount_ro".to_string()),
+            }
             args.push(format!("{}:{}", mount.src.display(), mount.dst.display()));
         }
 
@@ -511,6 +587,7 @@ mod tests {
         assert_eq!(config.timeout_secs, 300);
         assert_eq!(config.pool.max_warm_instances, 10);
         assert_eq!(config.resource_limits.memory_limit_mb, 512);
+        assert!(!config.nsjail_path.as_os_str().is_empty());
     }
 
     #[test]
@@ -519,6 +596,22 @@ mod tests {
         let args = config.to_args();
         assert!(args.contains(&"--mode".to_string()));
         assert!(args.contains(&"o".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_uses_writable_bindmount_when_requested() {
+        let mut config = NsjailConfig::default();
+        config.sandbox.security.namespace.mount_points = vec![MountConfig {
+            src: PathBuf::from("/tmp/source"),
+            dst: PathBuf::from("/tmp/destination"),
+            mount_type: MountType::Bind,
+            read_only: false,
+        }];
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--bindmount".to_string()));
+        assert!(!args.contains(&"--bindmount_ro".to_string()));
     }
 
     #[test]
@@ -531,5 +624,42 @@ mod tests {
             serde_json::to_string(&SeccompMode::Denylist).unwrap(),
             "\"denylist\""
         );
+    }
+
+    #[test]
+    fn test_from_env_prefers_nsjail_path_override() {
+        unsafe {
+            std::env::set_var("NSJAIL_PATH", "/custom/nsjail");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert_eq!(config.nsjail_path, PathBuf::from("/custom/nsjail"));
+
+        unsafe {
+            std::env::remove_var("NSJAIL_PATH");
+        }
+    }
+
+    #[test]
+    fn test_from_env_reads_cgroup_overrides() {
+        unsafe {
+            std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED", "false");
+            std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED", "true");
+            std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_ROOT", "/tmp/cgroup-test");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert!(!config.security.cgroup.enabled);
+        assert!(config.security.cgroup.required);
+        assert_eq!(
+            config.security.cgroup.cgroup_root,
+            PathBuf::from("/tmp/cgroup-test")
+        );
+
+        unsafe {
+            std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED");
+            std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED");
+            std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ROOT");
+        }
     }
 }

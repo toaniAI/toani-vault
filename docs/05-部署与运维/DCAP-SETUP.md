@@ -9,6 +9,7 @@
 - [安装 DCAP 驱动和库](#安装-dcap-驱动和库)
 - [配置 Intel PCS](#配置-intel-pcs)
 - [CredBridge DCAP 配置](#credbridge-dcap-配置)
+- [调试 Demo](#调试-demo)
 - [API 使用](#api-使用)
 - [故障排查](#故障排查)
 
@@ -135,7 +136,7 @@ sudo nano /etc/sgx_default_qcnl.conf
 
 # 配置内容：
 {
-  "pccs_url": "https://your-pccs-server:8081/sgx/certification/v4/",
+  "pccs_url": "https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/",
   "use_secure_cert": true,
   "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",
   "pccs_api_version": "3.1"
@@ -146,7 +147,7 @@ sudo nano /etc/sgx_default_qcnl.conf
 
 ### 选项 1: 使用 Intel 公有 PCS 服务
 
-对于开发和测试，可以直接使用 Intel 的公有 PCS 服务：
+当你显式选择 `TEE_MODE=hardware` 且需要直接访问 Intel PCS 时，可以使用 Intel 的公有 PCS 服务：
 
 ```
 https://api.trustedservices.intel.com/sgx/certification/v4/
@@ -156,7 +157,7 @@ https://api.trustedservices.intel.com/sgx/certification/v4/
 
 ### 选项 2: 部署本地 PCCS (Provisioning Certificate Caching Service)
 
-对于生产环境，建议部署本地 PCCS：
+当你显式选择 `TEE_MODE=hardware` 并准备长期运行硬件 attestation 时，建议部署本地 PCCS：
 
 ```bash
 # 安装 PCCS
@@ -182,8 +183,11 @@ sudo systemctl enable pccs
 ### 环境变量配置
 
 ```bash
-# DCAP 模式
-export CRED_BRIDGE_DCAP_MODE=production  # 或 simulation
+# TEE 运行模式（必须显式设置）
+export TEE_MODE=hardware
+
+# 显式 simulation 示例
+# export TEE_MODE=simulation
 
 # Intel PCS URL
 export INTEL_PCS_URL=https://api.trustedservices.intel.com/sgx/certification/v4/
@@ -198,9 +202,13 @@ export DCAP_QUOTE_MAX_AGE=3600
 export DCAP_VERIFY_CERT_CHAIN=true
 ```
 
+- `TEE_MODE=hardware` 会走真实 SGX/DCAP 路径；若 SGX/DCAP/AESM/PCCS（或 Intel PCS）未就绪，将 fail-closed。
+- `TEE_MODE=simulation` 只用于显式模拟路径；相关模拟状态字段只会在该模式下出现。
+
 ### 代码配置示例
 
 ```rust
+use vault_service::config::TeeRuntimeMode;
 use vault_service::tee::{
     dcap::{DcapConfig, DcapService, INTEL_PCS_BASE_URL_PROD},
     enclave::{Enclave, EnclaveConfig},
@@ -208,6 +216,7 @@ use vault_service::tee::{
 
 // 创建 DCAP 配置
 let dcap_config = DcapConfig {
+    runtime_mode: TeeRuntimeMode::Hardware,
     pcs_base_url: INTEL_PCS_BASE_URL_PROD.to_string(),
     use_test_environment: false,
     api_key: Some("your_api_key".to_string()),
@@ -221,7 +230,7 @@ let dcap_config = DcapConfig {
         // 允许的 MRSIGNER 白名单
         hex::decode("fedcba9876543210...").unwrap().try_into().unwrap(),
     ],
-    simulation_mode: false,
+    ..Default::default()
 };
 
 // 创建 DCAP 服务
@@ -237,18 +246,37 @@ println!("MRENCLAVE: {}", hex::encode(quote.report_body.mrenclave));
 println!("MRSIGNER: {}", hex::encode(quote.report_body.mrsigner));
 ```
 
-### 模拟模式配置（开发测试）
+### 显式 simulation 模式配置
 
-在没有 SGX 硬件的环境中进行开发：
+在没有 SGX 硬件的环境中，如需运行 simulation-safe 测试或文档示例，请显式设置 `TEE_MODE=simulation`：
 
-```rust
+````rust
+use vault_service::config::TeeRuntimeMode;
+
 let dcap_config = DcapConfig {
-    simulation_mode: true,
+    runtime_mode: TeeRuntimeMode::Simulation,
     ..Default::default()
 };
 
 let dcap_service = DcapService::new(dcap_config)?;
-```
+
+## 调试 Demo
+
+仓库提供两个可独立运行的 demo，用于区分“旧错误复现”与“标准流程验证”：
+
+```bash
+# 反例：故意跳过 sgx_qe_get_target_info()
+cargo run --features tee-hardware --bin sgx_dcap_quote_legacy_demo
+
+# 正例：按 Intel 推荐顺序执行
+TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so \
+cargo run --features tee-hardware --bin sgx_dcap_quote_standard_demo
+````
+
+- `sgx_dcap_quote_legacy_demo` 用于稳定复现旧链路，输出已加载 `.so` 路径、`get_quote_size` 返回码和失败阶段。
+- `sgx_dcap_quote_standard_demo` 用于验证修复后的执行顺序，输出 `.so` 路径、`get_target_info rc`、`get_quote_size rc`、`quote_size` 和最终失败阶段。
+
+````
 
 ## API 使用
 
@@ -260,7 +288,7 @@ let dcap_service = DcapService::new(dcap_config)?;
 
 ```bash
 curl http://localhost:3000/api/v1/attestation/quote
-```
+````
 
 响应：
 
@@ -357,6 +385,8 @@ curl http://localhost:3000/api/v1/attestation/health
   "quote_valid": true
 }
 ```
+
+显式 `TEE_MODE=simulation` 时，相关状态接口才会出现模拟标记；若设置 `TEE_MODE=hardware` 但真实能力未接通，请预期初始化失败，而不是得到模拟健康状态。
 
 ### 客户端验证示例
 
@@ -472,6 +502,41 @@ cargo run
 
 # 检查 Quote 生成
 /opt/intel/sgxsdk/SampleCode/SampleAttestedTLS/build/sample_attested_tls_app
+```
+
+## CI / 验收语义
+
+- 默认 CI 只运行 simulation-safe 测试，并显式设置 `TEE_MODE=simulation`。
+- hardware-only 测试应在带 SGX/DCAP/AESM 的专用 runner 或 staging 主机执行，并显式设置 `TEE_MODE=hardware`。
+
+### 启动自检与探针约定
+
+- `GET /health` 只表示进程存活（liveness），不代表 SGX/DCAP 已就绪。
+- `GET /ready` 与 `GET /health/detail` 表示服务就绪（readiness）；当 SGX 设备、AESM、PCCS/PCS、Quote 初始化或关键启动自检失败时应返回 `503`。
+- 在 `TEE_MODE=hardware` 下，若 DCAP 依赖缺失，服务应 fail-closed，而不是静默降级到 simulation。
+
+### 建议验收矩阵
+
+| 类别                | 运行环境                           | 目标                                     | 建议命令                                                                               |
+| ------------------- | ---------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| `simulation-safe`   | 普通 CI / 开发机                   | 验证默认构建、格式、lint、单测不依赖 SGX | `cargo fmt --check` / `cargo clippy --tests -- -D warnings` / `cargo test`             |
+| `service-dependent` | 可访问数据库、Redis、immudb 的环境 | 验证服务集成行为，但不要求 SGX           | `TEE_MODE=simulation cargo test --test attestation_api_tests`                          |
+| `hardware-only`     | SGX 专用 runner / 预发机           | 验证真实 SGX/DCAP/AESM/PCCS 闭环         | `TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1` |
+
+### 无法执行硬件验证时的记录模板
+
+当当前环境没有 SGX runner、`aesmd`、PCCS 或 Intel PCS 凭证时，请在验收记录中明确写出：
+
+```text
+未执行验证：
+- hardware-only: `TEE_MODE=hardware cargo test --test sgx_hardware_tests -- --ignored --test-threads=1`
+
+未执行原因：
+- 当前环境缺少 /dev/sgx_enclave 与 /dev/sgx_provision
+- aesmd / PCCS 未部署，无法完成真实 Quote 闭环
+
+影响范围：
+- 无法证明真实 SGX sealing、真实 Quote 生成、PCCS collateral 拉取在本次变更中可用
 ```
 
 ### 联系支持

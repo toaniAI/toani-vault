@@ -1,0 +1,21 @@
+{
+  "data": {
+    "access_token": "v4.local.XrWp-rEfbgX0Qf_ytAX_3TcMuETpSY5aWGvQnGIXkzrV1shh_KbT6dvMDc3-_0KGrdPbXlDyhG3FHCsN9EgJiRUKg6-GuYdJ0KKmd1sCsYRfNQW6xSYwRaprFs2uYK31yqh5JfKU37rcQb7khJnQ3IVVRgAX8j5_eYEoxCNBuNyLJEs163DDyuh9dooe1ZKy228XHF1UKfMPVpTbxYys9qRqJJ_Pg7-7PfEE5DCM2mcBMXT0Hit1GjMC_s-KPd3tP6gYY98CBZAOdG09OX7SLc0aWi_c3rOGucWFuWkv4BMV3w19DB-5lN-Wpnl00052K641isjU-B6rPGQ7AZvHkgiakVa-SPLISR3pqonsJFiYOWPibYBQJWgu0fN6MkJXtAkC26hj4nKhiyGFz3Oam9R9HzL-tOtVSL_Lr5TTOxdQ8BVo4EP_WSeYVxC1pzns_QXNY0CNMTVvtOLcxG0jbEfNzjrv7_V1dtjkfmnynrxB3g1Zh1O9NPdco6R-1bazb6OysaNIJdDWDhbsVFMtAuFA2wkqhMQI-hk4loNRuee9GWgbksMYUVLGALzCM983opFODAyisK3kMkIulfZadw",
+    "display_name": null,
+    "expires_at": 1775728274,
+    "expires_in": 900,
+    "granted_scopes": [
+      "tokens:read",
+      "tokens:write",
+      "tokens:revoke",
+      "tenant:admin",
+      "credential:read"
+    ],
+    "issued_from": "session",
+    "revoked_at": null,
+    "subject_type": "user",
+    "token_id": "019d7199-70bb-7010-89a2-4dd0610338c6",
+    "token_type": "Bearer"
+  },
+  "success": true
+}

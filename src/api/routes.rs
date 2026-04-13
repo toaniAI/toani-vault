@@ -28,10 +28,22 @@ pub mod credentials {
 pub mod tokens {
     /// 创建 Token
     pub const CREATE: &str = "/tokens";
+    /// 获取 Token 统计
+    pub const STATS: &str = "/tokens/stats";
     /// 验证 Token
     pub const VERIFY: &str = "/tokens/verify";
     /// 撤销 Token
     pub const REVOKE: &str = "/tokens/:id/revoke";
+}
+
+/// Service Account 路由
+pub mod service_accounts {
+    pub const CREATE: &str = "/service-accounts";
+    pub const LIST: &str = "/service-accounts";
+    pub const GET: &str = "/service-accounts/:id";
+    pub const UPDATE: &str = "/service-accounts/:id";
+    pub const CREATE_TOKEN: &str = "/service-accounts/:id/tokens";
+    pub const LIST_TOKENS: &str = "/service-accounts/:id/tokens";
 }
 
 /// 审计日志路由

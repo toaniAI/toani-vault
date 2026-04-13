@@ -1,0 +1,54 @@
+# CredBridge Local Environment Configuration
+# 本地开发环境配置
+# 此配置文件用于本地开发，连接本地数据库和 Redis
+# NOTE: Copy this file and fill in your actual credentials. Do not commit real credentials.
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+# =============================================================================
+# PostgreSQL 数据库配置 (本地访问)
+# 使用 DATABASE_URL 环境变量覆盖，或修改此占位符
+# =============================================================================
+database:
+  url: "postgres://CHANGE_ME_USER:CHANGE_ME_PASSWORD@127.0.0.1:5432/credbridge"
+  pool_size: 10
+  timeout_seconds: 30
+
+# =============================================================================
+# Redis 缓存配置
+# 使用 REDIS_URL 环境变量覆盖，或修改此占位符
+# =============================================================================
+redis:
+  url: "redis://:CHANGE_ME_REDIS_PASSWORD@localhost:6379/0"
+  pool_size: 10
+
+# Vault 配置 (本地开发使用模拟或本地 Vault)
+vault:
+  addr: "http://localhost:8200"
+  token: "root"
+  kv_path: "secret/local"
+
+# 日志配置
+log:
+  level: "debug"
+  format: "json"
+
+# 安全配置 (本地开发使用固定值)
+security:
+  jwt_secret: "local-jwt-secret-for-development-only-change-in-production"
+  token_expiry: 3600
+  encryption_key: "local-encryption-key-32bytes-for-dev"
+
+# CORS 配置
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:5173"
+
+# API 限流
+rate_limit:
+  requests_per_minute: 1000
+  burst: 100

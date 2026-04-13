@@ -1,5 +1,9 @@
+# Internal documentation (not for public release)
+docs/internal/
+
 # Hidden directories
 .claude/
+.omc/
 .idea/
 .local/
 .playwright-mcp/
@@ -18,10 +22,16 @@
 **/dist/
 **/.DS_Store
 .env
+.env.*
+!.env.example
 .env.local
+*.bak
+*.key
+*.pem
 *.log
 npm-debug.log*
 coverage/
 *.swp
 *.swo
 *~
+.omx/

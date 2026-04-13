@@ -37,6 +37,7 @@
 use crate::tee::attestation::{AttestationError, AttestationResult, AttestationService, Quote};
 use crate::tee::enclave::{Enclave, EnclaveError};
 use ring::digest::{SHA256, digest};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -118,7 +119,7 @@ impl From<EnclaveError> for ChallengeError {
 }
 
 /// 挑战数据
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Challenge {
     /// 挑战唯一标识符
     pub id: String,
@@ -143,7 +144,7 @@ pub struct Challenge {
 }
 
 /// 挑战状态
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChallengeStatus {
     /// 已创建，等待响应
     Pending,
@@ -158,7 +159,7 @@ pub enum ChallengeStatus {
 }
 
 /// 挑战元数据
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChallengeMetadata {
     /// 客户端 IP 地址
     pub client_ip: Option<String>,
@@ -828,7 +829,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_generate() {
-        let attestation_service = AttestationService::new().allow_simulation(true);
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service);
 
         let challenge = protocol.generate_challenge(None, None).unwrap();
@@ -849,9 +850,8 @@ mod tests {
         enclave.initialize().unwrap();
 
         // 设置 Verifier
-        let attestation_service = AttestationService::new()
-            .allow_simulation(true)
-            .allow_mrenclave(enclave.mrenclave());
+        let attestation_service =
+            AttestationService::for_simulation().allow_mrenclave(enclave.mrenclave());
         let verifier = ChallengeProtocol::new(attestation_service.clone());
 
         // 设置 Prover
@@ -873,7 +873,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_cancel() {
-        let attestation_service = AttestationService::new();
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service);
 
         let challenge = protocol.generate_challenge(None, None).unwrap();
@@ -889,7 +889,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_limit() {
-        let attestation_service = AttestationService::new();
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service).with_max_challenges(3);
 
         // 创建 3 个挑战
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn test_challenge_protocol_cleanup() {
-        let attestation_service = AttestationService::new();
+        let attestation_service = AttestationService::for_simulation();
         let protocol = ChallengeProtocol::new(attestation_service);
 
         // 创建一个立即过期的挑战（通过内部修改）
@@ -966,7 +966,7 @@ mod tests {
 
     #[test]
     fn test_replay_protection() {
-        let attestation_service = AttestationService::new().allow_simulation(true);
+        let attestation_service = AttestationService::for_simulation();
         let verifier = ChallengeProtocol::new(attestation_service.clone());
         let prover = ProverProtocol::new(attestation_service);
 

@@ -1,16 +1,16 @@
 /**
- * CredBridge TypeScript SDK - Express 集成示例
+ * Toani Vault SDK TypeScript - Express 集成示例
  *
- * 展示如何在 Express 应用中集成 CredBridge SDK
+ * 展示如何在 Express 应用中集成 Toani Vault SDK
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction } from "express";
 import {
   CredBridgeClient,
   CredBridgeError,
   CredBridgeErrorCode,
   CredentialType,
-} from '@credbridge/sdk';
+} from "@toani/vault-sdk";
 
 // 扩展 Express Request 类型
 declare global {
@@ -26,15 +26,15 @@ declare global {
 const app = express();
 app.use(express.json());
 
-const BASE_URL = process.env.CREDBRIDGE_BASE_URL || 'https://api.credbridge.io';
+const BASE_URL = process.env.TOANI_VAULT_BASE_URL || "https://api.toani.io";
 
-// 初始化 CredBridge 客户端中间件
+// 初始化 Toani Vault 客户端中间件
 function initCredBridge() {
   return (req: Request, _res: Response, next: NextFunction) => {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const token = req.headers.authorization?.replace("Bearer ", "");
 
     if (!token) {
-      return res.status(401).json({ error: 'Missing authorization token' });
+      return res.status(401).json({ error: "Missing authorization token" });
     }
 
     req.credbridge = new CredBridgeClient({
@@ -57,7 +57,9 @@ function initCredBridge() {
 function requireScopes(...scopes: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.credbridge) {
-      return res.status(500).json({ error: 'CredBridge client not initialized' });
+      return res
+        .status(500)
+        .json({ error: "Toani Vault client not initialized" });
     }
 
     const token = req.credbridge.token;
@@ -65,7 +67,7 @@ function requireScopes(...scopes: string[]) {
 
     if (!hasScopes) {
       return res.status(403).json({
-        error: 'Insufficient permissions',
+        error: "Insufficient permissions",
         required: scopes,
         granted: token.getScopes(),
       });
@@ -79,12 +81,12 @@ function requireScopes(...scopes: string[]) {
 app.use(initCredBridge());
 
 // 健康检查
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // 获取当前用户信息
-app.get('/api/me', (req, res) => {
+app.get("/api/me", (req, res) => {
   const token = req.credbridge!.token;
   res.json({
     tenantId: req.tenantId,
@@ -96,8 +98,8 @@ app.get('/api/me', (req, res) => {
 
 // 获取凭证列表（需要 read 权限）
 app.get(
-  '/api/credentials',
-  requireScopes('credential:read'),
+  "/api/credentials",
+  requireScopes("credential:read"),
   async (req, res, next) => {
     try {
       const { credentials, total } = await req.credbridge!.credentials.list();
@@ -109,13 +111,13 @@ app.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // 获取单个凭证（需要 read 权限）
 app.get(
-  '/api/credentials/:id',
-  requireScopes('credential:read'),
+  "/api/credentials/:id",
+  requireScopes("credential:read"),
   async (req, res, next) => {
     try {
       const credential = await req.credbridge!.credentials.get(req.params.id);
@@ -123,42 +125,43 @@ app.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // 解密凭证（需要 decrypt 权限）
 app.post(
-  '/api/credentials/:id/decrypt',
-  requireScopes('credential:decrypt'),
+  "/api/credentials/:id/decrypt",
+  requireScopes("credential:decrypt"),
   async (req, res, next) => {
     try {
       const { reason } = req.body;
       if (!reason) {
-        return res.status(400).json({ error: 'Decryption reason is required' });
+        return res.status(400).json({ error: "Decryption reason is required" });
       }
 
       const decrypted = await req.credbridge!.credentials.decrypt(
         req.params.id,
-        reason
+        reason,
       );
       res.json(decrypted);
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // 创建凭证（需要 write 权限）
 app.post(
-  '/api/credentials',
-  requireScopes('credential:write'),
+  "/api/credentials",
+  requireScopes("credential:write"),
   async (req, res, next) => {
     try {
       const { serviceId, credentialType, plaintextData, expiresAt } = req.body;
 
       if (!serviceId || !credentialType || !plaintextData) {
         return res.status(400).json({
-          error: 'Missing required fields: serviceId, credentialType, plaintextData',
+          error:
+            "Missing required fields: serviceId, credentialType, plaintextData",
         });
       }
 
@@ -171,7 +174,7 @@ app.post(
             serviceId,
             plaintextData.username,
             plaintextData.password,
-            { expiresAt }
+            { expiresAt },
           );
           break;
         case CredentialType.ApiKey:
@@ -179,7 +182,7 @@ app.post(
             serviceId,
             plaintextData.apiKey,
             plaintextData.apiSecret,
-            { expiresAt }
+            { expiresAt },
           );
           break;
         default:
@@ -195,25 +198,25 @@ app.post(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // 删除凭证（需要 write 权限）
 app.delete(
-  '/api/credentials/:id',
-  requireScopes('credential:write'),
+  "/api/credentials/:id",
+  requireScopes("credential:write"),
   async (req, res, next) => {
     try {
       const result = await req.credbridge!.credentials.delete(req.params.id);
       if (result.deleted) {
         res.status(204).send();
       } else {
-        res.status(404).json({ error: 'Credential not found' });
+        res.status(404).json({ error: "Credential not found" });
       }
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 // 错误处理中间件
@@ -249,14 +252,14 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Express server running on port ${PORT}`);
-  console.log(`CredBridge API: ${BASE_URL}`);
-  console.log('');
-  console.log('API Endpoints:');
-  console.log('  GET  /health                    - 健康检查');
-  console.log('  GET  /api/me                    - 获取当前用户信息');
-  console.log('  GET  /api/credentials           - 获取凭证列表');
-  console.log('  GET  /api/credentials/:id       - 获取凭证详情');
-  console.log('  POST /api/credentials/:id/decrypt - 解密凭证');
-  console.log('  POST /api/credentials           - 创建凭证');
-  console.log('  DELETE /api/credentials/:id     - 删除凭证');
+  console.log(`Toani Vault API: ${BASE_URL}`);
+  console.log("");
+  console.log("API Endpoints:");
+  console.log("  GET  /health                    - 健康检查");
+  console.log("  GET  /api/me                    - 获取当前用户信息");
+  console.log("  GET  /api/credentials           - 获取凭证列表");
+  console.log("  GET  /api/credentials/:id       - 获取凭证详情");
+  console.log("  POST /api/credentials/:id/decrypt - 解密凭证");
+  console.log("  POST /api/credentials           - 创建凭证");
+  console.log("  DELETE /api/credentials/:id     - 删除凭证");
 });

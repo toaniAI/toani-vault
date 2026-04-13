@@ -14,14 +14,31 @@ image:
 imagePullSecrets: []
 
 command:
+  - /app/runtime-preflight.sh
+args:
   - /app/vault-service
-args: []
 
 envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: development
+  CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK: "true"
+  TEE_MODE: hardware
+  TEE_ENCLAVE_PATH: /app/credbridge_enclave.signed.so
+  SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: debug
+  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@postgresql-hl.dev:5432/credbridge?sslmode=disable"
+  REDIS_URL: "redis://:Ysdn2025G0217@redis74-master.test.svc.cluster.local:6379/0"
+  CREDBRIDGE_PG_SCHEMA: "credbridge_vault"
+  VAULT_ADDR: "http://vault:8200"
+  DCAP_PCCS_URL: "https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/"
+  DCAP_USE_SECURE_CERT: "true"
+  DCAP_COLLATERAL_SERVICE: "https://api.trustedservices.intel.com/sgx/certification/v4/"
+  DCAP_PCCS_API_VERSION: "3.1"
+  # Optional plaintext fallback for CI/CD when Drone secrets are unavailable.
+  # Prefer Drone secrets in production; these values are committed to git if filled in here.
+  PRIVY_APP_ID: "cmniaifov006t0cl1af6l5xqs"
+  PRIVY_APP_SECRET: "privy_app_secret_51xduL8UX9MyuZDEizgyhhh9MXsAQsZbW5n9T1xBTdrT1fgcYDqK64Yv4Cnefyhirjx94sctJPzNyAFqyVJ2GH73"
 
 o_envs: []
 
@@ -60,8 +77,21 @@ resources:
     cpu: 100m
     memory: 128Mi
 
+securityContext:
+  privileged: true
+
+volumes:
+  - name: aesmd-socket
+    hostPath:
+      path: /var/run/aesmd
+      type: Directory
+volumeMounts:
+  - name: aesmd-socket
+    mountPath: /var/run/aesmd
+
 configs: {}
 configPath: /configs/
-configExist: "credbridge-go"
+configExist: "credbridge"
 
-nodeSelector: {}
+nodeSelector:
+  tee: tee

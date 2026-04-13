@@ -14,6 +14,7 @@
 
 use crate::crypto::constants::KEY_LENGTH;
 use crate::crypto::{CryptoError, KeyHandle};
+use crate::tee::host_runtime::SharedEnclaveRuntime;
 use crate::tee::sealing::{SealPolicy, SealedStorage, SealingService};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -543,6 +544,24 @@ impl KeyManager {
         }
     }
 
+    /// 创建绑定到共享 runtime 的密钥管理器。
+    pub fn new_with_runtime(
+        storage_path: String,
+        mrsigner: [u8; 32],
+        mrenclave: [u8; 32],
+        runtime: SharedEnclaveRuntime,
+    ) -> Self {
+        let storage = SealedStorage::new(storage_path);
+        let sealing_service = SealingService::with_runtime(runtime);
+
+        Self {
+            storage,
+            sealing_service,
+            current_mrsigner: mrsigner,
+            current_mrenclave: mrenclave,
+        }
+    }
+
     /// 密封并存储 L1 主密钥
     ///
     /// # 流程
@@ -807,12 +826,12 @@ mod tests {
         for i in 0..3 {
             let entry = CachedKeyEntry::new(
                 [i as u8; 32],
-                format!("tenant_{}", i),
-                format!("user_{}", i),
+                format!("tenant_{i}"),
+                format!("user_{i}"),
                 [i as u8; KEY_LENGTH],
                 KeyType::UserVault,
             );
-            cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+            cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
         }
 
         assert_eq!(cache.len(), 3);
@@ -834,12 +853,12 @@ mod tests {
         for i in 0..3 {
             let entry = CachedKeyEntry::new(
                 [i as u8; 32],
-                format!("tenant_{}", i),
-                format!("user_{}", i),
+                format!("tenant_{i}"),
+                format!("user_{i}"),
                 [i as u8; KEY_LENGTH],
                 KeyType::UserVault,
             );
-            cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+            cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
         }
 
         assert_eq!(cache.len(), 3);

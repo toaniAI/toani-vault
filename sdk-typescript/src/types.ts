@@ -11,29 +11,29 @@
 /** 凭证类型 */
 export enum CredentialType {
   /** 用户名密码 */
-  UsernamePassword = 'username_password',
+  UsernamePassword = "username_password",
   /** OAuth 刷新令牌 */
-  OAuthRefresh = 'oauth_refresh',
+  OAuthRefresh = "oauth_refresh",
   /** API 密钥 */
-  ApiKey = 'api_key',
+  ApiKey = "api_key",
   /** 会话 Cookie */
-  SessionCookie = 'session_cookie',
+  SessionCookie = "session_cookie",
   /** KYC 文档 */
-  KycDocument = 'kyc_document',
+  KycDocument = "kyc_document",
 }
 
 /** Token Scope 权限 */
 export enum TokenScope {
   /** 凭证读取权限 */
-  CredentialRead = 'credential:read',
+  CredentialRead = "credential:read",
   /** 凭证解密权限 */
-  CredentialDecrypt = 'credential:decrypt',
+  CredentialDecrypt = "credential:decrypt",
   /** 凭证写入权限 */
-  CredentialWrite = 'credential:write',
+  CredentialWrite = "credential:write",
   /** 审计日志读取权限 */
-  AuditRead = 'audit:read',
+  AuditRead = "audit:read",
   /** 管理员权限 */
-  Admin = 'admin',
+  Admin = "admin",
 }
 
 // ============================================================================
@@ -269,6 +269,157 @@ export interface TokenRefreshResult {
   expiresAt: number;
 }
 
+/** 创建 Token 请求 */
+export interface CreateTokenRequest {
+  /** 请求的权限范围 */
+  scopes: string[];
+  /** 过期时间（秒） */
+  expiresIn?: number;
+}
+
+/** 创建 Token 响应 */
+export interface CreateTokenResponse {
+  /** 访问令牌 */
+  accessToken: string;
+  /** Token ID */
+  tokenId: string;
+  /** Token 类型 */
+  tokenType: string;
+  /** 有效期（秒） */
+  expiresIn: number;
+  /** 空格分隔的 scope 字符串 */
+  scope: string;
+  /** 颁发时间 */
+  issuedAt: number;
+  /** 过期时间 */
+  expiresAt: number;
+}
+
+/** 创建 access token 请求 */
+export interface AuthCreateAccessTokenRequest {
+  /** 请求的权限范围 */
+  scopes: string[];
+  /** 过期时间（秒） */
+  ttlSeconds?: number;
+}
+
+/** 创建 access token 响应 */
+export interface AuthCreateAccessTokenResponse {
+  /** 访问令牌 */
+  accessToken: string;
+  /** Token ID */
+  tokenId: string;
+  /** Token 类型 */
+  tokenType: string;
+  /** 主体类型 */
+  subjectType?: string;
+  /** 签发来源 */
+  issuedFrom?: string;
+  /** 展示名称 */
+  displayName?: string;
+  /** 过期时间（Unix 时间戳） */
+  expiresAt: number;
+  /** 有效期（秒） */
+  expiresIn: number;
+  /** 已授予 scopes */
+  grantedScopes: string[];
+  /** 撤销时间 */
+  revokedAt?: string;
+}
+
+/** Token 统计响应 */
+export interface TokenStatsResponse {
+  /** Token 总数 */
+  totalTokens?: number;
+  /** 活跃 Token 数量 */
+  activeTokens: number;
+  /** 已撤销 Token 数量 */
+  revokedTokens?: number;
+}
+
+/** Token 元数据 */
+export interface TokenMetadata {
+  tokenId: string;
+  tokenType: string;
+  subjectType: string;
+  subjectId: string;
+  tenantId: string;
+  issuedFrom: string;
+  sessionId?: string;
+  membershipId?: string;
+  displayName?: string;
+  grantedScopes: string[];
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+/** Service Account 状态 */
+export type ServiceAccountStatus = "active" | "disabled" | "deleted";
+
+/** Service Account 信息 */
+export interface ServiceAccountInfo {
+  id: string;
+  tenantId: string;
+  name: string;
+  description?: string;
+  role: string;
+  scopeCeiling: string[];
+  status: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+
+/** 创建 Service Account 请求 */
+export interface CreateServiceAccountRequest {
+  name: string;
+  description?: string;
+  scopeCeiling: string[];
+}
+
+/** 更新 Service Account 请求 */
+export interface UpdateServiceAccountRequest {
+  name?: string;
+  description?: string;
+  status?: ServiceAccountStatus;
+  scopeCeiling?: string[];
+}
+
+/** Service Account token 创建请求 */
+export interface ServiceAccountTokenCreateRequest {
+  scopes: string[];
+  ttlSeconds?: number;
+  displayName?: string;
+}
+
+/** Service Account token 创建响应 */
+export interface ServiceAccountTokenCreateResponse {
+  accessToken: string;
+  tokenId: string;
+  tokenType: string;
+  subjectType: string;
+  issuedFrom: string;
+  displayName?: string;
+  expiresIn: number;
+  scope: string;
+  grantedScopes: string[];
+  issuedAt: number;
+  expiresAt: number;
+  revokedAt?: string;
+}
+
+/** Service Account token 元数据 */
+export type ServiceAccountTokenMetadata = TokenMetadata;
+
+/** 按 ID 撤销 token 响应 */
+export interface TokenRevokeByIdResponse {
+  revoked: boolean;
+  tokenId: string;
+}
+
 // ============================================================================
 // 错误类型
 // ============================================================================
@@ -276,37 +427,37 @@ export interface TokenRefreshResult {
 /** SDK 错误码 */
 export enum CredBridgeErrorCode {
   /** 未知错误 */
-  Unknown = 'unknown',
+  Unknown = "unknown",
   /** 网络错误 */
-  NetworkError = 'network_error',
+  NetworkError = "network_error",
   /** 请求超时 */
-  Timeout = 'timeout',
+  Timeout = "timeout",
   /** 未授权 */
-  Unauthorized = 'unauthorized',
+  Unauthorized = "unauthorized",
   /** 禁止访问 */
-  Forbidden = 'forbidden',
+  Forbidden = "forbidden",
   /** 凭证未找到 */
-  NotFound = 'not_found',
+  NotFound = "not_found",
   /** 无效的请求 */
-  InvalidRequest = 'invalid_request',
+  InvalidRequest = "invalid_request",
   /** 服务器内部错误 */
-  InternalError = 'internal_error',
+  InternalError = "internal_error",
   /** Token 过期 */
-  TokenExpired = 'token_expired',
+  TokenExpired = "token_expired",
   /** Token 无效 */
-  InvalidToken = 'invalid_token',
+  InvalidToken = "invalid_token",
   /** Token 已被撤销 */
-  TokenRevoked = 'token_revoked',
+  TokenRevoked = "token_revoked",
   /** 权限不足 */
-  InsufficientScope = 'insufficient_scope',
+  InsufficientScope = "insufficient_scope",
   /** 租户隔离违规 */
-  TenantIsolationViolation = 'tenant_isolation_violation',
+  TenantIsolationViolation = "tenant_isolation_violation",
   /** 凭证已过期 */
-  CredentialExpired = 'credential_expired',
+  CredentialExpired = "credential_expired",
   /** 解密失败 */
-  DecryptionFailed = 'decryption_failed',
+  DecryptionFailed = "decryption_failed",
   /** 加密失败 */
-  EncryptionFailed = 'encryption_failed',
+  EncryptionFailed = "encryption_failed",
 }
 
 /** SDK 错误 */
@@ -325,10 +476,10 @@ export class CredBridgeError extends Error {
     message: string,
     statusCode?: number,
     details?: Record<string, unknown>,
-    requestId?: string
+    requestId?: string,
   ) {
     super(message);
-    this.name = 'CredBridgeError';
+    this.name = "CredBridgeError";
     this.code = code;
     this.statusCode = statusCode;
     this.details = details;
@@ -340,23 +491,29 @@ export class CredBridgeError extends Error {
 
   /** 是否为网络错误 */
   public isNetworkError(): boolean {
-    return this.code === CredBridgeErrorCode.NetworkError ||
-           this.code === CredBridgeErrorCode.Timeout;
+    return (
+      this.code === CredBridgeErrorCode.NetworkError ||
+      this.code === CredBridgeErrorCode.Timeout
+    );
   }
 
   /** 是否为认证错误 */
   public isAuthError(): boolean {
-    return this.code === CredBridgeErrorCode.Unauthorized ||
-           this.code === CredBridgeErrorCode.InvalidToken ||
-           this.code === CredBridgeErrorCode.TokenExpired ||
-           this.code === CredBridgeErrorCode.TokenRevoked;
+    return (
+      this.code === CredBridgeErrorCode.Unauthorized ||
+      this.code === CredBridgeErrorCode.InvalidToken ||
+      this.code === CredBridgeErrorCode.TokenExpired ||
+      this.code === CredBridgeErrorCode.TokenRevoked
+    );
   }
 
   /** 是否可重试 */
   public isRetryable(): boolean {
-    return this.isNetworkError() ||
-           this.code === CredBridgeErrorCode.InternalError ||
-           this.statusCode === 429; // Rate limited
+    return (
+      this.isNetworkError() ||
+      this.code === CredBridgeErrorCode.InternalError ||
+      this.statusCode === 429
+    ); // Rate limited
   }
 }
 
@@ -423,7 +580,7 @@ export interface PaginationParams {
   /** 排序字段 */
   sortBy?: string;
   /** 排序方向 */
-  sortOrder?: 'asc' | 'desc';
+  sortOrder?: "asc" | "desc";
 }
 
 // ============================================================================
@@ -433,17 +590,17 @@ export interface PaginationParams {
 /** SDK 事件类型 */
 export enum SdkEventType {
   /** Token 即将过期 */
-  TokenExpiring = 'token_expiring',
+  TokenExpiring = "token_expiring",
   /** Token 已刷新 */
-  TokenRefreshed = 'token_refreshed',
+  TokenRefreshed = "token_refreshed",
   /** 请求开始 */
-  RequestStart = 'request_start',
+  RequestStart = "request_start",
   /** 请求成功 */
-  RequestSuccess = 'request_success',
+  RequestSuccess = "request_success",
   /** 请求失败 */
-  RequestError = 'request_error',
+  RequestError = "request_error",
   /** 重试 */
-  Retry = 'retry',
+  Retry = "retry",
 }
 
 /** SDK 事件 */
@@ -500,6 +657,186 @@ export interface AuditLogFilter {
   success?: boolean;
 }
 
+/** 审计日志查询请求 */
+export interface ListAuditLogsRequest {
+  startTime?: number;
+  endTime?: number;
+  userIdHash?: string;
+  action?: string;
+  riskTier?: string;
+  outcome?: string;
+  service?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/** 审计日志列表项 */
+export interface AuditLogItem {
+  id: string;
+  timestamp: number;
+  userIdHash: string;
+  sessionId: string;
+  service: string;
+  action: string;
+  riskTier: string;
+  outcome: string;
+  logIndex: number;
+}
+
+/** 审计日志列表响应 */
+export interface AuditLogsListResponse {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/** 审计导出格式 */
+export type AuditExportFormat = "json" | "csv";
+
+/** 导出审计日志请求 */
+export interface ExportAuditLogsRequest {
+  startTime?: number;
+  endTime?: number;
+  format?: AuditExportFormat;
+  userIdHash?: string;
+  action?: string;
+}
+
+/** 导出审计日志响应 */
+export interface AuditExportResult {
+  exportId: string;
+  format: AuditExportFormat;
+  content: string;
+  integrityHash: string;
+  count: number;
+  generatedAt: number;
+}
+
+/** 验证审计日志请求 */
+export interface VerifyAuditLogRequest {
+  id?: string;
+  logIndex?: number;
+}
+
+/** 审计验证详情 */
+export interface AuditVerificationDetail {
+  step: string;
+  passed: boolean;
+  message?: string;
+}
+
+/** 验证审计日志结果 */
+export interface VerifyAuditLogResult {
+  id: string;
+  logIndex: number;
+  verified: boolean;
+  contentHashMatch: boolean;
+  signatureValid: boolean;
+  merkleProofValid: boolean;
+  details: AuditVerificationDetail[];
+  verifiedAt: number;
+}
+
+// ============================================================================
+// Auth 类型
+// ============================================================================
+
+/** Auth 身份信息 */
+export interface AuthIdentityInfo {
+  provider: string;
+  subject: string;
+  walletAddress?: string;
+  email?: string;
+  isVerified: boolean;
+  isPrimary: boolean;
+}
+
+/** Auth 用户信息 */
+export interface AuthUserProfile {
+  id: string;
+  displayName?: string;
+  status: string;
+  onboardingCompleted: boolean;
+  defaultTenantId?: string;
+  identities: AuthIdentityInfo[];
+}
+
+/** Auth 成员资格信息 */
+export interface AuthMembershipInfo {
+  id: string;
+  tenantId: string;
+  role: string;
+  status: string;
+  scopes: string[];
+  joinedAt?: string;
+}
+
+/** Auth 租户信息 */
+export interface AuthTenantInfo {
+  id: string;
+  name?: string;
+}
+
+/** 当前用户响应 */
+export interface AuthMeResponse {
+  user: AuthUserProfile;
+  currentTenant?: AuthTenantInfo;
+  currentMembership?: AuthMembershipInfo;
+  memberships: AuthMembershipInfo[];
+  mfaStatus: string;
+}
+
+/** 成员资格列表响应 */
+export interface AuthMembershipsResponse {
+  memberships: AuthMembershipInfo[];
+}
+
+/** 注销响应 */
+export interface AuthLogoutResponse {
+  success: boolean;
+}
+
+export interface AuthAutomationToken {
+  tokenId: string;
+  tokenKind: string;
+  tokenName?: string;
+  tokenPrefix?: string;
+  tokenPreview?: string;
+  tokenType: string;
+  subjectType: string;
+  subjectId: string;
+  tenantId: string;
+  issuedFrom: string;
+  sessionId?: string;
+  membershipId?: string;
+  description?: string;
+  grantedScopes: string[];
+  issuedMembershipRoleSnapshot?: string;
+  permissionSource?: string;
+  createdVia?: string;
+  revokedReason?: string;
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+export interface AuthCreateAutomationTokenRequest {
+  name: string;
+  description?: string;
+  scopes: string[];
+  ttlSeconds?: number;
+  createdVia?: "profile_dashboard" | "cli" | "sdk";
+}
+
+export interface AuthCreateAutomationTokenResponse {
+  tokenValue: string;
+  tokenPreview: string;
+  metadata: AuthAutomationToken;
+}
+
 // ============================================================================
 // Sandbox 类型
 // ============================================================================
@@ -507,57 +844,59 @@ export interface AuditLogFilter {
 /** Session 状态 */
 export enum SessionStatus {
   /** 正在创建 */
-  Creating = 'creating',
+  Creating = "creating",
   /** 运行中 */
-  Running = 'running',
+  Running = "running",
   /** 已暂停 */
-  Paused = 'paused',
+  Paused = "paused",
   /** 已关闭 */
-  Closed = 'closed',
+  Closed = "closed",
   /** 错误状态 */
-  Error = 'error',
+  Error = "error",
 }
 
 /** 操作类型 */
 export enum OperationType {
   /** 导航到URL */
-  Navigate = 'navigate',
+  Navigate = "navigate",
   /** 点击元素 */
-  Click = 'click',
+  Click = "click",
   /** 填充表单 */
-  Fill = 'fill',
+  Fill = "fill",
   /** 获取文本 */
-  GetText = 'get_text',
+  GetText = "get_text",
   /** 获取元素属性 */
-  GetAttribute = 'get_attribute',
+  GetAttribute = "get_attribute",
   /** 执行脚本 */
-  ExecuteScript = 'execute_script',
+  ExecuteScript = "execute_script",
   /** 等待元素 */
-  WaitForSelector = 'wait_for_selector',
+  WaitForSelector = "wait",
   /** 截图 */
-  Screenshot = 'screenshot',
+  Screenshot = "screenshot",
   /** 导出数据 */
-  ExportData = 'export_data',
+  ExportData = "export",
 }
 
 /** 操作状态 */
 export enum OperationStatus {
   /** 待执行 */
-  Pending = 'pending',
+  Pending = "pending",
   /** 执行中 */
-  Running = 'running',
+  Running = "running",
   /** 成功 */
-  Success = 'success',
+  Success = "success",
   /** 失败 */
-  Failed = 'failed',
+  Failed = "failed",
   /** 已取消 */
-  Cancelled = 'cancelled',
+  Cancelled = "cancelled",
 }
 
 /** 创建 Session 请求 */
 export interface CreateSessionRequest {
   /** 服务ID */
   serviceId: string;
+  /** 原始意图（后端必填） */
+  originalIntent: string;
   /** 凭证ID（可选） */
   credentialId?: string;
   /** 启动URL */
@@ -606,18 +945,48 @@ export interface SessionInfo {
   expiresAt?: string;
 }
 
+/** Sandbox 操作详情 */
+export interface SandboxOperationInfo {
+  operationId: string;
+  sessionId: string;
+  operationType: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  executionTimeMs?: number;
+}
+
+/** Sandbox 统计 */
+export interface SandboxStats {
+  poolStatus: string;
+  activeSessions: number;
+  warmInstances: number;
+  healthy: boolean;
+  error?: string;
+}
+
 /** 执行操作请求 */
+export type SandboxCredentialField = string;
+
+export interface SandboxCredentialReference {
+  $credential: SandboxCredentialField;
+}
+
 export interface ExecuteOperationRequest {
   /** 操作类型 */
   operationType: OperationType;
+  /** 操作描述 */
+  description?: string;
   /** 选择器（CSS选择器或XPath） */
   selector?: string;
   /** 输入值 */
-  value?: string;
+  value?: string | SandboxCredentialReference;
   /** URL（用于导航操作） */
   url?: string;
   /** 脚本（用于执行脚本操作） */
   script?: string;
+  /** 脚本绑定（支持 credential 引用） */
+  bindings?: Record<string, string | SandboxCredentialReference>;
   /** 属性名（用于获取属性操作） */
   attribute?: string;
   /** 超时时间（毫秒） */
@@ -652,7 +1021,7 @@ export interface ScreenshotOptions {
   /** 完整页面截图 */
   fullPage?: boolean;
   /** 图片格式 */
-  type?: 'png' | 'jpeg';
+  type?: "png" | "jpeg";
   /** 图片质量（仅jpeg） */
   quality?: number;
   /** 裁剪区域 */
@@ -669,7 +1038,7 @@ export interface ScreenshotResponse {
   /** 图片数据（Base64） */
   data: string;
   /** 图片格式 */
-  type: 'png' | 'jpeg';
+  type: "png" | "jpeg";
   /** 宽度 */
   width: number;
   /** 高度 */
@@ -679,7 +1048,7 @@ export interface ScreenshotResponse {
 /** 导出数据请求 */
 export interface ExportDataRequest {
   /** 导出格式 */
-  format: 'json' | 'csv' | 'html';
+  format: "json" | "csv" | "html";
   /** 选择器 */
   selector?: string;
   /** 数据提取规则 */
@@ -698,7 +1067,7 @@ export interface ExportDataResponse {
   /** 导出数据 */
   data: unknown;
   /** 数据格式 */
-  format: 'json' | 'csv' | 'html';
+  format: "json" | "csv" | "html";
   /** 记录数 */
   recordCount: number;
 }

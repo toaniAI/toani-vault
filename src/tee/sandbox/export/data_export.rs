@@ -611,14 +611,14 @@ impl ExportService {
         xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         xml.push_str("<export>\n");
 
-        self.json_to_xml(data, &mut xml, 1);
+        Self::json_to_xml(data, &mut xml, 1);
 
         xml.push_str("</export>\n");
         Ok(xml.into_bytes())
     }
 
     /// JSON 转 XML
-    fn json_to_xml(&self, value: &serde_json::Value, xml: &mut String, indent: usize) {
+    fn json_to_xml(value: &serde_json::Value, xml: &mut String, indent: usize) {
         let indent_str = "  ".repeat(indent);
 
         match value {
@@ -627,7 +627,7 @@ impl ExportService {
                     xml.push_str(&format!("{indent_str}<{key}>"));
                     if val.is_object() || val.is_array() {
                         xml.push('\n');
-                        self.json_to_xml(val, xml, indent + 1);
+                        Self::json_to_xml(val, xml, indent + 1);
                         xml.push_str(&format!("{indent_str}</{key}>\n"));
                     } else {
                         xml.push_str(&escape_xml(&val.to_string()));
@@ -638,7 +638,7 @@ impl ExportService {
             serde_json::Value::Array(arr) => {
                 for item in arr {
                     xml.push_str(&format!("{indent_str}<item>\n"));
-                    self.json_to_xml(item, xml, indent + 1);
+                    Self::json_to_xml(item, xml, indent + 1);
                     xml.push_str(&format!("{indent_str}</item>\n"));
                 }
             }

@@ -16,10 +16,10 @@ CredBridge 凭证保险库服务 - 基于 TEE（可信执行环境）和 HashiCo
 
 ### 存储后端
 
-| 后端 | 适用场景 | 特性 |
-|------|----------|------|
-| InMemoryStorage | 开发/测试 | 快速启动，数据不持久化 |
-| VaultStorageBackend | 生产环境 | HashiCorp Vault KV v2，高可用 |
+| 后端                | 适用场景  | 特性                          |
+| ------------------- | --------- | ----------------------------- |
+| InMemoryStorage     | 开发/测试 | 快速启动，数据不持久化        |
+| VaultStorageBackend | 生产环境  | HashiCorp Vault KV v2，高可用 |
 
 ## 快速开始
 
@@ -93,6 +93,7 @@ secret/credbridge/{tenant_id}/{credential_id}
 ```
 
 示例：
+
 ```
 secret/credbridge/tenant_123/uuid-v7-credential-id
 ```
@@ -285,14 +286,14 @@ let enterprise = TenantConfig::enterprise_tier();
 
 ### 功能开关
 
-| 功能 | 描述 | Free | Pro | Enterprise |
-|------|------|------|-----|------------|
-| `enable_credential_encryption` | 凭证加密 | ✅ | ✅ | ✅ |
-| `enable_audit_logging` | 审计日志 | ✅ | ✅ | ✅ |
-| `enable_mfa` | 多因素认证 | ❌ | ✅ | ✅ |
-| `enable_webhooks` | Webhook 通知 | ❌ | ✅ | ✅ |
-| `enable_sso` | SSO 集成 | ❌ | ❌ | ✅ |
-| `enable_custom_crypto` | 自定义加密 | ❌ | ❌ | ✅ |
+| 功能                           | 描述         | Free | Pro | Enterprise |
+| ------------------------------ | ------------ | ---- | --- | ---------- |
+| `enable_credential_encryption` | 凭证加密     | ✅   | ✅  | ✅         |
+| `enable_audit_logging`         | 审计日志     | ✅   | ✅  | ✅         |
+| `enable_mfa`                   | 多因素认证   | ❌   | ✅  | ✅         |
+| `enable_webhooks`              | Webhook 通知 | ❌   | ✅  | ✅         |
+| `enable_sso`                   | SSO 集成     | ❌   | ❌  | ✅         |
+| `enable_custom_crypto`         | 自定义加密   | ❌   | ❌  | ✅         |
 
 ### 配置更新
 
@@ -384,27 +385,27 @@ v4.local.{base64url(payload)}
 
 ### Token Claims
 
-| 字段 | 描述 | 示例 |
-|------|------|------|
-| `iss` | 签发者 | `credbridge-vault` |
-| `sub` | 用户 ID | `user_123` |
-| `aud` | 租户 ID | `tenant_456` |
-| `exp` | 过期时间（Unix 时间戳） | `1710123456` |
-| `jti` | Token 唯一标识符（UUID v7） | `018e...` |
-| `scope` | 权限范围 | `credential:read` |
-| `mfa_verified` | MFA 验证状态 | `true` |
+| 字段           | 描述                        | 示例               |
+| -------------- | --------------------------- | ------------------ |
+| `iss`          | 签发者                      | `credbridge-vault` |
+| `sub`          | 用户 ID                     | `user_123`         |
+| `aud`          | 租户 ID                     | `tenant_456`       |
+| `exp`          | 过期时间（Unix 时间戳）     | `1710123456`       |
+| `jti`          | Token 唯一标识符（UUID v7） | `018e...`          |
+| `scope`        | 权限范围                    | `credential:read`  |
+| `mfa_verified` | MFA 验证状态                | `true`             |
 
 ### Scope 权限
 
-| Scope | 描述 |
-|-------|------|
-| `credential:read` | 读取凭证元数据 |
-| `credential:decrypt` | 解密凭证内容 |
-| `credential:write` | 创建/更新凭证 |
-| `credential:delete` | 删除凭证 |
-| `token:manage` | 管理 Token（撤销/刷新） |
-| `audit:read` | 读取审计日志 |
-| `admin` | 所有管理权限 |
+| Scope                | 描述                    |
+| -------------------- | ----------------------- |
+| `credential:read`    | 读取凭证元数据          |
+| `credential:decrypt` | 解密凭证内容            |
+| `credential:write`   | 创建/更新凭证           |
+| `credential:delete`  | 删除凭证                |
+| `token:manage`       | 管理 Token（撤销/刷新） |
+| `audit:read`         | 读取审计日志            |
+| `admin`              | 所有管理权限            |
 
 ### 使用示例
 
@@ -452,11 +453,11 @@ CredBridge 使用 Redis 管理 Token 状态，支持撤销检查、元数据查�
 
 ### Redis 数据结构
 
-| 数据类型 | Key 格式 | 用途 |
-|----------|----------|------|
-| Sorted Set | `credbridge:tokens:{tenant_id}:active` | 活跃 Token 集合（score = exp） |
-| Set | `credbridge:tokens:{tenant_id}:revoked` | 已撤销 Token 集合 |
-| Hash | `credbridge:token:{jti}` | Token 元数据 |
+| 数据类型   | Key 格式                                | 用途                           |
+| ---------- | --------------------------------------- | ------------------------------ |
+| Sorted Set | `credbridge:tokens:{tenant_id}:active`  | 活跃 Token 集合（score = exp） |
+| Set        | `credbridge:tokens:{tenant_id}:revoked` | 已撤销 Token 集合              |
+| Hash       | `credbridge:token:{jti}`                | Token 元数据                   |
 
 ### Token 元数据
 
@@ -694,7 +695,7 @@ cargo test --test redis_store_tests -- --skip
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
+version: "3.8"
 
 services:
   vault:
@@ -756,6 +757,7 @@ GET /metrics
 ```
 
 支持的指标类型：
+
 - `credbridge_http_requests_total` - HTTP 请求总数
 - `credbridge_http_error_rate_percentage` - HTTP 错误率
 - `credbridge_http_request_duration_bucket` - 请求延迟分布

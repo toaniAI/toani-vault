@@ -1,5 +1,7 @@
 # CredBridge TypeScript SDK - 高级示例
 
+> **迁移说明**: 本 SDK 已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，主类从 `CredBridgeSDK` 重命名为 `ToaniVaultSDK`。旧名称 `CredBridgeSDK` 仍然作为兼容性别名保留，但建议使用新名称。`CredBridgeClient`、`CredBridgeError`、`CredBridgeErrorCode` 等类名保持不变。
+
 ## 目录
 
 1. [基础凭证操作](#1-基础凭证操作)
@@ -20,20 +22,20 @@
 ### 1.1 创建不同类型的凭证
 
 ```typescript
-import { CredBridgeClient, CredentialType } from '@credbridge/sdk';
+import { CredBridgeClient, CredentialType } from "@toani/vault-sdk";
 
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
-  token: process.env.CREDBRIDGE_TOKEN!,
+  baseUrl: "https://api.toani.io",
+  token: process.env.TOANI_VAULT_TOKEN!,
 });
 
 // 创建用户名密码凭证
 async function createUserCredentials() {
   const credential = await client.credentials.createUsernamePassword(
-    'schwab',
-    'user@example.com',
-    'SecurePassword123!',
-    { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 90 } // 90天过期
+    "schwab",
+    "user@example.com",
+    "SecurePassword123!",
+    { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 90 }, // 90天过期
   );
   return credential.credentialId;
 }
@@ -41,10 +43,10 @@ async function createUserCredentials() {
 // 创建 API Key 凭证
 async function createApiCredentials() {
   const credential = await client.credentials.createApiKey(
-    'stripe',
-    'sk_live_51H...',
-    'sk_secret_...',
-    { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 365 } // 1年过期
+    "stripe",
+    "sk_live_51H...",
+    "sk_secret_...",
+    { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 365 }, // 1年过期
   );
   return credential.credentialId;
 }
@@ -52,9 +54,9 @@ async function createApiCredentials() {
 // 创建 OAuth 刷新令牌
 async function createOAuthCredentials() {
   const credential = await client.credentials.createOAuthRefresh(
-    'google',
-    '1//0dYVjK7V7V7V7V7V7V7V7V7V7V7V...',
-    { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 180 } // 180天过期
+    "google",
+    "1//0dYVjK7V7V7V7V7V7V7V7V7V7V7V...",
+    { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 180 }, // 180天过期
   );
   return credential.credentialId;
 }
@@ -62,12 +64,12 @@ async function createOAuthCredentials() {
 // 创建自定义凭证
 async function createCustomCredential() {
   const credential = await client.credentials.create({
-    serviceId: 'custom-service',
+    serviceId: "custom-service",
     credentialType: CredentialType.SessionCookie,
     plaintextData: {
-      sessionId: 'sess_123456',
-      csrfToken: 'csrf_abcdef',
-      userAgent: 'Mozilla/5.0...',
+      sessionId: "sess_123456",
+      csrfToken: "csrf_abcdef",
+      userAgent: "Mozilla/5.0...",
     },
     expiresAt: Math.floor(Date.now() / 1000) + 3600, // 1小时过期
   });
@@ -88,11 +90,14 @@ class CredentialLifecycleManager {
 
     // 检查凭证是否过期
     if (metadata.expiresAt && new Date(metadata.expiresAt) < new Date()) {
-      throw new Error('Credential has expired');
+      throw new Error("Credential has expired");
     }
 
     // 解密凭证
-    const decrypted = await this.client.credentials.decrypt(credentialId, reason);
+    const decrypted = await this.client.credentials.decrypt(
+      credentialId,
+      reason,
+    );
 
     return {
       metadata,
@@ -102,16 +107,20 @@ class CredentialLifecycleManager {
 
   // 批量更新过期凭证
   async renewExpiringCredentials(daysBeforeExpiry: number = 7) {
-    const { credentials } = await this.client.credentials.list({ onlyValid: true });
+    const { credentials } = await this.client.credentials.list({
+      onlyValid: true,
+    });
     const now = Date.now();
     const threshold = now + daysBeforeExpiry * 24 * 60 * 60 * 1000;
 
-    const expiringCredentials = credentials.filter(cred => {
+    const expiringCredentials = credentials.filter((cred) => {
       if (!cred.expiresAt) return false;
       return new Date(cred.expiresAt).getTime() < threshold;
     });
 
-    console.log(`Found ${expiringCredentials.length} credentials expiring soon`);
+    console.log(
+      `Found ${expiringCredentials.length} credentials expiring soon`,
+    );
 
     return expiringCredentials;
   }
@@ -121,7 +130,7 @@ class CredentialLifecycleManager {
     // 验证凭证存在
     const exists = await this.client.credentials.exists(credentialId);
     if (!exists) {
-      throw new Error('Credential does not exist');
+      throw new Error("Credential does not exist");
     }
 
     // 删除凭证
@@ -151,7 +160,7 @@ class BulkCredentialManager {
       type: CredentialType;
       data: Record<string, unknown>;
       expiresAt?: number;
-    }>
+    }>,
   ) {
     const results = [];
     const errors = [];
@@ -176,27 +185,28 @@ class BulkCredentialManager {
   // 批量删除凭证
   async bulkDelete(credentialIds: string[]) {
     const results = await Promise.allSettled(
-      credentialIds.map(id => this.client.credentials.delete(id))
+      credentialIds.map((id) => this.client.credentials.delete(id)),
     );
 
     return results.map((result, index) => ({
       credentialId: credentialIds[index],
-      success: result.status === 'fulfilled',
-      result: result.status === 'fulfilled' ? result.value : undefined,
-      error: result.status === 'rejected' ? result.reason : undefined,
+      success: result.status === "fulfilled",
+      result: result.status === "fulfilled" ? result.value : undefined,
+      error: result.status === "rejected" ? result.reason : undefined,
     }));
   }
 
   // 批量轮换凭证
   async rotateCredentials(serviceId: string) {
-    const { credentials } = await this.client.credentials.getByService(serviceId);
+    const { credentials } =
+      await this.client.credentials.getByService(serviceId);
     const rotated = [];
 
     for (const cred of credentials) {
       // 获取并解密旧凭证
       const old = await this.client.credentials.decrypt(
         cred.credentialId,
-        'Credential rotation'
+        "Credential rotation",
       );
 
       // 创建新凭证
@@ -237,15 +247,15 @@ class TokenManager {
   // 设置 Token 监控
   private setupTokenMonitoring() {
     // Token 即将过期提醒
-    this.client.on('token_expiring', () => {
-      console.warn('Token is expiring soon, refreshing...');
+    this.client.on("token_expiring", () => {
+      console.warn("Token is expiring soon, refreshing...");
     });
 
     // Token 刷新成功
-    this.client.on('token_refreshed', (event) => {
-      console.log('Token refreshed successfully');
+    this.client.on("token_refreshed", (event) => {
+      console.log("Token refreshed successfully");
       // 更新环境变量或配置文件
-      process.env.CREDBRIDGE_TOKEN = event.data.token;
+      process.env.TOANI_VAULT_TOKEN = event.data.token;
     });
   }
 
@@ -255,11 +265,12 @@ class TokenManager {
 
     // 检查 Token 是否有效
     if (!token.isValid()) {
-      throw new Error('Token is invalid or expired');
+      throw new Error("Token is invalid or expired");
     }
 
     // 检查 Token 是否即将过期
-    if (token.isExpiringSoon(600)) { // 10分钟内过期
+    if (token.isExpiringSoon(600)) {
+      // 10分钟内过期
       console.log(`Token expires in ${token.getRemainingTimeFormatted()}`);
 
       // 这里可以实现实际的 Token 刷新逻辑
@@ -270,7 +281,7 @@ class TokenManager {
     // 验证 Token（向服务器确认）
     const isValid = await token.verify();
     if (!isValid) {
-      throw new Error('Token has been revoked');
+      throw new Error("Token has been revoked");
     }
 
     return {
@@ -287,7 +298,7 @@ class TokenManager {
 
     const hasAll = token.hasAllScopes(requiredScopes as any);
     const hasAny = token.hasAnyScope(requiredScopes as any);
-    const missing = requiredScopes.filter(s => !token.hasScope(s as any));
+    const missing = requiredScopes.filter((s) => !token.hasScope(s as any));
 
     return {
       hasAll,
@@ -304,7 +315,7 @@ class TokenManager {
 ## 4. 错误处理与重试
 
 ```typescript
-import { CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { CredBridgeError, CredBridgeErrorCode } from "@toani/vault-sdk";
 
 class SafeCredentialClient {
   constructor(private client: CredBridgeClient) {}
@@ -312,7 +323,7 @@ class SafeCredentialClient {
   // 带重试的凭证操作
   async withRetry<T>(
     operation: () => Promise<T>,
-    maxRetries: number = 3
+    maxRetries: number = 3,
   ): Promise<T> {
     let lastError: Error | undefined;
 
@@ -330,7 +341,7 @@ class SafeCredentialClient {
 
           // 认证错误需要特殊处理
           if (error.isAuthError()) {
-            console.error('Authentication error, please check your token');
+            console.error("Authentication error, please check your token");
             throw error;
           }
         }
@@ -338,7 +349,7 @@ class SafeCredentialClient {
         // 指数退避
         const delay = Math.pow(2, i) * 1000;
         console.log(`Retry ${i + 1}/${maxRetries} after ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -346,24 +357,44 @@ class SafeCredentialClient {
   }
 
   // 处理特定错误
-  handleCredentialError(error: unknown): { success: false; error: string; code: string } {
+  handleCredentialError(error: unknown): {
+    success: false;
+    error: string;
+    code: string;
+  } {
     if (error instanceof CredBridgeError) {
       switch (error.code) {
         case CredBridgeErrorCode.NotFound:
-          return { success: false, error: '凭证不存在', code: 'NOT_FOUND' };
+          return { success: false, error: "凭证不存在", code: "NOT_FOUND" };
         case CredBridgeErrorCode.Unauthorized:
-          return { success: false, error: '未授权访问', code: 'UNAUTHORIZED' };
+          return { success: false, error: "未授权访问", code: "UNAUTHORIZED" };
         case CredBridgeErrorCode.Forbidden:
-          return { success: false, error: '禁止访问', code: 'FORBIDDEN' };
+          return { success: false, error: "禁止访问", code: "FORBIDDEN" };
         case CredBridgeErrorCode.InsufficientScope:
-          return { success: false, error: '权限不足', code: 'INSUFFICIENT_SCOPE' };
+          return {
+            success: false,
+            error: "权限不足",
+            code: "INSUFFICIENT_SCOPE",
+          };
         case CredBridgeErrorCode.TokenExpired:
-          return { success: false, error: 'Token 已过期', code: 'TOKEN_EXPIRED' };
+          return {
+            success: false,
+            error: "Token 已过期",
+            code: "TOKEN_EXPIRED",
+          };
         case CredBridgeErrorCode.CredentialExpired:
-          return { success: false, error: '凭证已过期', code: 'CREDENTIAL_EXPIRED' };
+          return {
+            success: false,
+            error: "凭证已过期",
+            code: "CREDENTIAL_EXPIRED",
+          };
         case CredBridgeErrorCode.NetworkError:
         case CredBridgeErrorCode.Timeout:
-          return { success: false, error: '网络错误，请稍后重试', code: 'NETWORK_ERROR' };
+          return {
+            success: false,
+            error: "网络错误，请稍后重试",
+            code: "NETWORK_ERROR",
+          };
         default:
           return { success: false, error: error.message, code: error.code };
       }
@@ -371,8 +402,8 @@ class SafeCredentialClient {
 
     return {
       success: false,
-      error: error instanceof Error ? error.message : '未知错误',
-      code: 'UNKNOWN'
+      error: error instanceof Error ? error.message : "未知错误",
+      code: "UNKNOWN",
     };
   }
 
@@ -380,7 +411,7 @@ class SafeCredentialClient {
   async safeGetCredential(credentialId: string) {
     try {
       const credential = await this.withRetry(() =>
-        this.client.credentials.get(credentialId)
+        this.client.credentials.get(credentialId),
       );
       return { success: true, data: credential };
     } catch (error) {
@@ -392,7 +423,7 @@ class SafeCredentialClient {
   async safeDecryptCredential(credentialId: string, reason: string) {
     try {
       const decrypted = await this.withRetry(() =>
-        this.client.credentials.decrypt(credentialId, reason)
+        this.client.credentials.decrypt(credentialId, reason),
       );
       return { success: true, data: decrypted };
     } catch (error) {
@@ -413,13 +444,16 @@ class AuditLogger {
   // 记录凭证访问
   async logCredentialAccess(
     credentialId: string,
-    action: 'read' | 'decrypt' | 'create' | 'delete',
+    action: "read" | "decrypt" | "create" | "delete",
     success: boolean,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
   ) {
     // 这里可以实现自定义审计日志逻辑
     // 例如发送到日志服务或数据仓库
-    console.log(`[AUDIT] ${action} credential ${credentialId}: ${success ? 'success' : 'failed'}`, metadata);
+    console.log(
+      `[AUDIT] ${action} credential ${credentialId}: ${success ? "success" : "failed"}`,
+      metadata,
+    );
   }
 
   // 获取凭证使用统计
@@ -442,42 +476,38 @@ class AuditLogger {
 ## 6. Webhook 集成
 
 ```typescript
-import express from 'express';
-import crypto from 'crypto';
+import express from "express";
+import crypto from "crypto";
 
-class CredBridgeWebhookHandler {
+class ToaniVaultWebhookHandler {
   constructor(private webhookSecret: string) {}
 
   // 验证 Webhook 签名
   verifySignature(payload: string, signature: string): boolean {
     const expectedSignature = crypto
-      .createHmac('sha256', this.webhookSecret)
+      .createHmac("sha256", this.webhookSecret)
       .update(payload)
-      .digest('hex');
+      .digest("hex");
 
     return crypto.timingSafeEqual(
       Buffer.from(signature),
-      Buffer.from(`sha256=${expectedSignature}`)
+      Buffer.from(`sha256=${expectedSignature}`),
     );
   }
 
   // 处理 Webhook 事件
-  async handleEvent(event: {
-    type: string;
-    data: unknown;
-    timestamp: string;
-  }) {
+  async handleEvent(event: { type: string; data: unknown; timestamp: string }) {
     switch (event.type) {
-      case 'credential.created':
+      case "credential.created":
         await this.handleCredentialCreated(event.data);
         break;
-      case 'credential.decrypted':
+      case "credential.decrypted":
         await this.handleCredentialDecrypted(event.data);
         break;
-      case 'credential.deleted':
+      case "credential.deleted":
         await this.handleCredentialDeleted(event.data);
         break;
-      case 'token.revoked':
+      case "token.revoked":
         await this.handleTokenRevoked(event.data);
         break;
       default:
@@ -486,29 +516,29 @@ class CredBridgeWebhookHandler {
   }
 
   private async handleCredentialCreated(data: any) {
-    console.log('Credential created:', data.credentialId);
+    console.log("Credential created:", data.credentialId);
     // 发送通知或更新缓存
   }
 
   private async handleCredentialDecrypted(data: any) {
-    console.log('Credential decrypted:', data.credentialId, 'by', data.userId);
+    console.log("Credential decrypted:", data.credentialId, "by", data.userId);
     // 记录审计日志或发送安全警报
   }
 
   private async handleCredentialDeleted(data: any) {
-    console.log('Credential deleted:', data.credentialId);
+    console.log("Credential deleted:", data.credentialId);
     // 清理相关资源
   }
 
   private async handleTokenRevoked(data: any) {
-    console.log('Token revoked:', data.tokenId);
+    console.log("Token revoked:", data.tokenId);
     // 清除会话或通知用户
   }
 }
 
 // Express 中间件
 export function createWebhookMiddleware(webhookSecret: string) {
-  const handler = new CredBridgeWebhookHandler(webhookSecret);
+  const handler = new ToaniVaultWebhookHandler(webhookSecret);
 
   return express.json({
     verify: (req: any, _res, buf) => {
@@ -523,22 +553,26 @@ export function createWebhookMiddleware(webhookSecret: string) {
 ## 7. Express 中间件
 
 ```typescript
-import { Request, Response, NextFunction } from 'express';
-import { CredBridgeClient, CredBridgeError, CredBridgeErrorCode } from '@credbridge/sdk';
+import { Request, Response, NextFunction } from "express";
+import {
+  CredBridgeClient,
+  CredBridgeError,
+  CredBridgeErrorCode,
+} from "@toani/vault-sdk";
 
 // 扩展 Express Request 类型
 declare global {
   namespace Express {
     interface Request {
-      credbridge?: CredBridgeClient;
+      toaniVault?: CredBridgeClient;
       tenantId?: string;
       userId?: string;
     }
   }
 }
 
-// 初始化 CredBridge 客户端中间件
-export function initCredBridge(config: {
+// 初始化 Toani Vault 客户端中间件
+export function initToaniVault(config: {
   baseUrl: string;
   getToken: (req: Request) => string | undefined;
 }) {
@@ -546,16 +580,16 @@ export function initCredBridge(config: {
     const token = config.getToken(req);
 
     if (!token) {
-      return next(new Error('Missing CredBridge token'));
+      return next(new Error("Missing Toani Vault token"));
     }
 
-    req.credbridge = new CredBridgeClient({
+    req.toaniVault = new CredBridgeClient({
       baseUrl: config.baseUrl,
       token,
     });
 
     // 从 Token 中提取租户和用户 ID
-    const tokenInfo = req.credbridge.getTokenInfo();
+    const tokenInfo = req.toaniVault.getTokenInfo();
     if (tokenInfo) {
       req.tenantId = tokenInfo.tenantId;
       req.userId = tokenInfo.userId;
@@ -568,16 +602,18 @@ export function initCredBridge(config: {
 // 权限检查中间件
 export function requireScopes(...scopes: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.credbridge) {
-      return res.status(500).json({ error: 'CredBridge client not initialized' });
+    if (!req.toaniVault) {
+      return res
+        .status(500)
+        .json({ error: "Toani Vault client not initialized" });
     }
 
-    const token = req.credbridge.token;
+    const token = req.toaniVault.token;
     const hasScopes = token.hasAllScopes(scopes as any);
 
     if (!hasScopes) {
       return res.status(403).json({
-        error: 'Insufficient permissions',
+        error: "Insufficient permissions",
         required: scopes,
         granted: token.getScopes(),
       });
@@ -588,11 +624,11 @@ export function requireScopes(...scopes: string[]) {
 }
 
 // 错误处理中间件
-export function credBridgeErrorHandler(
+export function toaniVaultErrorHandler(
   err: Error,
   _req: Request,
   res: Response,
-  _next: NextFunction
+  _next: NextFunction,
 ) {
   if (err instanceof CredBridgeError) {
     const statusMap: Record<CredBridgeErrorCode, number> = {
@@ -628,8 +664,8 @@ import express from 'express';
 
 const app = express();
 
-app.use(initCredBridge({
-  baseUrl: 'https://api.credbridge.io',
+app.use(initToaniVault({
+  baseUrl: 'https://api.toani.io',
   getToken: (req) => req.headers.authorization?.replace('Bearer ', ''),
 }));
 
@@ -637,7 +673,7 @@ app.use(initCredBridge({
 app.get('/api/credentials',
   requireScopes('credential:read'),
   async (req, res) => {
-    const { credentials } = await req.credbridge!.credentials.list();
+    const { credentials } = await req.toaniVault!.credentials.list();
     res.json(credentials);
   }
 );
@@ -645,12 +681,12 @@ app.get('/api/credentials',
 app.post('/api/credentials',
   requireScopes('credential:write'),
   async (req, res) => {
-    const credential = await req.credbridge!.credentials.create(req.body);
+    const credential = await req.toaniVault!.credentials.create(req.body);
     res.json(credential);
   }
 );
 
-app.use(credBridgeErrorHandler);
+app.use(toaniVaultErrorHandler);
 */
 ```
 
@@ -659,8 +695,8 @@ app.use(credBridgeErrorHandler);
 ## 8. React Hook
 
 ```typescript
-import { useState, useEffect, useCallback } from 'react';
-import { CredBridgeClient, CredentialType } from '@credbridge/sdk';
+import { useState, useEffect, useCallback } from "react";
+import { CredBridgeClient, CredentialType } from "@toani/vault-sdk";
 
 interface UseCredentialsOptions {
   baseUrl: string;
@@ -668,7 +704,11 @@ interface UseCredentialsOptions {
   serviceId?: string;
 }
 
-export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOptions) {
+export function useCredentials({
+  baseUrl,
+  token,
+  serviceId,
+}: UseCredentialsOptions) {
   const [client] = useState(() => new CredBridgeClient({ baseUrl, token }));
   const [credentials, setCredentials] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -680,7 +720,7 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
     setError(null);
     try {
       const result = await client.credentials.list(
-        serviceId ? { serviceId } : undefined
+        serviceId ? { serviceId } : undefined,
       );
       setCredentials(result.credentials);
     } catch (err) {
@@ -692,9 +732,13 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
 
   // 创建凭证
   const createCredential = useCallback(
-    async (type: CredentialType, data: Record<string, unknown>, expiresAt?: number) => {
+    async (
+      type: CredentialType,
+      data: Record<string, unknown>,
+      expiresAt?: number,
+    ) => {
       const result = await client.credentials.create({
-        serviceId: serviceId || 'default',
+        serviceId: serviceId || "default",
         credentialType: type,
         plaintextData: data,
         expiresAt,
@@ -702,7 +746,7 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
       await loadCredentials();
       return result;
     },
-    [client, serviceId, loadCredentials]
+    [client, serviceId, loadCredentials],
   );
 
   // 解密凭证
@@ -710,7 +754,7 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
     async (credentialId: string, reason: string) => {
       return client.credentials.decrypt(credentialId, reason);
     },
-    [client]
+    [client],
   );
 
   // 删除凭证
@@ -719,7 +763,7 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
       await client.credentials.delete(credentialId);
       await loadCredentials();
     },
-    [client, loadCredentials]
+    [client, loadCredentials],
   );
 
   useEffect(() => {
@@ -741,7 +785,7 @@ export function useCredentials({ baseUrl, token, serviceId }: UseCredentialsOpti
 /*
 function CredentialManager() {
   const { credentials, loading, create, delete: deleteCred } = useCredentials({
-    baseUrl: 'https://api.credbridge.io',
+    baseUrl: 'https://api.toani.io',
     token: 'your-token',
     serviceId: 'schwab',
   });
@@ -772,7 +816,7 @@ class MultiTenantCredentialManager {
 
   constructor(
     private baseUrl: string,
-    private getTenantToken: (tenantId: string) => string
+    private getTenantToken: (tenantId: string) => string,
   ) {}
 
   // 获取或创建租户客户端
@@ -795,21 +839,22 @@ class MultiTenantCredentialManager {
         const client = this.getClient(tenantId);
         const { credentials } = await client.credentials.list();
         return { tenantId, credentials };
-      })
+      }),
     );
 
     return results.map((result, index) => ({
       tenantId: tenantIds[index],
-      success: result.status === 'fulfilled',
-      data: result.status === 'fulfilled' ? result.value.credentials : undefined,
-      error: result.status === 'rejected' ? result.reason : undefined,
+      success: result.status === "fulfilled",
+      data:
+        result.status === "fulfilled" ? result.value.credentials : undefined,
+      error: result.status === "rejected" ? result.reason : undefined,
     }));
   }
 
   // 租户隔离验证
   async validateTenantAccess(
     tenantId: string,
-    credentialId: string
+    credentialId: string,
   ): Promise<boolean> {
     try {
       const client = this.getClient(tenantId);
@@ -833,7 +878,7 @@ class AutoRefreshTokenClient {
 
   constructor(
     private client: CredBridgeClient,
-    private refreshCallback: () => Promise<string>
+    private refreshCallback: () => Promise<string>,
   ) {
     this.startAutoRefresh();
   }
@@ -864,12 +909,12 @@ class AutoRefreshTokenClient {
     if (token.isExpiringSoon(300)) {
       this.isRefreshing = true;
       try {
-        console.log('Refreshing token...');
+        console.log("Refreshing token...");
         const newToken = await this.refreshCallback();
         this.client.setToken(newToken);
-        console.log('Token refreshed successfully');
+        console.log("Token refreshed successfully");
       } catch (error) {
-        console.error('Failed to refresh token:', error);
+        console.error("Failed to refresh token:", error);
       } finally {
         this.isRefreshing = false;
       }
@@ -879,7 +924,7 @@ class AutoRefreshTokenClient {
   // 手动刷新 Token
   async refreshToken(): Promise<string> {
     if (this.isRefreshing) {
-      throw new Error('Token refresh already in progress');
+      throw new Error("Token refresh already in progress");
     }
 
     this.isRefreshing = true;
@@ -896,7 +941,7 @@ class AutoRefreshTokenClient {
 // 使用示例
 /*
 const client = new CredBridgeClient({
-  baseUrl: 'https://api.credbridge.io',
+  baseUrl: 'https://api.toani.io',
   token: initialToken,
 });
 

@@ -10,7 +10,7 @@ pub mod key_derivation;
 pub mod key_rotation;
 pub mod keys;
 
-pub use cipher::{EncryptedBlob, decrypt_credential, encrypt_credential};
+pub use cipher::{CredentialCryptoContext, EncryptedBlob, decrypt_credential, encrypt_credential};
 pub use enclave_key::{EnclaveKeyManager, KeyAlgorithm, KeyConfig, KeyState, Signature};
 pub use hkdf::KeyHierarchy;
 pub use keys::{CredentialKey, EnclaveMasterKey, HardwareRootKey, KeyPurpose, UserVaultKey};

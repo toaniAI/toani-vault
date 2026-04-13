@@ -15,6 +15,7 @@
 
 use crate::crypto::CryptoError;
 use crate::crypto::constants::KEY_LENGTH;
+use crate::tee::host_runtime::SharedEnclaveRuntime;
 use zeroize::ZeroizeOnDrop;
 
 /// 密封策略
@@ -417,6 +418,9 @@ pub struct SealingService {
 
     /// 密封数据存储路径
     storage_path: Option<String>,
+
+    /// 共享 runtime 句柄（硬件模式）
+    runtime: Option<SharedEnclaveRuntime>,
 }
 
 impl SealingService {
@@ -426,6 +430,17 @@ impl SealingService {
             cpusvn: [0u8; 16],
             isvsvn: 1,
             storage_path: None,
+            runtime: None,
+        }
+    }
+
+    /// 创建绑定到共享 runtime 的 Sealing 服务。
+    pub fn with_runtime(runtime: SharedEnclaveRuntime) -> Self {
+        Self {
+            cpusvn: [0u8; 16],
+            isvsvn: 1,
+            storage_path: None,
+            runtime: Some(runtime),
         }
     }
 
@@ -439,9 +454,15 @@ impl SealingService {
     ///
     /// 在真实 SGX 环境中，这将调用 EGETKEY 指令获取硬件密钥
     pub fn get_sealing_key(&self, policy: SealPolicy) -> Result<SealingKey, CryptoError> {
-        // 模拟 Sealing Key 获取
-        // 实际 SGX 实现中，这里会调用 Intel SGX SDK 的 sgx_get_key()
-        let key_material = simulate_egetkey(&self.cpusvn, self.isvsvn, policy)?;
+        let key_material = if let Some(runtime) = &self.runtime {
+            runtime
+                .get_sealing_key(policy)
+                .map_err(|error| CryptoError::TeeError(error.to_string()))?
+        } else {
+            // 模拟 Sealing Key 获取
+            // 实际 SGX 实现中，这里会调用 Intel SGX SDK 的 sgx_get_key()
+            simulate_egetkey(&self.cpusvn, self.isvsvn, policy)?
+        };
 
         Ok(SealingKey::new(
             key_material,
@@ -659,8 +680,15 @@ impl SealedStorage {
     /// 删除密封数据
     pub fn delete(&self, key: &str) -> Result<(), CryptoError> {
         let file_path = format!("{}/{}.sealed", self.path, key);
-        std::fs::remove_file(&file_path)
-            .map_err(|e| CryptoError::EncryptionError(format!("删除密封数据失败: {e}")))?;
+        match std::fs::remove_file(&file_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(CryptoError::EncryptionError(format!(
+                    "删除密封数据失败: {error}"
+                )));
+            }
+        }
 
         Ok(())
     }
@@ -680,6 +708,60 @@ impl SealedStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tee::ffi_types::{
+        EnclaveIdentity, SGX_REPORT_DATA_LEN, SGX_SEALING_KEY_LEN, SGX_TARGET_INFO_LEN,
+    };
+    use crate::tee::host_runtime::{EnclaveRuntime, HostRuntimeError, SharedEnclaveRuntime};
+    use std::sync::Arc;
+
+    struct TestRuntime {
+        sealing_key: [u8; SGX_SEALING_KEY_LEN],
+    }
+
+    impl EnclaveRuntime for TestRuntime {
+        fn get_identity(&self) -> Result<EnclaveIdentity, HostRuntimeError> {
+            Ok(EnclaveIdentity::new([0u8; 32], [0u8; 32]))
+        }
+
+        fn get_targeted_report(
+            &self,
+            _target_info: [u8; SGX_TARGET_INFO_LEN],
+            _report_data: [u8; SGX_REPORT_DATA_LEN],
+        ) -> Result<Vec<u8>, HostRuntimeError> {
+            Ok(vec![0u8; 432])
+        }
+
+        fn get_sealing_key(
+            &self,
+            _policy: SealPolicy,
+        ) -> Result<[u8; SGX_SEALING_KEY_LEN], HostRuntimeError> {
+            Ok(self.sealing_key)
+        }
+
+        fn encrypt_credential(
+            &self,
+            _tenant_id: &str,
+            _user_id_hash: &str,
+            _credential_id: &str,
+            _plaintext: &[u8],
+        ) -> Result<crate::crypto::EncryptedBlob, HostRuntimeError> {
+            Err(HostRuntimeError::UnsupportedPlatform {
+                operation: "encrypt_credential",
+            })
+        }
+
+        fn decrypt_credential(
+            &self,
+            _tenant_id: &str,
+            _user_id_hash: &str,
+            _credential_id: &str,
+            _blob: &crate::crypto::EncryptedBlob,
+        ) -> Result<Vec<u8>, HostRuntimeError> {
+            Err(HostRuntimeError::UnsupportedPlatform {
+                operation: "decrypt_credential",
+            })
+        }
+    }
 
     #[test]
     fn test_seal_policy() {
@@ -762,6 +844,18 @@ mod tests {
         // 不同策略应该产生不同的密钥
         let key3 = service.get_sealing_key(SealPolicy::Mrsigner).unwrap();
         assert_ne!(key1.as_bytes(), key3.as_bytes());
+    }
+
+    #[test]
+    fn test_sealing_service_uses_runtime_key_when_present() {
+        let runtime: SharedEnclaveRuntime = Arc::new(TestRuntime {
+            sealing_key: [0xAB; SGX_SEALING_KEY_LEN],
+        });
+        let service = SealingService::with_runtime(runtime);
+
+        let key = service.get_sealing_key(SealPolicy::Mrsigner).unwrap();
+
+        assert_eq!(key.as_bytes(), &[0xAB; SGX_SEALING_KEY_LEN]);
     }
 
     #[test]

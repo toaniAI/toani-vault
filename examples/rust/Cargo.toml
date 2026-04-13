@@ -1,11 +1,11 @@
 [package]
-name = "credbridge-examples"
+name = "toani-vault-examples"
 version = "1.0.0"
 edition = "2021"
-description = "CredBridge Rust SDK 示例项目"
+description = "Toani Vault Rust SDK 示例项目"
 
 [dependencies]
-credbridge-sdk = { path = "../../sdk-rust" }
+toani-vault-sdk = { path = "../../sdk-rust" }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1.0"
 chrono = "0.4"

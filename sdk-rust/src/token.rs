@@ -1,10 +1,41 @@
 //! CredBridge SDK - Token 管理模块
 //!
-//! 提供 Token 验证、刷新和管理功能
+//! 管理 bearer tokens，用于 automation token、access token 和 service account token。
+//!
+//! # 重要说明
+//!
+//! 此 TokenManager 管理的是对外 bearer token，
+//! 包括 automation token、access token 和 service account token。
+//! 浏览器侧 Privy / session 流程不属于 Rust SDK 对外认证面。
+//!
+//! # 示例
+//!
+//! ```rust,no_run
+//! use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK, TokenScope};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // 直接使用 bearer token
+//! let sdk = ToaniVaultSDK::new(
+//!     CredBridgeConfig::new("https://vault.toani.io")
+//!         .with_token("v4.local.your-bearer-token")
+//! )?;
+//!
+//! // 检查 Token 权限
+//! if sdk.token().has_scope(TokenScope::CredentialRead) {
+//!     println!("Can read credentials");
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
 use crate::{
     client::CredBridgeClient,
-    types::{CredBridgeError, CredBridgeErrorCode, RequestOptions, Result, TokenInfo, TokenScope},
+    types::{
+        ApiTokenMetadata, CreateAccessTokenResponse, CreateAutomationTokenRequest,
+        CreateAutomationTokenResponse, CreateTokenRequest, CreateTokenResponse, CredBridgeError,
+        CredBridgeErrorCode, ListTokensResponse, RequestOptions, Result, RevokeTokenResponse,
+        TokenInfo, TokenScope, TokenStatsResponse,
+    },
 };
 use std::sync::Arc;
 
@@ -12,34 +43,14 @@ use std::sync::Arc;
 #[derive(Debug, Clone, serde::Deserialize)]
 struct TokenVerifyResponse {
     valid: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    claims: Option<TokenVerifyClaims>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TokenVerifyClaims {
-    jti: String,
-    sub: String,
-    exp: i64,
-    iat: i64,
-    scope: String,
-    #[serde(rename = "tenant_id")]
-    tenant_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    aud: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    iss: Option<String>,
-}
-
-/// Token 撤销响应
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TokenRevokeResponse {
-    revoked: bool,
 }
 
 /// Token 管理器
+///
+/// 管理 bearer tokens。
+///
+/// **注意**: 此结构管理的 Token 用于自动化和服务集成，
+/// 不负责浏览器侧 Privy / session 登录流程。
 #[derive(Debug, Clone)]
 pub struct TokenManager {
     client: Arc<CredBridgeClient>,
@@ -66,7 +77,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient};
     ///
     /// # async fn example() {
     /// let config = CredBridgeConfig::new("https://api.credbridge.io")
@@ -87,7 +98,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -116,7 +127,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -146,7 +157,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -173,7 +184,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -218,7 +229,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -241,7 +252,7 @@ impl TokenManager {
             }
         };
 
-        let response: TokenRevokeResponse = self
+        let response: RevokeTokenResponse = self
             .client
             .post_with_options(
                 &format!("/tokens/{}/revoke", token_info.token_id),
@@ -253,12 +264,147 @@ impl TokenManager {
         Ok(response.revoked)
     }
 
+    /// 按 token id 撤销 token
+    pub async fn revoke_by_id(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<RevokeTokenResponse> {
+        self.client
+            .post_with_options(
+                &format!("/tokens/{}/revoke", token_id.as_ref()),
+                serde_json::json!({}),
+                options,
+            )
+            .await
+    }
+
+    /// 从当前 bearer token 签发更小权限的 API access token
+    pub async fn create_access_token(
+        &self,
+        scopes: Vec<String>,
+        expires_in: Option<u64>,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateAccessTokenResponse> {
+        let body = serde_json::json!({
+            "scopes": scopes,
+            "ttl_seconds": expires_in,
+        });
+
+        self.client
+            .post_with_options("/auth/access-token", body, options)
+            .await
+    }
+
+    pub async fn create_automation_token(
+        &self,
+        request: CreateAutomationTokenRequest,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateAutomationTokenResponse> {
+        self.client
+            .post_with_options("/profile/automation-tokens", request, options)
+            .await
+    }
+
+    pub async fn list_automation_tokens(
+        &self,
+        options: Option<RequestOptions>,
+    ) -> Result<Vec<ApiTokenMetadata>> {
+        self.client
+            .get_with_options("/profile/automation-tokens", options)
+            .await
+    }
+
+    pub async fn get_automation_token(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<ApiTokenMetadata> {
+        self.client
+            .get_with_options(
+                &format!("/profile/automation-tokens/{}", token_id.as_ref()),
+                options,
+            )
+            .await
+    }
+
+    pub async fn revoke_automation_token(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<ApiTokenMetadata> {
+        self.client
+            .post_with_options(
+                &format!("/profile/automation-tokens/{}/revoke", token_id.as_ref()),
+                serde_json::json!({}),
+                options,
+            )
+            .await
+    }
+
+    /// 撤销指定 API access token
+    pub async fn revoke_access_token(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<RevokeTokenResponse> {
+        self.client
+            .post_with_options(
+                &format!("/tokens/{}/revoke", token_id.as_ref()),
+                serde_json::json!({}),
+                options,
+            )
+            .await
+    }
+
+    /// 创建新 token
+    pub async fn create(
+        &self,
+        user_id: Option<String>,
+        scopes: Vec<String>,
+        expires_in: Option<u64>,
+        credential_ids: Option<Vec<String>>,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateTokenResponse> {
+        let request = CreateTokenRequest {
+            user_id,
+            scopes,
+            expires_in,
+            credential_ids,
+        };
+        self.client
+            .post_with_options("/tokens", request, options)
+            .await
+    }
+
+    /// 列出 token
+    pub async fn list(&self, options: Option<RequestOptions>) -> Result<ListTokensResponse> {
+        let items: Vec<ApiTokenMetadata> = self.client.get_with_options("/tokens", options).await?;
+        Ok(ListTokensResponse { tokens: items })
+    }
+
+    /// 获取指定 token 元数据
+    pub async fn get(
+        &self,
+        token_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<ApiTokenMetadata> {
+        self.client
+            .get_with_options(&format!("/tokens/{}", token_id.as_ref()), options)
+            .await
+    }
+
+    /// 获取 token 统计
+    pub async fn stats(&self, options: Option<RequestOptions>) -> Result<TokenStatsResponse> {
+        self.client.get_with_options("/tokens/stats", options).await
+    }
+
     /// 检查 Token 是否具有指定的 Scope
     ///
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -274,8 +420,7 @@ impl TokenManager {
             None => return false,
         };
 
-        token_info.scopes.contains(&scope)
-            || token_info.scopes.contains(&TokenScope::Admin)
+        token_info.scopes.contains(&scope) || token_info.scopes.contains(&TokenScope::Admin)
     }
 
     /// 检查 Token 是否具有指定的任一 Scope
@@ -283,7 +428,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -302,7 +447,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, types::TokenScope, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -321,7 +466,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
@@ -373,7 +518,7 @@ impl TokenManager {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// # use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
+    /// # use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, token::TokenManager};
     /// # use std::sync::Arc;
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());

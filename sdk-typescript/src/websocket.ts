@@ -30,7 +30,7 @@
  * ```
  */
 
-import { CredBridgeError, CredBridgeErrorCode } from './types.js';
+import { CredBridgeError, CredBridgeErrorCode } from "./types.js";
 
 /** WebSocket 配置选项 */
 export interface WebSocketConfig {
@@ -56,12 +56,12 @@ export interface WebSocketConfig {
 
 /** 客户端消息类型 */
 export interface ClientMessage {
-  type: 'execute' | 'screenshot' | 'heartbeat' | 'close';
+  type: "execute" | "screenshot" | "heartbeat" | "close";
 }
 
 /** 执行操作消息 */
 export interface ExecuteMessage extends ClientMessage {
-  type: 'execute';
+  type: "execute";
   operation_id?: string;
   operation_type: string;
   description: string;
@@ -70,19 +70,19 @@ export interface ExecuteMessage extends ClientMessage {
 
 /** 截图消息 */
 export interface ScreenshotMessage extends ClientMessage {
-  type: 'screenshot';
+  type: "screenshot";
   request_id?: string;
 }
 
 /** 心跳消息 */
 export interface HeartbeatMessage extends ClientMessage {
-  type: 'heartbeat';
+  type: "heartbeat";
   timestamp: number;
 }
 
 /** 关闭消息 */
 export interface CloseMessage extends ClientMessage {
-  type: 'close';
+  type: "close";
   reason?: string;
 }
 
@@ -98,7 +98,7 @@ export type ServerMessage =
 
 /** 连接成功消息 */
 export interface ConnectedMessage {
-  type: 'connected';
+  type: "connected";
   session_id: string;
   connected_at: string;
   heartbeat_interval: number;
@@ -106,7 +106,7 @@ export interface ConnectedMessage {
 
 /** 操作进度消息 */
 export interface OperationProgressMessage {
-  type: 'operation_progress';
+  type: "operation_progress";
   operation_id: string;
   operation_type: string;
   status: string;
@@ -117,7 +117,7 @@ export interface OperationProgressMessage {
 
 /** 操作完成消息 */
 export interface OperationCompletedMessage {
-  type: 'operation_completed';
+  type: "operation_completed";
   operation_id: string;
   operation_type: string;
   success: boolean;
@@ -129,7 +129,7 @@ export interface OperationCompletedMessage {
 
 /** 截图结果消息 */
 export interface ScreenshotResultMessage {
-  type: 'screenshot_result';
+  type: "screenshot_result";
   request_id: string;
   success: boolean;
   image_data?: string;
@@ -140,14 +140,14 @@ export interface ScreenshotResultMessage {
 
 /** 心跳确认消息 */
 export interface HeartbeatAckMessage {
-  type: 'heartbeat_ack';
+  type: "heartbeat_ack";
   client_timestamp: number;
   server_timestamp: number;
 }
 
 /** 会话状态更新消息 */
 export interface SessionStatusUpdateMessage {
-  type: 'session_status_update';
+  type: "session_status_update";
   session_id: string;
   status: string;
   message?: string;
@@ -156,7 +156,7 @@ export interface SessionStatusUpdateMessage {
 
 /** 错误消息 */
 export interface ErrorMessage {
-  type: 'error';
+  type: "error";
   code: string;
   message: string;
   operation_id?: string;
@@ -198,15 +198,15 @@ export interface ScreenshotResult {
 /** WebSocket 连接状态 */
 export enum WebSocketState {
   /** 未连接 */
-  Disconnected = 'disconnected',
+  Disconnected = "disconnected",
   /** 正在连接 */
-  Connecting = 'connecting',
+  Connecting = "connecting",
   /** 已连接 */
-  Connected = 'connected',
+  Connected = "connected",
   /** 正在重连 */
-  Reconnecting = 'reconnecting',
+  Reconnecting = "reconnecting",
   /** 已关闭 */
-  Closed = 'closed',
+  Closed = "closed",
 }
 
 /**
@@ -278,14 +278,20 @@ export class SandboxWebSocketClient {
    * 检查是否已连接
    */
   public isConnected(): boolean {
-    return this.state === WebSocketState.Connected && this.ws?.readyState === WebSocket.OPEN;
+    return (
+      this.state === WebSocketState.Connected &&
+      this.ws?.readyState === WebSocket.OPEN
+    );
   }
 
   /**
    * 连接到 WebSocket
    */
   public async connect(): Promise<void> {
-    if (this.state === WebSocketState.Connected || this.state === WebSocketState.Connecting) {
+    if (
+      this.state === WebSocketState.Connected ||
+      this.state === WebSocketState.Connecting
+    ) {
       return;
     }
 
@@ -319,8 +325,8 @@ export class SandboxWebSocketClient {
             reject(
               new CredBridgeError(
                 CredBridgeErrorCode.NetworkError,
-                'WebSocket connection failed'
-              )
+                "WebSocket connection failed",
+              ),
             );
           }
         };
@@ -329,8 +335,8 @@ export class SandboxWebSocketClient {
         reject(
           new CredBridgeError(
             CredBridgeErrorCode.NetworkError,
-            `Failed to create WebSocket: ${error instanceof Error ? error.message : 'Unknown error'}`
-          )
+            `Failed to create WebSocket: ${error instanceof Error ? error.message : "Unknown error"}`,
+          ),
         );
       }
     });
@@ -347,30 +353,30 @@ export class SandboxWebSocketClient {
       // 发送关闭消息
       if (this.ws.readyState === WebSocket.OPEN) {
         const message: CloseMessage = {
-          type: 'close',
+          type: "close",
           reason,
         };
         this.sendMessage(message);
       }
 
-      this.ws.close(1000, reason || 'Client disconnect');
+      this.ws.close(1000, reason || "Client disconnect");
       this.ws = null;
     }
 
     this.state = WebSocketState.Closed;
-    this.rejectAllPending('Client disconnected');
+    this.rejectAllPending("Client disconnected");
   }
 
   /**
    * 执行操作
    */
   public async executeOperation(
-    options: ExecuteOperationOptions
+    options: ExecuteOperationOptions,
   ): Promise<ExecuteOperationResult> {
     if (!this.isConnected()) {
       throw new CredBridgeError(
         CredBridgeErrorCode.NetworkError,
-        'WebSocket is not connected'
+        "WebSocket is not connected",
       );
     }
 
@@ -384,8 +390,8 @@ export class SandboxWebSocketClient {
         reject(
           new CredBridgeError(
             CredBridgeErrorCode.Timeout,
-            `Operation ${operationId} timed out after ${timeout}ms`
-          )
+            `Operation ${operationId} timed out after ${timeout}ms`,
+          ),
         );
       }, timeout);
 
@@ -398,7 +404,7 @@ export class SandboxWebSocketClient {
 
       // 发送执行消息
       const message: ExecuteMessage = {
-        type: 'execute',
+        type: "execute",
         operation_id: operationId,
         operation_type: options.operationType,
         description: options.description,
@@ -416,7 +422,7 @@ export class SandboxWebSocketClient {
     if (!this.isConnected()) {
       throw new CredBridgeError(
         CredBridgeErrorCode.NetworkError,
-        'WebSocket is not connected'
+        "WebSocket is not connected",
       );
     }
 
@@ -430,8 +436,8 @@ export class SandboxWebSocketClient {
         reject(
           new CredBridgeError(
             CredBridgeErrorCode.Timeout,
-            `Screenshot request ${requestId} timed out after ${actualTimeout}ms`
-          )
+            `Screenshot request ${requestId} timed out after ${actualTimeout}ms`,
+          ),
         );
       }, actualTimeout);
 
@@ -444,7 +450,7 @@ export class SandboxWebSocketClient {
 
       // 发送截图消息
       const message: ScreenshotMessage = {
-        type: 'screenshot',
+        type: "screenshot",
         request_id: requestId,
       };
 
@@ -459,7 +465,7 @@ export class SandboxWebSocketClient {
     if (!this.isConnected()) return;
 
     const message: HeartbeatMessage = {
-      type: 'heartbeat',
+      type: "heartbeat",
       timestamp: Date.now(),
     };
 
@@ -473,7 +479,7 @@ export class SandboxWebSocketClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new CredBridgeError(
         CredBridgeErrorCode.NetworkError,
-        'WebSocket is not open'
+        "WebSocket is not open",
       );
     }
 
@@ -488,39 +494,42 @@ export class SandboxWebSocketClient {
       const message = JSON.parse(data) as ServerMessage;
 
       switch (message.type) {
-        case 'connected':
+        case "connected":
           this.onConnected?.(message);
           break;
 
-        case 'operation_progress':
+        case "operation_progress":
           this.onOperationProgress?.(message);
           break;
 
-        case 'operation_completed':
+        case "operation_completed":
           this.handleOperationCompleted(message);
           break;
 
-        case 'screenshot_result':
+        case "screenshot_result":
           this.handleScreenshotResult(message);
           break;
 
-        case 'heartbeat_ack':
+        case "heartbeat_ack":
           // 心跳确认，无需处理
           break;
 
-        case 'session_status_update':
+        case "session_status_update":
           this.onSessionStatusUpdate?.(message);
           break;
 
-        case 'error':
+        case "error":
           this.handleErrorMessage(message);
           break;
 
         default:
-          console.warn('Unknown message type:', (message as { type: string }).type);
+          console.warn(
+            "Unknown message type:",
+            (message as { type: string }).type,
+          );
       }
     } catch (error) {
-      console.error('Failed to parse message:', error);
+      console.error("Failed to parse message:", error);
     }
   }
 
@@ -579,8 +588,8 @@ export class SandboxWebSocketClient {
         pendingOp.reject(
           new CredBridgeError(
             CredBridgeErrorCode.InternalError,
-            message.message
-          )
+            message.message,
+          ),
         );
         return;
       }
@@ -601,10 +610,13 @@ export class SandboxWebSocketClient {
       this.onDisconnected?.(code, reason);
 
       // 尝试重连
-      if (this.config.autoReconnect && this.reconnectAttempts < this.config.maxReconnectAttempts) {
+      if (
+        this.config.autoReconnect &&
+        this.reconnectAttempts < this.config.maxReconnectAttempts
+      ) {
         this.scheduleReconnect();
       } else {
-        this.rejectAllPending('Connection closed');
+        this.rejectAllPending("Connection closed");
       }
     }
   }
@@ -643,7 +655,10 @@ export class SandboxWebSocketClient {
     this.reconnectAttempts++;
     this.state = WebSocketState.Reconnecting;
 
-    this.onReconnecting?.(this.reconnectAttempts, this.config.maxReconnectAttempts);
+    this.onReconnecting?.(
+      this.reconnectAttempts,
+      this.config.maxReconnectAttempts,
+    );
 
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {
@@ -670,10 +685,7 @@ export class SandboxWebSocketClient {
    * 拒绝所有 pending 的操作
    */
   private rejectAllPending(reason: string): void {
-    const error = new CredBridgeError(
-      CredBridgeErrorCode.NetworkError,
-      reason
-    );
+    const error = new CredBridgeError(CredBridgeErrorCode.NetworkError, reason);
 
     for (const [, pending] of this.pendingOperations) {
       clearTimeout(pending.timeout);
@@ -693,8 +705,8 @@ export class SandboxWebSocketClient {
    */
   private buildWebSocketUrl(): string {
     // 将 http/https 转换为 ws/wss
-    let baseUrl = this.config.baseUrl.replace(/^http/, 'ws');
-    baseUrl = baseUrl.replace(/\/$/, '');
+    let baseUrl = this.config.baseUrl.replace(/^http/, "ws");
+    baseUrl = baseUrl.replace(/\/$/, "");
 
     return `${baseUrl}/api/v1/sandbox/sessions/${this.config.sessionId}/ws/${this.config.credentialId}`;
   }

@@ -1,103 +1,210 @@
-# CredBridge 租户管理 API 文档
+# CredBridge Tenant API
 
-本文档描述 CredBridge 多租户系统的配置管理 API。
+本文档描述当前 `src/api/tenant.rs` 实际实现的租户管理接口。
 
-## 概述
+## 重要说明
 
-CredBridge 采用 **Schema-per-Tenant + RLS** 的多租户隔离架构。每个租户拥有：
+当前 tenant 路由整体挂在受保护路由组下，因此所有 `/api/v1/tenants*` 请求都需要先通过路由级认证中间件。
 
-- 独立的 PostgreSQL Schema
-- 独立的加密密钥层次
-- 可配置的功能开关和配额限制
-- 自定义安全策略
+同时，tenant 模块的 handler 层并没有统一执行 `tenant:*` 或 `admin` scope 校验。当前真实情况是：
 
-## 租户层级
+- 所有 `/api/v1/tenants*` 端点都要求已认证请求
+- `POST /api/v1/tenants` 还会显式读取 `Extension<ValidatedToken>` 中的 `user_id`
+- 其余 tenant handler 大多没有再做 handler 级 scope 校验
 
-系统支持三种预设层级：
+这不是推荐的安全模型，而是当前代码行为。文档按实现记录，不按理想设计记录。
 
-| 层级 | 功能特点 | 配额限制 |
-|------|----------|----------|
-| **Free** | 基础加密、审计日志 | 100凭证, 3Token/用户, 100请求/分钟 |
-| **Pro** | +MFA, Webhook, 高级审计 | 10K凭证, 20Token/用户, 10K请求/分钟 |
-| **Enterprise** | +SSO, 自定义加密, 全功能 | 100K凭证, 100Token/用户, 100K请求/分钟 |
+## 端点总览
 
-## API 端点
+- `POST /api/v1/tenants`
+- `GET /api/v1/tenants/:id`
+- `GET /api/v1/tenants/:id/config`
+- `PUT /api/v1/tenants/:id/config`
+- `POST /api/v1/tenants/:id/activate`
+- `POST /api/v1/tenants/:id/suspend`
+- `DELETE /api/v1/tenants/:id`
 
-### 1. 创建租户
+## 通用响应形状
 
-创建新租户并初始化所有资源。
+成功响应通常为：
 
-```http
-POST /api/v1/tenants
-Content-Type: application/json
-Authorization: Bearer {admin_token}
+```json
+{
+  "success": true,
+  "data": {},
+  "meta": {
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
+  }
+}
 ```
 
-**请求体：**
+错误响应通常为：
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "TENANT_NOT_FOUND",
+    "message": "租户不存在"
+  },
+  "meta": {
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
+  }
+}
+```
+
+## 创建租户
+
+**Endpoint**: `POST /api/v1/tenants`
+
+**当前实现要求**:
+- 需要可用的 `ValidatedToken`
+- 当前 handler 未显式校验 `admin` scope
+- handler 会强制把当前 token 的 `user_id` 写入 `owner_user_id`
+
+**请求体**:
 
 ```json
 {
   "name": "Acme Corporation",
   "description": "Enterprise tenant for Acme Corp",
   "tier": "enterprise",
-  "admin_email": "admin@acme.com",
   "create_default_roles": true,
   "init_schema": true,
   "generate_keys": true,
+  "bind_owner": true,
   "custom_config": {
     "feature_flags": {
       "enable_mfa": true,
-      "enable_webhooks": true
+      "enable_webhooks": true,
+      "enable_sso": true
     },
     "settings": {
-      "timezone": "America/New_York"
+      "timezone": "Asia/Shanghai"
     }
   }
 }
 ```
 
-**响应：**
+**请求字段**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | 租户名称 |
+| `description` | string | 否 | 租户描述 |
+| `tier` | string | 否 | 层级，默认 `free` |
+| `owner_user_id` | string | 否 | 请求可传，但 handler 会用当前 token 的 `user_id` 覆盖 |
+| `owner_external_identity` | object | 否 | owner 外部身份信息 |
+| `create_default_roles` | bool | 否 | 默认 `true` |
+| `init_schema` | bool | 否 | 默认 `true` |
+| `generate_keys` | bool | 否 | 默认 `true` |
+| `bind_owner` | bool | 否 | 默认 `true` |
+| `custom_config` | object | 否 | 初始租户配置 |
+
+**成功响应 (200 OK)**:
 
 ```json
 {
   "success": true,
   "data": {
-    "id": "018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
+    "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
     "name": "Acme Corporation",
     "status": "active",
     "tier": "enterprise",
-    "created_at": "2024-03-11T10:30:00Z",
-    "updated_at": "2024-03-11T10:30:00Z"
+    "created_at": "2026-04-11T10:00:00Z",
+    "updated_at": "2026-04-11T10:00:00Z"
   },
   "initialization": [
     { "step": "create_config", "success": true },
     { "step": "init_schema", "success": true },
-    { "step": "generate_keys", "success": true },
-    { "step": "create_roles", "success": true }
+    { "step": "generate_keys", "success": true }
   ],
   "meta": {
-    "request_id": "req_018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
-    "timestamp": "2024-03-11T10:30:00Z"
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
   }
 }
 ```
 
-### 2. 获取租户配置
+**可能的错误状态**:
+- `400 Bad Request`: 名称为空、名称冲突、创建失败兜底分支
+- `401 Unauthorized`: 当前 token 中的 `user_id` 无法解析为 UUID
+- `500 Internal Server Error`: 租户持久化失败、owner membership 创建失败、用户默认租户更新失败等
 
-获取指定租户的完整配置信息。
+## 缺少租户 ID 的详情请求
 
-```http
-GET /api/v1/tenants/{tenant_id}/config
-Authorization: Bearer {token}
+**Endpoint**: `GET /api/v1/tenants` 或 `GET /api/v1/tenants/`
+
+**当前实现行为**:
+- 这两个路径不再被视为“租户列表”接口
+- 真实服务会先经过 `NormalizePathLayer::trim_trailing_slash()`，因此 `/api/v1/tenants/` 会先归一化为 `/api/v1/tenants`
+- 归一化后的 `GET /api/v1/tenants` 会被明确当作“租户详情缺少 ID”处理，并返回 `404 Not Found`
+
+**失败响应 (404 Not Found)**:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "TENANT_NOT_FOUND",
+    "message": "租户不存在"
+  },
+  "meta": {
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
+  }
+}
 ```
 
-**响应：**
+## 获取单个租户
+
+**Endpoint**: `GET /api/v1/tenants/:id`
+
+**当前实现要求**:
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
+
+**成功响应 (200 OK)**:
 
 ```json
 {
   "success": true,
   "data": {
-    "tenant_id": "018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
+    "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "name": "Acme Corporation",
+    "status": "active",
+    "tier": "enterprise",
+    "created_at": "2026-04-11T10:00:00Z",
+    "updated_at": "2026-04-11T10:00:00Z"
+  },
+  "meta": {
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
+  }
+}
+```
+
+**失败状态**:
+- `404 Not Found`: `TENANT_NOT_FOUND`
+- `500 Internal Server Error`: `INTERNAL_ERROR`
+
+## 获取租户配置
+
+**Endpoint**: `GET /api/v1/tenants/:id/config`
+
+**当前实现要求**:
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
+
+**成功响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "tenant_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
     "feature_flags": {
       "enable_credential_encryption": true,
       "enable_audit_logging": true,
@@ -132,31 +239,31 @@ Authorization: Bearer {token}
       "password_min_length": 8,
       "require_password_complexity": true,
       "require_mfa": false,
-      "timezone": "America/New_York",
+      "timezone": "Asia/Shanghai",
       "language": "zh-CN"
     },
     "version": 1,
-    "updated_at": "2024-03-11T10:30:00Z",
+    "updated_at": null,
     "updated_by": null
   },
   "meta": {
-    "request_id": "req_018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
-    "timestamp": "2024-03-11T10:30:00Z"
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
   }
 }
 ```
 
-### 3. 更新租户配置
+## 更新租户配置
 
-更新租户的部分配置，支持增量更新。
+**Endpoint**: `PUT /api/v1/tenants/:id/config`
 
-```http
-PUT /api/v1/tenants/{tenant_id}/config
-Content-Type: application/json
-Authorization: Bearer {admin_token}
-```
+**当前实现要求**:
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
+- 支持部分更新
+- 更新时 `updated_by` 由 handler 固定写为 `api_user`
 
-**请求体：**
+**请求体**:
 
 ```json
 {
@@ -174,45 +281,50 @@ Authorization: Bearer {admin_token}
 }
 ```
 
-**响应：** 同获取配置响应，version 会递增
+`feature_flags`、`quota_limits`、`settings` 下的字段全部都是可选增量字段。
 
-### 4. 激活租户
+**成功响应**: 与“获取租户配置”相同。
 
-激活待处理的租户。
+**失败状态**:
+- `404 Not Found`: `TENANT_NOT_FOUND`
+- `400 Bad Request`: `VALIDATION_ERROR`
+- `500 Internal Server Error`: `INTERNAL_ERROR`
 
-```http
-POST /api/v1/tenants/{tenant_id}/activate
-Authorization: Bearer {admin_token}
-```
+## 激活租户
 
-**响应：**
+**Endpoint**: `POST /api/v1/tenants/:id/activate`
+
+**当前实现要求**:
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
+
+**成功响应 (200 OK)**:
 
 ```json
 {
   "success": true,
   "data": {
-    "id": "018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
+    "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
     "status": "active",
-    "activated_at": "2024-03-11T10:35:00Z"
+    "activated_at": "2026-04-11T10:00:00Z"
   },
   "meta": {
-    "request_id": "req_018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
-    "timestamp": "2024-03-11T10:35:00Z"
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
   }
 }
 ```
 
-### 5. 暂停租户
+## 暂停租户
 
-暂停活跃的租户。
+**Endpoint**: `POST /api/v1/tenants/:id/suspend`
 
-```http
-POST /api/v1/tenants/{tenant_id}/suspend
-Content-Type: application/json
-Authorization: Bearer {admin_token}
-```
+**当前实现要求**:
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
+- 请求体可以是任意 JSON；handler 只会尝试读取可选的 `reason` 字符串
 
-**请求体：**
+**请求体**:
 
 ```json
 {
@@ -220,190 +332,38 @@ Authorization: Bearer {admin_token}
 }
 ```
 
-**响应：**
+`reason` 可省略。
+
+**成功响应 (200 OK)**:
 
 ```json
 {
   "success": true,
   "data": {
-    "id": "018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
+    "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
     "status": "suspended",
-    "suspended_at": "2024-03-11T10:40:00Z"
+    "suspended_at": "2026-04-11T10:00:00Z"
   },
   "meta": {
-    "request_id": "req_018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
-    "timestamp": "2024-03-11T10:40:00Z"
+    "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+    "timestamp": "2026-04-11T10:00:00Z"
   }
 }
 ```
 
-### 6. 删除租户
+## 删除租户
 
-软删除租户（保留审计日志）。
+**Endpoint**: `DELETE /api/v1/tenants/:id`
 
-```http
-DELETE /api/v1/tenants/{tenant_id}
-Authorization: Bearer {admin_token}
-```
+**当前实现要求**:
+- 需要已认证请求
+- 当前 handler 未显式校验额外 scope
 
-**响应：** HTTP 204 No Content
+**成功响应**:
+- `204 No Content`
 
-### 7. 列出租户
+**失败状态**:
+- `404 Not Found`: `TENANT_NOT_FOUND`
+- `500 Internal Server Error`: `INTERNAL_ERROR`
 
-列出所有租户（管理员权限）。
-
-```http
-GET /api/v1/tenants
-Authorization: Bearer {admin_token}
-```
-
-**响应：**
-
-```json
-{
-  "success": true,
-  "data": {
-    "tenants": [
-      {
-        "id": "018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
-        "name": "Acme Corporation",
-        "status": "active",
-        "tier": "enterprise",
-        "created_at": "2024-03-11T10:30:00Z",
-        "updated_at": "2024-03-11T10:30:00Z"
-      }
-    ],
-    "total": 1
-  },
-  "meta": {
-    "request_id": "req_018e3b7c-6a7f-7a8b-9c0d-1e2f3a4b5c6d",
-    "timestamp": "2024-03-11T10:45:00Z"
-  }
-}
-```
-
-## 功能开关说明
-
-| 功能 | 描述 | 默认状态 |
-|------|------|----------|
-| `enable_credential_encryption` | 启用凭证加密 | ✅ |
-| `enable_audit_logging` | 启用审计日志 | ✅ |
-| `enable_token_revocation` | 启用 Token 撤销 | ✅ |
-| `enable_mfa` | 启用多因素认证 | ❌ |
-| `enable_remote_attestation` | 启用远程认证 | ❌ |
-| `enable_auto_rotation` | 启用凭证自动轮换 | ❌ |
-| `allow_cors` | 允许跨域请求 | ❌ |
-| `enable_ip_whitelist` | 启用 IP 白名单 | ❌ |
-| `enable_webhooks` | 启用 Webhook 通知 | ❌ |
-| `enable_sso` | 启用 SSO 集成 | ❌ |
-| `enable_custom_crypto` | 启用自定义加密策略 | ❌ |
-| `enable_advanced_audit` | 启用高级审计分析 | ❌ |
-
-## 配额限制说明
-
-| 配额 | 描述 | Free | Pro | Enterprise |
-|------|------|------|-----|------------|
-| `max_credentials` | 最大凭证数量 | 100 | 10,000 | 100,000 |
-| `max_tokens_per_user` | 每用户最大 Token 数 | 3 | 20 | 100 |
-| `max_requests_per_minute` | 每分钟最大请求数 | 100 | 10,000 | 100,000 |
-| `max_users` | 最大用户数 | 5 | 1,000 | 10,000 |
-| `max_connectors` | 最大服务连接器数 | 5 | 100 | 1,000 |
-| `max_webhooks` | 最大 Webhook 数 | 0 | 20 | 100 |
-| `storage_quota_mb` | 存储配额 (MB) | 100 | 10,240 | 102,400 |
-| `audit_retention_days` | 审计日志保留天数 | 7 | 90 | 365 |
-| `max_token_ttl_seconds` | Token 最大有效期 (秒) | 3,600 | 604,800 | 2,592,000 |
-| `max_batch_size` | 批量操作最大数量 | 10 | 500 | 1,000 |
-
-## 错误码
-
-| 错误码 | 描述 | HTTP 状态码 |
-|--------|------|-------------|
-| `TENANT_NOT_FOUND` | 租户不存在 | 404 |
-| `NAME_EXISTS` | 租户名称已被使用 | 400 |
-| `INVALID_NAME` | 无效的租户名称 | 400 |
-| `VALIDATION_ERROR` | 配置验证失败 | 400 |
-| `INTERNAL_ERROR` | 内部服务器错误 | 500 |
-
-## 权限控制
-
-| 操作 | 所需 Scope |
-|------|-----------|
-| 创建租户 | `admin` |
-| 查看租户配置 | `admin` 或租户成员 |
-| 更新租户配置 | `admin` 或 `tenant:admin` |
-| 激活/暂停/删除租户 | `admin` |
-| 列出租户 | `admin` |
-
-## 审计日志
-
-所有租户管理操作都会记录审计日志：
-
-- **创建租户**: `risk_tier: High`, 记录创建者、租户ID、层级
-- **更新配置**: `risk_tier: Medium`, 记录变更字段、更新者
-- **激活/暂停/删除**: `risk_tier: High`, 记录操作原因、执行者
-
-## 示例代码
-
-### Rust SDK 示例
-
-```rust
-use vault_service::tenant::{
-    CreateTenantRequest, TenantConfig, TenantManager
-};
-
-// 创建租户
-let request = CreateTenantRequest::new("My Organization")
-    .with_tier("pro")
-    .with_admin_email("admin@example.com");
-
-let result = tenant_manager.create_tenant(request, Some("creator".to_string())).await?;
-println!("Tenant created: {}", result.tenant.id);
-
-// 获取配置
-let config = tenant_manager.get_config(&tenant_id).await?;
-println!("Max credentials: {}", config.quota_limits.max_credentials);
-
-// 更新配置
-let partial = PartialTenantConfig {
-    feature_flags: Some(FeatureFlags {
-        enable_mfa: true,
-        ..Default::default()
-    }),
-    ..Default::default()
-};
-let updated = tenant_manager.update_config(&tenant_id, partial, "admin"
-).await?;
-```
-
-### cURL 示例
-
-```bash
-# 创建租户
-curl -X POST http://localhost:8080/api/v1/tenants \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -d '{
-    "name": "Test Tenant",
-    "tier": "pro"
-  }'
-
-# 获取配置
-curl http://localhost:8080/api/v1/tenants/${TENANT_ID}/config \
-  -H "Authorization: Bearer ${TOKEN}"
-
-# 更新配置
-curl -X PUT http://localhost:8080/api/v1/tenants/${TENANT_ID}/config \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -d '{
-    "feature_flags": {
-      "enable_mfa": true
-    }
-  }'
-```
-
-## 相关文档
-
-- [设计规范](./CredBridge_CN_设计规范_v1.0.md)
-- [API 文档](./API.md)
-- [架构设计](../_bmad-output/planning-artifacts/architecture.md)
+**更新时间**: 2026-04-11

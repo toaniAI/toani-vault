@@ -174,16 +174,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 环境变量
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `IMMUDB_HOST` | `localhost` | immudb 服务器地址 |
-| `IMMUDB_PORT` | `3322` | immudb 服务器端口 |
-| `IMMUDB_DATABASE` | `credbridge_audit` | 数据库名称 |
-| `IMMUDB_USERNAME` | `immudb` | 连接用户名 |
-| `IMMUDB_PASSWORD` | `immudb` | 连接密码 |
-| `IMMUDB_TIMEOUT` | `30` | 连接超时（秒） |
-| `IMMUDB_USE_TLS` | `false` | 是否使用 TLS |
-| `IMMUDB_COLLECTION` | `audit_logs` | 审计日志集合名称 |
+| 变量名              | 默认值             | 说明              |
+| ------------------- | ------------------ | ----------------- |
+| `IMMUDB_HOST`       | `localhost`        | immudb 服务器地址 |
+| `IMMUDB_PORT`       | `3322`             | immudb 服务器端口 |
+| `IMMUDB_DATABASE`   | `credbridge_audit` | 数据库名称        |
+| `IMMUDB_USERNAME`   | `immudb`           | 连接用户名        |
+| `IMMUDB_PASSWORD`   | `immudb`           | 连接密码          |
+| `IMMUDB_TIMEOUT`    | `30`               | 连接超时（秒）    |
+| `IMMUDB_USE_TLS`    | `false`            | 是否使用 TLS      |
+| `IMMUDB_COLLECTION` | `audit_logs`       | 审计日志集合名称  |
 
 ### 生产环境配置
 
@@ -315,7 +315,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: `Failed to connect to immudb`
 
 **解决方案**:
+
 1. 检查 immudb 服务是否运行：
+
    ```bash
    docker ps | grep immudb
    # 或
@@ -323,6 +325,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    ```
 
 2. 检查防火墙设置：
+
    ```bash
    # 检查端口是否开放
    telnet localhost 3322
@@ -339,7 +342,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: `Authentication failed`
 
 **解决方案**:
+
 1. 验证用户名和密码：
+
    ```bash
    immuclient -a localhost -p 3322 login immudb
    ```
@@ -354,7 +359,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: `Database not found`
 
 **解决方案**:
+
 1. 手动创建数据库：
+
    ```bash
    immuclient -a localhost -p 3322
    > login immudb
@@ -368,13 +375,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: 写入速度慢
 
 **解决方案**:
+
 1. 增加批处理大小：
+
    ```rust
    // 使用批量存储
    store.store_batch(&entries).await?;
    ```
 
 2. 调整缓存大小：
+
    ```rust
    let config = ImmuDbStoreConfig {
        max_cache_size: 50_000,  // 增加缓存
@@ -389,12 +399,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: TLS 连接失败
 
 **解决方案**:
+
 1. 生成证书：
+
    ```bash
    openssl req -x509 -newkey rsa:4096 -keyout immudb.key -out immudb.crt -days 365 -nodes
    ```
 
 2. 启动 immudb 时启用 TLS：
+
    ```bash
    immudb --tls --certificate immudb.crt --key immudb.key
    ```

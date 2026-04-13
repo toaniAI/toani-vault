@@ -1,0 +1,95 @@
+{
+  "user": {
+    "id": "019d7199-7017-7791-8e7b-c9f8cf883284",
+    "display_name": "Mock User",
+    "status": "active",
+    "onboarding_completed": false,
+    "default_tenant_id": "019d7199-7064-7fd2-8776-d9681f1fe6f0",
+    "identities": [
+      {
+        "provider": "privy",
+        "subject": "did:privy:mock",
+        "wallet_address": "0x1234567890abcdef",
+        "email": "mock@example.com",
+        "is_verified": true,
+        "is_primary": true
+      }
+    ]
+  },
+  "session": {
+    "id": "019d719b-2f81-7792-a246-525ace8c9ea8",
+    "session_token": "TFZc3wfbvb4SdbY35zwp_XaRysjX3l_-FrDx2ekRX2k",
+    "expires_at": "2026-04-09T10:38:08.897385+00:00",
+    "mfa_status": "not_required"
+  },
+  "memberships": [
+    {
+      "id": "019d7199-708f-7bb3-bead-9168178338c5",
+      "tenant_id": "019d7199-7064-7fd2-8776-d9681f1fe6f0",
+      "role": "owner",
+      "status": "active",
+      "scopes": [
+        "admin",
+        "tenant:read",
+        "tenant:write",
+        "tenant:admin",
+        "tenant:delete",
+        "credential:read",
+        "credential:decrypt",
+        "credential:write",
+        "credential:delete",
+        "sandbox:read",
+        "sandbox:write",
+        "sandbox:execute",
+        "audit:read",
+        "members:read",
+        "members:write",
+        "members:invite",
+        "invitations:read",
+        "invitations:write",
+        "tokens:read",
+        "tokens:write",
+        "tokens:revoke",
+        "users:manage",
+        "roles:manage"
+      ],
+      "joined_at": "2026-04-09T09:36:14.479791+00:00"
+    }
+  ],
+  "current_tenant": {
+    "id": "019d7199-7064-7fd2-8776-d9681f1fe6f0",
+    "name": null
+  },
+  "current_membership": {
+    "id": "019d7199-708f-7bb3-bead-9168178338c5",
+    "tenant_id": "019d7199-7064-7fd2-8776-d9681f1fe6f0",
+    "role": "owner",
+    "status": "active",
+    "scopes": [
+      "admin",
+      "tenant:read",
+      "tenant:write",
+      "tenant:admin",
+      "tenant:delete",
+      "credential:read",
+      "credential:decrypt",
+      "credential:write",
+      "credential:delete",
+      "sandbox:read",
+      "sandbox:write",
+      "sandbox:execute",
+      "audit:read",
+      "members:read",
+      "members:write",
+      "members:invite",
+      "invitations:read",
+      "invitations:write",
+      "tokens:read",
+      "tokens:write",
+      "tokens:revoke",
+      "users:manage",
+      "roles:manage"
+    ],
+    "joined_at": "2026-04-09T09:36:14.479791+00:00"
+  }
+}

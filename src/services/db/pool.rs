@@ -5,6 +5,7 @@
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{Postgres, Transaction, pool::PoolConnection};
+use std::path::Path;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -69,6 +70,14 @@ impl DatabaseConfig {
 
         let url = env::var("DATABASE_URL")
             .map_err(|_| DatabaseError::ConfigError("DATABASE_URL not set".to_string()))?;
+        let config_file_path_for_log = detect_config_file_path_for_log();
+        let database_url_for_log = redact_database_url(&url);
+        tracing::info!(
+            database_url = %database_url_for_log,
+            database_url_source = "env:DATABASE_URL",
+            config_file_path = %config_file_path_for_log,
+            "database configuration loaded"
+        );
 
         let max_connections = env::var("DATABASE_MAX_CONNECTIONS")
             .ok()
@@ -149,6 +158,15 @@ impl DatabasePool {
     /// 创建新的数据库连接池
     pub async fn new(config: DatabaseConfig) -> Result<Self, DatabaseError> {
         config.validate()?;
+        let database_url_for_log = redact_database_url(&config.url);
+
+        tracing::info!(
+            max_connections = config.max_connections,
+            min_connections = config.min_connections,
+            connect_timeout_s = config.connect_timeout,
+            database_url = %database_url_for_log,
+            "creating database connection pool"
+        );
 
         let pool = PgPoolOptions::new()
             .max_connections(config.max_connections)
@@ -157,8 +175,16 @@ impl DatabasePool {
             .idle_timeout(Some(Duration::from_secs(config.idle_timeout)))
             .connect(&config.url)
             .await
-            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(
+                    error = %e,
+                    database_url = %database_url_for_log,
+                    "database connection pool creation failed"
+                );
+                DatabaseError::ConnectionFailed(e.to_string())
+            })?;
 
+        tracing::info!("database connection pool created successfully");
         Ok(Self { pool, config })
     }
 
@@ -183,7 +209,10 @@ impl DatabasePool {
         sqlx::query("SELECT 1")
             .fetch_one(&self.pool)
             .await
-            .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "database health check failed");
+                DatabaseError::ConnectionFailed(e.to_string())
+            })?;
         Ok(())
     }
 
@@ -218,19 +247,26 @@ impl DatabasePool {
         &self,
         rls_context: &R,
     ) -> Result<sqlx::Transaction<'_, Postgres>, DatabaseError> {
-        // 开启事务
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
+        tracing::debug!(
+            tenant_id = rls_context.tenant_id(),
+            user_id = rls_context.user_id(),
+            "acquiring connection with RLS context"
+        );
 
-        // 在事务中设置 RLS 上下文
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            tracing::error!(error = %e, "failed to begin transaction for RLS");
+            DatabaseError::TransactionError(e.to_string())
+        })?;
+
         let sql = rls_context.to_sql_transaction_local();
-        sqlx::query(&sql)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
+        execute_pg_script_tx(&mut tx, &sql).await.map_err(|e| {
+            tracing::error!(
+                tenant_id = rls_context.tenant_id(),
+                error = %e,
+                "failed to set RLS context in transaction"
+            );
+            DatabaseError::RlsContextError(e.to_string())
+        })?;
 
         Ok(tx)
     }
@@ -251,8 +287,7 @@ impl DatabasePool {
         rls_context: &R,
     ) -> Result<(), DatabaseError> {
         let sql = rls_context.to_sql_transaction_local();
-        sqlx::query(&sql)
-            .execute(&mut **tx)
+        execute_pg_script_tx(tx, &sql)
             .await
             .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
         Ok(())
@@ -300,10 +335,12 @@ impl DatabasePool {
         &self,
         conn: &mut PoolConnection<Postgres>,
     ) -> Result<(), DatabaseError> {
-        sqlx::query("RESET app.current_tenant_id; RESET app.current_user_id; RESET app.current_scopes; RESET app.is_admin")
-            .execute(&mut **conn)
-            .await
-            .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
+        execute_pg_script_conn(
+            conn,
+            "RESET app.current_tenant_id; RESET app.current_user_id; RESET app.current_scopes; RESET app.is_admin",
+        )
+        .await
+        .map_err(|e| DatabaseError::RlsContextError(e.to_string()))?;
         Ok(())
     }
 
@@ -332,6 +369,45 @@ impl DatabasePool {
     }
 }
 
+/// 脱敏数据库 URL，避免日志泄露凭据。
+fn redact_database_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+
+    match rest.rsplit_once('@') {
+        Some((_credentials, host_and_path)) => format!("{scheme}://***:***@{host_and_path}"),
+        None => format!("{scheme}://{rest}"),
+    }
+}
+
+/// 推断配置文件路径（仅用于日志排查，不参与业务配置加载）。
+fn detect_config_file_path_for_log() -> String {
+    // 优先检查显式配置路径环境变量。
+    for key in ["CREDBRIDGE_CONFIG_PATH", "CONFIG_PATH", "CONFIG_FILE"] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return format!("{key}={trimmed}");
+            }
+        }
+    }
+
+    // 其次检查部署中常见的挂载路径。
+    for path in [
+        "/configs/config.yaml",
+        "/app/config/config.yaml",
+        "config/dev/config.yaml",
+        "config/test/config.yaml",
+    ] {
+        if Path::new(path).exists() {
+            return path.to_string();
+        }
+    }
+
+    "not-detected (DATABASE_URL currently loaded from env only)".to_string()
+}
+
 /// RLS 状态信息
 #[derive(Debug, Clone)]
 pub struct RlsStatus {
@@ -339,6 +415,48 @@ pub struct RlsStatus {
     pub tables_with_rls: Vec<String>,
     /// 强制 RLS 的表（包括表所有者）
     pub forced_tables: Vec<String>,
+}
+
+/// 按分号拆分并逐条执行（PostgreSQL 扩展查询协议下，单个 prepared statement 不能包含多条命令）。
+pub(crate) async fn execute_pg_script_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
+/// 在连接池上逐条执行分号分隔的脚本。
+pub(crate) async fn execute_pg_script_pool(pool: &PgPool, script: &str) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(pool).await?;
+    }
+    Ok(())
+}
+
+/// 在池化连接上逐条执行分号分隔的脚本。
+pub(crate) async fn execute_pg_script_conn(
+    conn: &mut PoolConnection<Postgres>,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    for stmt in script.split(';') {
+        let stmt = stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        sqlx::query(stmt).execute(&mut **conn).await?;
+    }
+    Ok(())
 }
 
 impl RlsStatus {

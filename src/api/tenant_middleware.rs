@@ -42,7 +42,7 @@ impl Default for TenantIsolationConfig {
             public_paths: vec![
                 "/health".to_string(),
                 "/api/v1/health".to_string(),
-                "/api/v1/auth/login".to_string(),
+                "/api/v1/auth/session".to_string(),
             ],
         }
     }
@@ -68,7 +68,7 @@ impl TenantIsolationConfig {
             public_paths: vec![
                 "/health".to_string(),
                 "/api/v1/health".to_string(),
-                "/api/v1/auth/login".to_string(),
+                "/api/v1/auth/session".to_string(),
                 "/api/v1/auth/register".to_string(),
             ],
         }
@@ -197,7 +197,7 @@ pub async fn cross_tenant_check_middleware(request: Request, next: Next) -> Resp
 /// 租户隔离错误响应
 impl IntoResponse for TenantIsolationError {
     fn into_response(self) -> Response {
-        let (status, _code, message) = match &self {
+        let (status, code, message) = match &self {
             TenantIsolationError::CrossTenantAccessDenied { requested, actual } => (
                 StatusCode::FORBIDDEN,
                 "CROSS_TENANT_ACCESS_DENIED",
@@ -219,6 +219,8 @@ impl IntoResponse for TenantIsolationError {
                 format!("租户未激活: {id}"),
             ),
         };
+
+        tracing::warn!(error_code = code, message = %message, status = status.as_u16(), "tenant isolation error");
 
         let response =
             CrossTenantErrorResponse::new(format!("req_{}", uuid::Uuid::now_v7()), message);
@@ -364,12 +366,16 @@ mod tests {
     fn create_test_token(tenant_id: &str, user_id: &str) -> ValidatedToken {
         ValidatedToken {
             token_id: "test_token".to_string(),
-            subject: format!("{}:{}", tenant_id, user_id),
+            subject: format!("{tenant_id}:{user_id}"),
             tenant_id: tenant_id.to_string(),
             user_id: user_id.to_string(),
             expires_at: u64::MAX,
             scopes: vec![TokenScope::CredentialRead],
             issued_at: 0,
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
         }
     }
 
@@ -380,6 +386,8 @@ mod tests {
         assert!(!config.enable_tenant_active_check);
         assert!(config.enable_rls_context);
         assert!(config.is_public_path("/health"));
+        assert!(config.is_public_path("/api/v1/auth/session"));
+        assert!(!config.is_public_path("/api/v1/auth/login"));
         assert!(!config.is_public_path("/api/v1/credentials"));
     }
 

@@ -5,15 +5,27 @@ server:
   host: "0.0.0.0"
   port: 8080
 
-# 数据库配置
+# =============================================================================
+# PostgreSQL 数据库配置 (K8s 集群内访问)
+# 连接地址: postgresql-hl.dev.svc.cluster.local:5432
+# User: dn
+# Password: dnXcdYxcv56H
+# Database: credbridge
+# SSL: disabled (集群内访问)
+# 建表参考: https://help.aliyun.com/zh/rds/apsaradb-rds-for-postgresql/use-the-timescaledb-extension
+# =============================================================================
 database:
-  url: "postgres://credbridge_dev:${DATABASE_PASSWORD}@postgres:5432/credbridge_dev"
+  url: "postgres://dn:dnXcdYxcv56H@postgresql-hl.dev.svc.cluster.local:5432/credbridge?sslmode=disable"
   pool_size: 10
   timeout_seconds: 30
 
-# Redis 缓存
+# =============================================================================
+# Redis 缓存配置 (K8s 集群内访问)
+# 连接地址: redis.dev.svc.cluster.local:6379
+# Database: 2
+# =============================================================================
 redis:
-  url: "redis://redis:6379/0"
+  url: "redis://:devredis@4y93j3Usi@redis.dev.svc.cluster.local:6379/3"
   pool_size: 10
 
 # Vault 配置

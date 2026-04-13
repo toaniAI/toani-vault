@@ -29,6 +29,7 @@
 //! ```
 
 use super::claims::{ClaimsError, TokenClaims};
+use super::claims::{TOKEN_ISSUED_FROM_SESSION, TOKEN_SUBJECT_TYPE_USER};
 use pasetors::claims::{Claims, ClaimsValidationRules};
 use pasetors::keys::{Generate, SymmetricKey};
 use pasetors::token::{TrustedToken, UntrustedToken};
@@ -195,6 +196,22 @@ impl PasetoToken {
         paseto_claims
             .add_additional("mfa_verified", claims.mfa_verified)
             .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .add_additional("subject_type", claims.subject_type.as_str())
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .add_additional("issued_from", claims.issued_from.as_str())
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        if let Some(membership_id) = claims.membership_id.as_deref() {
+            paseto_claims
+                .add_additional("membership_id", membership_id)
+                .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        }
+        if let Some(session_id) = claims.session_id.as_deref() {
+            paseto_claims
+                .add_additional("session_id", session_id)
+                .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        }
 
         // 创建对称密钥
         let symmetric_key = SymmetricKey::<V4>::from(key.as_bytes())
@@ -305,6 +322,24 @@ impl PasetoToken {
             .get_claim("mfa_verified")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let subject_type = paseto_claims
+            .get_claim("subject_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or(TOKEN_SUBJECT_TYPE_USER)
+            .to_string();
+        let issued_from = paseto_claims
+            .get_claim("issued_from")
+            .and_then(|v| v.as_str())
+            .unwrap_or(TOKEN_ISSUED_FROM_SESSION)
+            .to_string();
+        let membership_id = paseto_claims
+            .get_claim("membership_id")
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string());
+        let session_id = paseto_claims
+            .get_claim("session_id")
+            .and_then(|v| v.as_str())
+            .map(|v| v.to_string());
 
         Ok(TokenClaims {
             iss,
@@ -316,6 +351,10 @@ impl PasetoToken {
             jti,
             scope,
             mfa_verified,
+            subject_type,
+            issued_from,
+            membership_id,
+            session_id,
         })
     }
 }
@@ -505,8 +544,7 @@ mod tests {
                     | Err(TokenError::ClaimsError(ClaimsError::InvalidAudience { .. }))
                     | Err(TokenError::Expired)
             ),
-            "Expected validation error, got {:?}",
-            result
+            "Expected validation error, got {result:?}"
         );
     }
 

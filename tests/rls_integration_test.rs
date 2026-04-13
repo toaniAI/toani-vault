@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! RLS (Row Level Security) 集成测试
 //!
 //! 测试 PostgreSQL 行级安全策略的正确性：

@@ -415,6 +415,7 @@ mod tests {
     use super::*;
     use crate::tee::sandbox::export::review::RegionType;
 
+    #[allow(dead_code)]
     fn create_test_image() -> Vec<u8> {
         // 创建一个简单的 100x100 PNG 图像
         // 使用最小的有效 PNG 数据
@@ -435,6 +436,7 @@ mod tests {
         ]
     }
 
+    #[allow(dead_code)]
     fn create_test_region(action: RedactionAction) -> RedactionRegion {
         RedactionRegion {
             region_type: RegionType::Rectangle,

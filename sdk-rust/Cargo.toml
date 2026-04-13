@@ -1,12 +1,12 @@
 [package]
-name = "credbridge-sdk"
+name = "toani-vault-sdk"
 version = "0.1.0"
 edition = "2021"
-authors = ["CredBridge Team"]
-description = "Rust SDK for CredBridge Vault API"
+authors = ["Toani Team"]
+description = "Rust SDK for Toani Vault API"
 license = "MIT"
-repository = "https://github.com/credbridge/credbridge"
-keywords = ["credentials", "vault", "security", "api", "sdk"]
+repository = "https://github.com/toani/toani-vault"
+keywords = ["credentials", "vault", "security", "api", "sdk", "toani"]
 categories = ["api-bindings", "authentication", "cryptography"]
 rust-version = "1.70"
 

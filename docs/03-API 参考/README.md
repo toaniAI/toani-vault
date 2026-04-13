@@ -1,144 +1,194 @@
 # API 参考
 
-本目录包含 CredBridge 完整的 API 接口文档。
+本目录记录当前 CredBridge 服务中已经实现的 HTTP API。本文档以 `src/main.rs` 与 `src/api/*.rs` 的实际路由、请求/响应结构为准，不以历史设计稿或旧示例为准。
 
-## API 列表
+## 文档列表
 
-### REST API
-- [REST API](REST-API.md) - 完整的 RESTful API 接口文档
-- [Tenant API](TENANT-API.md) - 租户管理 API
-- [Attestation API](ATTESTATION-API.md) - 远程认证 API
+- [REST API](REST-API.md): 健康检查、认证、Token、Profile Automation Token、通知、Service Account、凭证、审计、Sandbox
+- [Tenant API](TENANT-API.md): 租户管理接口
+- [Attestation API](ATTESTATION-API.md): 远程认证接口
 
-## API 端点
+## 基础路径
 
-**基础路径**: `/api/v1`
+- 业务 API: `/api/v1`
+- 健康检查: `/health`
+- 就绪检查: `/ready`
+- 详细健康检查: `/health/detail`
+- 指标: `/metrics`
 
-### 认证 API
-- `POST /api/v1/auth/login` - 登录
-- `POST /api/v1/auth/refresh` - 刷新 Token
-- `POST /api/v1/auth/me` - 获取当前用户信息
+## 当前已实现端点总览
 
-### Token 管理 API
-- `POST /api/v1/tokens` - 创建 Token
-- `POST /api/v1/tokens/verify` - 验证 Token
-- `POST /api/v1/tokens/:id/revoke` - 撤销 Token
+### 服务级端点
 
-### 凭证管理 API
-- `POST /api/v1/credentials` - 创建凭证
-- `GET /api/v1/credentials` - 获取凭证列表
-- `GET /api/v1/credentials/:id` - 获取凭证详情
-- `PUT /api/v1/credentials/:id` - 更新凭证
-- `DELETE /api/v1/credentials/:id` - 删除凭证
-- `POST /api/v1/credentials/:id/decrypt` - 解密凭证
-- `GET /api/v1/credentials/:id/versions` - 获取版本历史
-- `GET /api/v1/credentials/:id/versions/:version` - 获取版本详情
-- `POST /api/v1/credentials/:id/rollback` - 回滚凭证
+- `GET /`
+- `GET /api/v1/`
+- `GET /health`
+- `GET /ready`
+- `GET /health/detail`
+- `GET /metrics`
 
-### 审计日志 API
-- `GET /api/v1/audit/logs` - 查询审计日志列表
-- `GET /api/v1/audit/logs/:id` - 获取审计日志详情
-- `POST /api/v1/audit/export` - 导出审计日志
-- `POST /api/v1/audit/verify` - 验证审计日志
+### 认证与用户
 
-### Sandbox API
-- `POST /api/v1/sandbox/sessions` - 创建沙箱会话
-- `GET /api/v1/sandbox/sessions` - 获取会话列表
-- `GET /api/v1/sandbox/sessions/:id` - 获取会话详情
-- `POST /api/v1/sandbox/sessions/:id/execute` - 执行操作
-- `POST /api/v1/sandbox/sessions/:id/pause` - 暂停会话
-- `POST /api/v1/sandbox/sessions/:id/resume` - 恢复会话
-- `DELETE /api/v1/sandbox/sessions/:id` - 关闭会话
-- `POST /api/v1/sandbox/sessions/:id/screenshot` - 截图
-- `POST /api/v1/sandbox/sessions/:id/export` - 数据导出
-- `GET /api/v1/sandbox/sessions/:id/ws/:credential_id` - WebSocket 连接
+- `POST /api/v1/auth/session`
+- `POST /api/v1/auth/access-token`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/auth/memberships`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/mfa-status`
+- `POST /api/v1/auth/mfa-status/sync`
+- `POST /api/v1/auth/invitations/consume`
+- `POST /api/v1/invitations/consume`
+- `GET /api/v1/users/me`
+- `PATCH /api/v1/users/me`
+- `DELETE /api/v1/users/me`
+- `POST /api/v1/users/me/onboarding`
+- `GET /api/v1/members`
+- `PATCH /api/v1/members/:membership_id/role`
+- `DELETE /api/v1/members/:membership_id`
+- `GET /api/v1/invitations`
+- `POST /api/v1/invitations`
+- `POST /api/v1/invitations/:invitation_id/revoke`
 
-### 远程认证 API
-- `GET /api/v1/attestation/quote` - 获取 Quote
-- `POST /api/v1/attestation/verify` - 验证 Quote
-- `GET /api/v1/attestation/report` - 获取认证报告
-- `POST /api/v1/attestation/challenge` - 创建挑战
-- `POST /api/v1/attestation/verify-response` - 验证挑战响应
-- `GET /api/v1/attestation/status` - 获取认证状态
-- `POST /api/v1/attestation/refresh` - 刷新 Quote
-- `GET /api/v1/attestation/health` - 健康检查
+### Token 管理
 
-### 健康检查 (不在 /api/v1 下)
-- `GET /health` - 健康检查
-- `GET /health/detail` - 详细健康检查
-- `GET /metrics` - Prometheus 指标
+- `POST /api/v1/tokens`
+- `GET /api/v1/tokens`
+- `GET /api/v1/tokens/:token_id`
+- `POST /api/v1/tokens/verify`
+- `GET /api/v1/tokens/stats`
+- `POST /api/v1/tokens/:token_id/revoke`
 
-## 错误处理
+### Profile Automation Token
 
-所有 API 错误遵循统一格式：
+- `POST /api/v1/profile/automation-tokens`
+- `GET /api/v1/profile/automation-tokens/:token_id`
+- `POST /api/v1/profile/automation-tokens/:token_id/revoke`
 
+### 通知
+
+- `GET /api/v1/notifications`
+
+### Service Account
+
+- `POST /api/v1/service-accounts`
+- `GET /api/v1/service-accounts`
+- `GET /api/v1/service-accounts/:service_account_id`
+- `PATCH /api/v1/service-accounts/:service_account_id`
+- `POST /api/v1/service-accounts/:service_account_id/tokens`
+- `GET /api/v1/service-accounts/:service_account_id/tokens`
+
+### 凭证管理
+
+- `POST /api/v1/credentials`
+- `GET /api/v1/credentials`
+- `GET /api/v1/credentials/:id`
+- `PUT /api/v1/credentials/:id`
+- `DELETE /api/v1/credentials/:id`
+- `POST /api/v1/credentials/:id/decrypt`
+- `GET /api/v1/credentials/:id/versions`
+- `GET /api/v1/credentials/:id/versions/:version`
+- `POST /api/v1/credentials/:id/rollback`
+
+### 审计日志
+
+- `GET /api/v1/audit/logs`
+- `GET /api/v1/audit/logs/:id`
+- `POST /api/v1/audit/export`
+- `POST /api/v1/audit/verify`
+
+### Sandbox
+
+- `POST /api/v1/sandbox/sessions`
+- `GET /api/v1/sandbox/sessions`
+- `GET /api/v1/sandbox/sessions/:id`
+- `DELETE /api/v1/sandbox/sessions/:id`
+- `POST /api/v1/sandbox/sessions/:id/execute`
+- `POST /api/v1/sandbox/sessions/:id/pause`
+- `POST /api/v1/sandbox/sessions/:id/resume`
+- `POST /api/v1/sandbox/sessions/:id/screenshot`
+- `POST /api/v1/sandbox/sessions/:id/export`
+- `GET /api/v1/sandbox/operations/:operation_id`
+- `GET /api/v1/sandbox/stats`
+- `GET /api/v1/sandbox/sessions/:id/ws/:credential_id`
+
+### 专项文档
+
+- Tenant: 见 [Tenant API](TENANT-API.md)
+- Attestation: 见 [Attestation API](ATTESTATION-API.md)
+
+## 响应约定
+
+当前代码里并不存在单一的全局响应格式，至少有以下 4 类：
+
+1. 直接返回业务对象
+- 例如 `POST /api/v1/auth/session`、`GET /api/v1/auth/me`、凭证 API、版本 API、token 成功响应
+- `POST /api/v1/auth/session` 的请求字段兼容 `privy_access_token` 与历史别名 `privy_token`；当 token 超长或请求体非法时，当前实现返回 `400 Bad Request` + `error=invalid_request`
+
+2. `ApiSuccessResponse<T>` 包装
+- 形状为：
 ```json
 {
-  "error": {
-    "code": "error_code",
-    "message": "人类可读的错误信息",
-    "details": {}
-  }
+  "success": true,
+  "data": {}
+}
+```
+- 例如 `/api/v1/auth/access-token`、`/api/v1/service-accounts`、`/api/v1/users/me`、`/api/v1/members`、`/api/v1/invitations`、`/api/v1/notifications`、大多数 Sandbox 接口
+
+3. 自定义成功/失败对象
+- 例如审计、租户、远程认证接口会同时返回 `success` 和自定义 `data`/`error`
+
+4. `ApiErrorResponse`
+- 典型形状为：
+```json
+{
+  "success": false,
+  "error": "invalid_request",
+  "message": "用户友好的错误描述",
+  "locale": "zh-CN"
 }
 ```
 
-### HTTP 状态码说明
+因此阅读具体接口时，应以该接口所在模块的结构体定义为准，而不要假设所有模块都共享同一响应包装。
 
-| HTTP 状态码 | 说明 |
-|-------------|------|
-| 200 OK | 请求成功 |
-| 201 Created | 资源创建成功 |
-| 204 No Content | 请求成功，无返回内容 |
-| 400 Bad Request | 请求参数错误或缺失 |
-| 401 Unauthorized | 未认证或 Token 无效 |
-| 403 Forbidden | 权限不足或 Scope 不够 |
-| 404 Not Found | 资源不存在 |
-| 409 Conflict | 资源冲突（如凭证已存在） |
-| 422 Unprocessable Entity | 请求语义错误 |
-| 429 Too Many Requests | 速率限制 |
-| 500 Internal Server Error | 服务器内部错误 |
-| 503 Service Unavailable | 服务暂时不可用 |
+## 常见 Scope
 
-### 常见错误码
+以下 Scope 名称可在当前代码中看到被实际使用：
 
-| 错误码 | HTTP 状态码 | 说明 |
-|--------|-------------|------|
-| `invalid_request` | 400 | 请求参数无效或缺失 |
-| `invalid_time_range` | 400 | 时间范围无效 |
-| `verification_failed` | 400 | 验证失败 |
-| `missing_token` | 401 | 缺少 Authorization 头 |
-| `invalid_token` | 401 | Token 格式无效或过期 |
-| `revoked_token` | 401 | Token 已被撤销 |
-| `insufficient_scope` | 403 | Token 缺少必需的 Scope |
-| `access_denied` | 403 | 访问被拒绝（权限不足） |
-| `not_found` | 404 | 资源不存在 |
-| `credential_not_found` | 404 | 凭证不存在 |
-| `audit_entry_not_found` | 404 | 审计条目不存在 |
-| `conflict` | 409 | 资源冲突 |
-| `rate_limited` | 429 | 请求频率超限 |
-| `internal_error` | 500 | 服务器内部错误 |
-| `storage_error` | 500 | 存储错误 |
-| `service_unavailable` | 503 | 服务暂时不可用 |
+- `credential:read`
+- `credential:decrypt`
+- `credential:write`
+- `credential:delete`
+- `audit:read`
+- `sandbox:execute`
+- `sandbox:read`
+- `sandbox:write`
+- `tenant:admin`
+- `tenant:read`
+- `tenant:write`
+- `tenant:delete`
+- `members:read`
+- `members:write`
+- `members:invite`
+- `invitations:read`
+- `invitations:write`
+- `tokens:read`
+- `tokens:write`
+- `tokens:revoke`
+- `users:manage`
+- `roles:manage`
+- `admin`
 
-## Token Scope 权限
+注意：`TENANT-API.md` 中记录的是当前 `tenant` 模块 handler 的真实行为。该模块现在大多没有在 handler 层执行 scope 校验，这属于当前实现事实，不代表最终安全设计目标。
 
-| Scope | 权限说明 |
-|-------|----------|
-| `credential:read` | 读取凭证元数据 |
-| `credential:decrypt` | 解密凭证获取明文 |
-| `credential:write` | 创建/更新/删除凭证 |
-| `credential:delete` | 删除凭证（可与 write 互换）|
-| `audit:read` | 读取审计日志 |
-| `token:manage` | 管理 Token |
-| `sandbox:read` | 读取沙箱会话信息 |
-| `sandbox:write` | 创建/控制沙箱会话 |
-| `admin` | 所有管理权限 |
+## 维护规则
 
-## 速率限制
+更新本目录文档时，请同时核对：
 
-- 默认：100 请求/分钟
-- 认证端点：10 请求/分钟
-- Sandbox 端点：20 请求/分钟
+- `src/main.rs`
+- `src/api/*.rs`
+- `src/api/response.rs`
+- 相关 `tests/` 中的 API 测试
 
----
+不要只依据旧文档做增量修补，否则会继续保留错误字段名、过时状态码和不存在的鉴权规则。
 
-**更新时间**: 2026-03-20
+**更新时间**: 2026-04-11

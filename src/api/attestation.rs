@@ -19,24 +19,32 @@
 //! POST /api/v1/attestation/refresh        - 刷新 Quote
 //! ```
 
+use crate::config::TeeRuntimeConfig;
 use crate::tee::{
-    attestation::AttestationService,
-    challenge::{ChallengeMetadata, ChallengeProtocol, ChallengeResponse, ProverProtocol},
-    dcap::{DcapConfig, DcapService, INTEL_PCS_BASE_URL_PROD, INTEL_PCS_BASE_URL_TEST},
-    enclave::{Enclave, EnclaveConfig},
+    SelfCheckItem, SelfCheckStatus, SharedEnclave, TeeCapabilities,
+    challenge::{Challenge, ChallengeMetadata},
+    dcap::{DcapConfig, DcapService},
     quote::QuoteSerializer,
+    validate_runtime_requirements,
 };
+use async_trait::async_trait;
 use axum::{
     Router,
     extract::State,
+    extract::rejection::JsonRejection,
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use redis::{AsyncCommands, Client as RedisClient, Script};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock as AsyncRwLock;
+
+use super::response::ApiErrorResponse;
 
 /// 认证状态
 pub struct AttestationState {
@@ -44,19 +52,19 @@ pub struct AttestationState {
     dcap_service: Arc<RwLock<DcapService>>,
 
     /// Enclave 实例
-    enclave: Arc<RwLock<Enclave>>,
+    enclave: SharedEnclave,
 
     /// 服务配置
     config: AttestationApiConfig,
 
-    /// 挑战-响应协议处理器
-    challenge_protocol: Arc<RwLock<ChallengeProtocol>>,
+    /// 运行时能力探测结果
+    tee_capabilities: TeeCapabilities,
 
-    /// Prover 协议处理器（用于生成 Quote）
-    prover_protocol: Arc<RwLock<ProverProtocol>>,
+    /// 待验证 challenge 存储。默认要求 Redis 持久化，多实例共享。
+    challenge_store: Arc<dyn ChallengeStore>,
 
-    /// 认证服务
-    attestation_service: Arc<RwLock<AttestationService>>,
+    /// 最近一次 quote/challenge 校验成功时间。
+    last_verified_at: Arc<RwLock<Option<u64>>>,
 }
 
 impl std::fmt::Debug for AttestationState {
@@ -65,9 +73,8 @@ impl std::fmt::Debug for AttestationState {
             .field("config", &self.config)
             .field("dcap_service", &"<DcapService>")
             .field("enclave", &"<Enclave>")
-            .field("challenge_protocol", &"<ChallengeProtocol>")
-            .field("prover_protocol", &"<ProverProtocol>")
-            .field("attestation_service", &"<AttestationService>")
+            .field("challenge_store", &"<dyn ChallengeStore>")
+            .field("last_verified_at", &"<Option<u64>>")
             .finish()
     }
 }
@@ -78,9 +85,339 @@ impl Clone for AttestationState {
             dcap_service: Arc::clone(&self.dcap_service),
             enclave: Arc::clone(&self.enclave),
             config: self.config.clone(),
-            challenge_protocol: Arc::clone(&self.challenge_protocol),
-            prover_protocol: Arc::clone(&self.prover_protocol),
-            attestation_service: Arc::clone(&self.attestation_service),
+            tee_capabilities: self.tee_capabilities.clone(),
+            challenge_store: Arc::clone(&self.challenge_store),
+            last_verified_at: Arc::clone(&self.last_verified_at),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ChallengeStoreError {
+    #[error("Redis 连接错误: {0}")]
+    RedisConnection(String),
+
+    #[error("Redis 操作错误: {0}")]
+    RedisOperation(String),
+
+    #[error("序列化错误: {0}")]
+    Serialization(String),
+}
+
+#[async_trait]
+trait ChallengeStore: Send + Sync {
+    async fn put(&self, challenge: &Challenge) -> Result<(), ChallengeStoreError>;
+    async fn take(&self, challenge_id: &str) -> Result<Option<Challenge>, ChallengeStoreError>;
+}
+
+#[derive(Debug, Default)]
+struct InMemoryChallengeStore {
+    challenges: Arc<AsyncRwLock<HashMap<String, Challenge>>>,
+}
+
+#[async_trait]
+impl ChallengeStore for InMemoryChallengeStore {
+    async fn put(&self, challenge: &Challenge) -> Result<(), ChallengeStoreError> {
+        let mut challenges = self.challenges.write().await;
+        challenges.retain(|_, existing| !existing.is_expired());
+        challenges.insert(challenge.id.clone(), challenge.clone());
+        Ok(())
+    }
+
+    async fn take(&self, challenge_id: &str) -> Result<Option<Challenge>, ChallengeStoreError> {
+        let mut challenges = self.challenges.write().await;
+        challenges.retain(|_, existing| !existing.is_expired());
+        Ok(challenges.remove(challenge_id))
+    }
+}
+
+#[derive(Debug)]
+struct RedisChallengeStore {
+    client: RedisClient,
+    key_prefix: String,
+}
+
+impl RedisChallengeStore {
+    fn new(redis_url: &str) -> Result<Self, ChallengeStoreError> {
+        let client = RedisClient::open(redis_url)
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+        Ok(Self {
+            client,
+            key_prefix: "credbridge:attestation:challenge:".to_string(),
+        })
+    }
+
+    async fn health_check(&self) -> Result<(), ChallengeStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+
+        redis::cmd("PING")
+            .query_async::<_, String>(&mut conn)
+            .await
+            .map_err(|error| ChallengeStoreError::RedisOperation(error.to_string()))?;
+
+        Ok(())
+    }
+
+    fn build_key(&self, challenge_id: &str) -> String {
+        format!("{}{}", self.key_prefix, challenge_id)
+    }
+}
+
+#[async_trait]
+impl ChallengeStore for RedisChallengeStore {
+    async fn put(&self, challenge: &Challenge) -> Result<(), ChallengeStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+
+        let ttl_seconds = challenge
+            .expires_at
+            .saturating_sub(current_timestamp())
+            .max(1);
+        let payload = serde_json::to_string(challenge)
+            .map_err(|error| ChallengeStoreError::Serialization(error.to_string()))?;
+
+        conn.set_ex::<_, _, ()>(self.build_key(&challenge.id), payload, ttl_seconds)
+            .await
+            .map_err(|error| ChallengeStoreError::RedisOperation(error.to_string()))?;
+        Ok(())
+    }
+
+    async fn take(&self, challenge_id: &str) -> Result<Option<Challenge>, ChallengeStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| ChallengeStoreError::RedisConnection(error.to_string()))?;
+
+        let script = Script::new(
+            r#"
+local value = redis.call("GET", KEYS[1])
+if value then
+  redis.call("DEL", KEYS[1])
+end
+return value
+"#,
+        );
+
+        let payload: Option<String> = script
+            .key(self.build_key(challenge_id))
+            .invoke_async(&mut conn)
+            .await
+            .map_err(|error| ChallengeStoreError::RedisOperation(error.to_string()))?;
+
+        payload
+            .map(|value| {
+                serde_json::from_str::<Challenge>(&value)
+                    .map_err(|error| ChallengeStoreError::Serialization(error.to_string()))
+            })
+            .transpose()
+    }
+}
+
+impl AttestationState {
+    fn record_successful_verification(&self, timestamp: u64) {
+        if let Ok(mut last_verified_at) = self.last_verified_at.write() {
+            *last_verified_at = Some(timestamp);
+        }
+    }
+
+    async fn generate_challenge(
+        &self,
+        enclave_id: Option<String>,
+    ) -> Result<Challenge, &'static str> {
+        let challenge = Challenge::with_metadata(
+            format!("chal_{}", uuid::Uuid::new_v4().simple()),
+            self.config.quote_max_age,
+            ChallengeMetadata {
+                client_ip: None,
+                user_agent: None,
+                request_id: None,
+                extra: HashMap::new(),
+            },
+        )
+        .map_err(|_| "Failed to construct attestation challenge")?;
+
+        let mut challenge = challenge;
+        challenge.enclave_id = enclave_id;
+        self.challenge_store
+            .put(&challenge)
+            .await
+            .map_err(|_| "Failed to persist attestation challenge")?;
+        Ok(challenge)
+    }
+
+    async fn take_challenge(&self, challenge_id: &str) -> Result<Option<Challenge>, &'static str> {
+        self.challenge_store
+            .take(challenge_id)
+            .await
+            .map_err(|_| "Failed to load attestation challenge")
+    }
+
+    pub async fn runtime_snapshot(&self) -> AttestationRuntimeSnapshot {
+        let requested_mode = self.config.tee_runtime.mode.to_string();
+        let effective_mode = self.config.tee_runtime.mode.to_string();
+        let last_verified_at = self.last_verified_at.read().ok().and_then(|value| *value);
+
+        let enclave = self.enclave.lock().await;
+        let enclave_running = enclave.is_running();
+        let enclave_state = enclave.state().to_string();
+        let mrenclave = if enclave_running {
+            hex::encode(enclave.mrenclave())
+        } else {
+            String::new()
+        };
+        let mrsigner = if enclave_running {
+            hex::encode(enclave.mrsigner())
+        } else {
+            String::new()
+        };
+
+        if !enclave_running {
+            return AttestationRuntimeSnapshot {
+                status: ApiAttestationStatus::Uninitialized,
+                health_status: SelfCheckStatus::Failed,
+                requested_mode,
+                effective_mode,
+                root_key_source: self.config.root_key_source.clone(),
+                detected_type: self
+                    .tee_capabilities
+                    .detected_type
+                    .description()
+                    .to_string(),
+                hardware_available: self.tee_capabilities.hardware_available,
+                remote_attestation_available: self.tee_capabilities.remote_attestation_available,
+                enclave_state,
+                enclave_running,
+                mrenclave,
+                mrsigner,
+                quote_valid: false,
+                quote_expires_at: None,
+                last_quote_generated_at: None,
+                last_verified_at,
+                error: Some("Enclave not running".to_string()),
+            };
+        }
+
+        let dcap_service = match self.dcap_service.read() {
+            Ok(service) => service,
+            Err(_) => {
+                return AttestationRuntimeSnapshot {
+                    status: ApiAttestationStatus::Failed,
+                    health_status: SelfCheckStatus::Failed,
+                    requested_mode,
+                    effective_mode,
+                    root_key_source: self.config.root_key_source.clone(),
+                    detected_type: self
+                        .tee_capabilities
+                        .detected_type
+                        .description()
+                        .to_string(),
+                    hardware_available: self.tee_capabilities.hardware_available,
+                    remote_attestation_available: self
+                        .tee_capabilities
+                        .remote_attestation_available,
+                    enclave_state,
+                    enclave_running,
+                    mrenclave,
+                    mrsigner,
+                    quote_valid: false,
+                    quote_expires_at: None,
+                    last_quote_generated_at: None,
+                    last_verified_at,
+                    error: Some("Failed to acquire DCAP service lock".to_string()),
+                };
+            }
+        };
+
+        match dcap_service.get_current_quote() {
+            Ok(quote) => {
+                let quote_expires_at = quote.timestamp.checked_add(self.config.quote_max_age);
+                let quote_valid =
+                    quote_expires_at.is_some_and(|expires_at| current_timestamp() <= expires_at);
+
+                let (status, health_status, error) = if quote_valid {
+                    (
+                        ApiAttestationStatus::Authenticated,
+                        SelfCheckStatus::Ready,
+                        None,
+                    )
+                } else {
+                    (
+                        ApiAttestationStatus::Expired,
+                        SelfCheckStatus::Degraded,
+                        Some("Cached quote expired".to_string()),
+                    )
+                };
+
+                AttestationRuntimeSnapshot {
+                    status,
+                    health_status,
+                    requested_mode,
+                    effective_mode,
+                    root_key_source: self.config.root_key_source.clone(),
+                    detected_type: self
+                        .tee_capabilities
+                        .detected_type
+                        .description()
+                        .to_string(),
+                    hardware_available: self.tee_capabilities.hardware_available,
+                    remote_attestation_available: self
+                        .tee_capabilities
+                        .remote_attestation_available,
+                    enclave_state,
+                    enclave_running,
+                    mrenclave,
+                    mrsigner,
+                    quote_valid,
+                    quote_expires_at,
+                    last_quote_generated_at: Some(quote.timestamp),
+                    last_verified_at,
+                    error,
+                }
+            }
+            Err(error) => {
+                let (status, health_status) = if self.config.tee_runtime.is_hardware() {
+                    (ApiAttestationStatus::Failed, SelfCheckStatus::Failed)
+                } else {
+                    (
+                        ApiAttestationStatus::PendingVerification,
+                        SelfCheckStatus::Degraded,
+                    )
+                };
+
+                AttestationRuntimeSnapshot {
+                    status,
+                    health_status,
+                    requested_mode,
+                    effective_mode,
+                    root_key_source: self.config.root_key_source.clone(),
+                    detected_type: self
+                        .tee_capabilities
+                        .detected_type
+                        .description()
+                        .to_string(),
+                    hardware_available: self.tee_capabilities.hardware_available,
+                    remote_attestation_available: self
+                        .tee_capabilities
+                        .remote_attestation_available,
+                    enclave_state,
+                    enclave_running,
+                    mrenclave,
+                    mrsigner,
+                    quote_valid: false,
+                    quote_expires_at: None,
+                    last_quote_generated_at: None,
+                    last_verified_at,
+                    error: Some(format!("No valid quote available: {error}")),
+                }
+            }
         }
     }
 }
@@ -88,8 +425,11 @@ impl Clone for AttestationState {
 /// API 配置
 #[derive(Debug, Clone)]
 pub struct AttestationApiConfig {
-    /// 是否启用模拟模式
-    pub simulation_mode: bool,
+    /// TEE 运行时配置
+    pub tee_runtime: TeeRuntimeConfig,
+
+    /// 当前进程实际使用的 L0 根密钥来源
+    pub root_key_source: String,
 
     /// 是否需要 API 密钥
     pub require_api_key: bool,
@@ -99,15 +439,20 @@ pub struct AttestationApiConfig {
 
     /// 是否启用 PCS 注册
     pub enable_pcs_registration: bool,
+
+    /// 仅测试/显式 fallback 使用内存 challenge store。
+    pub allow_memory_challenge_store: bool,
 }
 
 impl Default for AttestationApiConfig {
     fn default() -> Self {
         Self {
-            simulation_mode: false,
+            tee_runtime: TeeRuntimeConfig::hardware(),
+            root_key_source: "unknown".to_string(),
             require_api_key: false,
             quote_max_age: 3600,
             enable_pcs_registration: true,
+            allow_memory_challenge_store: false,
         }
     }
 }
@@ -239,17 +584,26 @@ pub struct VerifyChallengeResponseResult {
 pub struct AttestationStatusResponse {
     pub success: bool,
     pub status: String,
+    pub health_status: String,
+    pub ready: bool,
+    pub requested_mode: String,
+    pub effective_mode: String,
+    pub root_key_source: String,
+    pub detected_type: String,
+    pub hardware_available: bool,
+    pub remote_attestation_available: bool,
     pub enclave_state: String,
     pub mrenclave: String,
     pub mrsigner: String,
     pub quote_valid: bool,
     pub quote_expires_at: Option<u64>,
+    pub last_quote_generated_at: Option<u64>,
     pub last_verified_at: Option<u64>,
     pub error: Option<String>,
 }
 
 /// 认证状态枚举
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiAttestationStatus {
     /// 已认证
@@ -258,8 +612,22 @@ pub enum ApiAttestationStatus {
     PendingVerification,
     /// 已过期
     Expired,
+    /// 运行期失败
+    Failed,
     /// 未初始化
     Uninitialized,
+}
+
+impl ApiAttestationStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            ApiAttestationStatus::Authenticated => "authenticated",
+            ApiAttestationStatus::PendingVerification => "pending_verification",
+            ApiAttestationStatus::Expired => "expired",
+            ApiAttestationStatus::Failed => "failed",
+            ApiAttestationStatus::Uninitialized => "uninitialized",
+        }
+    }
 }
 
 /// 刷新响应
@@ -275,9 +643,65 @@ pub struct RefreshResponse {
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: String,
+    pub ready: bool,
+    pub requested_mode: String,
+    pub effective_mode: String,
+    pub root_key_source: String,
+    pub detected_type: String,
     pub enclave_state: String,
     pub dcap_version: String,
     pub quote_valid: bool,
+    pub quote_expires_at: Option<u64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttestationRuntimeSnapshot {
+    pub status: ApiAttestationStatus,
+    pub health_status: SelfCheckStatus,
+    pub requested_mode: String,
+    pub effective_mode: String,
+    pub root_key_source: String,
+    pub detected_type: String,
+    pub hardware_available: bool,
+    pub remote_attestation_available: bool,
+    pub enclave_state: String,
+    pub enclave_running: bool,
+    pub mrenclave: String,
+    pub mrsigner: String,
+    pub quote_valid: bool,
+    pub quote_expires_at: Option<u64>,
+    pub last_quote_generated_at: Option<u64>,
+    pub last_verified_at: Option<u64>,
+    pub error: Option<String>,
+}
+
+impl AttestationRuntimeSnapshot {
+    pub fn ready(&self) -> bool {
+        self.health_status.is_ready()
+    }
+
+    pub fn health_label(&self) -> &'static str {
+        self.health_status.as_str()
+    }
+
+    pub fn as_readiness_check(&self) -> SelfCheckItem {
+        match self.health_status {
+            SelfCheckStatus::Ready => SelfCheckItem::ready("attestation"),
+            SelfCheckStatus::Degraded => SelfCheckItem::degraded(
+                "attestation",
+                self.error
+                    .clone()
+                    .unwrap_or_else(|| "attestation degraded".to_string()),
+            ),
+            SelfCheckStatus::Failed => SelfCheckItem::failed(
+                "attestation",
+                self.error
+                    .clone()
+                    .unwrap_or_else(|| "attestation failed".to_string()),
+            ),
+        }
+    }
 }
 
 /// 获取当前 Quote
@@ -389,17 +813,20 @@ async fn verify_quote(
 
     // 执行验证
     match dcap_service.verify_attestation(&quote_bytes, nonce.as_deref()) {
-        Ok(report) => (
-            StatusCode::OK,
-            Json(VerifyResponse {
-                success: true,
-                valid: true,
-                mrenclave: report.mrenclave_hex,
-                mrsigner: report.mrsigner_hex,
-                timestamp: report.timestamp,
-                error: None,
-            }),
-        ),
+        Ok(report) => {
+            state.record_successful_verification(report.timestamp);
+            (
+                StatusCode::OK,
+                Json(VerifyResponse {
+                    success: true,
+                    valid: true,
+                    mrenclave: report.mrenclave_hex,
+                    mrsigner: report.mrsigner_hex,
+                    timestamp: report.timestamp,
+                    error: None,
+                }),
+            )
+        }
         Err(e) => (
             StatusCode::OK,
             Json(VerifyResponse {
@@ -484,27 +911,7 @@ async fn create_challenge(
     State(state): State<Arc<AttestationState>>,
     Json(request): Json<CreateChallengeRequest>,
 ) -> impl IntoResponse {
-    // 获取 Enclave 实例
-    let enclave = match state.enclave.read() {
-        Ok(enclave) => enclave,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ChallengeResponseData {
-                    success: false,
-                    challenge_id: String::new(),
-                    nonce: String::new(),
-                    quote_b64: String::new(),
-                    expires_at: 0,
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    error: Some("Failed to acquire Enclave lock".to_string()),
-                }),
-            );
-        }
-    };
-
-    // 检查 Enclave 状态
+    let enclave = state.enclave.lock().await;
     if !enclave.is_running() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -521,9 +928,27 @@ async fn create_challenge(
         );
     }
 
-    // 生成挑战
-    let challenge_protocol = match state.challenge_protocol.read() {
-        Ok(protocol) => protocol,
+    let challenge = match state.generate_challenge(request.enclave_id.clone()).await {
+        Ok(challenge) => challenge,
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ChallengeResponseData {
+                    success: false,
+                    challenge_id: String::new(),
+                    nonce: String::new(),
+                    quote_b64: String::new(),
+                    expires_at: 0,
+                    mrenclave: String::new(),
+                    mrsigner: String::new(),
+                    error: Some(error.to_string()),
+                }),
+            );
+        }
+    };
+
+    let dcap_service = match state.dcap_service.read() {
+        Ok(service) => service,
         Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -535,64 +960,17 @@ async fn create_challenge(
                     expires_at: 0,
                     mrenclave: String::new(),
                     mrsigner: String::new(),
-                    error: Some("Failed to acquire challenge protocol lock".to_string()),
+                    error: Some("Failed to acquire DCAP service lock".to_string()),
                 }),
             );
         }
     };
 
-    let metadata = ChallengeMetadata {
-        client_ip: None,
-        user_agent: None,
-        request_id: None,
-        extra: std::collections::HashMap::new(),
-    };
-
-    let challenge =
-        match challenge_protocol.generate_challenge(request.enclave_id.clone(), Some(metadata)) {
-            Ok(c) => c,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ChallengeResponseData {
-                        success: false,
-                        challenge_id: String::new(),
-                        nonce: String::new(),
-                        quote_b64: String::new(),
-                        expires_at: 0,
-                        mrenclave: String::new(),
-                        mrsigner: String::new(),
-                        error: Some(format!("Failed to generate challenge: {e}")),
-                    }),
-                );
-            }
-        };
-
-    // 使用 Prover 协议生成 Quote
-    let prover_protocol = match state.prover_protocol.read() {
-        Ok(protocol) => protocol,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ChallengeResponseData {
-                    success: false,
-                    challenge_id: String::new(),
-                    nonce: String::new(),
-                    quote_b64: String::new(),
-                    expires_at: 0,
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    error: Some("Failed to acquire prover protocol lock".to_string()),
-                }),
-            );
-        }
-    };
-
-    let challenge_response = match prover_protocol.respond_to_challenge(&enclave, &challenge) {
-        Ok(r) => r,
+    let quote = match dcap_service.generate_quote_for_challenge(&enclave, &challenge.nonce) {
+        Ok(quote) => quote,
         Err(e) => {
             return (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::SERVICE_UNAVAILABLE,
                 Json(ChallengeResponseData {
                     success: false,
                     challenge_id: String::new(),
@@ -607,8 +985,24 @@ async fn create_challenge(
         }
     };
 
-    // 序列化 Quote (使用 Quote 结构体的 to_bytes 方法)
-    let quote_bytes = challenge_response.quote.to_bytes();
+    let quote_bytes = match QuoteSerializer::serialize(&quote) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ChallengeResponseData {
+                    success: false,
+                    challenge_id: String::new(),
+                    nonce: String::new(),
+                    quote_b64: String::new(),
+                    expires_at: 0,
+                    mrenclave: String::new(),
+                    mrsigner: String::new(),
+                    error: Some(format!("Failed to serialize quote: {e}")),
+                }),
+            );
+        }
+    };
 
     (
         StatusCode::OK,
@@ -618,8 +1012,8 @@ async fn create_challenge(
             nonce: hex::encode(challenge.nonce),
             quote_b64: STANDARD.encode(&quote_bytes),
             expires_at: challenge.expires_at,
-            mrenclave: hex::encode(challenge_response.quote.mrenclave()),
-            mrsigner: hex::encode(challenge_response.quote.mrsigner()),
+            mrenclave: hex::encode(quote.report_body.mrenclave),
+            mrsigner: hex::encode(quote.report_body.mrsigner),
             error: None,
         }),
     )
@@ -632,51 +1026,45 @@ async fn create_challenge(
 /// 验证客户端返回的挑战响应，确认客户端拥有正确的密钥
 async fn verify_challenge_response(
     State(state): State<Arc<AttestationState>>,
-    Json(request): Json<VerifyChallengeResponseRequest>,
-) -> impl IntoResponse {
-    // 解码 Quote
+    payload: Result<Json<VerifyChallengeResponseRequest>, JsonRejection>,
+) -> Response {
+    // BUG-18353: 拦截 JSON 反序列化错误（如缺少 quote_b64 字段），统一返回 400 + invalid_request
+    let request = match payload {
+        Ok(Json(req)) => req,
+        Err(e) => {
+            return ApiErrorResponse::invalid_request(format!(
+                "Invalid verify-response request payload: {e}"
+            ))
+            .into_response();
+        }
+    };
+
     let quote_bytes = match STANDARD.decode(&request.quote_b64) {
         Ok(bytes) => bytes,
         Err(e) => {
+            // BUG-18354: 统一非法 payload 响应格式为 {"error":"invalid_request"}
+            return ApiErrorResponse::invalid_request(format!("Invalid base64 quote: {e}"))
+                .into_response();
+        }
+    };
+
+    let challenge = match state.take_challenge(&request.challenge_id).await {
+        Ok(Some(challenge)) => challenge,
+        Ok(None) => {
             return (
-                StatusCode::BAD_REQUEST,
+                StatusCode::OK,
                 Json(VerifyChallengeResponseResult {
-                    success: false,
+                    success: true,
                     verified: false,
                     mrenclave: String::new(),
                     mrsigner: String::new(),
                     timestamp: 0,
-                    error: Some(format!("Invalid base64 quote: {e}")),
+                    error: Some("Verification failed: Challenge not found or expired".to_string()),
                 }),
-            );
+            )
+                .into_response();
         }
-    };
-
-    // 反序列化 Quote
-    let quote = match crate::tee::attestation::Quote::from_bytes(&quote_bytes) {
-        Ok(q) => q,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(VerifyChallengeResponseResult {
-                    success: false,
-                    verified: false,
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    timestamp: 0,
-                    error: Some(format!("Invalid quote format: {e}")),
-                }),
-            );
-        }
-    };
-
-    // 构建 ChallengeResponse 对象
-    let challenge_response = ChallengeResponse::new(request.challenge_id, quote.clone());
-
-    // 获取 Enclave 身份
-    let enclave = match state.enclave.read() {
-        Ok(enclave) => enclave,
-        Err(_) => {
+        Err(error) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(VerifyChallengeResponseResult {
@@ -685,44 +1073,62 @@ async fn verify_challenge_response(
                     mrenclave: String::new(),
                     mrsigner: String::new(),
                     timestamp: 0,
-                    error: Some("Failed to acquire Enclave lock".to_string()),
+                    error: Some(error.to_string()),
                 }),
-            );
+            )
+                .into_response();
         }
     };
 
-    let enclave_identity = generate_enclave_identity(&enclave);
-
-    // 验证响应
-    let challenge_protocol = match state.challenge_protocol.read() {
-        Ok(protocol) => protocol,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(VerifyChallengeResponseResult {
-                    success: false,
-                    verified: false,
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    timestamp: 0,
-                    error: Some("Failed to acquire challenge protocol lock".to_string()),
-                }),
-            );
-        }
-    };
-
-    match challenge_protocol.verify_response(&challenge_response, &enclave_identity) {
-        Ok(result) => (
+    if challenge.is_expired() {
+        return (
             StatusCode::OK,
             Json(VerifyChallengeResponseResult {
                 success: true,
-                verified: result.success,
-                mrenclave: hex::encode(result.mrenclave),
-                mrsigner: hex::encode(result.mrsigner),
-                timestamp: result.timestamp,
-                error: None,
+                verified: false,
+                mrenclave: String::new(),
+                mrsigner: String::new(),
+                timestamp: 0,
+                error: Some("Verification failed: Challenge expired".to_string()),
             }),
-        ),
+        )
+            .into_response();
+    }
+
+    let dcap_service = match state.dcap_service.read() {
+        Ok(service) => service,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(VerifyChallengeResponseResult {
+                    success: false,
+                    verified: false,
+                    mrenclave: String::new(),
+                    mrsigner: String::new(),
+                    timestamp: 0,
+                    error: Some("Failed to acquire DCAP service lock".to_string()),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    match dcap_service.verify_attestation(&quote_bytes, Some(&challenge.nonce)) {
+        Ok(result) => {
+            state.record_successful_verification(result.timestamp);
+            (
+                StatusCode::OK,
+                Json(VerifyChallengeResponseResult {
+                    success: true,
+                    verified: result.result.success,
+                    mrenclave: result.mrenclave_hex,
+                    mrsigner: result.mrsigner_hex,
+                    timestamp: result.timestamp,
+                    error: None,
+                }),
+            )
+                .into_response()
+        }
         Err(e) => (
             StatusCode::OK,
             Json(VerifyChallengeResponseResult {
@@ -733,7 +1139,8 @@ async fn verify_challenge_response(
                 timestamp: 0,
                 error: Some(format!("Verification failed: {e}")),
             }),
-        ),
+        )
+            .into_response(),
     }
 }
 
@@ -743,90 +1150,29 @@ async fn verify_challenge_response(
 ///
 /// 返回当前 Enclave 的认证状态（已认证/待验证/已过期）
 async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
-    let enclave = match state.enclave.read() {
-        Ok(enclave) => enclave,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AttestationStatusResponse {
-                    success: false,
-                    status: "error".to_string(),
-                    enclave_state: "unknown".to_string(),
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    quote_valid: false,
-                    quote_expires_at: None,
-                    last_verified_at: None,
-                    error: Some("Failed to acquire Enclave lock".to_string()),
-                }),
-            );
-        }
-    };
-
-    let dcap_service = match state.dcap_service.read() {
-        Ok(service) => service,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AttestationStatusResponse {
-                    success: false,
-                    status: "error".to_string(),
-                    enclave_state: "unknown".to_string(),
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    quote_valid: false,
-                    quote_expires_at: None,
-                    last_verified_at: None,
-                    error: Some("Failed to acquire DCAP service lock".to_string()),
-                }),
-            );
-        }
-    };
-
-    let enclave_state = enclave.state().to_string();
-    let mrenclave = hex::encode(enclave.mrenclave());
-    let mrsigner = hex::encode(enclave.mrsigner());
-
-    // 确定认证状态
-    let (status, quote_valid, quote_expires_at) = if !enclave.is_running() {
-        (ApiAttestationStatus::Uninitialized, false, None)
-    } else {
-        match dcap_service.get_current_quote() {
-            Ok(quote) => {
-                let now = current_timestamp();
-                let age = now.saturating_sub(quote.timestamp);
-                let max_age = state.config.quote_max_age;
-
-                if age > max_age {
-                    (
-                        ApiAttestationStatus::Expired,
-                        false,
-                        Some(quote.timestamp + max_age),
-                    )
-                } else {
-                    (
-                        ApiAttestationStatus::Authenticated,
-                        true,
-                        Some(quote.timestamp + max_age),
-                    )
-                }
-            }
-            Err(_) => (ApiAttestationStatus::PendingVerification, false, None),
-        }
-    };
+    let snapshot = state.runtime_snapshot().await;
 
     (
         StatusCode::OK,
         Json(AttestationStatusResponse {
             success: true,
-            status: format!("{status:?}").to_lowercase(),
-            enclave_state,
-            mrenclave,
-            mrsigner,
-            quote_valid,
-            quote_expires_at,
-            last_verified_at: dcap_service.get_current_quote().ok().map(|q| q.timestamp),
-            error: None,
+            status: snapshot.status.as_str().to_string(),
+            health_status: snapshot.health_label().to_string(),
+            ready: snapshot.ready(),
+            requested_mode: snapshot.requested_mode,
+            effective_mode: snapshot.effective_mode,
+            root_key_source: snapshot.root_key_source,
+            detected_type: snapshot.detected_type,
+            hardware_available: snapshot.hardware_available,
+            remote_attestation_available: snapshot.remote_attestation_available,
+            enclave_state: snapshot.enclave_state,
+            mrenclave: snapshot.mrenclave,
+            mrsigner: snapshot.mrsigner,
+            quote_valid: snapshot.quote_valid,
+            quote_expires_at: snapshot.quote_expires_at,
+            last_quote_generated_at: snapshot.last_quote_generated_at,
+            last_verified_at: snapshot.last_verified_at,
+            error: snapshot.error,
         }),
     )
 }
@@ -837,6 +1183,8 @@ async fn get_attestation_status(State(state): State<Arc<AttestationState>>) -> i
 ///
 /// 生成新的 Quote 并更新缓存
 async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
+    let enclave = state.enclave.lock().await;
+
     let dcap_service = match state.dcap_service.write() {
         Ok(service) => service,
         Err(_) => {
@@ -847,21 +1195,6 @@ async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoR
                     new_quote_b64: None,
                     timestamp: 0,
                     error: Some("Failed to acquire DCAP service lock".to_string()),
-                }),
-            );
-        }
-    };
-
-    let enclave = match state.enclave.read() {
-        Ok(enclave) => enclave,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(RefreshResponse {
-                    success: false,
-                    new_quote_b64: None,
-                    timestamp: 0,
-                    error: Some("Failed to acquire Enclave lock".to_string()),
                 }),
             );
         }
@@ -906,33 +1239,29 @@ async fn refresh_quote(State(state): State<Arc<AttestationState>>) -> impl IntoR
 ///
 /// 返回认证服务健康状态
 async fn health_check(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
-    let enclave_state = match state.enclave.read() {
-        Ok(enclave) => enclave.state().to_string(),
-        Err(_) => "unknown".to_string(),
-    };
-
-    let quote_valid = match state.dcap_service.read() {
-        Ok(service) => service.get_current_quote().is_ok(),
-        Err(_) => false,
+    let snapshot = state.runtime_snapshot().await;
+    let status_code = if snapshot.ready() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
     };
 
     (
-        StatusCode::OK,
+        status_code,
         Json(HealthResponse {
-            status: "healthy".to_string(),
-            enclave_state,
+            status: snapshot.health_label().to_string(),
+            ready: snapshot.ready(),
+            requested_mode: snapshot.requested_mode,
+            effective_mode: snapshot.effective_mode,
+            root_key_source: snapshot.root_key_source,
+            detected_type: snapshot.detected_type,
+            enclave_state: snapshot.enclave_state,
             dcap_version: "1.0.0".to_string(),
-            quote_valid,
+            quote_valid: snapshot.quote_valid,
+            quote_expires_at: snapshot.quote_expires_at,
+            error: snapshot.error,
         }),
     )
-}
-
-/// 生成 Enclave 身份标识
-fn generate_enclave_identity(enclave: &Enclave) -> Vec<u8> {
-    let mut identity = Vec::with_capacity(64);
-    identity.extend_from_slice(&enclave.mrenclave());
-    identity.extend_from_slice(&enclave.mrsigner());
-    identity
 }
 
 /// 生成随机挑战（用于测试）
@@ -962,56 +1291,68 @@ fn current_timestamp() -> u64 {
 /// 初始化认证 API
 ///
 /// 创建并初始化认证状态
-pub fn init_attestation_api(
-    config: AttestationApiConfig,
+pub async fn init_attestation_api(
+    mut config: AttestationApiConfig,
+    enclave: SharedEnclave,
+    tee_capabilities: Option<TeeCapabilities>,
 ) -> Result<Arc<AttestationState>, AttestationInitError> {
-    // 创建 Enclave
-    let enclave_config = EnclaveConfig {
-        debug_mode: config.simulation_mode,
-        ..Default::default()
-    };
+    if config.root_key_source.is_empty() {
+        config.root_key_source = if config.tee_runtime.is_simulation() {
+            "simulation".to_string()
+        } else {
+            "unknown".to_string()
+        };
+    }
 
-    let mut enclave = Enclave::new(enclave_config);
-    enclave
-        .initialize()
-        .map_err(|e| AttestationInitError::EnclaveError(e.to_string()))?;
+    if config.tee_runtime.is_hardware() && config.root_key_source == "simulation" {
+        return Err(AttestationInitError::ConfigurationError(
+            "TEE_MODE=hardware requested, but attestation API was configured with a simulation root key source".to_string(),
+        ));
+    }
+
+    let tee_capabilities = tee_capabilities.map(Ok).unwrap_or_else(|| {
+        validate_runtime_requirements(&config.tee_runtime)
+            .map_err(|e| AttestationInitError::ConfigurationError(e.to_string()))
+    })?;
 
     // 创建 DCAP 服务
-    let dcap_config = DcapConfig {
-        simulation_mode: config.simulation_mode,
-        pcs_base_url: if config.simulation_mode {
-            INTEL_PCS_BASE_URL_TEST.to_string()
-        } else {
-            INTEL_PCS_BASE_URL_PROD.to_string()
-        },
-        ..Default::default()
-    };
+    let dcap_config = DcapConfig::from_runtime(&config.tee_runtime);
 
     let dcap_service = DcapService::new(dcap_config)
         .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
 
+    let challenge_store: Arc<dyn ChallengeStore> = if config.allow_memory_challenge_store {
+        Arc::new(InMemoryChallengeStore::default())
+    } else {
+        let redis_url = std::env::var("REDIS_URL").map_err(|_| {
+            AttestationInitError::ConfigurationError(
+                "attestation challenge state 要求 REDIS_URL，内存回退已禁用".to_string(),
+            )
+        })?;
+        let store = RedisChallengeStore::new(&redis_url)
+            .map_err(|error| AttestationInitError::ConfigurationError(error.to_string()))?;
+        store
+            .health_check()
+            .await
+            .map_err(|error| AttestationInitError::ConfigurationError(error.to_string()))?;
+        Arc::new(store)
+    };
+
     // 初始化 DCAP（生成 Quote）
-    dcap_service
-        .initialize(&enclave)
-        .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
-
-    // 创建认证服务
-    let attestation_service = AttestationService::new().allow_simulation(config.simulation_mode);
-
-    // 创建挑战-响应协议处理器
-    let challenge_protocol =
-        ChallengeProtocol::new(attestation_service.clone()).with_ttl(config.quote_max_age);
-
-    // 创建 Prover 协议处理器
-    let prover_protocol = ProverProtocol::new(attestation_service.clone());
+    {
+        let enclave_guard = enclave.lock().await;
+        dcap_service
+            .initialize(&enclave_guard)
+            .map_err(|e| AttestationInitError::DcapError(e.to_string()))?;
+    }
 
     Ok(Arc::new(AttestationState {
         dcap_service: Arc::new(RwLock::new(dcap_service)),
-        enclave: Arc::new(RwLock::new(enclave)),
+        enclave,
         config,
-        challenge_protocol: Arc::new(RwLock::new(challenge_protocol)),
-        prover_protocol: Arc::new(RwLock::new(prover_protocol)),
-        attestation_service: Arc::new(RwLock::new(attestation_service)),
+        tee_capabilities,
+        challenge_store,
+        last_verified_at: Arc::new(RwLock::new(None)),
     }))
 }
 
@@ -1040,6 +1381,18 @@ impl std::error::Error for AttestationInitError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TeeRuntimeMode;
+    use crate::tee::{Enclave, EnclaveConfig};
+    use tokio::sync::Mutex;
+
+    async fn make_initialized_enclave() -> SharedEnclave {
+        let mut enclave = Enclave::new(EnclaveConfig {
+            debug_mode: true,
+            ..Default::default()
+        });
+        enclave.initialize().unwrap();
+        Arc::new(Mutex::new(enclave))
+    }
 
     #[test]
     fn test_generate_challenge() {
@@ -1063,7 +1416,7 @@ mod tests {
     #[test]
     fn test_attestation_api_config_default() {
         let config = AttestationApiConfig::default();
-        assert!(!config.simulation_mode);
+        assert_eq!(config.tee_runtime.mode, TeeRuntimeMode::Hardware);
         assert!(!config.require_api_key);
         assert_eq!(config.quote_max_age, 3600);
         assert!(config.enable_pcs_registration);
@@ -1072,13 +1425,64 @@ mod tests {
     #[test]
     fn test_health_response() {
         let response = HealthResponse {
-            status: "healthy".to_string(),
+            status: "ready".to_string(),
+            ready: true,
+            requested_mode: "simulation".to_string(),
+            effective_mode: "simulation".to_string(),
+            root_key_source: "simulation".to_string(),
+            detected_type: "Software Simulation".to_string(),
             enclave_state: "running".to_string(),
             dcap_version: "1.0.0".to_string(),
             quote_valid: true,
+            quote_expires_at: Some(42),
+            error: None,
         };
 
-        assert_eq!(response.status, "healthy");
+        assert_eq!(response.status, "ready");
+        assert!(response.ready);
         assert!(response.quote_valid);
+    }
+
+    #[tokio::test]
+    async fn test_init_attestation_api_hardware_mode_fails_closed() {
+        let enclave = make_initialized_enclave().await;
+        let error = init_attestation_api(AttestationApiConfig::default(), enclave, None)
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("TEE_MODE=hardware")
+                || message.contains("real SGX DCAP quote generation"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_init_attestation_api_reuses_shared_enclave_state() {
+        let enclave = make_initialized_enclave().await;
+        let state = init_attestation_api(
+            AttestationApiConfig {
+                tee_runtime: TeeRuntimeConfig::simulation(),
+                root_key_source: "simulation".to_string(),
+                allow_memory_challenge_store: true,
+                ..Default::default()
+            },
+            enclave.clone(),
+            Some(validate_runtime_requirements(&TeeRuntimeConfig::simulation()).unwrap()),
+        )
+        .await
+        .unwrap();
+
+        {
+            let mut shared = enclave.lock().await;
+            shared.shutdown().unwrap();
+        }
+
+        let snapshot = state.runtime_snapshot().await;
+        assert_eq!(snapshot.status, ApiAttestationStatus::Uninitialized);
+        assert_eq!(snapshot.health_status, SelfCheckStatus::Failed);
+        assert_eq!(snapshot.enclave_state, "shutdown");
+        assert!(!snapshot.quote_valid);
     }
 }

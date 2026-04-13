@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! Connector 框架集成测试
 //!
 //! 测试内容：
@@ -11,6 +12,7 @@
 #![allow(clippy::approx_constant)]
 // 允许测试代码中有未使用的辅助方法
 #![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 
 use async_trait::async_trait;
 use serde_json::{Value, json};

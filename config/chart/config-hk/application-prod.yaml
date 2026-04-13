@@ -19,7 +19,7 @@ redis:
 
 # Vault 配置
 vault:
-  addr: "https://vault.bitkinetic.com"
+  addr: "https://vault.example.com"
   token: "${VAULT_TOKEN}"
   kv_path: "secret/prod"
 
@@ -37,8 +37,8 @@ security:
 # CORS 配置 - 生产环境
 cors:
   allowed_origins:
-    - "https://credbridge.bitkinetic.com"
-    - "https://admin.credbridge.bitkinetic.com"
+    - "https://credbridge.example.com"
+    - "https://admin.credbridge.example.com"
 
 # API 限流
 rate_limit:

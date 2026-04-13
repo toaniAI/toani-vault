@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! immudb 集成测试
 //!
 //! 测试 immudb 客户端和存储实现的功能
@@ -43,7 +46,7 @@ fn create_test_config() -> ImmuDbConfig {
     ImmuDbConfig {
         host: "localhost".to_string(),
         port: 3322,
-        database: "credbridge_test".to_string(),
+        database: format!("credbridge_test_{}", uuid::Uuid::now_v7()),
         username: "immudb".to_string(),
         password: "immudb".to_string(),
         timeout_secs: 10,
@@ -122,12 +125,19 @@ mod immudb_client_tests {
 
         // 验证条目计数
         assert_eq!(client.entry_count(), 1);
+
+        let retrieved = client
+            .get_entry("audit:0")
+            .await
+            .expect("Failed to retrieve stored entry");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().signed_entry.log_index, 0);
     }
 
     #[tokio::test]
     async fn test_store_multiple_entries() {
         let config = create_test_config();
-        let mut client = ImmuDbClient::new(config);
+        let mut client = ImmuDbClient::new(config.clone());
 
         client.connect().await.expect("Failed to connect");
         client.initialize().await.expect("Failed to initialize");
@@ -146,7 +156,7 @@ mod immudb_client_tests {
         // 获取当前状态
         let state = client.current_state().await.expect("Failed to get state");
         assert_eq!(state.tree_size, 5);
-        assert_eq!(state.database, "credbridge_test");
+        assert_eq!(state.database, config.database);
         assert!(!state.state_hash.is_empty());
     }
 
@@ -214,6 +224,43 @@ mod immudb_client_tests {
         assert!(proof.verified);
         assert_eq!(proof.transaction_id, 1);
         assert!(!proof.root_hash.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_persistence_across_client_restart() {
+        let config = create_test_config();
+        let mut client = ImmuDbClient::new(config.clone());
+
+        client.connect().await.expect("Failed to connect");
+        client.initialize().await.expect("Failed to initialize");
+
+        let entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
+        client.store_entry(&entry).await.expect("Failed to store");
+        client.disconnect().await.expect("Failed to disconnect");
+
+        let mut restarted = ImmuDbClient::new(config.clone());
+        restarted.connect().await.expect("Failed to reconnect");
+        restarted
+            .initialize()
+            .await
+            .expect("Failed to reinitialize");
+
+        let retrieved = restarted
+            .get_entry("audit:0")
+            .await
+            .expect("Failed to retrieve after restart");
+        assert!(retrieved.is_some(), "entry should survive restart");
+
+        let queried = restarted
+            .query(&QueryOptions {
+                action: Some(AuditAction::CredentialDecrypt),
+                limit: Some(10),
+                ..Default::default()
+            })
+            .await
+            .expect("Failed to query after restart");
+        assert_eq!(queried.len(), 1);
+        assert_eq!(queried[0].signed_entry.log_index, 0);
     }
 
     #[tokio::test]
@@ -415,6 +462,39 @@ mod immudb_audit_store_tests {
 
         let new_state = store.current_state().await.expect("Failed to get state");
         assert!(new_state.tree_size > initial_state.tree_size);
+    }
+
+    #[tokio::test]
+    async fn test_audit_store_survives_restart_with_same_signing_key() {
+        let key_pair = SigningKeyPair::generate().expect("Failed to generate key pair");
+        let config = create_test_store_config();
+
+        let first_store = ImmuDbAuditStore::new(
+            config.clone(),
+            key_pair.fingerprint().to_string(),
+            key_pair.public_key().to_vec(),
+        )
+        .await
+        .expect("Failed to create first store");
+
+        let first_public_key = first_store.public_key().to_vec();
+        let entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
+        first_store.store(&entry).await.expect("Failed to store");
+
+        let second_store = ImmuDbAuditStore::new(
+            config.clone(),
+            key_pair.fingerprint().to_string(),
+            key_pair.public_key().to_vec(),
+        )
+        .await
+        .expect("Failed to recreate store");
+
+        assert_eq!(second_store.public_key(), first_public_key);
+        let retrieved = second_store
+            .get_by_index(0)
+            .await
+            .expect("Failed to retrieve after restart");
+        assert!(retrieved.is_some(), "audit entry should survive restart");
     }
 
     #[tokio::test]

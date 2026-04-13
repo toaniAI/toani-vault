@@ -4,10 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use vault_service::{
-    metrics::*,
-    alerting::*,
-};
+use vault_service::{alerting::*, metrics::*};
 
 // ============ Metrics Tests ============
 
@@ -25,7 +22,12 @@ fn test_http_request_metrics() {
     // 记录一些请求
     metrics.record("GET", "/api/v1/credentials", 200, Duration::from_millis(50));
     metrics.record("POST", "/api/v1/tokens", 201, Duration::from_millis(100));
-    metrics.record("GET", "/api/v1/credentials", 500, Duration::from_millis(200));
+    metrics.record(
+        "GET",
+        "/api/v1/credentials",
+        500,
+        Duration::from_millis(200),
+    );
 
     assert_eq!(metrics.total_requests(), 3);
     assert_eq!(metrics.requests_by_status(200), 1);
@@ -160,9 +162,9 @@ fn test_prometheus_histogram_format() {
     let metrics = HttpRequestMetrics::new();
 
     // 记录不同延迟的请求
-    metrics.record("GET", "/test", 200, Duration::from_millis(5));   // bucket_10ms
-    metrics.record("GET", "/test", 200, Duration::from_millis(30));  // bucket_50ms
-    metrics.record("GET", "/test", 200, Duration::from_millis(80));  // bucket_100ms
+    metrics.record("GET", "/test", 200, Duration::from_millis(5)); // bucket_10ms
+    metrics.record("GET", "/test", 200, Duration::from_millis(30)); // bucket_50ms
+    metrics.record("GET", "/test", 200, Duration::from_millis(80)); // bucket_100ms
     metrics.record("GET", "/test", 200, Duration::from_millis(300)); // bucket_500ms
     metrics.record("GET", "/test", 200, Duration::from_millis(600)); // bucket_1000ms
     metrics.record("GET", "/test", 200, Duration::from_millis(1500)); // bucket_inf
@@ -219,7 +221,10 @@ fn test_alert_event_builder() {
 
     assert_eq!(alert.metrics, Some(metrics));
     assert_eq!(alert.component, Some("tee-enclave".to_string()));
-    assert_eq!(alert.suggested_action, Some("Restart the service".to_string()));
+    assert_eq!(
+        alert.suggested_action,
+        Some("Restart the service".to_string())
+    );
 }
 
 #[test]
@@ -242,8 +247,14 @@ fn test_alert_severity_display() {
 fn test_alert_type_display() {
     assert_eq!(AlertType::HighErrorRate.to_string(), "high_error_rate");
     assert_eq!(AlertType::TeeAnomaly.to_string(), "tee_anomaly");
-    assert_eq!(AlertType::DatabaseConnectionFailed.to_string(), "database_connection_failed");
-    assert_eq!(AlertType::RedisConnectionFailed.to_string(), "redis_connection_failed");
+    assert_eq!(
+        AlertType::DatabaseConnectionFailed.to_string(),
+        "database_connection_failed"
+    );
+    assert_eq!(
+        AlertType::RedisConnectionFailed.to_string(),
+        "redis_connection_failed"
+    );
     assert_eq!(
         AlertType::Custom("my_alert".to_string()).to_string(),
         "custom_my_alert"
@@ -438,20 +449,23 @@ fn test_metrics_to_alert_integration() {
 
     // 导出 Prometheus 指标
     let prometheus_output = collector.export_prometheus();
-    assert!(prometheus_output.contains(&format!("credbridge_http_error_rate_percentage {:.2}", error_rate)));
+    assert!(prometheus_output.contains(&format!(
+        "credbridge_http_error_rate_percentage {:.2}",
+        error_rate
+    )));
 }
 
 #[test]
 fn test_alert_threshold_evaluation() {
     // 测试各种阈值比较
     let thresholds = vec![
-        (5.0, ">", 10.0, true),   // 10 > 5
-        (5.0, ">", 3.0, false),   // 3 > 5
-        (5.0, ">=", 5.0, true),   // 5 >= 5
-        (5.0, "<", 3.0, true),    // 3 < 5
-        (5.0, "<=", 5.0, true),   // 5 <= 5
-        (5.0, "==", 5.0, true),   // 5 == 5
-        (5.0, "==", 3.0, false),  // 3 == 5
+        (5.0, ">", 10.0, true),  // 10 > 5
+        (5.0, ">", 3.0, false),  // 3 > 5
+        (5.0, ">=", 5.0, true),  // 5 >= 5
+        (5.0, "<", 3.0, true),   // 3 < 5
+        (5.0, "<=", 5.0, true),  // 5 <= 5
+        (5.0, "==", 5.0, true),  // 5 == 5
+        (5.0, "==", 3.0, false), // 3 == 5
     ];
 
     for (threshold, op, value, expected) in thresholds {

@@ -9,7 +9,7 @@ services:
   # ============================================================================
   vault-service:
     build:
-      context: /Users/yvan/AIWorkspace/credbridge
+      context: ../
       dockerfile: docker/Dockerfile
     container_name: credbridge-vault-service
     restart: unless-stopped
@@ -17,16 +17,22 @@ services:
       - "8080:8080"
     environment:
       # 服务配置
-      - VAULT_SERVICE_HOST=0.0.0.0
-      - VAULT_SERVICE_PORT=8080
-      - VAULT_SERVICE_ENV=development
-      - RUST_LOG=debug
+      - CREDBRIDGE_HOST=${CREDBRIDGE_HOST:-0.0.0.0}
+      - CREDBRIDGE_PORT=${CREDBRIDGE_PORT:-8080}
+      - CREDBRIDGE_ENV=${CREDBRIDGE_ENV:-development}
+      - RUST_LOG=${RUST_LOG:-debug}
+
+      # 存储后端选择
+      - CREDBRIDGE_STORAGE_BACKEND=${CREDBRIDGE_STORAGE_BACKEND:-postgres}
+
+      # CORS 配置 (开发环境允许本地前端)
+      - CREDBRIDGE_ALLOWED_ORIGINS=${CREDBRIDGE_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:3000}
 
       # PostgreSQL 配置
       - DATABASE_URL=postgresql://credbridge:credbridge_secret@postgres:5432/credbridge
 
-      # Redis 配置
-      - REDIS_URL=redis://redis:6379/0
+      # Redis 配置 (含密码)
+      - REDIS_URL=redis://:credbridge_redis_pass@redis:6379/0
 
       # immudb 配置
       - IMMUDB_HOST=immudb
@@ -39,9 +45,18 @@ services:
       - VAULT_ADDR=http://vault:8200
       - VAULT_TOKEN=${VAULT_TOKEN:-credbridge-root-token}
 
+      # Privy 配置（显式注入，允许通过 .env 或宿主环境明文传入）
+      - PRIVY_APP_ID=${PRIVY_APP_ID:-}
+      - PRIVY_APP_SECRET=${PRIVY_APP_SECRET:-}
+      - PRIVY_JWKS_URL=${PRIVY_JWKS_URL:-}
+      - PRIVY_API_URL=${PRIVY_API_URL:-https://auth.privy.io/api/v1}
+      - PRIVY_MOCK_ENABLED=${PRIVY_MOCK_ENABLED:-false}
+
       # TEE 配置 (开发模式)
-      - TEE_MODE=simulation
+      - TEE_MODE=${TEE_MODE:-simulation}
       - TEE_DEBUG=true
+      - SEALED_STORAGE_PATH=/app/data/sealed
+      - NSJAIL_PATH=${NSJAIL_PATH:-/usr/local/bin/nsjail}
 
       # 加密配置
       - ENCRYPTION_KEY_PATH=/app/config/keys
@@ -140,7 +155,7 @@ services:
     networks:
       - credbridge_network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "-a", "credbridge_redis_pass", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -260,12 +275,12 @@ services:
     networks:
       - credbridge_network
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=200h"
+      - "--web.enable-lifecycle"
     profiles:
       - monitoring
 

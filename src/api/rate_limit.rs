@@ -1,10 +1,11 @@
 //! API 速率限制中间件
 //!
-//! 基于 IP 地址的速率限制，防止 DoS 攻击
+//! 基于客户端 IP 地址进行速率限制，默认使用 Redis 持久化窗口状态。
 //! 配置项：
-//! - CREDBRIDGE_RATE_LIMIT_REQUESTS: 每个时间窗口允许的请求数 (默认: 100)
-//! - CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS: 时间窗口（秒）(默认: 60)
+//! - `CREDBRIDGE_RATE_LIMIT_REQUESTS`: 每个时间窗口允许的请求数 (默认: 100)
+//! - `CREDBRIDGE_RATE_LIMIT_WINDOW_SECONDS`: 时间窗口（秒）(默认: 60)
 
+use async_trait::async_trait;
 use axum::{
     Json,
     extract::{ConnectInfo, Request},
@@ -12,11 +13,13 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use redis::{Client as RedisClient, Script};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// 速率限制配置
 #[derive(Debug, Clone)]
@@ -78,6 +81,11 @@ impl RateLimitError {
 
 impl IntoResponse for RateLimitError {
     fn into_response(self) -> Response {
+        tracing::warn!(
+            retry_after = self.retry_after_seconds,
+            "rate limit exceeded"
+        );
+
         (
             StatusCode::TOO_MANY_REQUESTS,
             [(
@@ -90,12 +98,36 @@ impl IntoResponse for RateLimitError {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum RateLimitStoreError {
+    #[error("Redis 连接错误: {0}")]
+    RedisConnection(String),
+
+    #[error("Redis 操作错误: {0}")]
+    RedisOperation(String),
+}
+
+impl From<redis::RedisError> for RateLimitStoreError {
+    fn from(error: redis::RedisError) -> Self {
+        RateLimitStoreError::RedisOperation(error.to_string())
+    }
+}
+
+#[async_trait]
+pub trait RateLimitBackend: Send + Sync {
+    async fn check_and_record(&self, client_ip: &str) -> Result<(), RateLimitDecision>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RateLimitDecision {
+    RetryAfter(u64),
+    BackendUnavailable,
+}
+
 /// 客户端请求记录
 #[derive(Debug, Clone)]
 struct ClientRecord {
-    /// 请求次数
     count: u32,
-    /// 窗口开始时间
     window_start: Instant,
 }
 
@@ -107,31 +139,25 @@ impl ClientRecord {
         }
     }
 
-    /// 检查是否在窗口内
     fn is_in_window(&self, window_duration: Duration) -> bool {
         self.window_start.elapsed() < window_duration
     }
 
-    /// 重置窗口
     fn reset(&mut self) {
         self.count = 1;
         self.window_start = Instant::now();
     }
 }
 
-/// 速率限制存储
-#[derive(Debug, Clone)]
-pub struct RateLimitStore {
-    /// 客户端记录 (IP -> 请求记录)
+/// 内存速率限制存储，仅用于测试或显式 fallback。
+#[derive(Debug)]
+pub struct InMemoryRateLimitStore {
     clients: Arc<Mutex<HashMap<String, ClientRecord>>>,
-    /// 配置
     config: RateLimitConfig,
-    /// 最后清理时间
     last_cleanup: Arc<Mutex<Instant>>,
 }
 
-impl RateLimitStore {
-    /// 创建新的速率限制存储
+impl InMemoryRateLimitStore {
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
@@ -140,132 +166,210 @@ impl RateLimitStore {
         }
     }
 
-    /// 检查并记录请求
-    /// 返回：Ok(()) 表示允许请求，Err(retry_after) 表示需要等待的秒数
-    pub fn check_and_record(&self, client_ip: &str) -> Result<(), u64> {
-        let window_duration = Duration::from_secs(self.config.window_seconds);
-        let mut clients = self.clients.lock().unwrap();
-
-        // 定期清理过期记录（每 5 分钟）
-        self.maybe_cleanup(&mut clients);
-
-        match clients.get_mut(client_ip) {
-            Some(record) => {
-                if record.is_in_window(window_duration) {
-                    // 在窗口内，检查是否超过限制
-                    if record.count >= self.config.requests_per_window {
-                        let elapsed = record.window_start.elapsed();
-                        let retry_after = window_duration.saturating_sub(elapsed).as_secs().max(1);
-                        return Err(retry_after);
-                    }
-                    record.count += 1;
-                    Ok(())
-                } else {
-                    // 窗口过期，重置
-                    record.reset();
-                    Ok(())
-                }
-            }
-            None => {
-                // 新客户端
-                clients.insert(client_ip.to_string(), ClientRecord::new());
-                Ok(())
-            }
-        }
-    }
-
-    /// 可能需要清理过期记录
-    fn maybe_cleanup(&self, clients: &mut std::sync::MutexGuard<HashMap<String, ClientRecord>>) {
-        let mut last_cleanup = self.last_cleanup.lock().unwrap();
+    async fn maybe_cleanup(&self, clients: &mut HashMap<String, ClientRecord>) {
+        let mut last_cleanup = self.last_cleanup.lock().await;
         if last_cleanup.elapsed() > Duration::from_secs(300) {
-            // 5 分钟清理一次
             let window_duration = Duration::from_secs(self.config.window_seconds);
             clients.retain(|_, record| record.is_in_window(window_duration));
             *last_cleanup = Instant::now();
         }
     }
+}
 
-    /// 获取当前配置
-    pub fn config(&self) -> &RateLimitConfig {
-        &self.config
-    }
+#[async_trait]
+impl RateLimitBackend for InMemoryRateLimitStore {
+    async fn check_and_record(&self, client_ip: &str) -> Result<(), RateLimitDecision> {
+        let window_duration = Duration::from_secs(self.config.window_seconds);
+        let mut clients = self.clients.lock().await;
+        self.maybe_cleanup(&mut clients).await;
 
-    /// 获取当前客户端数量（用于监控）
-    pub fn client_count(&self) -> usize {
-        self.clients.lock().unwrap().len()
+        match clients.get_mut(client_ip) {
+            Some(record) => {
+                if record.is_in_window(window_duration) {
+                    if record.count >= self.config.requests_per_window {
+                        let elapsed = record.window_start.elapsed();
+                        let retry_after = window_duration.saturating_sub(elapsed).as_secs().max(1);
+                        return Err(RateLimitDecision::RetryAfter(retry_after));
+                    }
+                    record.count += 1;
+                    Ok(())
+                } else {
+                    record.reset();
+                    Ok(())
+                }
+            }
+            None => {
+                clients.insert(client_ip.to_string(), ClientRecord::new());
+                Ok(())
+            }
+        }
     }
 }
 
-/// 从请求中提取客户端 IP
-fn extract_client_ip(request: &Request) -> String {
-    // 1. 首先尝试从 X-Forwarded-For 头获取（如果通过代理）
-    if let Some(forwarded) = request.headers().get("X-Forwarded-For")
-        && let Ok(forwarded_str) = forwarded.to_str()
-    {
-        // 取第一个 IP（最原始的客户端）
-        if let Some(first_ip) = forwarded_str.split(',').next() {
-            return first_ip.trim().to_string();
-        }
-    }
-
-    // 2. 尝试 X-Real-IP 头
-    if let Some(real_ip) = request.headers().get("X-Real-IP")
-        && let Ok(real_ip_str) = real_ip.to_str()
-    {
-        return real_ip_str.trim().to_string();
-    }
-
-    // 3. 使用连接地址
-    if let Some(ConnectInfo(addr)) = request.extensions().get::<ConnectInfo<SocketAddr>>() {
-        return addr.ip().to_string();
-    }
-
-    // 4. 无法获取 IP，使用 "unknown"
-    "unknown".to_string()
+/// Redis 速率限制存储，窗口状态跨重启和多实例共享。
+#[derive(Debug)]
+pub struct RedisRateLimitStore {
+    client: RedisClient,
+    config: RateLimitConfig,
+    key_prefix: String,
 }
 
-/// 速率限制中间件
-pub async fn rate_limit_middleware(request: Request, next: Next) -> Response {
-    // 从请求扩展中获取速率限制存储
-    let store = request.extensions().get::<RateLimitStore>().cloned();
+impl RedisRateLimitStore {
+    pub fn new(redis_url: &str, config: RateLimitConfig) -> Result<Self, RateLimitStoreError> {
+        let client = RedisClient::open(redis_url)
+            .map_err(|error| RateLimitStoreError::RedisConnection(error.to_string()))?;
 
-    let Some(store) = store else {
-        // 如果没有配置速率限制，直接放行
-        return next.run(request).await;
-    };
+        Ok(Self {
+            client,
+            config,
+            key_prefix: "credbridge:rate_limit:".to_string(),
+        })
+    }
 
-    let client_ip = extract_client_ip(&request);
+    pub async fn health_check(&self) -> Result<(), RateLimitStoreError> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| RateLimitStoreError::RedisConnection(error.to_string()))?;
 
-    // 检查速率限制
-    match store.check_and_record(&client_ip) {
-        Ok(()) => {
-            // 允许请求
-            next.run(request).await
+        redis::cmd("PING")
+            .query_async::<_, String>(&mut conn)
+            .await
+            .map_err(|error| RateLimitStoreError::RedisOperation(error.to_string()))?;
+
+        Ok(())
+    }
+
+    fn build_key(&self, client_ip: &str) -> String {
+        format!("{}{}", self.key_prefix, client_ip)
+    }
+}
+
+#[async_trait]
+impl RateLimitBackend for RedisRateLimitStore {
+    async fn check_and_record(&self, client_ip: &str) -> Result<(), RateLimitDecision> {
+        let mut conn = match self.client.get_multiplexed_async_connection().await {
+            Ok(conn) => conn,
+            Err(error) => {
+                tracing::error!(error = %error, "failed to connect to Redis rate limit store");
+                return Err(RateLimitDecision::BackendUnavailable);
+            }
+        };
+
+        let script = Script::new(
+            r#"
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+local ttl = redis.call("TTL", KEYS[1])
+return {current, ttl}
+"#,
+        );
+
+        let (count, ttl): (u32, i64) = match script
+            .key(self.build_key(client_ip))
+            .arg(self.config.window_seconds)
+            .invoke_async(&mut conn)
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                tracing::error!(error = %error, "failed to update Redis rate limit state");
+                return Err(RateLimitDecision::BackendUnavailable);
+            }
+        };
+
+        if count > self.config.requests_per_window {
+            return Err(RateLimitDecision::RetryAfter(ttl.max(1) as u64));
         }
-        Err(retry_after) => {
-            // 超出限制
-            RateLimitError::new(retry_after).into_response()
-        }
+
+        Ok(())
     }
 }
 
 /// 速率限制状态（用于 AppState）
 #[derive(Clone)]
 pub struct RateLimitState {
-    pub store: RateLimitStore,
+    store: Arc<dyn RateLimitBackend>,
 }
 
 impl RateLimitState {
-    pub fn new(config: RateLimitConfig) -> Self {
+    pub async fn new(
+        config: RateLimitConfig,
+        redis_url: &str,
+    ) -> Result<Self, RateLimitStoreError> {
+        let store = RedisRateLimitStore::new(redis_url, config)?;
+        store.health_check().await?;
+        Ok(Self {
+            store: Arc::new(store),
+        })
+    }
+
+    pub fn new_in_memory(config: RateLimitConfig) -> Self {
         Self {
-            store: RateLimitStore::new(config),
+            store: Arc::new(InMemoryRateLimitStore::new(config)),
         }
+    }
+
+    pub async fn check_and_record(&self, client_ip: &str) -> Result<(), RateLimitDecision> {
+        self.store.check_and_record(client_ip).await
+    }
+}
+
+/// 从请求中提取客户端 IP
+fn extract_client_ip(request: &Request) -> String {
+    if let Some(forwarded) = request.headers().get("X-Forwarded-For")
+        && let Ok(forwarded_str) = forwarded.to_str()
+        && let Some(first_ip) = forwarded_str.split(',').next()
+    {
+        return first_ip.trim().to_string();
+    }
+
+    if let Some(real_ip) = request.headers().get("X-Real-IP")
+        && let Ok(real_ip_str) = real_ip.to_str()
+    {
+        return real_ip_str.trim().to_string();
+    }
+
+    if let Some(ConnectInfo(addr)) = request.extensions().get::<ConnectInfo<SocketAddr>>() {
+        return addr.ip().to_string();
+    }
+
+    "unknown".to_string()
+}
+
+/// 速率限制中间件
+pub async fn rate_limit_middleware(request: Request, next: Next) -> Response {
+    let state = request.extensions().get::<RateLimitState>().cloned();
+
+    let Some(state) = state else {
+        return next.run(request).await;
+    };
+
+    let client_ip = extract_client_ip(&request);
+
+    match state.check_and_record(&client_ip).await {
+        Ok(()) => next.run(request).await,
+        Err(RateLimitDecision::RetryAfter(retry_after)) => {
+            RateLimitError::new(retry_after).into_response()
+        }
+        Err(RateLimitDecision::BackendUnavailable) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "rate_limit_backend_unavailable",
+                "message": "Rate limit backend unavailable",
+            })),
+        )
+            .into_response(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::time::{Duration, sleep};
 
     #[test]
     fn test_rate_limit_config_default() {
@@ -274,40 +378,51 @@ mod tests {
         assert_eq!(config.window_seconds, 60);
     }
 
-    #[test]
-    fn test_rate_limit_store_allows_requests() {
+    #[tokio::test]
+    async fn test_rate_limit_store_allows_requests() {
         let config = RateLimitConfig {
             requests_per_window: 3,
             window_seconds: 60,
         };
-        let store = RateLimitStore::new(config);
+        let store = InMemoryRateLimitStore::new(config);
 
-        // 前 3 个请求应该通过
-        assert!(store.check_and_record("192.168.1.1").is_ok());
-        assert!(store.check_and_record("192.168.1.1").is_ok());
-        assert!(store.check_and_record("192.168.1.1").is_ok());
-
-        // 第 4 个请求应该被拒绝
-        assert!(store.check_and_record("192.168.1.1").is_err());
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
+        assert!(store.check_and_record("192.168.1.1").await.is_err());
     }
 
-    #[test]
-    fn test_rate_limit_store_per_client() {
+    #[tokio::test]
+    async fn test_rate_limit_store_per_client() {
         let config = RateLimitConfig {
             requests_per_window: 2,
             window_seconds: 60,
         };
-        let store = RateLimitStore::new(config);
+        let store = InMemoryRateLimitStore::new(config);
 
-        // 客户端 1 用完配额
-        assert!(store.check_and_record("192.168.1.1").is_ok());
-        assert!(store.check_and_record("192.168.1.1").is_ok());
-        assert!(store.check_and_record("192.168.1.1").is_err());
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
+        assert!(store.check_and_record("192.168.1.1").await.is_err());
 
-        // 客户端 2 不受影响
-        assert!(store.check_and_record("192.168.1.2").is_ok());
-        assert!(store.check_and_record("192.168.1.2").is_ok());
-        assert!(store.check_and_record("192.168.1.2").is_err());
+        assert!(store.check_and_record("192.168.1.2").await.is_ok());
+        assert!(store.check_and_record("192.168.1.2").await.is_ok());
+        assert!(store.check_and_record("192.168.1.2").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_store_window_expires() {
+        let config = RateLimitConfig {
+            requests_per_window: 1,
+            window_seconds: 1,
+        };
+        let store = InMemoryRateLimitStore::new(config);
+
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
+        assert!(store.check_and_record("192.168.1.1").await.is_err());
+
+        sleep(Duration::from_millis(1100)).await;
+
+        assert!(store.check_and_record("192.168.1.1").await.is_ok());
     }
 
     #[test]
@@ -318,16 +433,17 @@ mod tests {
         assert!(error.message.contains("30"));
     }
 
-    #[test]
-    fn test_client_record() {
-        let mut record = ClientRecord::new();
-        assert_eq!(record.count, 1);
+    #[tokio::test]
+    #[ignore = "requires local Redis service"]
+    async fn test_redis_rate_limit_store_persists_window_state() {
+        let config = RateLimitConfig {
+            requests_per_window: 1,
+            window_seconds: 5,
+        };
+        let store_a = RedisRateLimitStore::new("redis://127.0.0.1:6379", config.clone()).unwrap();
+        let store_b = RedisRateLimitStore::new("redis://127.0.0.1:6379", config).unwrap();
 
-        // 应该在窗口内
-        assert!(record.is_in_window(Duration::from_secs(60)));
-
-        // 重置
-        record.reset();
-        assert_eq!(record.count, 1);
+        assert!(store_a.check_and_record("203.0.113.1").await.is_ok());
+        assert!(store_b.check_and_record("203.0.113.1").await.is_err());
     }
 }

@@ -635,12 +635,12 @@ mod tests {
             for i in 0..3 {
                 let entry = CachedKeyEntry::new(
                     [i as u8; 32],
-                    format!("tenant_{}", i),
-                    format!("user_{}", i),
+                    format!("tenant_{i}"),
+                    format!("user_{i}"),
                     [i as u8; KEY_LENGTH],
                     crate::tee::keys::KeyType::UserVault,
                 );
-                cache.insert(&format!("tenant_{}", i), &format!("user_{}", i), entry);
+                cache.insert(&format!("tenant_{i}"), &format!("user_{i}"), entry);
             }
         }
 
@@ -693,12 +693,13 @@ mod tests {
 
     #[test]
     fn test_cleanup_stats() {
-        let mut stats = CleanupStats::default();
-        stats.total_cleanups = 10;
-        stats.keys_cleaned = 100;
-        stats.bytes_cleared = 3200;
-        stats.last_cleanup = Some(Instant::now());
-        stats.started_at = Some(Instant::now());
+        let stats = CleanupStats {
+            total_cleanups: 10,
+            keys_cleaned: 100,
+            bytes_cleared: 3200,
+            last_cleanup: Some(Instant::now()),
+            started_at: Some(Instant::now()),
+        };
 
         assert_eq!(stats.total_cleanups, 10);
         assert_eq!(stats.keys_cleaned, 100);

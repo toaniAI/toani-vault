@@ -1,7 +1,7 @@
 # 默认 values - 会被环境 specific values 覆盖
 project:
   name: credbridge
-  server: credbridge-backend
+  server: credbridge-go
 
 environment: dev
 namespace: suna
@@ -10,7 +10,7 @@ cluster: hk
 # Vault 配置 - 生产环境从 Vault 读取机密
 vault:
   enabled: true
-  address: "https://vault.bitkinetic.com"
+  address: "https://vault.example.com"
   path: "secret/data/credbridge"
   secrets:
     keys:

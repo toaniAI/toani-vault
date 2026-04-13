@@ -9,6 +9,7 @@
 ### 安全架构概述
 
 CredBridge TEE沙箱采用**多层隔离架构**，确保：
+
 1. 凭证明文永不出Enclave
 2. 沙箱间严格隔离，防止横向移动
 3. 每个会话独立的执行上下文和凭证命名空间
@@ -342,30 +343,33 @@ impl NsjailSandboxPool {
 **TEE 环境限制分析：**
 
 由于 CredBridge 运行在 TEE（可信执行环境）内，沙箱方案必须满足以下约束：
+
 - **KVM 不可用**：TEE 内无法运行虚拟机管理器
 - **内核模块受限**：不能依赖特权内核模块
 - **纯用户空间**：必须在用户态实现隔离
 
 **候选方案评估：**
 
-| 方案 | TEE兼容性 | 推荐度 | 关键结论 |
-|------|-----------|--------|---------|
-| **Firecracker** | 低 | 不推荐 | 依赖KVM，架构冲突 |
-| **Kata Containers** | 低 | 不推荐 | 依赖KVM，TEE内不可用 |
-| **nsjail** | 高 | **首选** | 极轻量，完全基于Linux namespace，启动快速 |
-| **gVisor** | 中等 | **次选** | ptrace模式纯用户空间，隔离性更强但开销大 |
-| **Chrome Sandbox** | 部分 | 参考 | 设计优秀但非通用方案 |
-| **Isolate** | 部分 | 备选 | 适合特定场景 |
+| 方案                | TEE兼容性 | 推荐度   | 关键结论                                  |
+| ------------------- | --------- | -------- | ----------------------------------------- |
+| **Firecracker**     | 低        | 不推荐   | 依赖KVM，架构冲突                         |
+| **Kata Containers** | 低        | 不推荐   | 依赖KVM，TEE内不可用                      |
+| **nsjail**          | 高        | **首选** | 极轻量，完全基于Linux namespace，启动快速 |
+| **gVisor**          | 中等      | **次选** | ptrace模式纯用户空间，隔离性更强但开销大  |
+| **Chrome Sandbox**  | 部分      | 参考     | 设计优秀但非通用方案                      |
+| **Isolate**         | 部分      | 备选     | 适合特定场景                              |
 
 **最终架构决策（阶段性）：**
 
 **第一阶段（当前）**：采用 **nsjail 轻量级方案**
+
 - 基于 Linux Namespaces + seccomp-bpf + cgroups
 - 启动时间 < 100ms，内存开销 < 10MB
 - 满足浏览器自动化和凭证操作的隔离需求
 - 易于在 TEE 内集成和调试
 
 **第二阶段（未来扩展）**：可选升级到 **gVisor**
+
 - 当需要更强的应用级隔离时引入
 - 用户空间内核，系统调用拦截
 - 更高的资源开销，但隔离边界更清晰
@@ -379,6 +383,7 @@ impl NsjailSandboxPool {
 CredBridge 采用 **nsjail** 作为沙箱运行时，通过 Linux Namespaces、seccomp-bpf 和 cgroups 实现轻量级隔离。
 
 **nsjail 核心配置结构：**
+
 ```rust
 /// nsjail 沙箱配置
 pub struct NsjailConfig {
@@ -496,6 +501,7 @@ impl NsjailSandbox {
 ```
 
 **nsjail 配置文件示例（YAML）：**
+
 ```yaml
 # nsjail_credbridge.cfg
 mode: r  # 使用 PID namespace
@@ -542,14 +548,14 @@ iface_no_lo: false
 
 **与传统方案对比：**
 
-| 特性 | nsjail 方案 | gVisor 方案 | 说明 |
-|------|-------------|-------------|------|
-| **启动时间** | < 100ms | 500ms - 2s | nsjail 直接复用主机内核 |
-| **内存开销** | ~10MB | ~100MB+ | gVisor 需要用户空间内核 |
-| **隔离边界** | Namespace + seccomp | 用户空间内核 | gVisor 隔离性更强 |
-| **兼容性** | 高（标准Linux） | 中等（syscall代理） | nsjail 兼容所有Linux应用 |
-| **调试难度** | 低 | 高 | nsjail 更易于排错 |
-| **TEE支持** | 完全支持 | ptrace模式支持 | 两者均可在TEE内运行 |
+| 特性         | nsjail 方案         | gVisor 方案         | 说明                     |
+| ------------ | ------------------- | ------------------- | ------------------------ |
+| **启动时间** | < 100ms             | 500ms - 2s          | nsjail 直接复用主机内核  |
+| **内存开销** | ~10MB               | ~100MB+             | gVisor 需要用户空间内核  |
+| **隔离边界** | Namespace + seccomp | 用户空间内核        | gVisor 隔离性更强        |
+| **兼容性**   | 高（标准Linux）     | 中等（syscall代理） | nsjail 兼容所有Linux应用 |
+| **调试难度** | 低                  | 高                  | nsjail 更易于排错        |
+| **TEE支持**  | 完全支持            | ptrace模式支持      | 两者均可在TEE内运行      |
 
 **2. 资源限制（cgroups v2 via nsjail）**
 
@@ -750,6 +756,7 @@ pub fn build_nsjail_seccomp_args(config: &SeccompConfig) -> Vec<String> {
 ```
 
 **4. 凭证隔离机制**
+
 ```rust
 /// 沙箱凭证命名空间
 pub struct CredentialNamespace {
@@ -804,12 +811,12 @@ impl CredentialNamespace {
 
 #### 1.2.2 隔离级别对比
 
-| 隔离机制 | 保护级别 | 防止的威胁 |
-|---------|---------|-----------|
-| **Namespaces** | 强 | 进程ID冲突、网络嗅探、文件系统遍历 |
-| **cgroups** | 强 | 资源耗尽DoS、CPU/内存滥用 |
-| **seccomp** | 强 | 系统调用滥用、沙箱逃逸 |
-| **凭证命名空间** | 极强 | 横向移动、凭证泄露 |
+| 隔离机制         | 保护级别 | 防止的威胁                         |
+| ---------------- | -------- | ---------------------------------- |
+| **Namespaces**   | 强       | 进程ID冲突、网络嗅探、文件系统遍历 |
+| **cgroups**      | 强       | 资源耗尽DoS、CPU/内存滥用          |
+| **seccomp**      | 强       | 系统调用滥用、沙箱逃逸             |
+| **凭证命名空间** | 极强     | 横向移动、凭证泄露                 |
 
 #### 1.2.3 安全保证
 
@@ -823,7 +830,7 @@ impl CredentialNamespace {
 ```typescript
 interface SandboxSession {
   sessionId: string;
-  status: 'creating' | 'ready' | 'executing' | 'paused' | 'closed';
+  status: "creating" | "ready" | "executing" | "paused" | "closed";
   createdAt: number;
   lastActivityAt: number;
   context: SessionContext;
@@ -847,7 +854,7 @@ interface SessionContext {
   allowedDomains: string[];
 
   // 风险上限
-  maxRiskLevel: 'low' | 'medium' | 'high';
+  maxRiskLevel: "low" | "medium" | "high";
 }
 
 /**
@@ -893,17 +900,23 @@ interface CredentialCacheConfig {
 
 // 默认凭证缓存配置
 const DEFAULT_CREDENTIAL_CACHE_CONFIG: CredentialCacheConfig = {
-  absoluteExpirationMinutes: 30,    // 30分钟绝对过期
-  slidingExpirationMinutes: 10,      // 10分钟滑动过期
-  maxAccessCount: 100,               // 最多使用100次
-  keepPlaintextInMemory: false,      // 不在内存中保留明文
+  absoluteExpirationMinutes: 30, // 30分钟绝对过期
+  slidingExpirationMinutes: 10, // 10分钟滑动过期
+  maxAccessCount: 100, // 最多使用100次
+  keepPlaintextInMemory: false, // 不在内存中保留明文
 };
 
 interface OperationRequest {
-  type: 'navigate' | 'click' | 'fill' | 'screenshot' | 'extract' | 'execute_script';
-  description: string;  // 自然语言描述，用于 AI 审核
+  type:
+    | "navigate"
+    | "click"
+    | "fill"
+    | "screenshot"
+    | "extract"
+    | "execute_script";
+  description: string; // 自然语言描述，用于 AI 审核
   params: Record<string, any>;
-  expectedOutcome?: string;  // 预期结果，用于验证
+  expectedOutcome?: string; // 预期结果，用于验证
 }
 
 interface OperationResult {
@@ -918,11 +931,11 @@ interface OperationResult {
 ### 1.3 SDK 使用示例
 
 ```typescript
-import { CredBridgeSDK } from '@credbridge/sdk';
+import { ToaniVaultSDK } from "@toani/vault-sdk";
 
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
-  token: 'your-paseto-token',
+const sdk = new ToaniVaultSDK({
+  baseUrl: "https://vault.credbridge.io",
+  token: "your-paseto-token",
 });
 
 // 1. 创建会话 - 声明整体目的
@@ -937,40 +950,31 @@ const session = await sdk.sandbox.createSession({
 // 2. 会话内操作 - 每个操作都经过AI审核
 
 // 操作1：登录
-const loginResult = await sdk.sandbox.executeInSession(
-  session.sessionId,
-  {
-    type: "navigate_and_fill",
-    description: "导航到Schwab登录页并输入凭证",
-    params: {
-      url: "https://client.schwab.com/Login/SignUp/SignIn",
-      useSessionCredential: true,
-    }
-  }
-);
+const loginResult = await sdk.sandbox.executeInSession(session.sessionId, {
+  type: "navigate_and_fill",
+  description: "导航到Schwab登录页并输入凭证",
+  params: {
+    url: "https://client.schwab.com/Login/SignUp/SignIn",
+    useSessionCredential: true,
+  },
+});
 
 // 操作2：导航到投资组合页面
-const navigateResult = await sdk.sandbox.executeInSession(
-  session.sessionId,
-  {
-    type: "click",
-    description: "点击Portfolio菜单进入投资组合页面",
-    params: {
-      selector: "a[href*='portfolio']",
-      waitForNavigation: true,
-    }
-  }
-);
+const navigateResult = await sdk.sandbox.executeInSession(session.sessionId, {
+  type: "click",
+  description: "点击Portfolio菜单进入投资组合页面",
+  params: {
+    selector: "a[href*='portfolio']",
+    waitForNavigation: true,
+  },
+});
 
 // 操作3：截图（敏感操作，额外审核）
-const screenshot = await sdk.sandbox.screenshot(
-  session.sessionId,
-  {
-    purpose: "获取投资组合概览截图",
-    fullPage: true,
-    expectedContent: "应该显示投资组合总价值、各持仓股票列表",
-  }
-);
+const screenshot = await sdk.sandbox.screenshot(session.sessionId, {
+  purpose: "获取投资组合概览截图",
+  fullPage: true,
+  expectedContent: "应该显示投资组合总价值、各持仓股票列表",
+});
 
 // 关闭会话
 await sdk.sandbox.closeSession(session.sessionId);
@@ -990,30 +994,30 @@ interface ApiResponse<T> {
   success: boolean;
   data: T | null;
   error: ApiError | null;
-  request_id: string;  // 用于追踪和调试
+  request_id: string; // 用于追踪和调试
 }
 
 interface ApiError {
-  code: string;        // 错误代码
-  message: string;     // 错误消息
-  details?: Record<string, any>;  // 详细错误信息
+  code: string; // 错误代码
+  message: string; // 错误消息
+  details?: Record<string, any>; // 详细错误信息
 }
 ```
 
 #### API 端点清单
 
-| 端点 | 方法 | 路径 | 描述 |
-|-----|------|------|------|
-| 创建会话 | POST | `/sandbox/sessions` | 创建新的沙箱会话 |
-| 获取会话 | GET | `/sandbox/sessions/:id` | 查询会话状态和信息 |
-| 列出会话 | GET | `/sandbox/sessions` | 分页列出用户的会话 |
-| 执行操作 | POST | `/sandbox/sessions/:id/execute` | 在会话中执行操作 |
-| 暂停会话 | POST | `/sandbox/sessions/:id/pause` | 暂停会话 |
-| 恢复会话 | POST | `/sandbox/sessions/:id/resume` | 恢复暂停的会话 |
-| 关闭会话 | DELETE | `/sandbox/sessions/:id` | 关闭并清理会话 |
-| 截图 | POST | `/sandbox/sessions/:id/screenshot` | 安全截图并导出 |
-| 导出数据 | POST | `/sandbox/sessions/:id/export` | 导出结构化数据 |
-| WebSocket | WS | `/sandbox/sessions/:id/stream` | 实时操作流 |
+| 端点      | 方法   | 路径                               | 描述               |
+| --------- | ------ | ---------------------------------- | ------------------ |
+| 创建会话  | POST   | `/sandbox/sessions`                | 创建新的沙箱会话   |
+| 获取会话  | GET    | `/sandbox/sessions/:id`            | 查询会话状态和信息 |
+| 列出会话  | GET    | `/sandbox/sessions`                | 分页列出用户的会话 |
+| 执行操作  | POST   | `/sandbox/sessions/:id/execute`    | 在会话中执行操作   |
+| 暂停会话  | POST   | `/sandbox/sessions/:id/pause`      | 暂停会话           |
+| 恢复会话  | POST   | `/sandbox/sessions/:id/resume`     | 恢复暂停的会话     |
+| 关闭会话  | DELETE | `/sandbox/sessions/:id`            | 关闭并清理会话     |
+| 截图      | POST   | `/sandbox/sessions/:id/screenshot` | 安全截图并导出     |
+| 导出数据  | POST   | `/sandbox/sessions/:id/export`     | 导出结构化数据     |
+| WebSocket | WS     | `/sandbox/sessions/:id/stream`     | 实时操作流         |
 
 #### 详细契约定义
 
@@ -1022,26 +1026,27 @@ interface ApiError {
 ```typescript
 // Request
 interface CreateSessionRequest {
-  original_intent: string;           // 会话目的描述，用于AI审核
-  credential_id: string;             // 凭证ID
-  allowed_domains: string[];         // 允许访问的域名白名单
-  max_risk_level: 'low' | 'medium' | 'high';
-  timeout_minutes: number;           // 默认 30
-  credential_cache_config?: {        // 可选凭证缓存配置
-    absolute_expiration_minutes: number;  // 默认 30
-    sliding_expiration_minutes: number;   // 默认 10
-    max_access_count: number;             // 默认 100
-    keep_plaintext_in_memory: boolean;    // 默认 false
+  original_intent: string; // 会话目的描述，用于AI审核
+  credential_id: string; // 凭证ID
+  allowed_domains: string[]; // 允许访问的域名白名单
+  max_risk_level: "low" | "medium" | "high";
+  timeout_minutes: number; // 默认 30
+  credential_cache_config?: {
+    // 可选凭证缓存配置
+    absolute_expiration_minutes: number; // 默认 30
+    sliding_expiration_minutes: number; // 默认 10
+    max_access_count: number; // 默认 100
+    keep_plaintext_in_memory: boolean; // 默认 false
   };
 }
 
 // Response
 interface CreateSessionResponse {
   session_id: string;
-  status: 'creating' | 'ready';
+  status: "creating" | "ready";
   created_at: number;
-  websocket_url: string;             // WebSocket连接地址
-  websocket_token: string;           // 一次性连接令牌
+  websocket_url: string; // WebSocket连接地址
+  websocket_token: string; // 一次性连接令牌
 }
 
 // Error Codes
@@ -1055,11 +1060,17 @@ interface CreateSessionResponse {
 ```typescript
 // Request
 interface ExecuteOperationRequest {
-  type: 'navigate' | 'click' | 'fill' | 'screenshot' | 'extract' | 'execute_script';
-  description: string;               // 自然语言描述，用于AI审核
-  params: Record<string, any>;       // 操作参数
-  expected_outcome?: string;         // 预期结果
-  use_credential?: boolean;          // 是否使用会话凭证
+  type:
+    | "navigate"
+    | "click"
+    | "fill"
+    | "screenshot"
+    | "extract"
+    | "execute_script";
+  description: string; // 自然语言描述，用于AI审核
+  params: Record<string, any>; // 操作参数
+  expected_outcome?: string; // 预期结果
+  use_credential?: boolean; // 是否使用会话凭证
 }
 
 // Response
@@ -1071,7 +1082,7 @@ interface ExecuteOperationResponse {
   audit_log_id: string;
   review_result: {
     approved: boolean;
-    risk_level: 'low' | 'medium' | 'high' | 'critical';
+    risk_level: "low" | "medium" | "high" | "critical";
     confidence: number;
     reasoning: string;
   };
@@ -1095,9 +1106,9 @@ interface ExecuteOperationResponse {
 interface PauseSessionResponse {
   session_id: string;
   previous_status: string;
-  current_status: 'paused';
+  current_status: "paused";
   paused_at: number;
-  page_snapshot?: PageSnapshot;      // 暂停时的页面状态
+  page_snapshot?: PageSnapshot; // 暂停时的页面状态
 }
 
 // Error Codes
@@ -1114,10 +1125,10 @@ interface PauseSessionResponse {
 // Response
 interface ResumeSessionResponse {
   session_id: string;
-  previous_status: 'paused';
-  current_status: 'ready';
+  previous_status: "paused";
+  current_status: "ready";
   resumed_at: number;
-  restored_from_snapshot: boolean;   // 是否从快照恢复
+  restored_from_snapshot: boolean; // 是否从快照恢复
 }
 
 // Error Codes
@@ -1131,21 +1142,21 @@ interface ResumeSessionResponse {
 ```typescript
 // Request
 interface ScreenshotRequest {
-  purpose: string;                   // 截图目的
-  expected_content?: string;         // 预期内容描述
-  full_page?: boolean;               // 是否全页截图
-  selector?: string;                 // 可选：特定元素截图
-  max_review_duration_ms?: number;   // 审核超时，默认 5000
+  purpose: string; // 截图目的
+  expected_content?: string; // 预期内容描述
+  full_page?: boolean; // 是否全页截图
+  selector?: string; // 可选：特定元素截图
+  max_review_duration_ms?: number; // 审核超时，默认 5000
 }
 
 // Response
 interface ScreenshotResponse {
-  image_data: string;                // Base64编码图片
-  image_hash: string;                // SHA256哈希
+  image_data: string; // Base64编码图片
+  image_hash: string; // SHA256哈希
   review_duration_ms: number;
-  signature: string;                 // Enclave签名
-  watermark: string;                 // 水印文本
-  redaction_applied: boolean;        // 是否应用了脱敏
+  signature: string; // Enclave签名
+  watermark: string; // 水印文本
+  redaction_applied: boolean; // 是否应用了脱敏
 }
 
 // Error Codes
@@ -1159,14 +1170,14 @@ interface ScreenshotResponse {
 ```typescript
 // Request
 interface CloseSessionRequest {
-  reason?: string;                   // 关闭原因（可选）
+  reason?: string; // 关闭原因（可选）
 }
 
 // Response
 interface CloseSessionResponse {
   session_id: string;
   closed_at: number;
-  resources_cleaned: boolean;        // 资源是否已清理
+  resources_cleaned: boolean; // 资源是否已清理
 }
 
 // Error Codes
@@ -1185,14 +1196,14 @@ interface CloseSessionResponse {
 
 // Client -> Server 消息
 interface ClientMessage {
-  type: 'execute' | 'heartbeat' | 'abort';
+  type: "execute" | "heartbeat" | "abort";
   payload?: ExecuteOperationRequest;
   message_id: string;
 }
 
 // Server -> Client 消息
 interface ServerMessage {
-  type: 'status' | 'progress' | 'result' | 'error' | 'audit_log';
+  type: "status" | "progress" | "result" | "error" | "audit_log";
   message_id: string;
   payload: any;
   timestamp: number;
@@ -1225,18 +1236,18 @@ interface ServerMessage {
 
 #### HTTP 状态码
 
-| 状态码 | 场景 |
-|-------|------|
-| 200 OK | 请求成功 |
-| 201 Created | 资源创建成功 |
-| 400 Bad Request | 请求参数错误 |
-| 401 Unauthorized | 认证失败 |
-| 403 Forbidden | 权限不足 |
-| 404 Not Found | 资源不存在 |
-| 409 Conflict | 状态冲突（如尝试操作已关闭的会话） |
-| 422 Unprocessable Entity | 操作被拒绝（如AI审核拒绝） |
-| 429 Too Many Requests | 速率限制 |
-| 500 Internal Server Error | 服务器内部错误 |
+| 状态码                    | 场景                               |
+| ------------------------- | ---------------------------------- |
+| 200 OK                    | 请求成功                           |
+| 201 Created               | 资源创建成功                       |
+| 400 Bad Request           | 请求参数错误                       |
+| 401 Unauthorized          | 认证失败                           |
+| 403 Forbidden             | 权限不足                           |
+| 404 Not Found             | 资源不存在                         |
+| 409 Conflict              | 状态冲突（如尝试操作已关闭的会话） |
+| 422 Unprocessable Entity  | 操作被拒绝（如AI审核拒绝）         |
+| 429 Too Many Requests     | 速率限制                           |
+| 500 Internal Server Error | 服务器内部错误                     |
 
 ## 2. LLM 服务接口设计
 
@@ -1246,13 +1257,13 @@ interface ServerMessage {
 
 #### 支持的 LLM 服务商
 
-| 服务商 | 配置方式 | 特点 |
-|--------|---------|------|
-| **OpenAI** | 官方 API | 功能最强，支持 Vision |
-| **Claude (Anthropic)** | 通过 OpenAI 兼容层或直接使用 | 推理能力强 |
-| **Azure OpenAI** | 企业级部署 | 合规性好，SLA 保障 |
-| **OpenRouter** | 统一接口 | 多模型路由，按量计费 |
-| **其他兼容服务** | 标准接口 | 国产模型、私有化部署 |
+| 服务商                 | 配置方式                     | 特点                  |
+| ---------------------- | ---------------------------- | --------------------- |
+| **OpenAI**             | 官方 API                     | 功能最强，支持 Vision |
+| **Claude (Anthropic)** | 通过 OpenAI 兼容层或直接使用 | 推理能力强            |
+| **Azure OpenAI**       | 企业级部署                   | 合规性好，SLA 保障    |
+| **OpenRouter**         | 统一接口                     | 多模型路由，按量计费  |
+| **其他兼容服务**       | 标准接口                     | 国产模型、私有化部署  |
 
 #### 配置结构
 
@@ -1260,7 +1271,7 @@ interface ServerMessage {
 # config/llm.yaml
 llm:
   # 默认提供商
-  default_provider: "openai"  # openai | azure | claude | openrouter | mock
+  default_provider: "openai" # openai | azure | claude | openrouter | mock
 
   # 提供商配置
   providers:
@@ -1269,10 +1280,10 @@ llm:
       type: "openai_compatible"
       base_url: "https://api.openai.com/v1"
       api_key: "${OPENAI_API_KEY}"
-      model: "gpt-4o"  # gpt-4o, gpt-4o-mini, gpt-4-turbo
+      model: "gpt-4o" # gpt-4o, gpt-4o-mini, gpt-4-turbo
       timeout_ms: 30000
       max_tokens: 4096
-      temperature: 0.1  # 低温度，确保审核一致性
+      temperature: 0.1 # 低温度，确保审核一致性
 
     # Claude (通过兼容层或直接使用)
     claude:
@@ -1300,7 +1311,7 @@ llm:
       type: "openai_compatible"
       base_url: "https://openrouter.ai/api/v1"
       api_key: "${OPENROUTER_API_KEY}"
-      model: "openai/gpt-4o"  # 可切换任意模型
+      model: "openai/gpt-4o" # 可切换任意模型
       timeout_ms: 30000
       max_tokens: 4096
       temperature: 0.1
@@ -1311,10 +1322,10 @@ llm:
 
   # 功能路由配置（不同功能可使用不同模型）
   routing:
-    operation_review: "openai"      # 操作审核
-    content_review: "openai"        # 内容审核（需要 Vision 能力）
-    code_generation: "claude"       # 代码生成
-    fallback: "openai"              # 失败回退
+    operation_review: "openai" # 操作审核
+    content_review: "openai" # 内容审核（需要 Vision 能力）
+    code_generation: "claude" # 代码生成
+    fallback: "openai" # 失败回退
 
   # 成本控制和降级策略
   cost_control:
@@ -1324,8 +1335,8 @@ llm:
     # 成本触达阈值时的降级策略
     fallback_on_cost_threshold:
       - provider: "openai"
-        model: "gpt-4o-mini"  # 成本过高时降级到 mini
-      - provider: "mock"      # 最终回退到 mock
+        model: "gpt-4o-mini" # 成本过高时降级到 mini
+      - provider: "mock" # 最终回退到 mock
 
     # 重试策略
     retry:
@@ -1865,6 +1876,7 @@ pub const OPERATION_REVIEW_PROMPT: &str = r#"
 **提示词注入攻击**：恶意用户通过构造特殊的操作描述来操控AI审核结果，使危险操作被错误地批准。
 
 **攻击示例**：
+
 ```typescript
 // 攻击者尝试绕过审核
 const maliciousOperation = {
@@ -2237,11 +2249,13 @@ impl OperationReviewer {
 #### 4.1.1 安全截图流程（修复TOCTOU漏洞）
 
 **安全威胁模型**：
+
 - **TOCTOU攻击**：恶意页面可能在截图后、审核前改变显示内容
 - **内容替换攻击**：页面JavaScript检测到截图行为后显示伪造内容
 - **时序攻击**：利用截图和审核之间的时间窗口修改DOM
 
 **防护策略**：
+
 1. 页面状态冻结（阻断JavaScript执行）
 2. 原子性截图+验证（单次操作完成）
 3. 截图哈希锁定（验证内容完整性）
@@ -2598,6 +2612,7 @@ pub async fn capture_screenshot_secure(
 #### 4.4.1 密钥生命周期管理
 
 **安全威胁模型**：
+
 - 密钥泄露：攻击者获取签名密钥可伪造截图和数据导出
 - 密钥老化：长期使用同一密钥增加泄露风险
 - 密钥销毁：服务终止时需要安全销毁密钥
@@ -2979,6 +2994,7 @@ let new_key = key_manager.rotate_key().await?;
 #### 5.2.1 安全凭证注入实现
 
 **安全威胁模型**：
+
 - 攻击者可能通过构造包含模板语法的凭证值来尝试提取其他凭证字段（级联替换攻击）
 - 凭证值可能包含特殊字符导致脚本注入
 - 需要防止凭证值在替换过程中被二次解析
@@ -3411,7 +3427,7 @@ pub enum CacheError {
 enclave:
   # TEE 配置
   tee:
-    type: "sgx"  # sgx | tdx | simulation
+    type: "sgx" # sgx | tdx | simulation
     sealing_policy: "mrsigner"
     sealed_storage_path: "/var/lib/credbridge/sealed"
 
@@ -3437,7 +3453,7 @@ enclave:
 
   # LLM 配置 - 使用第三方 API
   llm:
-    default_provider: "mock"  # 开发使用 mock，生产使用 openai/azure/claude
+    default_provider: "mock" # 开发使用 mock，生产使用 openai/azure/claude
 
     providers:
       # OpenAI 官方 API
@@ -3494,11 +3510,11 @@ enclave:
       # Mock (开发和测试)
       mock:
         type: "mock"
-        delay_ms: 50  # 模拟延迟
+        delay_ms: 50 # 模拟延迟
 
     routing:
       operation_review: "openai"
-      content_review: "openai"      # 需要 Vision 能力
+      content_review: "openai" # 需要 Vision 能力
       code_generation: "claude"
       fallback: "openai-mini"
 
@@ -3578,14 +3594,14 @@ LLM_DEFAULT_PROVIDER=mock
 
 ```yaml
 # docker-compose.sandbox.yml
-version: '3.8'
+version: "3.8"
 
 services:
   credbridge-enclave:
     build:
       context: .
       dockerfile: docker/Dockerfile.enclave
-    privileged: true  # SGX 需要
+    privileged: true # SGX 需要
     devices:
       - /dev/sgx_enclave
       - /dev/sgx_provision
@@ -3630,19 +3646,19 @@ AZURE_OPENAI_ENDPOINT=xxx AZURE_OPENAI_API_KEY=xxx cargo test --features integra
 
 ### 8.1 新增 API 端点概览
 
-| 方法 | 路径 | 描述 | 权限要求 |
-|------|------|------|---------|
-| POST | `/api/v1/sandbox/sessions` | 创建沙箱会话 | `sandbox:write` |
-| GET | `/api/v1/sandbox/sessions/:id` | 获取会话状态 | `sandbox:read` |
-| POST | `/api/v1/sandbox/sessions/:id/execute` | 执行操作（AI审核） | `sandbox:execute` |
-| POST | `/api/v1/sandbox/sessions/:id/screenshot` | 截图（Vision审核） | `sandbox:export` |
-| POST | `/api/v1/sandbox/sessions/:id/export` | 导出数据 | `sandbox:export` |
-| POST | `/api/v1/sandbox/sessions/:id/pause` | 暂停会话 | `sandbox:write` |
-| POST | `/api/v1/sandbox/sessions/:id/resume` | 恢复会话 | `sandbox:write` |
-| DELETE | `/api/v1/sandbox/sessions/:id` | 关闭会话 | `sandbox:write` |
-| GET | `/api/v1/sandbox/sessions/:id/logs` | 获取会话审计日志 | `sandbox:read` |
-| GET | `/api/v1/sandbox/providers` | 获取可用LLM提供商 | `sandbox:read` |
-| WS | `/ws/sandbox/:session_id` | WebSocket实时通信 | Token认证 |
+| 方法   | 路径                                      | 描述               | 权限要求          |
+| ------ | ----------------------------------------- | ------------------ | ----------------- |
+| POST   | `/api/v1/sandbox/sessions`                | 创建沙箱会话       | `sandbox:write`   |
+| GET    | `/api/v1/sandbox/sessions/:id`            | 获取会话状态       | `sandbox:read`    |
+| POST   | `/api/v1/sandbox/sessions/:id/execute`    | 执行操作（AI审核） | `sandbox:execute` |
+| POST   | `/api/v1/sandbox/sessions/:id/screenshot` | 截图（Vision审核） | `sandbox:export`  |
+| POST   | `/api/v1/sandbox/sessions/:id/export`     | 导出数据           | `sandbox:export`  |
+| POST   | `/api/v1/sandbox/sessions/:id/pause`      | 暂停会话           | `sandbox:write`   |
+| POST   | `/api/v1/sandbox/sessions/:id/resume`     | 恢复会话           | `sandbox:write`   |
+| DELETE | `/api/v1/sandbox/sessions/:id`            | 关闭会话           | `sandbox:write`   |
+| GET    | `/api/v1/sandbox/sessions/:id/logs`       | 获取会话审计日志   | `sandbox:read`    |
+| GET    | `/api/v1/sandbox/providers`               | 获取可用LLM提供商  | `sandbox:read`    |
+| WS     | `/ws/sandbox/:session_id`                 | WebSocket实时通信  | Token认证         |
 
 ### 8.2 详细接口定义
 
@@ -3655,6 +3671,7 @@ Content-Type: application/json
 ```
 
 **请求体：**
+
 ```json
 {
   "original_intent": "查询Charles Schwab投资组合",
@@ -3672,6 +3689,7 @@ Content-Type: application/json
 ```
 
 **响应（201 Created）：**
+
 ```json
 {
   "session_id": "sandbox_abc123",
@@ -3700,6 +3718,7 @@ Content-Type: application/json
 ```
 
 **请求体：**
+
 ```json
 {
   "type": "navigate_and_fill",
@@ -3716,6 +3735,7 @@ Content-Type: application/json
 ```
 
 **响应（202 Accepted - 异步处理）：**
+
 ```json
 {
   "operation_id": "op_xyz789",
@@ -3726,6 +3746,7 @@ Content-Type: application/json
 ```
 
 **或同步响应（200 OK - 审核通过）：**
+
 ```json
 {
   "operation_id": "op_xyz789",
@@ -3754,6 +3775,7 @@ Content-Type: application/json
 ```
 
 **响应（403 Forbidden - 审核拒绝）：**
+
 ```json
 {
   "error": "operation_rejected",
@@ -3777,6 +3799,7 @@ Content-Type: application/json
 ```
 
 **请求体：**
+
 ```json
 {
   "purpose": "获取投资组合概览",
@@ -3789,6 +3812,7 @@ Content-Type: application/json
 ```
 
 **响应（200 OK）：**
+
 ```json
 {
   "screenshot_id": "ss_abc123",
@@ -3821,6 +3845,7 @@ Content-Type: application/json
 ```
 
 **请求体：**
+
 ```json
 {
   "type": "json",
@@ -3830,21 +3855,25 @@ Content-Type: application/json
     "max_rows": 100,
     "allowed_fields": ["symbol", "quantity", "market_value"],
     "required_fields": ["symbol"],
-    "forbidden_patterns": ["\\d{4}-\\d{4}-\\d{4}-\\d{4}", "\\d{3}-\\d{2}-\\d{4}"]
+    "forbidden_patterns": [
+      "\\d{4}-\\d{4}-\\d{4}-\\d{4}",
+      "\\d{3}-\\d{2}-\\d{4}"
+    ]
   },
   "encrypt_with_user_key": false
 }
 ```
 
 **响应（200 OK）：**
+
 ```json
 {
   "export_id": "exp_def456",
   "status": "approved",
   "data": {
     "records": [
-      {"symbol": "AAPL", "quantity": "100", "market_value": "$17,500"},
-      {"symbol": "GOOGL", "quantity": "50", "market_value": "$7,250"}
+      { "symbol": "AAPL", "quantity": "100", "market_value": "$17,500" },
+      { "symbol": "GOOGL", "quantity": "50", "market_value": "$7,250" }
     ],
     "record_count": 2,
     "schema_hash": "sha256:abc..."
@@ -3867,6 +3896,7 @@ Authorization: Bearer {paseto_token}
 ```
 
 **响应（200 OK）：**
+
 ```json
 {
   "session_id": "sandbox_abc123",
@@ -3913,6 +3943,7 @@ Authorization: Bearer {paseto_token}
 ```
 
 **响应（200 OK）：**
+
 ```json
 {
   "session_id": "sandbox_abc123",
@@ -3947,29 +3978,31 @@ Authorization: Bearer {paseto_token}
 
 **错误码列表：**
 
-| 错误码 | HTTP状态 | 描述 |
-|--------|----------|------|
-| `sandbox_session_not_found` | 404 | 会话不存在或已过期 |
-| `sandbox_session_limit_exceeded` | 429 | 用户会话数超过限制 |
-| `operation_rejected_by_ai` | 403 | AI审核拒绝操作 |
-| `operation_timeout` | 408 | 操作执行超时 |
-| `screenshot_content_rejected` | 403 | 截图内容审核未通过 |
-| `export_data_rejected` | 403 | 导出数据审核未通过 |
-| `credential_not_available` | 400 | 会话凭证不可用 |
-| `domain_not_allowed` | 403 | 目标域名不在白名单 |
-| `llm_service_unavailable` | 503 | LLM服务不可用 |
-| `enclave_attestation_failed` | 500 | Enclave认证失败 |
+| 错误码                           | HTTP状态 | 描述               |
+| -------------------------------- | -------- | ------------------ |
+| `sandbox_session_not_found`      | 404      | 会话不存在或已过期 |
+| `sandbox_session_limit_exceeded` | 429      | 用户会话数超过限制 |
+| `operation_rejected_by_ai`       | 403      | AI审核拒绝操作     |
+| `operation_timeout`              | 408      | 操作执行超时       |
+| `screenshot_content_rejected`    | 403      | 截图内容审核未通过 |
+| `export_data_rejected`           | 403      | 导出数据审核未通过 |
+| `credential_not_available`       | 400      | 会话凭证不可用     |
+| `domain_not_allowed`             | 403      | 目标域名不在白名单 |
+| `llm_service_unavailable`        | 503      | LLM服务不可用      |
+| `enclave_attestation_failed`     | 500      | Enclave认证失败    |
 
 ### 8.4 WebSocket 安全连接
 
 #### 8.4.1 安全威胁模型
 
 **会话固定攻击（Session Fixation）**：
+
 - 攻击者预先建立WebSocket连接
 - 等待合法用户在此连接上进行认证
 - 攻击者劫持已认证的连接
 
 **防护措施**：
+
 1. 带签名的URL认证（连接即认证）
 2. 挑战-响应机制
 3. 一次性令牌（One-time token）
@@ -3979,7 +4012,7 @@ Authorization: Bearer {paseto_token}
 ```typescript
 // 客户端 → 服务器
 interface OperationMessage {
-  type: 'execute';
+  type: "execute";
   operation: OperationRequest;
   requestId: string;
   // 新增：每条消息附带签名
@@ -3990,7 +4023,7 @@ interface OperationMessage {
 
 // 服务器 → 客户端
 interface OperationCompleteMessage {
-  type: 'operation_complete' | 'operation_failed' | 'review_required';
+  type: "operation_complete" | "operation_failed" | "review_required";
   requestId: string;
   result?: OperationResult;
   error?: string;
@@ -3999,7 +4032,7 @@ interface OperationCompleteMessage {
 
 // 服务器推送消息
 interface ServerPushMessage {
-  type: 'session_expiring' | 'resource_warning' | 'ai_review_progress';
+  type: "session_expiring" | "resource_warning" | "ai_review_progress";
   sessionId: string;
   data: any;
 }
@@ -4008,13 +4041,16 @@ interface ServerPushMessage {
 #### 8.4.3 安全连接方式
 
 **方式一：带签名令牌的URL（推荐）**
+
 ```typescript
 // 客户端请求WebSocket连接令牌
 const { wsToken, expiresAt } = await sdk.sandbox.getWebSocketToken(session.id);
 
 // 令牌包含：session_id + user_id + 过期时间 + HMAC签名
 // 使用带令牌的URL连接（一次性使用）
-const ws = new WebSocket(`wss://vault.credbridge.io/ws/sandbox/${session.id}?token=${wsToken}`);
+const ws = new WebSocket(
+  `wss://vault.credbridge.io/ws/sandbox/${session.id}?token=${wsToken}`,
+);
 
 // 服务器验证：
 // 1. 验证HMAC签名
@@ -4024,6 +4060,7 @@ const ws = new WebSocket(`wss://vault.credbridge.io/ws/sandbox/${session.id}?tok
 ```
 
 **方式二：挑战-响应认证**
+
 ```rust
 /// WebSocket握手认证流程
 pub async fn websocket_handshake(
@@ -4050,20 +4087,23 @@ pub async fn websocket_handshake(
 ```
 
 **连接示例（安全方式）：**
+
 ```typescript
 // 步骤1: 获取一次性WebSocket令牌
 const { wsToken, expiresAt } = await sdk.sandbox.getWebSocketToken(session.id);
 
 // 步骤2: 使用令牌建立连接（令牌在连接成功后立即失效）
-const ws = new WebSocket(`wss://vault.credbridge.io/ws/sandbox/${session.id}?token=${wsToken}`);
+const ws = new WebSocket(
+  `wss://vault.credbridge.io/ws/sandbox/${session.id}?token=${wsToken}`,
+);
 
 // 步骤3: 连接成功后不再需要额外认证
 ws.onopen = () => {
-  console.log('WebSocket连接已建立并认证');
+  console.log("WebSocket连接已建立并认证");
 };
 
 ws.onerror = (error) => {
-  console.error('连接失败:', error);
+  console.error("连接失败:", error);
   // 可能原因：令牌过期、令牌已被使用、签名无效
 };
 
@@ -4071,17 +4111,17 @@ ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
 
   switch (msg.type) {
-    case 'operation_complete':
-      console.log('操作完成:', msg.result);
+    case "operation_complete":
+      console.log("操作完成:", msg.result);
       break;
-    case 'operation_failed':
-      console.error('操作失败:', msg.error);
+    case "operation_failed":
+      console.error("操作失败:", msg.error);
       break;
-    case 'review_required':
+    case "review_required":
       // 需要用户确认
       showConfirmationDialog(msg.reviewReason, msg.confirmationToken);
       break;
-    case 'session_expiring':
+    case "session_expiring":
       // 会话即将过期，提示用户
       showSessionExpiringWarning(msg.data.timeRemainingSeconds);
       break;
@@ -4089,15 +4129,17 @@ ws.onmessage = (event) => {
 };
 
 // 发送操作
-ws.send(JSON.stringify({
-  type: 'execute',
-  requestId: generateUUID(),
-  operation: {
-    type: 'click',
-    description: '点击投资组合链接',
-    params: { selector: 'a[href*="portfolio"]' }
-  }
-}));
+ws.send(
+  JSON.stringify({
+    type: "execute",
+    requestId: generateUUID(),
+    operation: {
+      type: "click",
+      description: "点击投资组合链接",
+      params: { selector: 'a[href*="portfolio"]' },
+    },
+  }),
+);
 ```
 
 ### 8.5 SDK TypeScript 类型定义
@@ -4131,8 +4173,8 @@ export class SandboxManager {
    */
   async createSession(options: CreateSessionOptions): Promise<SandboxSession> {
     const response = await this.client.request<CreateSessionResponse>({
-      method: 'POST',
-      path: '/api/v1/sandbox/sessions',
+      method: "POST",
+      path: "/api/v1/sandbox/sessions",
       body: options,
     });
 
@@ -4155,7 +4197,7 @@ export class SandboxManager {
 
     // 从服务器获取
     const response = await this.client.request<GetSessionResponse>({
-      method: 'GET',
+      method: "GET",
       path: `/api/v1/sandbox/sessions/${sessionId}`,
     });
 
@@ -4170,8 +4212,8 @@ export class SandboxManager {
    */
   async listActiveSessions(): Promise<SandboxSessionInfo[]> {
     return this.client.request({
-      method: 'GET',
-      path: '/api/v1/sandbox/sessions',
+      method: "GET",
+      path: "/api/v1/sandbox/sessions",
     });
   }
 
@@ -4189,7 +4231,7 @@ export class SandboxManager {
 
     // 关闭服务器端会话
     await this.client.request({
-      method: 'DELETE',
+      method: "DELETE",
       path: `/api/v1/sandbox/sessions/${sessionId}`,
     });
 
@@ -4201,19 +4243,18 @@ export class SandboxManager {
    * @param sessionId 会话ID
    * @param handlers 消息处理器
    */
-  connectWebSocket(
-    sessionId: string,
-    handlers: WebSocketHandlers
-  ): WebSocket {
+  connectWebSocket(sessionId: string, handlers: WebSocketHandlers): WebSocket {
     const wsUrl = `${this.client.wsBaseUrl}/ws/sandbox/${sessionId}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       // 发送认证消息
-      ws.send(JSON.stringify({
-        type: 'auth',
-        token: this.client.token,
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "auth",
+          token: this.client.token,
+        }),
+      );
       handlers.onOpen?.();
     };
 
@@ -4234,22 +4275,22 @@ export class SandboxManager {
 
   private handleWebSocketMessage(
     msg: WebSocketMessage,
-    handlers: WebSocketHandlers
+    handlers: WebSocketHandlers,
   ): void {
     switch (msg.type) {
-      case 'operation_complete':
+      case "operation_complete":
         handlers.onOperationComplete?.(msg.operationId, msg.result);
         break;
-      case 'operation_failed':
+      case "operation_failed":
         handlers.onOperationFailed?.(msg.operationId, msg.error);
         break;
-      case 'review_required':
+      case "review_required":
         handlers.onReviewRequired?.(msg.operationId, msg.reviewReason);
         break;
-      case 'session_expiring':
+      case "session_expiring":
         handlers.onSessionExpiring?.(msg.data.timeRemainingSeconds);
         break;
-      case 'resource_warning':
+      case "resource_warning":
         handlers.onResourceWarning?.(msg.data);
         break;
     }
@@ -4285,16 +4326,16 @@ export class SandboxSession {
    * @returns 操作结果
    */
   async execute<T = any>(
-    operation: OperationRequest
+    operation: OperationRequest,
   ): Promise<OperationResult<T>> {
     const response = await this.client.request<ExecuteOperationResponse>({
-      method: 'POST',
+      method: "POST",
       path: `/api/v1/sandbox/sessions/${this.id}/execute`,
       body: operation,
     });
 
     // 如果状态是 pending_review，需要轮询或等待 WebSocket
-    if (response.status === 'pending_review') {
+    if (response.status === "pending_review") {
       return this.pollOperationResult(response.operation_id);
     }
 
@@ -4308,7 +4349,7 @@ export class SandboxSession {
    */
   async executeWithProgress<T = any>(
     operation: OperationRequest,
-    onProgress: (progress: OperationProgress) => void
+    onProgress: (progress: OperationProgress) => void,
   ): Promise<OperationResult<T>> {
     // 注册回调等待 WebSocket 通知
     return new Promise((resolve, reject) => {
@@ -4322,7 +4363,7 @@ export class SandboxSession {
 
       // 发送操作到 WebSocket
       this.sendWebSocketMessage({
-        type: 'execute',
+        type: "execute",
         requestId,
         operation,
       });
@@ -4335,7 +4376,7 @@ export class SandboxSession {
    */
   async screenshot(options: ScreenshotOptions): Promise<ScreenshotResult> {
     const response = await this.client.request<ScreenshotResponse>({
-      method: 'POST',
+      method: "POST",
       path: `/api/v1/sandbox/sessions/${this.id}/screenshot`,
       body: options,
     });
@@ -4353,7 +4394,7 @@ export class SandboxSession {
       verifySignature: async (): Promise<boolean> => {
         return this.client.verifyEnclaveSignature(
           response.image_data,
-          response.signature
+          response.signature,
         );
       },
     };
@@ -4365,7 +4406,7 @@ export class SandboxSession {
    */
   async exportData<T = any>(options: ExportOptions): Promise<ExportResult<T>> {
     return this.client.request({
-      method: 'POST',
+      method: "POST",
       path: `/api/v1/sandbox/sessions/${this.id}/export`,
       body: options,
     });
@@ -4376,7 +4417,7 @@ export class SandboxSession {
    */
   async pause(): Promise<void> {
     await this.client.request({
-      method: 'POST',
+      method: "POST",
       path: `/api/v1/sandbox/sessions/${this.id}/pause`,
     });
   }
@@ -4386,7 +4427,7 @@ export class SandboxSession {
    */
   async resume(): Promise<void> {
     await this.client.request({
-      method: 'POST',
+      method: "POST",
       path: `/api/v1/sandbox/sessions/${this.id}/resume`,
     });
   }
@@ -4396,7 +4437,7 @@ export class SandboxSession {
    */
   async getLogs(): Promise<AuditLogEntry[]> {
     return this.client.request({
-      method: 'GET',
+      method: "GET",
       path: `/api/v1/sandbox/sessions/${this.id}/logs`,
     });
   }
@@ -4406,7 +4447,7 @@ export class SandboxSession {
    */
   async refresh(): Promise<void> {
     const response = await this.client.request<SessionResponse>({
-      method: 'GET',
+      method: "GET",
       path: `/api/v1/sandbox/sessions/${this.id}`,
     });
 
@@ -4418,7 +4459,7 @@ export class SandboxSession {
    * 检查会话是否活跃
    */
   isActive(): boolean {
-    return this.status === 'active' || this.status === 'ready';
+    return this.status === "active" || this.status === "ready";
   }
 
   /**
@@ -4439,7 +4480,7 @@ export interface CreateSessionOptions {
   /** 允许的域名白名单 */
   allowedDomains: string[];
   /** 最大风险等级 */
-  maxRiskLevel?: 'low' | 'medium' | 'high';
+  maxRiskLevel?: "low" | "medium" | "high";
   /** 会话超时（分钟） */
   timeoutMinutes?: number;
   /** 指定LLM提供商（可选） */
@@ -4456,7 +4497,12 @@ export interface BrowserOptions {
   timezone?: string;
 }
 
-export type SessionStatus = 'creating' | 'ready' | 'active' | 'paused' | 'closed';
+export type SessionStatus =
+  | "creating"
+  | "ready"
+  | "active"
+  | "paused"
+  | "closed";
 
 export interface SessionContext {
   originalIntent: string;
@@ -4472,37 +4518,37 @@ export interface SessionContext {
  */
 export type OperationType =
   // 基础导航操作
-  | 'navigate'           // 页面导航
-  | 'navigate_and_fill'  // 导航并填充表单
+  | "navigate" // 页面导航
+  | "navigate_and_fill" // 导航并填充表单
   // 页面交互操作
-  | 'click'              // 点击元素
-  | 'fill'               // 填充输入框
-  | 'fill_password'      // 填充密码（敏感操作）
-  | 'select'             // 选择下拉选项
-  | 'scroll'             // 滚动页面
-  | 'wait'               // 等待条件
+  | "click" // 点击元素
+  | "fill" // 填充输入框
+  | "fill_password" // 填充密码（敏感操作）
+  | "select" // 选择下拉选项
+  | "scroll" // 滚动页面
+  | "wait" // 等待条件
   // 内容提取操作
-  | 'extract'            // 提取数据
-  | 'extract_text'       // 提取文本
-  | 'extract_table'      // 提取表格数据
+  | "extract" // 提取数据
+  | "extract_text" // 提取文本
+  | "extract_table" // 提取表格数据
   // 截图操作（敏感）
-  | 'screenshot'         // 页面截图
-  | 'screenshot_element' // 元素截图
+  | "screenshot" // 页面截图
+  | "screenshot_element" // 元素截图
   // 脚本执行（需要额外审核）
-  | 'execute_script'     // 执行自定义脚本
+  | "execute_script" // 执行自定义脚本
   // 数据导出（敏感）
-  | 'export_data';       // 导出数据
+  | "export_data"; // 导出数据
 
 /**
  * 敏感操作类型列表
  * 这些操作需要额外的安全审核和确认
  */
 export const SENSITIVE_OPERATIONS: OperationType[] = [
-  'screenshot',
-  'screenshot_element',
-  'fill_password',
-  'export_data',
-  'execute_script',
+  "screenshot",
+  "screenshot_element",
+  "fill_password",
+  "export_data",
+  "execute_script",
 ];
 
 /**
@@ -4521,7 +4567,7 @@ export interface OperationRequest {
    * - 'script': 直接执行提供的脚本
    * - 'ai': AI 根据描述自动生成并执行操作
    */
-  mode: 'script' | 'ai';
+  mode: "script" | "ai";
 
   /**
    * 操作类型（统一枚举）
@@ -4585,10 +4631,10 @@ export interface OperationRequest {
  */
 export interface ScriptOperation {
   /** 脚本语言 */
-  language: 'javascript' | 'python';
+  language: "javascript" | "python";
 
   /** 执行引擎 */
-  runtime: 'playwright' | 'python_subprocess';
+  runtime: "playwright" | "python_subprocess";
 
   /** 脚本代码 */
   code: string;
@@ -4640,7 +4686,7 @@ export interface TargetElementHint {
 
 export interface ExpectedChange {
   /** 变化类型 */
-  type: 'url_change' | 'element_appear' | 'element_disappear' | 'text_change';
+  type: "url_change" | "element_appear" | "element_disappear" | "text_change";
   /** 变化描述 */
   description: string;
 }
@@ -4650,7 +4696,7 @@ export interface ExpectedChange {
  */
 export interface OperationResult<T = any> {
   operationId: string;
-  status: 'completed' | 'failed' | 'rejected';
+  status: "completed" | "failed" | "rejected";
   success: boolean;
   data?: T;
   pageState?: PageState;
@@ -4676,13 +4722,13 @@ export interface AIExecutionStep {
   stepNumber: number;
   action: string;
   target?: string;
-  result: 'success' | 'failed' | 'retry';
+  result: "success" | "failed" | "retry";
   timestamp: number;
 }
 
 export interface OperationResult<T = any> {
   operationId: string;
-  status: 'completed' | 'failed' | 'rejected';
+  status: "completed" | "failed" | "rejected";
   success: boolean;
   data?: T;
   pageState?: PageState;
@@ -4695,7 +4741,7 @@ export interface OperationResult<T = any> {
 export interface AIReviewResult {
   approved: boolean;
   confidence: number;
-  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  riskLevel: "low" | "medium" | "high" | "critical";
   reasoning: string;
   requiresConfirmation?: boolean;
 }
@@ -4707,12 +4753,12 @@ export interface ScreenshotOptions {
   selector?: string;
   clip?: { x: number; y: number; width: number; height: number };
   quality?: number;
-  type?: 'png' | 'jpeg' | 'webp';
+  type?: "png" | "jpeg" | "webp";
 }
 
 export interface ScreenshotResult {
   screenshotId: string;
-  status: 'approved' | 'rejected';
+  status: "approved" | "rejected";
   format: string;
   dimensions: { width: number; height: number };
   contentReview: ContentReviewResult;
@@ -4726,7 +4772,7 @@ export interface ScreenshotResult {
 }
 
 export interface ExportOptions {
-  type: 'json' | 'csv' | 'excel';
+  type: "json" | "csv" | "excel";
   purpose: string;
   extractionScript: string;
   validationRules?: ValidationRules;
@@ -4735,7 +4781,7 @@ export interface ExportOptions {
 
 export interface ExportResult<T = any> {
   exportId: string;
-  status: 'approved' | 'rejected';
+  status: "approved" | "rejected";
   data: {
     records: T[];
     recordCount: number;
@@ -4760,16 +4806,16 @@ export interface WebSocketHandlers {
 // 新增权限 Scope
 export enum TokenScope {
   // 原有权限
-  CredentialRead = 'credential:read',
-  CredentialWrite = 'credential:write',
-  CredentialDecrypt = 'credential:decrypt',
+  CredentialRead = "credential:read",
+  CredentialWrite = "credential:write",
+  CredentialDecrypt = "credential:decrypt",
 
   // 新增沙箱权限
-  SandboxRead = 'sandbox:read',
-  SandboxWrite = 'sandbox:write',
-  SandboxExecute = 'sandbox:execute',
-  SandboxExport = 'sandbox:export',
-  SandboxAdmin = 'sandbox:admin',
+  SandboxRead = "sandbox:read",
+  SandboxWrite = "sandbox:write",
+  SandboxExecute = "sandbox:execute",
+  SandboxExport = "sandbox:export",
+  SandboxAdmin = "sandbox:admin",
 }
 ```
 
@@ -4798,19 +4844,19 @@ export class CredBridgeClient {
 #### 8.5.3 使用示例
 
 ```typescript
-import { CredBridgeSDK } from '@credbridge/sdk';
+import { ToaniVaultSDK } from "@toani/vault-sdk";
 
-const sdk = new CredBridgeSDK({
-  baseUrl: 'https://vault.credbridge.io',
-  token: 'your-paseto-token',
+const sdk = new ToaniVaultSDK({
+  baseUrl: "https://vault.credbridge.io",
+  token: "your-paseto-token",
 });
 
 // 创建沙箱会话
 const session = await sdk.sandbox.createSession({
-  originalIntent: '查询投资组合',
-  credentialId: 'schwab_cred_001',
-  allowedDomains: ['client.schwab.com'],
-  maxRiskLevel: 'medium',
+  originalIntent: "查询投资组合",
+  credentialId: "schwab_cred_001",
+  allowedDomains: ["client.schwab.com"],
+  maxRiskLevel: "medium",
 });
 
 // ===== 模式 1：AI 模式（自然语言描述）=====
@@ -4818,29 +4864,30 @@ const session = await sdk.sandbox.createSession({
 
 // 示例 1.1：AI 执行登录
 const aiLoginResult = await session.execute({
-  mode: 'ai',
-  description: '在登录页面输入用户名和密码并点击登录',
+  mode: "ai",
+  description: "在登录页面输入用户名和密码并点击登录",
   ai: {
-    intent: '找到用户名输入框，输入凭证中的用户名；找到密码输入框，输入密码；点击登录按钮',
+    intent:
+      "找到用户名输入框，输入凭证中的用户名；找到密码输入框，输入密码；点击登录按钮",
     targetElements: [
-      { purpose: '用户名输入框', selectorHint: 'input[name="username"]' },
-      { purpose: '密码输入框', selectorHint: 'input[name="password"]' },
-      { purpose: '登录按钮', textHint: 'Log In' },
+      { purpose: "用户名输入框", selectorHint: 'input[name="username"]' },
+      { purpose: "密码输入框", selectorHint: 'input[name="password"]' },
+      { purpose: "登录按钮", textHint: "Log In" },
     ],
     expectedChanges: [
-      { type: 'url_change', description: 'URL 变为账户概览页面' },
+      { type: "url_change", description: "URL 变为账户概览页面" },
     ],
   },
 });
 
 // 示例 1.2：AI 导航到投资组合
 const aiNavigateResult = await session.execute({
-  mode: 'ai',
-  description: '找到并点击投资组合菜单',
+  mode: "ai",
+  description: "找到并点击投资组合菜单",
   ai: {
     intent: '在导航栏中找到"Portfolio"或"投资组合"链接并点击',
     expectedChanges: [
-      { type: 'element_appear', description: '页面上显示持仓列表' },
+      { type: "element_appear", description: "页面上显示持仓列表" },
     ],
   },
 });
@@ -4850,12 +4897,12 @@ const aiNavigateResult = await session.execute({
 
 // 示例 2.1：使用 Playwright 脚本精确控制
 const scriptResult = await session.execute({
-  mode: 'script',
-  type: 'execute_script',
-  description: '使用 Playwright 执行精确控制的登录流程',
+  mode: "script",
+  type: "execute_script",
+  description: "使用 Playwright 执行精确控制的登录流程",
   script: {
-    language: 'javascript',
-    runtime: 'playwright',
+    language: "javascript",
+    runtime: "playwright",
     code: `
       // 精确控制登录流程
       await page.goto('https://client.schwab.com/Login');
@@ -4883,12 +4930,12 @@ const scriptResult = await session.execute({
 
 // 示例 2.2：使用 Python 脚本处理数据
 const pythonResult = await session.execute({
-  mode: 'script',
-  type: 'extract',
-  description: '使用 Python 解析页面数据',
+  mode: "script",
+  type: "extract",
+  description: "使用 Python 解析页面数据",
   script: {
-    language: 'python',
-    runtime: 'python_subprocess',
+    language: "python",
+    runtime: "python_subprocess",
     code: `
 import json
 import re
@@ -4916,10 +4963,10 @@ print(json.dumps(positions))
 
 // 第一步：AI 探索找到正确的元素选择器
 const exploreResult = await session.execute({
-  mode: 'ai',
-  description: '分析页面结构，找到投资组合表格的选择器',
+  mode: "ai",
+  description: "分析页面结构，找到投资组合表格的选择器",
   ai: {
-    intent: '找到包含股票持仓信息的表格，返回表格的 CSS 选择器和列名',
+    intent: "找到包含股票持仓信息的表格，返回表格的 CSS 选择器和列名",
   },
 });
 
@@ -4928,12 +4975,12 @@ const tableSelector = exploreResult.data.tableSelector;
 
 // 第二步：使用脚本精确提取数据
 const extractResult = await session.execute({
-  mode: 'script',
-  type: 'extract',
-  description: '使用发现的选择器提取数据',
+  mode: "script",
+  type: "extract",
+  description: "使用发现的选择器提取数据",
   script: {
-    language: 'javascript',
-    runtime: 'playwright',
+    language: "javascript",
+    runtime: "playwright",
     code: `
       const rows = await page.$$('${tableSelector} tbody tr');
       const data = [];
@@ -4954,20 +5001,20 @@ const extractResult = await session.execute({
 
 // 截图（经过AI内容审核）
 const screenshot = await session.screenshot({
-  purpose: '获取投资组合',
-  expectedContent: '显示持仓列表',
+  purpose: "获取投资组合",
+  expectedContent: "显示持仓列表",
   fullPage: true,
 });
 
 // 获取图片并保存
 const imageData = await screenshot.getImageData();
-await fs.writeFile('portfolio.png', imageData);
+await fs.writeFile("portfolio.png", imageData);
 
 // 导出数据
 const exportResult = await session.exportData({
-  type: 'json',
-  purpose: '导出持仓明细',
-  extractionScript: '...',
+  type: "json",
+  purpose: "导出持仓明细",
+  extractionScript: "...",
 });
 
 // 关闭会话
@@ -4976,15 +5023,15 @@ await sdk.sandbox.closeSession(session.id);
 
 #### 8.5.4 两种模式对比
 
-| 特性 | AI 模式 | 脚本模式 |
-|------|---------|----------|
-| **使用门槛** | 低（自然语言） | 高（需编程） |
-| **精确度** | 中等（AI 可能误判） | 高（完全可控） |
-| **灵活性** | 高（自适应页面变化） | 低（需预先知道结构） |
-| **执行效率** | 较低（AI 生成需要时间） | 高（直接执行） |
-| **成本** | 较高（调用 LLM） | 较低（仅执行） |
-| **适用场景** | 探索、原型、简单操作 | 生产、复杂逻辑、性能敏感 |
-| **审核重点** | 意图是否合理 | 代码是否安全 |
+| 特性         | AI 模式                 | 脚本模式                 |
+| ------------ | ----------------------- | ------------------------ |
+| **使用门槛** | 低（自然语言）          | 高（需编程）             |
+| **精确度**   | 中等（AI 可能误判）     | 高（完全可控）           |
+| **灵活性**   | 高（自适应页面变化）    | 低（需预先知道结构）     |
+| **执行效率** | 较低（AI 生成需要时间） | 高（直接执行）           |
+| **成本**     | 较高（调用 LLM）        | 较低（仅执行）           |
+| **适用场景** | 探索、原型、简单操作    | 生产、复杂逻辑、性能敏感 |
+| **审核重点** | 意图是否合理            | 代码是否安全             |
 
 #### 8.5.5 模式选择建议
 
@@ -5054,30 +5101,30 @@ pub fn websocket_routes() -> Router<AppState> {
 
 以使用 OpenAI GPT-4o 为例，假设每月处理以下量级：
 
-| 操作类型 | 次数 | 平均 Token | 单价 | 月成本 |
-|---------|------|-----------|------|--------|
-| 操作审核 | 10,000 | 2,000 input / 500 output | $0.005/$0.015 per 1K | ~$175 |
-| 截图审核 (Vision) | 1,000 | 1,000 text + 1 image | $0.005 + $0.00765 per image | ~$13 |
-| 代码生成 | 500 | 3,000 input / 1,000 output | $0.005/$0.015 per 1K | ~$15 |
-| **总计** | | | | **~$203/月** |
+| 操作类型          | 次数   | 平均 Token                 | 单价                        | 月成本       |
+| ----------------- | ------ | -------------------------- | --------------------------- | ------------ |
+| 操作审核          | 10,000 | 2,000 input / 500 output   | $0.005/$0.015 per 1K        | ~$175        |
+| 截图审核 (Vision) | 1,000  | 1,000 text + 1 image       | $0.005 + $0.00765 per image | ~$13         |
+| 代码生成          | 500    | 3,000 input / 1,000 output | $0.005/$0.015 per 1K        | ~$15         |
+| **总计**          |        |                            |                             | **~$203/月** |
 
 使用 GPT-4o-mini 可降低成本约 95%：
 
-| 模型 | 预估月成本 |
-|------|-----------|
-| GPT-4o | ~$200 |
-| GPT-4o-mini | ~$10 |
-| Mock (测试) | $0 |
+| 模型        | 预估月成本 |
+| ----------- | ---------- |
+| GPT-4o      | ~$200      |
+| GPT-4o-mini | ~$10       |
+| Mock (测试) | $0         |
 
 ## 11. 实施路线图
 
-| 阶段 | 时长 | 目标 |
-|-----|------|-----|
+| 阶段    | 时长   | 目标                                          |
+| ------- | ------ | --------------------------------------------- |
 | Phase 1 | 4-6 周 | 基础架构：会话管理、Playwright 沙箱、Mock LLM |
-| Phase 2 | 3-4 周 | AI 审核：操作审核引擎、规则引擎、内容审核 |
-| Phase 3 | 3-4 周 | 导出通道：截图审核、数据导出、脱敏处理 |
-| Phase 4 | 2-3 周 | LLM 集成：OpenAI/Claude/Azure 集成、成本优化 |
-| Phase 5 | 2-3 周 | 生产就绪：性能优化、安全审计、文档完善 |
+| Phase 2 | 3-4 周 | AI 审核：操作审核引擎、规则引擎、内容审核     |
+| Phase 3 | 3-4 周 | 导出通道：截图审核、数据导出、脱敏处理        |
+| Phase 4 | 2-3 周 | LLM 集成：OpenAI/Claude/Azure 集成、成本优化  |
+| Phase 5 | 2-3 周 | 生产就绪：性能优化、安全审计、文档完善        |
 
 ---
 
@@ -5085,6 +5132,7 @@ pub fn websocket_routes() -> Router<AppState> {
 **最后更新**: 2024-01
 
 **变更说明**:
+
 - v1.4: 明确 execute 支持两种执行模式：AI 模式（自然语言）和脚本模式（Playwright/Python）
 - v1.3: 补充 SDK TypeScript 类型定义和实现细节（SandboxManager、SandboxSession、类型定义）
 - v1.2: 补充详细的 API 接口定义（请求/响应格式、错误码、WebSocket消息）

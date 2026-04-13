@@ -1,0 +1,818 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775971038592,
+  "projectRoot": "/Users/yvan/AIWorkspace/credbridge",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "axum",
+        "version": null,
+        "category": "backend"
+      }
+    ],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "examples",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "$CODEX_HOME": {
+      "path": "$CODEX_HOME",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775971038293,
+      "keyFiles": []
+    },
+    "_bmad": {
+      "path": "_bmad",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1775971038297,
+      "keyFiles": [
+        "config.yaml",
+        "state.json"
+      ]
+    },
+    "_bmad-output": {
+      "path": "_bmad-output",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1775971038298,
+      "keyFiles": [
+        "project-context.md"
+      ]
+    },
+    "automations": {
+      "path": "automations",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1775971038361,
+      "keyFiles": []
+    },
+    "cli": {
+      "path": "cli",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1775971038405,
+      "keyFiles": [
+        "INTERFACE_BASELINE.md",
+        "README.md",
+        "SKILL-INSTALL.md",
+        "SKILL.md",
+        "package.json"
+      ]
+    },
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 1,
+      "lastAccessed": 1775971038429,
+      "keyFiles": []
+    },
+    "docker": {
+      "path": "docker",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1775971038433,
+      "keyFiles": [
+        "Dockerfile",
+        "README.md",
+        "docker-compose.prod.yml",
+        "docker-compose.yml"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1775971038434,
+      "keyFiles": [
+        "README.md"
+      ]
+    },
+    "e2e-test": {
+      "path": "e2e-test",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775971038435,
+      "keyFiles": []
+    },
+    "examples": {
+      "path": "examples",
+      "purpose": "Example code",
+      "fileCount": 1,
+      "lastAccessed": 1775971038435,
+      "keyFiles": []
+    },
+    "frontend": {
+      "path": "frontend",
+      "purpose": null,
+      "fileCount": 27,
+      "lastAccessed": 1775971038435,
+      "keyFiles": [
+        "API_INTEGRATION.md",
+        "Dockerfile",
+        "README.md",
+        "automated-verify.cjs",
+        "components.json"
+      ]
+    },
+    "migrations": {
+      "path": "migrations",
+      "purpose": "Database migrations",
+      "fileCount": 7,
+      "lastAccessed": 1775971038436,
+      "keyFiles": [
+        "20260312120000_add_credential_versioning.sql",
+        "20260317000001_create_sandbox_tables.sql",
+        "20260402161446_create_privy_auth_tables.sql",
+        "20260403093000_add_sandbox_session_identity_columns.sql",
+        "20260408113000_add_identity_mfa_columns.sql"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 5,
+      "lastAccessed": 1775971038436,
+      "keyFiles": [
+        "build-sgx-enclave.sh",
+        "check_sgx_environment.sh",
+        "init-database.sql",
+        "sign-sgx-enclave.sh",
+        "verify-database.sh"
+      ]
+    },
+    "sdk-rust": {
+      "path": "sdk-rust",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1775971038436,
+      "keyFiles": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "EXAMPLES.md",
+        "README.md"
+      ]
+    },
+    "sdk-typescript": {
+      "path": "sdk-typescript",
+      "purpose": null,
+      "fileCount": 13,
+      "lastAccessed": 1775971038495,
+      "keyFiles": [
+        "EXAMPLES.md",
+        "README.md",
+        "debug-sdk2.ts",
+        "package-lock.json",
+        "package.json"
+      ]
+    },
+    "sgx-enclave": {
+      "path": "sgx-enclave",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1775971038543,
+      "keyFiles": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "Enclave.config.xml",
+        "Enclave.edl",
+        "README.md"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 4,
+      "lastAccessed": 1775971038545,
+      "keyFiles": [
+        "config.rs",
+        "lib.rs",
+        "main.rs"
+      ]
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1775971038553,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    },
+    "tasks": {
+      "path": "tasks",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775971038555,
+      "keyFiles": [
+        "user-experience-gap-analysis.md"
+      ]
+    },
+    "test-cases": {
+      "path": "test-cases",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1775971038561,
+      "keyFiles": [
+        "TC-001-sandbox-lifecycle.md",
+        "TC-002-sandbox-isolation.md",
+        "TC-003-llm-service.md",
+        "TC-004-ai-review-engine.md",
+        "TC-005-secure-export.md"
+      ]
+    },
+    "testcases": {
+      "path": "testcases",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775971038564,
+      "keyFiles": [
+        "acceptance-queue.json"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 16,
+      "lastAccessed": 1775971038565,
+      "keyFiles": [
+        "SANDBOX_TEST_PLAN.md",
+        "cleanup_tests.rs",
+        "connector_integration.rs",
+        "connector_performance.rs",
+        "credentials_api_tests.rs"
+      ]
+    },
+    "tmp": {
+      "path": "tmp",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1775971038565,
+      "keyFiles": [
+        "audit-report-18125.md"
+      ]
+    },
+    "vault-service": {
+      "path": "vault-service",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1775971038565,
+      "keyFiles": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "VAULT_SETUP.md"
+      ]
+    },
+    "zentao": {
+      "path": "zentao",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1775971038565,
+      "keyFiles": [
+        "18175.md",
+        "18187.md",
+        "my-bug-todo.before-tiangang-test.20260411-225015.md",
+        "my-bug-todo.md"
+      ]
+    },
+    "cli/dist": {
+      "path": "cli/dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 2,
+      "lastAccessed": 1775971038567,
+      "keyFiles": [
+        "index.d.ts",
+        "index.js"
+      ]
+    },
+    "cli/node_modules": {
+      "path": "cli/node_modules",
+      "purpose": "Dependencies",
+      "fileCount": 1,
+      "lastAccessed": 1775971038567,
+      "keyFiles": []
+    },
+    "cli/src": {
+      "path": "cli/src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1775971038567,
+      "keyFiles": [
+        "index.ts"
+      ]
+    },
+    "cli/tests": {
+      "path": "cli/tests",
+      "purpose": "Test files",
+      "fileCount": 2,
+      "lastAccessed": 1775971038567,
+      "keyFiles": [
+        "common.test.ts",
+        "config.test.ts"
+      ]
+    },
+    "config/test": {
+      "path": "config/test",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1775971038567,
+      "keyFiles": [
+        "config.yaml"
+      ]
+    },
+    "docker/config": {
+      "path": "docker/config",
+      "purpose": "Configuration files",
+      "fileCount": 0,
+      "lastAccessed": 1775971038567,
+      "keyFiles": []
+    },
+    "docker/scripts": {
+      "path": "docker/scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 6,
+      "lastAccessed": 1775971038567,
+      "keyFiles": [
+        "healthcheck.sh",
+        "init-immudb.sh",
+        "init-postgres.sql"
+      ]
+    },
+    "sdk-rust/docs": {
+      "path": "sdk-rust/docs",
+      "purpose": "Documentation",
+      "fileCount": 3,
+      "lastAccessed": 1775971038571,
+      "keyFiles": [
+        "API_REFERENCE.md",
+        "EXAMPLES.md",
+        "QUICKSTART.md"
+      ]
+    },
+    "sdk-rust/examples": {
+      "path": "sdk-rust/examples",
+      "purpose": "Example code",
+      "fileCount": 1,
+      "lastAccessed": 1775971038573,
+      "keyFiles": [
+        "test-sdk.rs"
+      ]
+    },
+    "sdk-rust/src": {
+      "path": "sdk-rust/src",
+      "purpose": "Source code",
+      "fileCount": 8,
+      "lastAccessed": 1775971038573,
+      "keyFiles": [
+        "audit.rs",
+        "client.rs",
+        "credentials.rs"
+      ]
+    },
+    "sdk-typescript/dist": {
+      "path": "sdk-typescript/dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 4,
+      "lastAccessed": 1775971038575,
+      "keyFiles": [
+        "index.d.mts",
+        "index.d.ts",
+        "index.js"
+      ]
+    },
+    "sdk-typescript/docs": {
+      "path": "sdk-typescript/docs",
+      "purpose": "Documentation",
+      "fileCount": 3,
+      "lastAccessed": 1775971038577,
+      "keyFiles": [
+        "API_REFERENCE.md",
+        "EXAMPLES.md",
+        "QUICKSTART.md"
+      ]
+    },
+    "sdk-typescript/node_modules": {
+      "path": "sdk-typescript/node_modules",
+      "purpose": "Dependencies",
+      "fileCount": 1,
+      "lastAccessed": 1775971038582,
+      "keyFiles": []
+    },
+    "sgx-enclave/src": {
+      "path": "sgx-enclave/src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1775971038584,
+      "keyFiles": [
+        "ecalls.rs",
+        "lib.rs"
+      ]
+    },
+    "src/api": {
+      "path": "src/api",
+      "purpose": "API routes",
+      "fileCount": 23,
+      "lastAccessed": 1775971038585,
+      "keyFiles": [
+        "attestation.rs",
+        "audit.rs",
+        "audit_models.rs"
+      ]
+    },
+    "src/bin": {
+      "path": "src/bin",
+      "purpose": "Executable scripts",
+      "fileCount": 6,
+      "lastAccessed": 1775971038585,
+      "keyFiles": [
+        "bug18208_repro.rs",
+        "db-verify.rs",
+        "generate_bug18212_token.rs"
+      ]
+    },
+    "tests/api": {
+      "path": "tests/api",
+      "purpose": "API routes",
+      "fileCount": 4,
+      "lastAccessed": 1775971038589,
+      "keyFiles": [
+        "attestation_tests.rs",
+        "audit_tests.rs",
+        "rate_limit_tests.rs"
+      ]
+    },
+    "vault-service/src": {
+      "path": "vault-service/src",
+      "purpose": "Source code",
+      "fileCount": 4,
+      "lastAccessed": 1775971038590,
+      "keyFiles": [
+        "alerting.rs",
+        "config.rs",
+        "lib.rs"
+      ]
+    },
+    "vault-service/tests": {
+      "path": "vault-service/tests",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1775971038591,
+      "keyFiles": [
+        "metrics_tests.rs"
+      ]
+    },
+    "zentao/scripts": {
+      "path": "zentao/scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 2,
+      "lastAccessed": 1775971038592,
+      "keyFiles": [
+        "sync-zentao-bugs-from-md.sh",
+        "update-my-bug-todo.sh"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "zentao/my-bug-todo.md",
+      "accessCount": 238,
+      "lastAccessed": 1776043309272,
+      "type": "file"
+    },
+    {
+      "path": "src/api/auth.rs",
+      "accessCount": 216,
+      "lastAccessed": 1776042870399,
+      "type": "directory"
+    },
+    {
+      "path": "src/auth/service.rs",
+      "accessCount": 129,
+      "lastAccessed": 1776009193424,
+      "type": "file"
+    },
+    {
+      "path": "src/api/tokens.rs",
+      "accessCount": 78,
+      "lastAccessed": 1776002824389,
+      "type": "file"
+    },
+    {
+      "path": "src/api/response.rs",
+      "accessCount": 49,
+      "lastAccessed": 1776009889159,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/middleware.rs",
+      "accessCount": 41,
+      "lastAccessed": 1775999299495,
+      "type": "directory"
+    },
+    {
+      "path": "src/api",
+      "accessCount": 39,
+      "lastAccessed": 1776042840447,
+      "type": "directory"
+    },
+    {
+      "path": "frontend/src/shared/i18n/messages.ts",
+      "accessCount": 37,
+      "lastAccessed": 1776010401007,
+      "type": "directory"
+    },
+    {
+      "path": "",
+      "accessCount": 31,
+      "lastAccessed": 1776002405104,
+      "type": "directory"
+    },
+    {
+      "path": "src/main.rs",
+      "accessCount": 31,
+      "lastAccessed": 1776037395740,
+      "type": "directory"
+    },
+    {
+      "path": "src/auth/models.rs",
+      "accessCount": 29,
+      "lastAccessed": 1776009819590,
+      "type": "file"
+    },
+    {
+      "path": "tests",
+      "accessCount": 23,
+      "lastAccessed": 1776042882299,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/credentials.rs",
+      "accessCount": 21,
+      "lastAccessed": 1776012707886,
+      "type": "file"
+    },
+    {
+      "path": "src/auth",
+      "accessCount": 18,
+      "lastAccessed": 1776008046591,
+      "type": "directory"
+    },
+    {
+      "path": "frontend/src/features/auth/pages/ProfilePage.tsx",
+      "accessCount": 15,
+      "lastAccessed": 1775907120819,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/features/developer/pages/DeveloperCenter.tsx",
+      "accessCount": 11,
+      "lastAccessed": 1775907211692,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "accessCount": 10,
+      "lastAccessed": 1775919670958,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18160.md",
+      "accessCount": 8,
+      "lastAccessed": 1775887762708,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/services.ts",
+      "accessCount": 8,
+      "lastAccessed": 1775919263211,
+      "type": "file"
+    },
+    {
+      "path": "src/auth/error.rs",
+      "accessCount": 6,
+      "lastAccessed": 1776008058045,
+      "type": "directory"
+    },
+    {
+      "path": "frontend/src",
+      "accessCount": 6,
+      "lastAccessed": 1776010363155,
+      "type": "directory"
+    },
+    {
+      "path": "src/api/mod.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775926212870,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18185.md",
+      "accessCount": 4,
+      "lastAccessed": 1775882094499,
+      "type": "file"
+    },
+    {
+      "path": "cli/src/commands/config.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775882136562,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/hooks.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775915922757,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/features/dashboard/pages/DashboardPage.tsx",
+      "accessCount": 4,
+      "lastAccessed": 1775919212972,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api",
+      "accessCount": 4,
+      "lastAccessed": 1775919250772,
+      "type": "directory"
+    },
+    {
+      "path": "frontend/src/shared/api/dashboardStats.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775919254194,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/types.ts",
+      "accessCount": 4,
+      "lastAccessed": 1775921967766,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18162.md",
+      "accessCount": 3,
+      "lastAccessed": 1775879881772,
+      "type": "file"
+    },
+    {
+      "path": "cli",
+      "accessCount": 3,
+      "lastAccessed": 1775881180863,
+      "type": "directory"
+    },
+    {
+      "path": "cli/src/index.ts",
+      "accessCount": 3,
+      "lastAccessed": 1775882136613,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18161.md",
+      "accessCount": 3,
+      "lastAccessed": 1775883006460,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18159.md",
+      "accessCount": 3,
+      "lastAccessed": 1775888538380,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/i18n/format.ts",
+      "accessCount": 3,
+      "lastAccessed": 1775907127326,
+      "type": "file"
+    },
+    {
+      "path": "cli/src/config/store.ts",
+      "accessCount": 2,
+      "lastAccessed": 1775882231198,
+      "type": "file"
+    },
+    {
+      "path": "src/models/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775888446069,
+      "type": "file"
+    },
+    {
+      "path": "zentao/18156.md",
+      "accessCount": 2,
+      "lastAccessed": 1775890056529,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/api/client.ts",
+      "accessCount": 2,
+      "lastAccessed": 1776010356619,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/i18n/useI18n.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775879429046,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/shared/i18n/context.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775879470534,
+      "type": "file"
+    },
+    {
+      "path": "cli/src/commands/common.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775881199557,
+      "type": "file"
+    },
+    {
+      "path": "cli/src/types/cli.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775881199614,
+      "type": "file"
+    },
+    {
+      "path": "cli/package.json",
+      "accessCount": 1,
+      "lastAccessed": 1775881491318,
+      "type": "file"
+    },
+    {
+      "path": "cli/tests/common.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775881517035,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/components/ui/button.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1775881973924,
+      "type": "file"
+    },
+    {
+      "path": "frontend/src/components/ui/button-variants.ts",
+      "accessCount": 1,
+      "lastAccessed": 1775881979578,
+      "type": "file"
+    },
+    {
+      "path": "migrations/20260409143000_add_service_accounts_and_api_tokens.sql",
+      "accessCount": 1,
+      "lastAccessed": 1775883476596,
+      "type": "file"
+    },
+    {
+      "path": "migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql",
+      "accessCount": 1,
+      "lastAccessed": 1775883476629,
+      "type": "file"
+    },
+    {
+      "path": "zentao/archived/18161.md",
+      "accessCount": 1,
+      "lastAccessed": 1775887490176,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

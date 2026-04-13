@@ -1,6 +1,6 @@
-//! CredBridge Rust SDK - Axum Web 框架集成示例
+//! Toani Vault Rust SDK - Axum Web 框架集成示例
 //!
-//! 展示如何在 Axum 应用中集成 CredBridge SDK
+//! 展示如何在 Axum 应用中集成 Toani Vault SDK
 
 use axum::{
     extract::{Path, State},
@@ -9,15 +9,15 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::{CredBridgeError, CredBridgeErrorCode, CredentialType, TokenScope};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::{CredBridgeError, CredBridgeErrorCode, CredentialType, TokenScope};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // 应用状态
 #[derive(Clone)]
 struct AppState {
-    sdk: Arc<CredBridgeSDK>,
+    sdk: Arc<ToaniVaultSDK>,
 }
 
 // 创建凭证请求
@@ -224,7 +224,7 @@ fn parse_credential_type(s: &str) -> Result<CredentialType, String> {
 }
 
 // 创建路由器
-pub fn create_router(sdk: CredBridgeSDK) -> Router {
+pub fn create_router(sdk: ToaniVaultSDK) -> Router {
     let state = AppState {
         sdk: Arc::new(sdk),
     };
@@ -245,14 +245,14 @@ pub fn create_router(sdk: CredBridgeSDK) -> Router {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let base_url = std::env::var("CREDBRIDGE_BASE_URL")
-        .unwrap_or_else(|_| "https://api.credbridge.io".to_string());
+        .unwrap_or_else(|_| "https://api.toani.io".to_string());
     let token = std::env::var("CREDBRIDGE_TOKEN")
         .expect("CREDBRIDGE_TOKEN must be set");
 
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
     let app = create_router(sdk);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
@@ -266,7 +266,7 @@ async fn main() -> anyhow::Result<()> {
 // 示例运行函数
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Axum 集成示例 ===\n");
-    println!("此示例展示了如何在 Axum 应用中使用 CredBridge SDK。");
+    println!("此示例展示了如何在 Axum 应用中使用 Toani Vault SDK。");
     println!("请查看源代码了解完整实现。\n");
     println!("API Endpoints:");
     println!("  GET  /api/me                    - 获取当前用户信息");

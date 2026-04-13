@@ -61,9 +61,30 @@ pub enum TokenScope {
     /// 凭证写入权限
     #[serde(rename = "credential:write")]
     CredentialWrite,
+    /// 凭证删除权限
+    #[serde(rename = "credential:delete")]
+    CredentialDelete,
+    /// Token 读取权限
+    #[serde(rename = "tokens:read")]
+    TokensRead,
+    /// Token 写入权限
+    #[serde(rename = "tokens:write")]
+    TokensWrite,
+    /// Token 撤销权限
+    #[serde(rename = "tokens:revoke")]
+    TokensRevoke,
     /// 审计日志读取权限
     #[serde(rename = "audit:read")]
     AuditRead,
+    /// 沙箱读取权限
+    #[serde(rename = "sandbox:read")]
+    SandboxRead,
+    /// 沙箱写入权限
+    #[serde(rename = "sandbox:write")]
+    SandboxWrite,
+    /// 沙箱执行权限
+    #[serde(rename = "sandbox:execute")]
+    SandboxExecute,
     /// 管理员权限
     #[serde(rename = "admin")]
     Admin,
@@ -75,7 +96,14 @@ impl std::fmt::Display for TokenScope {
             TokenScope::CredentialRead => "credential:read",
             TokenScope::CredentialDecrypt => "credential:decrypt",
             TokenScope::CredentialWrite => "credential:write",
+            TokenScope::CredentialDelete => "credential:delete",
+            TokenScope::TokensRead => "tokens:read",
+            TokenScope::TokensWrite => "tokens:write",
+            TokenScope::TokensRevoke => "tokens:revoke",
             TokenScope::AuditRead => "audit:read",
+            TokenScope::SandboxRead => "sandbox:read",
+            TokenScope::SandboxWrite => "sandbox:write",
+            TokenScope::SandboxExecute => "sandbox:execute",
             TokenScope::Admin => "admin",
         };
         write!(f, "{}", s)
@@ -335,6 +363,97 @@ pub struct DeleteCredentialResponse {
     pub deleted: bool,
 }
 
+/// 更新凭证请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCredentialRequest {
+    /// 新的明文凭证内容
+    #[serde(rename = "plaintext_data")]
+    pub plaintext_data: serde_json::Value,
+    /// 变更原因
+    #[serde(rename = "change_reason", skip_serializing_if = "Option::is_none")]
+    pub change_reason: Option<String>,
+    /// 期望的版本号
+    #[serde(rename = "expected_version", skip_serializing_if = "Option::is_none")]
+    pub expected_version: Option<u32>,
+}
+
+/// 更新凭证响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCredentialResponse {
+    /// 凭证 ID
+    #[serde(rename = "credential_id")]
+    pub credential_id: String,
+    /// 新版本号
+    pub version: u32,
+    /// 服务 ID
+    #[serde(rename = "service_id")]
+    pub service_id: String,
+    /// 凭证类型
+    #[serde(rename = "credential_type")]
+    pub credential_type: String,
+    /// 更新时间
+    #[serde(rename = "updated_at")]
+    pub updated_at: String,
+    /// 上一版本号
+    #[serde(rename = "previous_version")]
+    pub previous_version: u32,
+}
+
+/// 版本摘要
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionSummary {
+    pub version: u32,
+    pub created_at: DateTime<Utc>,
+    pub changed_by: Option<String>,
+    pub change_reason: Option<String>,
+}
+
+/// 凭证版本历史
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionHistory {
+    pub credential_id: String,
+    pub current_version: u32,
+    pub versions: Vec<VersionSummary>,
+    pub total: usize,
+}
+
+/// 版本元数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionMetadata {
+    pub service_id: String,
+    pub credential_type: String,
+    pub algorithm: String,
+}
+
+/// 版本详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionDetail {
+    pub credential_id: String,
+    pub version: u32,
+    pub created_at: DateTime<Utc>,
+    pub changed_by: Option<String>,
+    pub change_reason: Option<String>,
+    pub metadata: VersionMetadata,
+}
+
+/// 回滚请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RollbackCredentialRequest {
+    pub target_version: u32,
+    pub reason: String,
+}
+
+/// 回滚响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RollbackCredentialResponse {
+    pub credential_id: String,
+    pub previous_version: u32,
+    pub current_version: u32,
+    pub rollback_to_version: u32,
+    pub rollback_at: String,
+    pub reason: String,
+}
+
 /// 加密载荷结构
 #[derive(Debug, Clone, Deserialize)]
 pub struct EncryptedPayload {
@@ -420,6 +539,171 @@ pub struct TokenInfo {
     pub scopes: Vec<TokenScope>,
     /// 颁发时间（Unix 时间戳）
     pub issued_at: i64,
+}
+
+/// 创建 token 请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTokenRequest {
+    pub user_id: Option<String>,
+    pub scopes: Vec<String>,
+    pub expires_in: Option<u64>,
+    pub credential_ids: Option<Vec<String>>,
+}
+
+/// 创建 token 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTokenResponse {
+    pub access_token: String,
+    pub token_id: String,
+    pub token_type: String,
+    pub expires_in: u64,
+    pub scope: String,
+    pub issued_at: u64,
+    pub expires_at: u64,
+}
+
+/// 创建 access token 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAccessTokenResponse {
+    pub access_token: String,
+    pub token_id: String,
+    pub token_type: String,
+    pub expires_at: u64,
+    pub expires_in: u64,
+    pub granted_scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAutomationTokenRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub scopes: Vec<String>,
+    pub ttl_seconds: Option<u64>,
+    pub created_via: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAutomationTokenResponse {
+    pub token_value: String,
+    pub token_preview: String,
+    #[serde(flatten)]
+    pub metadata: ApiTokenMetadata,
+}
+
+/// Token 列表项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenListItem {
+    pub token_id: String,
+    pub user_id: String,
+    pub tenant_id: String,
+    pub scopes: Vec<String>,
+    pub issued_at: u64,
+    pub expires_at: u64,
+    pub revoked: bool,
+}
+
+/// Token 列表响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListTokensResponse {
+    pub tokens: Vec<ApiTokenMetadata>,
+}
+
+/// API token 元数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiTokenMetadata {
+    pub token_id: String,
+    pub token_kind: String,
+    pub token_name: Option<String>,
+    pub token_prefix: Option<String>,
+    pub token_type: String,
+    pub subject_type: String,
+    pub subject_id: String,
+    pub tenant_id: String,
+    pub issued_from: String,
+    pub session_id: Option<String>,
+    pub membership_id: Option<String>,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub granted_scopes: Vec<String>,
+    pub issued_membership_role_snapshot: Option<String>,
+    pub permission_source: Option<String>,
+    pub created_via: Option<String>,
+    pub revoked_reason: Option<String>,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+}
+
+/// Service Account 信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceAccountInfo {
+    pub id: String,
+    pub tenant_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub role: String,
+    pub scope_ceiling: Vec<String>,
+    pub status: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+}
+
+/// 创建 Service Account 请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccountRequest {
+    pub name: String,
+    pub description: Option<String>,
+    pub scope_ceiling: Vec<String>,
+}
+
+/// 更新 Service Account 请求
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateServiceAccountRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub scope_ceiling: Option<Vec<String>>,
+}
+
+/// 创建 Service Account token 请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccountTokenRequest {
+    pub scopes: Vec<String>,
+    pub ttl_seconds: Option<u64>,
+    pub display_name: Option<String>,
+}
+
+/// 创建 Service Account token 响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateServiceAccountTokenResponse {
+    pub access_token: String,
+    pub token_id: String,
+    pub token_type: String,
+    pub subject_type: String,
+    pub issued_from: String,
+    pub display_name: Option<String>,
+    pub expires_in: u64,
+    pub scope: String,
+    pub granted_scopes: Vec<String>,
+    pub issued_at: u64,
+    pub expires_at: u64,
+    pub revoked_at: Option<String>,
+}
+
+/// Token 撤销响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokeTokenResponse {
+    pub revoked: bool,
+    pub token_id: String,
+}
+
+/// Token 统计响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenStatsResponse {
+    pub active_tokens: u64,
 }
 
 /// Token 刷新结果
@@ -546,7 +830,10 @@ impl CredBridgeError {
 
     /// 是否为网络错误
     pub fn is_network_error(&self) -> bool {
-        matches!(self.code, CredBridgeErrorCode::NetworkError | CredBridgeErrorCode::Timeout)
+        matches!(
+            self.code,
+            CredBridgeErrorCode::NetworkError | CredBridgeErrorCode::Timeout
+        )
     }
 
     /// 是否为认证错误
@@ -719,4 +1006,225 @@ pub struct AuditLogFilter {
     pub outcome: Option<Outcome>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+/// 审计日志列表项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogListItem {
+    pub id: String,
+    pub timestamp: u64,
+    pub user_id_hash: String,
+    pub session_id: String,
+    pub service: String,
+    pub action: String,
+    pub risk_tier: RiskTier,
+    pub outcome: Outcome,
+    pub log_index: u64,
+}
+
+/// 审计日志列表数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogListData {
+    pub items: Vec<AuditLogListItem>,
+    pub total: u64,
+    pub page: usize,
+    pub page_size: usize,
+    pub total_pages: usize,
+}
+
+/// 审计日志查询响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogsResponse {
+    pub success: bool,
+    pub data: AuditLogListData,
+    pub error: Option<String>,
+}
+
+/// 审计导出格式
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditExportFormat {
+    Json,
+    Csv,
+}
+
+/// 审计导出请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditExportRequest {
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub format: AuditExportFormat,
+    pub user_id_hash: Option<String>,
+    pub action: Option<String>,
+}
+
+/// 审计导出数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditExportData {
+    pub export_id: String,
+    pub format: AuditExportFormat,
+    pub content: String,
+    pub integrity_hash: String,
+    pub count: u64,
+    pub generated_at: u64,
+}
+
+/// 审计导出响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditExportResponse {
+    pub success: bool,
+    pub data: Option<AuditExportData>,
+    pub error: Option<String>,
+}
+
+/// 审计校验请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditVerifyRequest {
+    pub id: Option<String>,
+    pub log_index: Option<u64>,
+}
+
+/// 审计校验详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditVerifyDetail {
+    pub step: String,
+    pub passed: bool,
+    pub message: Option<String>,
+}
+
+/// 审计校验数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditVerifyData {
+    pub id: String,
+    pub log_index: u64,
+    pub verified: bool,
+    pub content_hash_match: bool,
+    pub signature_valid: bool,
+    pub merkle_proof_valid: bool,
+    pub details: Vec<AuditVerifyDetail>,
+    pub verified_at: u64,
+}
+
+/// 审计校验响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditVerifyResponse {
+    pub success: bool,
+    pub data: Option<AuditVerifyData>,
+    pub error: Option<String>,
+}
+
+/// 沙箱创建会话请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSandboxSessionRequest {
+    pub credential_id: String,
+    pub original_intent: String,
+    pub metadata: Option<HashMap<String, String>>,
+}
+
+/// 沙箱创建会话响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSandboxSessionResponse {
+    pub session_id: String,
+    pub sandbox_id: String,
+    pub status: String,
+    pub created_at: String,
+    pub expires_at: String,
+}
+
+/// 沙箱会话摘要
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxSessionSummary {
+    pub session_id: String,
+    pub sandbox_id: String,
+    pub credential_id: String,
+    pub status: String,
+    pub original_intent: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub is_expired: bool,
+}
+
+/// 沙箱会话列表响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxSessionsResponse {
+    pub sessions: Vec<SandboxSessionSummary>,
+    pub total: usize,
+}
+
+/// 沙箱会话详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxSessionDetail {
+    pub session_id: String,
+    pub sandbox_id: String,
+    pub tenant_id: String,
+    pub user_id: String,
+    pub credential_id: String,
+    pub original_intent: String,
+    pub status: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub last_activity_at: String,
+    pub is_expired: bool,
+}
+
+/// 沙箱执行请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteSandboxOperationRequest {
+    pub operation_type: String,
+    pub description: String,
+    pub parameters: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxCredentialReference {
+    #[serde(rename = "$credential")]
+    pub field: String,
+}
+
+/// 沙箱执行响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteSandboxOperationResponse {
+    pub operation_id: String,
+    pub success: bool,
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub execution_time_ms: u64,
+}
+
+/// 沙箱操作详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxOperationDetail {
+    pub operation_id: String,
+    pub session_id: String,
+    pub operation_type: String,
+    pub status: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub execution_time_ms: Option<u64>,
+}
+
+/// 沙箱会话操作响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxSessionActionResponse {
+    pub session_id: String,
+    pub success: bool,
+    pub status: String,
+    pub message: String,
+}
+
+/// 沙箱健康/统计
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxStatsResponse {
+    pub pool_status: String,
+    pub active_sessions: usize,
+    pub warm_instances: usize,
+    pub healthy: bool,
+    pub error: Option<String>,
+}
+
+/// 通用 API 成功包装
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiSuccess<T> {
+    pub success: bool,
+    pub data: T,
 }

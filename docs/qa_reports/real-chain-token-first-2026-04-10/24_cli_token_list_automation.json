@@ -1,0 +1,57 @@
+[
+  {
+    "tokenId": "019d7678-69e8-7071-929b-40cd3626e232",
+    "tokenKind": "user_automation",
+    "tokenName": "codex-plan3-automation",
+    "tokenPrefix": "v4.local.2GfNUL7kU",
+    "tokenPreview": "v4.local.2GfNUL7kU...",
+    "tokenType": "user_access_token",
+    "subjectType": "user",
+    "subjectId": "019d7199-7017-7791-8e7b-c9f8cf883284",
+    "tenantId": "019d71b3-a66b-73e1-92f4-1bb616db9f8f",
+    "issuedFrom": "automation",
+    "sessionId": "019d7675-3554-7b62-9cb6-09f8700b0fb5",
+    "membershipId": "019d71b3-a698-7051-9e28-b5ef3f5f07b4",
+    "description": null,
+    "grantedScopes": [
+      "tokens:read",
+      "tokens:write",
+      "credential:read",
+      "audit:read"
+    ],
+    "issuedMembershipRoleSnapshot": "owner",
+    "permissionSource": "membership_subset",
+    "createdVia": "sdk",
+    "revokedReason": null,
+    "expiresAt": "2026-04-10T09:18:16+00:00",
+    "createdAt": "2026-04-10T08:18:16.170361+00:00",
+    "lastUsedAt": "2026-04-10T08:22:02.476175+00:00"
+  },
+  {
+    "tokenId": "019d7678-3867-7f60-b0e1-424937bbd47f",
+    "tokenKind": "user_automation",
+    "tokenName": "codex-plan3-automation",
+    "tokenPrefix": "v4.local.dekURLu6y",
+    "tokenPreview": "v4.local.dekURLu6y...",
+    "tokenType": "user_access_token",
+    "subjectType": "user",
+    "subjectId": "019d7199-7017-7791-8e7b-c9f8cf883284",
+    "tenantId": "019d71b3-a66b-73e1-92f4-1bb616db9f8f",
+    "issuedFrom": "automation",
+    "sessionId": "019d7675-3554-7b62-9cb6-09f8700b0fb5",
+    "membershipId": "019d71b3-a698-7051-9e28-b5ef3f5f07b4",
+    "description": null,
+    "grantedScopes": [
+      "tokens:read",
+      "tokens:write",
+      "credential:read",
+      "audit:read"
+    ],
+    "issuedMembershipRoleSnapshot": "owner",
+    "permissionSource": "membership_subset",
+    "createdVia": "sdk",
+    "revokedReason": null,
+    "expiresAt": "2026-04-10T09:18:03+00:00",
+    "createdAt": "2026-04-10T08:18:03.495765+00:00"
+  }
+]

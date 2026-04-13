@@ -1,0 +1,21 @@
+{
+  "success": true,
+  "data": {
+    "id": "019d719b-2fc4-7593-9dd2-72c5f8adb090",
+    "name": "rt-chain-tenant-1775727488",
+    "status": "active",
+    "tier": "free",
+    "created_at": "2026-04-09T09:38:08.964521+00:00",
+    "updated_at": "2026-04-09T09:38:09.007181+00:00"
+  },
+  "initialization": [
+    { "step": "create_config", "success": true },
+    { "step": "init_schema", "success": true },
+    { "step": "generate_keys", "success": true },
+    { "step": "create_roles", "success": true }
+  ],
+  "meta": {
+    "request_id": "019d719b-2ffc-7c02-8e70-d770c03df878",
+    "timestamp": "2026-04-09T09:38:09.020293+00:00"
+  }
+}

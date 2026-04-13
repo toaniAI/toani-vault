@@ -1,3 +1,6 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
 //! TC-LL-004: Mock 模式功能验收测试
 //!
 //! 验证 Mock 模式的以下指标：

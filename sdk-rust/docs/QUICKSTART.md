@@ -1,4 +1,6 @@
-# CredBridge Rust SDK - 快速入门
+# Toani Vault Rust SDK - 快速入门
+
+> **迁移注意**: 此 crate 已从 `credbridge-sdk` 重命名为 `toani-vault-sdk`。`CredBridgeSDK` 已被弃用，请使用 `ToaniVaultSDK`。
 
 ## 安装
 
@@ -6,24 +8,24 @@
 
 ```toml
 [dependencies]
-credbridge-sdk = "0.1.0"
+toani-vault-sdk = "0.1.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
 ## 初始化 SDK
 
 ```rust
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 创建配置
-    let config = CredBridgeConfig::new("https://api.credbridge.io")
+    let config = CredBridgeConfig::new("https://api.toani.io")
         .with_token("your-api-token")  // PASETO v4.local Token
         .with_timeout_ms(30000);         // 请求超时时间（毫秒）
 
     // 创建 SDK 实例
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     Ok(())
 }
@@ -34,12 +36,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 创建凭证
 
 ```rust
-use credbridge_sdk::types::{CredentialType, RequestOptions};
+use toani_vault_sdk::types::{CredentialType, RequestOptions};
 use serde_json::json;
 use std::collections::HashMap;
 
 // 创建用户名密码凭证
-async fn create_credential(sdk: &CredBridgeSDK) -> Result<String, Box<dyn std::error::Error>> {
+async fn create_credential(sdk: &ToaniVaultSDK) -> Result<String, Box<dyn std::error::Error>> {
     let mut plaintext_data = HashMap::new();
     plaintext_data.insert("username".to_string(), json!("user@example.com"));
     plaintext_data.insert("password".to_string(), json!("secret_password"));
@@ -62,7 +64,7 @@ async fn create_credential(sdk: &CredBridgeSDK) -> Result<String, Box<dyn std::e
 ### 快捷创建方法
 
 ```rust
-use credbridge_sdk::types::CredentialType;
+use toani_vault_sdk::types::CredentialType;
 
 // 创建用户名密码凭证
 let cred1 = sdk.credentials()
@@ -100,7 +102,7 @@ let cred3 = sdk.credentials()
 ### 获取凭证列表
 
 ```rust
-use credbridge_sdk::types::CredentialFilter;
+use toani_vault_sdk::types::CredentialFilter;
 
 // 获取所有凭证
 let (credentials, total) = sdk.credentials().list(None, None).await?;
@@ -153,7 +155,7 @@ if result.deleted {
 ## Token 管理
 
 ```rust
-use credbridge_sdk::types::TokenScope;
+use toani_vault_sdk::types::TokenScope;
 
 // 获取当前 Token 信息
 let token_info = sdk.token().get_token_info();
@@ -184,7 +186,7 @@ let is_valid = sdk.token().verify(None).await?;
 ## 错误处理
 
 ```rust
-use credbridge_sdk::types::{CredBridgeError, CredBridgeErrorCode};
+use toani_vault_sdk::types::{CredBridgeError, CredBridgeErrorCode};
 
 match sdk.credentials().get("invalid-id", None).await {
     Ok(credential) => {
@@ -212,7 +214,7 @@ match sdk.credentials().get("invalid-id", None).await {
 ## 请求选项
 
 ```rust
-use credbridge_sdk::types::RequestOptions;
+use toani_vault_sdk::types::RequestOptions;
 
 // 自定义请求选项
 let options = RequestOptions::new()
@@ -229,18 +231,18 @@ let credential = sdk.credentials()
 ## 完整示例
 
 ```rust
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::{CredentialType, RequestOptions};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::{CredentialType, RequestOptions};
 use serde_json::json;
 use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 初始化 SDK
-    let config = CredBridgeConfig::new("https://api.credbridge.io")
+    let config = CredBridgeConfig::new("https://api.toani.io")
         .with_token("your-api-token");
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     // 创建凭证
     let mut data = HashMap::new();

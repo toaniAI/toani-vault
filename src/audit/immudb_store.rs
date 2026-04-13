@@ -5,8 +5,11 @@
 
 use super::events::{AuditEntry, Outcome};
 use super::immudb_client::{ImmuDbConfig, ImmuDbState, ImmuDbStorage, QueryOptions};
-use super::recorder::{RecorderError, SignedAuditEntry};
+use super::recorder::{AuditRecorder, RecorderError, SignedAuditEntry, SigningKeyPair};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -14,11 +17,12 @@ use tokio::sync::Mutex;
 ///
 /// 将 immudb 持久化存储与内存缓存结合，提供高性能的审计日志存储
 /// 实现了完整的审计记录器 trait，可直接替换 MemoryAuditStorage
-#[derive(Debug)]
 #[allow(dead_code)]
 pub struct ImmuDbAuditStore {
     /// immudb 存储后端
     storage: Arc<Mutex<ImmuDbStorage>>,
+    /// 审计记录器（负责签名并维持链状态）
+    recorder: Arc<Mutex<AuditRecorder>>,
     /// 内存缓存（最近条目）
     cache: Arc<Mutex<VecDeque<SignedAuditEntry>>>,
     /// 最大缓存条目数
@@ -27,6 +31,22 @@ pub struct ImmuDbAuditStore {
     signer_fingerprint: String,
     /// 公钥（用于验证签名）
     public_key: Vec<u8>,
+}
+
+impl std::fmt::Debug for ImmuDbAuditStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImmuDbAuditStore")
+            .field("storage", &"<Arc<Mutex<ImmuDbStorage>>>")
+            .field("recorder", &"<Arc<Mutex<AuditRecorder>>>")
+            .field("max_cache_size", &self.max_cache_size)
+            .field("signer_fingerprint", &self.signer_fingerprint)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedSigningKey {
+    private_key: Vec<u8>,
 }
 
 /// 审计存储 trait
@@ -146,14 +166,40 @@ impl ImmuDbAuditStore {
     /// ```
     pub async fn new(
         config: ImmuDbStoreConfig,
-        signer_fingerprint: String,
-        public_key: Vec<u8>,
+        _signer_fingerprint: String,
+        _public_key: Vec<u8>,
     ) -> Result<Self, RecorderError> {
-        let storage = ImmuDbStorage::new(config.immudb).await?;
+        let immudb_config = config.immudb.clone();
+        let storage = ImmuDbStorage::new(immudb_config).await?;
+        let existing_entries = storage
+            .query(&QueryOptions {
+                limit: Some(100_000),
+                ..Default::default()
+            })
+            .await?;
+        let existing_entries: Vec<_> = existing_entries
+            .into_iter()
+            .map(|entry| entry.signed_entry)
+            .collect();
+        let signing_key = Self::load_or_create_signing_key(&config)?;
+        let recorder = AuditRecorder::with_key(config.max_cache_size, signing_key);
+        recorder.restore_entries(&existing_entries)?;
+        let signer_fingerprint = recorder.fingerprint().to_string();
+        let public_key = recorder.public_key().to_vec();
+        let cache_entries = existing_entries
+            .iter()
+            .rev()
+            .take(config.max_cache_size)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
 
         Ok(Self {
             storage: Arc::new(Mutex::new(storage)),
-            cache: Arc::new(Mutex::new(VecDeque::with_capacity(config.max_cache_size))),
+            recorder: Arc::new(Mutex::new(recorder)),
+            cache: Arc::new(Mutex::new(cache_entries)),
             max_cache_size: config.max_cache_size,
             signer_fingerprint,
             public_key,
@@ -170,6 +216,77 @@ impl ImmuDbAuditStore {
             ..Default::default()
         };
         Self::new(config, signer_fingerprint, public_key).await
+    }
+
+    fn signing_key_path(config: &ImmuDbStoreConfig) -> PathBuf {
+        if let Ok(path) = std::env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
+            && !path.is_empty()
+        {
+            return PathBuf::from(path);
+        }
+
+        let safe_database = config.immudb.database.replace('/', "_");
+        let safe_collection = config.immudb.collection.replace('/', "_");
+        std::env::temp_dir()
+            .join("credbridge-immudb-sim")
+            .join(format!(
+                "{safe_database}__{safe_collection}.signing-key.json"
+            ))
+    }
+
+    fn load_or_create_signing_key(
+        config: &ImmuDbStoreConfig,
+    ) -> Result<SigningKeyPair, RecorderError> {
+        let path = Self::signing_key_path(config);
+
+        if path.exists() {
+            let bytes = fs::read(&path).map_err(|error| {
+                RecorderError::StorageError(format!(
+                    "读取审计签名密钥失败 {}: {error}",
+                    path.display()
+                ))
+            })?;
+            let persisted: PersistedSigningKey =
+                serde_json::from_slice(&bytes).map_err(|error| {
+                    RecorderError::SerializationError(format!(
+                        "解析审计签名密钥失败 {}: {error}",
+                        path.display()
+                    ))
+                })?;
+            return SigningKeyPair::from_pkcs8(persisted.private_key);
+        }
+
+        let signing_key = SigningKeyPair::generate()?;
+        let persisted = PersistedSigningKey {
+            private_key: signing_key.private_key().to_vec(),
+        };
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                RecorderError::StorageError(format!(
+                    "创建审计签名密钥目录失败 {}: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+
+        let bytes = serde_json::to_vec_pretty(&persisted).map_err(|error| {
+            RecorderError::SerializationError(format!("序列化审计签名密钥失败: {error}"))
+        })?;
+
+        fs::write(&path, bytes).map_err(|error| {
+            RecorderError::StorageError(format!("写入审计签名密钥失败 {}: {error}", path.display()))
+        })?;
+
+        Ok(signing_key)
+    }
+
+    pub fn signer_fingerprint(&self) -> &str {
+        &self.signer_fingerprint
+    }
+
+    pub fn public_key(&self) -> &[u8] {
+        &self.public_key
     }
 
     /// 存储签名后的审计条目
@@ -456,6 +573,81 @@ impl ImmuDbAuditStore {
     }
 }
 
+#[async_trait::async_trait]
+impl AuditStorage for ImmuDbAuditStore {
+    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, RecorderError> {
+        let signed_entry = {
+            let recorder = self.recorder.lock().await;
+            recorder.record(entry)?
+        };
+
+        self.store(&signed_entry).await?;
+        Ok(signed_entry)
+    }
+
+    async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, RecorderError> {
+        ImmuDbAuditStore::get_by_index(self, index).await
+    }
+
+    async fn get_recent(&self, n: usize) -> Result<Vec<SignedAuditEntry>, RecorderError> {
+        ImmuDbAuditStore::get_recent(self, n).await
+    }
+
+    async fn query_by_user(
+        &self,
+        user_id_hash: &str,
+        limit: usize,
+    ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
+        ImmuDbAuditStore::query_by_user(self, user_id_hash, limit).await
+    }
+
+    async fn query_by_action(
+        &self,
+        action: super::events::AuditAction,
+        limit: usize,
+    ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
+        let immu_entries = {
+            let storage = self.storage.lock().await;
+            storage
+                .query(&QueryOptions {
+                    action: Some(action),
+                    limit: Some(limit),
+                    ..Default::default()
+                })
+                .await?
+        };
+
+        Ok(immu_entries
+            .into_iter()
+            .map(|entry| entry.signed_entry)
+            .collect())
+    }
+
+    async fn query_by_outcome(
+        &self,
+        outcome: Outcome,
+        limit: usize,
+    ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
+        ImmuDbAuditStore::query_by_outcome(self, outcome, limit).await
+    }
+
+    async fn verify(&self) -> Result<bool, RecorderError> {
+        ImmuDbAuditStore::verify(self).await
+    }
+
+    async fn count(&self) -> Result<u64, RecorderError> {
+        ImmuDbAuditStore::count(self).await
+    }
+
+    async fn generate_report(
+        &self,
+        start_time: Option<u64>,
+        end_time: Option<u64>,
+    ) -> Result<AuditReport, RecorderError> {
+        ImmuDbAuditStore::generate_report(self, start_time, end_time).await
+    }
+}
+
 /// 存储后的审计条目
 #[derive(Debug, Clone)]
 pub struct StoredAuditEntry {
@@ -524,13 +716,13 @@ mod tests {
 
     fn create_test_entry(index: u64) -> SignedAuditEntry {
         let entry = AuditEntry::new(
-            format!("user_{}", index),
+            format!("user_{index}"),
             "session_test",
             "test-service",
             AuditAction::TokenValidate,
             Outcome::Success,
             "mrenclave_test",
-            format!("jti_{}", index),
+            format!("jti_{index}"),
         );
 
         SignedAuditEntry {

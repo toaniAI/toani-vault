@@ -323,6 +323,7 @@ Error: Vault connection failed: Connection refused
 ```
 
 **解决方案**：
+
 - 检查 Vault 服务器是否运行：`vault status`
 - 检查 VAULT_ADDR 配置是否正确
 - 检查防火墙规则
@@ -334,6 +335,7 @@ Error: Authentication failed: permission denied
 ```
 
 **解决方案**：
+
 - 验证 VAULT_TOKEN 是否正确
 - 检查 Token 是否过期：`vault token lookup`
 - 检查策略权限：`vault token capabilities secret/credbridge/`
@@ -345,6 +347,7 @@ Error: Secret not found
 ```
 
 **解决方案**：
+
 - 确认 KV v2 引擎已启用：`vault secrets list`
 - 检查路径是否正确
 - 确认有读取权限
@@ -356,6 +359,7 @@ Error: certificate verify failed
 ```
 
 **解决方案**：
+
 - 验证 CA 证书路径
 - 检查证书有效期：`openssl x509 -in vault.crt -text -noout`
 - 开发环境可临时禁用 TLS 验证（不推荐生产环境）

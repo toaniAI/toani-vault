@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! Phase 2: 凭证解密失败问题复现测试
 //!
 //! 验证 Phase 1 分析报告中确认的三个根本原因：

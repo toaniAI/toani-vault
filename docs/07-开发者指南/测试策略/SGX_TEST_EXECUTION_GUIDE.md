@@ -113,6 +113,7 @@ chmod +x scripts/check_sgx_environment.sh
 ```
 
 **预期输出**:
+
 ```
 ========================================
 SGX 硬件环境检查
@@ -182,6 +183,7 @@ cargo test --test sgx_hardware_tests -- --test-threads=1
 ```
 
 **预期输出**:
+
 ```
 running 11 tests
 test test_suite_info ... ok
@@ -259,21 +261,27 @@ xdg-open ./coverage/tarpaulin-report.html
 ### 3.1 解读测试结果
 
 **通过 (ok)**:
+
 ```
 test test_sgx_hardware_availability ... ok
 ```
+
 表示测试断言全部通过，SGX 功能正常。
 
 **失败 (FAILED)**:
+
 ```
 test test_dcap_quote_generation_hardware ... FAILED
 ```
+
 表示测试失败，需要查看错误信息。
 
 **失败 (ignored)**:
+
 ```
 test test_some_feature ... ignored
 ```
+
 表示测试被跳过（通常因为配置或条件不满足）。
 
 ### 3.2 常见错误分析
@@ -285,11 +293,13 @@ thread 'test_sgx_hardware_availability' panicked at 'SGX 硬件初始化失败'
 ```
 
 **原因**:
+
 - SGX 驱动未加载
 - AESM 服务未运行
 - BIOS 中 SGX 未启用
 
 **解决方案**:
+
 ```bash
 # 检查驱动
 lsmod | grep sgx
@@ -308,11 +318,13 @@ thread 'test_dcap_quote_generation_hardware' panicked at 'Quote 生成失败'
 ```
 
 **原因**:
+
 - DCAP 库未安装
 - AESM 服务异常
 - EPC 内存不足
 
 **解决方案**:
+
 ```bash
 # 检查 DCAP 库
 ldconfig -p | grep sgx
@@ -331,9 +343,11 @@ thread 'test_measurement_whitelist_hardware' panicked at 'MeasurementMismatch'
 ```
 
 **原因**:
+
 - 白名单中的 MRENCLAVE 与实际不匹配
 
 **解决方案**:
+
 ```rust
 // 使用实际的 MRENCLAVE
 let config = DcapConfig {
@@ -347,11 +361,11 @@ let config = DcapConfig {
 记录以下性能指标用于基准对比：
 
 | 测试项 | 预期时间 | 实际时间 | 状态 |
-|-------|---------|---------|------|
-| HW-001 | <100ms | ___ms | ☐ |
-| HW-003 | <500ms | ___ms | ☐ |
-| HW-004 | <200ms | ___ms | ☐ |
-| HW-005 | <1000ms | ___ms | ☐ |
+| ------ | -------- | -------- | ---- |
+| HW-001 | <100ms   | \_\_\_ms | ☐    |
+| HW-003 | <500ms   | \_\_\_ms | ☐    |
+| HW-004 | <200ms   | \_\_\_ms | ☐    |
+| HW-005 | <1000ms  | \_\_\_ms | ☐    |
 
 ---
 
@@ -381,14 +395,14 @@ tar czf sgx_diagnosis.tar.gz ~/sgx_diagnosis
 
 ### 4.2 常见问题速查表
 
-| 问题 | 检查项 | 解决方案 |
-|------|-------|---------|
-| SGX 不可用 | BIOS 设置 | 重启进入 BIOS，启用 SGX |
-| 驱动未加载 | `lsmod \| grep sgx` | `sudo modprobe intel_sgx` |
-| AESM 未运行 | `systemctl status aesmd` | `sudo systemctl start aesmd` |
-| DCAP 库缺失 | `ldconfig -p \| grep sgx` | `sudo apt install libsgx-dcap-ql` |
-| 设备节点缺失 | `ls -la /dev/sgx_*` | 重新加载驱动或重启 |
-| EPC 内存不足 | `cat /sys/devices/system/cpu/sgx/epc_size` | 关闭其他 SGX 应用 |
+| 问题         | 检查项                                     | 解决方案                          |
+| ------------ | ------------------------------------------ | --------------------------------- |
+| SGX 不可用   | BIOS 设置                                  | 重启进入 BIOS，启用 SGX           |
+| 驱动未加载   | `lsmod \| grep sgx`                        | `sudo modprobe intel_sgx`         |
+| AESM 未运行  | `systemctl status aesmd`                   | `sudo systemctl start aesmd`      |
+| DCAP 库缺失  | `ldconfig -p \| grep sgx`                  | `sudo apt install libsgx-dcap-ql` |
+| 设备节点缺失 | `ls -la /dev/sgx_*`                        | 重新加载驱动或重启                |
+| EPC 内存不足 | `cat /sys/devices/system/cpu/sgx/epc_size` | 关闭其他 SGX 应用                 |
 
 ### 4.3 调试模式
 
@@ -421,11 +435,13 @@ cargo test --test sgx_hardware_tests --release -- --test-threads=1 \
 ### 5.2 性能优化建议
 
 1. **使用释放模式编译**:
+
    ```bash
    cargo test --release --test sgx_hardware_tests
    ```
 
 2. **减少日志输出**:
+
    ```bash
    RUST_LOG=error cargo test --test sgx_hardware_tests
    ```
@@ -435,11 +451,11 @@ cargo test --test sgx_hardware_tests --release -- --test-threads=1 \
 
 ### 5.3 性能对比表
 
-| 硬件平台 | Quote 生成 | Quote 验证 | 总测试时间 |
-|---------|-----------|-----------|-----------|
-| Intel i7-10700 | ___ms | ___ms | ___s |
-| Intel i5-9400 | ___ms | ___ms | ___s |
-| Intel Xeon E-2278G | ___ms | ___ms | ___s |
+| 硬件平台           | Quote 生成 | Quote 验证 | 总测试时间 |
+| ------------------ | ---------- | ---------- | ---------- |
+| Intel i7-10700     | \_\_\_ms   | \_\_\_ms   | \_\_\_s    |
+| Intel i5-9400      | \_\_\_ms   | \_\_\_ms   | \_\_\_s    |
+| Intel Xeon E-2278G | \_\_\_ms   | \_\_\_ms   | \_\_\_s    |
 
 ---
 

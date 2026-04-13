@@ -1,3 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+#![allow(dead_code)]
+#![allow(clippy::uninlined_format_args)]
+
 //! 审计事件测试
 //!
 //! EP4-Story4.1 审计事件记录功能的集成测试

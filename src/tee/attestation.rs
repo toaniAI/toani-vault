@@ -20,6 +20,7 @@
 //! - ** freshness**: 随机挑战防止重放攻击
 //! - **不可否认**: ECDSA 签名提供不可否认性
 
+use crate::config::TeeRuntimeMode;
 use crate::crypto::CryptoError;
 use crate::tee::enclave::{Enclave, EnclaveError};
 use ring::digest::{SHA256, digest};
@@ -732,20 +733,24 @@ pub struct AttestationService {
     /// Quote 最大年龄（秒）
     max_quote_age: u64,
 
-    /// 是否允许模拟模式
-    allow_simulation: bool,
+    /// TEE 运行模式
+    runtime_mode: TeeRuntimeMode,
 }
 
 impl AttestationService {
     /// 创建新的认证服务
-    pub fn new() -> Self {
+    pub fn new(runtime_mode: TeeRuntimeMode) -> Self {
         Self {
             verifier_public_key: None,
             allowed_mrenclaves: Vec::new(),
             allowed_mrsigners: Vec::new(),
             max_quote_age: 3600, // 1小时
-            allow_simulation: false,
+            runtime_mode,
         }
+    }
+
+    pub fn for_simulation() -> Self {
+        Self::new(TeeRuntimeMode::Simulation)
     }
 
     /// 设置验证者公钥
@@ -772,12 +777,6 @@ impl AttestationService {
         self
     }
 
-    /// 允许模拟模式（仅用于开发测试）
-    pub fn allow_simulation(mut self, allow: bool) -> Self {
-        self.allow_simulation = allow;
-        self
-    }
-
     /// 生成 Quote
     ///
     /// # 参数
@@ -795,6 +794,12 @@ impl AttestationService {
         if !enclave.is_running() {
             return Err(AttestationError::InternalError(
                 "Enclave not running".to_string(),
+            ));
+        }
+
+        if !self.runtime_mode.allows_simulation() {
+            return Err(AttestationError::QuoteGenerationFailed(
+                "hardware mode requires a real attestation quote implementation; refusing simulated quote generation".to_string(),
             ));
         }
 
@@ -863,7 +868,7 @@ impl AttestationService {
     fn verify_measurement(&self, quote: &Quote) -> Result<(), AttestationError> {
         // 如果白名单为空，跳过验证（仅用于测试）
         if self.allowed_mrenclaves.is_empty() && self.allowed_mrsigners.is_empty() {
-            if !self.allow_simulation {
+            if !self.runtime_mode.allows_simulation() {
                 return Err(AttestationError::MeasurementMismatch);
             }
             return Ok(());
@@ -907,7 +912,7 @@ impl AttestationService {
 
         if sig_is_zero {
             // 全零签名在模拟模式下允许（生成时未设置有效签名）
-            if self.allow_simulation {
+            if self.runtime_mode.allows_simulation() {
                 return Ok(());
             }
             return Err(AttestationError::SignatureVerificationFailed);
@@ -937,18 +942,18 @@ impl AttestationService {
         // 未配置验证者公钥且签名非零：
         // - 模拟模式下允许（内部生成的模拟 Quote 使用 SHA-256 哈希填充签名）
         // - 非模拟模式下拒绝（fail-closed），生产部署必须通过 with_verifier_key() 配置公钥
-        if self.allow_simulation {
-            log::warn!("[ATTESTATION] 未配置验证者公钥，模拟模式允许通过");
+        if self.runtime_mode.allows_simulation() {
+            tracing::warn!("[ATTESTATION] 未配置验证者公钥，模拟模式允许通过");
             return Ok(());
         }
-        log::error!("[ATTESTATION] 未配置验证者公钥，拒绝非零签名（fail-closed）");
+        tracing::error!("[ATTESTATION] 未配置验证者公钥，拒绝非零签名（fail-closed）");
         Err(AttestationError::SignatureVerificationFailed)
     }
 }
 
 impl Default for AttestationService {
     fn default() -> Self {
-        Self::new()
+        Self::new(TeeRuntimeMode::Hardware)
     }
 }
 
@@ -1180,6 +1185,14 @@ fn current_timestamp() -> u64 {
 mod tests {
     use super::*;
     use crate::tee::{Enclave, EnclaveConfig};
+    use std::path::PathBuf;
+
+    fn temp_sealed_storage_path(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "credbridge-attestation-{test_name}-{}",
+            uuid::Uuid::new_v4()
+        ))
+    }
 
     #[test]
     fn test_report_data_binding() {
@@ -1242,7 +1255,7 @@ mod tests {
         let header_size = 2 + 2 + 4 + 2 + 2 + 4 + 32; // 48 bytes
         let report_body_size = 384;
         let expected_min_size = header_size + report_body_size + 4 + quote.signature.len();
-        eprintln!("Expected min size: {}", expected_min_size);
+        eprintln!("Expected min size: {expected_min_size}");
         assert!(
             bytes.len() >= expected_min_size,
             "Serialized bytes too short: {} < {}",
@@ -1262,13 +1275,16 @@ mod tests {
     fn test_attestation_service_generate_quote() {
         let config = EnclaveConfig {
             debug_mode: true,
+            sealed_storage_path: temp_sealed_storage_path("generate-quote")
+                .to_string_lossy()
+                .to_string(),
             ..Default::default()
         };
 
         let mut enclave = Enclave::new(config);
         enclave.initialize().unwrap();
 
-        let service = AttestationService::new().allow_simulation(true);
+        let service = AttestationService::for_simulation();
         let challenge = b"test_challenge";
 
         let quote = service.generate_quote(&enclave, challenge).unwrap();
@@ -1281,13 +1297,16 @@ mod tests {
     fn test_attestation_service_verify_quote() {
         let config = EnclaveConfig {
             debug_mode: true,
+            sealed_storage_path: temp_sealed_storage_path("verify-quote")
+                .to_string_lossy()
+                .to_string(),
             ..Default::default()
         };
 
         let mut enclave = Enclave::new(config);
         enclave.initialize().unwrap();
 
-        let service = AttestationService::new().allow_simulation(true);
+        let service = AttestationService::for_simulation();
         let challenge = b"test_challenge";
 
         let quote = service.generate_quote(&enclave, challenge).unwrap();
@@ -1298,6 +1317,27 @@ mod tests {
         assert!(result.success);
         assert_eq!(result.mrenclave, enclave.mrenclave());
         assert_eq!(result.mrsigner, enclave.mrsigner());
+    }
+
+    #[test]
+    fn test_attestation_service_hardware_mode_fails_closed() {
+        let config = EnclaveConfig {
+            debug_mode: true,
+            sealed_storage_path: temp_sealed_storage_path("hardware-fail-closed")
+                .to_string_lossy()
+                .to_string(),
+            ..Default::default()
+        };
+
+        let mut enclave = Enclave::new(config);
+        enclave.initialize().unwrap();
+
+        let service = AttestationService::new(TeeRuntimeMode::Hardware);
+        let error = service
+            .generate_quote(&enclave, b"hardware_mode_challenge")
+            .unwrap_err();
+
+        assert!(matches!(error, AttestationError::QuoteGenerationFailed(_)));
     }
 
     #[test]
@@ -1364,10 +1404,8 @@ mod tests {
         let mut enclave = Enclave::new(config);
         enclave.initialize().unwrap();
 
-        // 创建带白名单的服务（测试使用模拟签名，因此允许模拟模式）
-        let service = AttestationService::new()
-            .allow_mrenclave(enclave.mrenclave())
-            .allow_simulation(true);
+        // 创建带白名单的服务（测试使用模拟签名，因此显式使用 simulation 运行时）
+        let service = AttestationService::for_simulation().allow_mrenclave(enclave.mrenclave());
 
         let challenge = b"test_challenge";
         let quote = service.generate_quote(&enclave, challenge).unwrap();
@@ -1390,9 +1428,7 @@ mod tests {
 
         // 创建带不同白名单的服务
         let wrong_mrenclave = [0x99u8; 32];
-        let service = AttestationService::new()
-            .allow_mrenclave(wrong_mrenclave)
-            .allow_simulation(false);
+        let service = AttestationService::for_simulation().allow_mrenclave(wrong_mrenclave);
 
         let challenge = b"test_challenge";
         let quote = service.generate_quote(&enclave, challenge).unwrap();

@@ -82,6 +82,10 @@ pub enum SessionError {
         credential_id: Uuid,
     },
 
+    /// 凭证不存在
+    #[error("凭证不存在: {credential_id}")]
+    CredentialNotFound { credential_id: Uuid },
+
     /// 最大会话数限制
     #[error("达到最大会话数限制: {max}")]
     MaxSessionsReached { max: usize },
@@ -252,6 +256,11 @@ impl SessionError {
             expected: expected.to_string(),
         }
     }
+
+    /// 创建凭证不存在错误
+    pub fn credential_not_found(credential_id: Uuid) -> Self {
+        SessionError::CredentialNotFound { credential_id }
+    }
 }
 
 impl SecurityError {
@@ -309,6 +318,7 @@ impl HttpStatusCode for SessionError {
     fn http_status_code(&self) -> u16 {
         match self {
             SessionError::NotFound { .. } => 404,
+            SessionError::CredentialNotFound { .. } => 404,
             SessionError::Expired { .. } => 401,
             SessionError::InvalidState { .. } => 409,
             SessionError::CredentialAccessDenied { .. } => 403,
@@ -357,6 +367,9 @@ mod tests {
 
         let state_err = SessionError::invalid_state(session_id, "closed", "ready");
         assert_eq!(state_err.http_status_code(), 409);
+
+        let credential_err = SessionError::credential_not_found(Uuid::new_v4());
+        assert_eq!(credential_err.http_status_code(), 404);
     }
 
     #[test]

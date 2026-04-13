@@ -2,8 +2,25 @@
 //!
 //! 提供多租户 Schema 的创建、管理和删除功能。
 //! 使用 Schema-per-Tenant 模式实现数据隔离。
+//!
+//! ## Schema 分层说明
+//!
+//! **Public Schema (认证域)** - 由 migrations 管理:
+//! - `users`: 用户主档表 (Privy 钱包优先认证)
+//! - `external_identities`: 外部身份映射 (Privy, email 等)
+//! - `tenant_memberships`: 用户-租户成员关系
+//! - `tenant_invitations`: 租户邀请
+//! - `auth_sessions`: 认证会话
+//! - `auth_audit_logs`: 认证审计日志
+//!
+//! **Tenant Schema (tenant_xxx)** - 由本模块管理:
+//! - `credentials`: 凭证存储
+//! - `scope_tokens`: Scope Token
+//! - `audit_logs`: 租户级审计日志
+//! - `tenant_roles`: 租户角色定义 (副本)
+//! - `user_roles`: 用户角色关联
 
-use super::pool::{DatabaseError, DatabasePool};
+use super::pool::{DatabaseError, DatabasePool, execute_pg_script_tx};
 
 /// Schema 管理器
 pub struct SchemaManager {
@@ -98,6 +115,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_roles_unique ON user_roles(user_id_ha
 
 /// 默认角色 SQL
 const DEFAULT_ROLES_SQL: &str = r#"
+-- Owner 角色 (租户所有者，通常为第一个加入的用户)
+INSERT INTO tenant_roles (role_name, permissions, description, is_system_role)
+VALUES (
+    'owner',
+    '["credentials:read", "credentials:write", "credentials:delete", "tokens:read", "tokens:write", "tokens:revoke", "audit:read", "users:manage", "roles:manage", "tenant:manage"]'::jsonb,
+    '租户所有者 - 拥有全部权限包括租户管理',
+    true
+) ON CONFLICT (role_name) DO NOTHING;
+
 -- Admin 角色
 INSERT INTO tenant_roles (role_name, permissions, description, is_system_role)
 VALUES (
@@ -168,9 +194,8 @@ impl SchemaManager {
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to set search_path: {e}")))?;
 
-        // 创建表结构
-        sqlx::query(TENANT_SCHEMA_SQL)
-            .execute(&mut *tx)
+        // 创建表结构（多语句必须逐条执行，不能塞进单个 prepared statement）
+        execute_pg_script_tx(&mut tx, TENANT_SCHEMA_SQL)
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {e}")))?;
 
@@ -204,8 +229,7 @@ impl SchemaManager {
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
         // 创建默认角色
-        sqlx::query(DEFAULT_ROLES_SQL)
-            .execute(&mut *tx)
+        execute_pg_script_tx(&mut tx, DEFAULT_ROLES_SQL)
             .await
             .map_err(|e| DatabaseError::SchemaError(format!("Failed to create roles: {e}")))?;
 

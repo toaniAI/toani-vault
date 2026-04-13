@@ -10,17 +10,17 @@ use std::time::Duration;
 use uuid::Uuid;
 
 fn main() {
-    // 从环境变量获取密钥或使用默认测试密钥
-    let secret_key = std::env::var("TOKEN_SECRET_KEY")
-        .unwrap_or_else(|_| "credbridge_dev_token_secret_key_32ch".to_string());
-
-    // 确保密钥长度为 32 字节
-    let key_bytes: [u8; 32] = {
+    // 从环境变量获取密钥或使用默认测试密钥（与服务端 main.rs 保持一致）
+    // 注意：服务端 main.rs:676 使用 vec![0u8; 32] 作为默认值
+    let key_bytes: [u8; 32] = if let Ok(key) = std::env::var("TOKEN_SECRET_KEY") {
         let mut bytes = [0u8; 32];
-        let secret_bytes = secret_key.as_bytes();
+        let secret_bytes = key.as_bytes();
         let copy_len = secret_bytes.len().min(32);
         bytes[..copy_len].copy_from_slice(&secret_bytes[..copy_len]);
         bytes
+    } else {
+        // 默认使用全零密钥，与服务端 main.rs 一致
+        [0u8; 32]
     };
 
     // 创建对称密钥
@@ -36,7 +36,7 @@ fn main() {
 
     claims.issuer("credbridge-vault").expect("设置 iss 失败");
     claims
-        .subject(&format!("{}:{}", tenant_id, user_id))
+        .subject(&format!("{tenant_id}:{user_id}"))
         .expect("设置 sub 失败");
     claims.audience(tenant_id).expect("设置 aud 失败");
     claims
@@ -51,17 +51,14 @@ fn main() {
 
     println!("=== CredBridge 测试 Token ===");
     println!();
-    println!("Token: {}", token);
+    println!("Token: {token}");
     println!();
     println!("参数:");
-    println!("  用户ID: {}", user_id);
-    println!("  租户ID: {}", tenant_id);
-    println!("  权限: {}", scopes);
+    println!("  用户ID: {user_id}");
+    println!("  租户ID: {tenant_id}");
+    println!("  权限: {scopes}");
     println!("  有效期: 1 小时");
     println!();
     println!("使用方法:");
-    println!(
-        "  curl -H \"Authorization: Bearer {}\" http://localhost:8082/health",
-        token
-    );
+    println!("  curl -H \"Authorization: Bearer {token}\" http://localhost:8082/health");
 }
