@@ -124,8 +124,10 @@ trigger:
   ref:
     - refs/heads/branch_dev
     - refs/heads/branch_test
+    - refs/tags/*
   event:
     - push
+    - tag
   paths:
     exclude:
       - frontend/**
@@ -332,6 +334,41 @@ steps:
       ref:
         - refs/heads/branch_test
 
+  - name: docker-build-pd
+    image: plugins/docker
+    pull: if-not-exists
+    settings:
+      registry: hub.bitkinetic.com
+      repo: hub.bitkinetic.com/zkme/credbridge
+      tags: ${DRONE_TAG}
+      purge: true
+      username:
+        from_secret: docker-hub-username
+      password:
+        from_secret: docker-hub-password
+      context: ./
+      dockerfile: Dockerfile
+    when:
+      ref:
+        - refs/tags/*
+
+  - name: apply push to online
+    image: hub.bitkinetic.com/public/deploy:v1
+    pull: if-not-exists
+    depends_on:
+      - docker-build-pd
+    environment:
+      DEPLOY_AUTH_KEY:
+        from_secret: deploy-auth-key
+      DEPLOY_SERVER:
+        from_secret: deploy-base-url
+      OBJECT: zkme
+    commands:
+      - app call -d
+    when:
+      ref:
+        - refs/tags/*
+
 ---
 kind: secret
 name: sgx-signing-key
@@ -387,3 +424,17 @@ name: PRIVY_APP_SECRET
 get:
   path: credbridge-privy
   name: PRIVY_APP_SECRET
+
+---
+kind: secret
+name: deploy-auth-key
+get:
+  path: drone-deploy-auth-key
+  name: auth-key
+
+---
+kind: secret
+name: deploy-base-url
+get:
+  path: drone-deploy-auth-key
+  name: deploy-base-url
