@@ -42,6 +42,8 @@ WORKDIR /app
 
 ENV SEALED_STORAGE_PATH=/app/data/sealed
 ENV SGX_AESM_SOCKET_PATH=/var/run/aesmd/aesm.socket
+ENV NODE_PATH=/opt/credbridge-browser-runtime/node_modules
+ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -70,6 +72,30 @@ RUN set -eux; \
       libsgx-dcap-default-qpl \
       sgx-aesm-service; \
     rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    mkdir -p /etc/apt/keyrings; \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg; \
+    echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main' \
+      > /etc/apt/sources.list.d/nodesource.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends nodejs; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    mkdir -p /opt/credbridge-browser-runtime; \
+    cd /opt/credbridge-browser-runtime; \
+    printf '%s\n' '{' \
+      '  "name": "credbridge-browser-runtime",' \
+      '  "private": true,' \
+      '  "dependencies": {' \
+      '    "playwright": "1.58.2"' \
+      '  }' \
+      '}' > package.json; \
+    npm install --omit=dev --no-fund --no-audit; \
+    npx playwright install --with-deps chromium; \
+    npm cache clean --force
 
 COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail
 

@@ -509,7 +509,11 @@ impl NsjailConfig {
 
         // Mount points
         for mount in &ns.mount_points {
-            args.push("--bindmount_ro".to_string());
+            match (mount.mount_type, mount.read_only) {
+                (MountType::Bind, true) => args.push("--bindmount_ro".to_string()),
+                (MountType::Bind, false) => args.push("--bindmount".to_string()),
+                _ => args.push("--bindmount_ro".to_string()),
+            }
             args.push(format!("{}:{}", mount.src.display(), mount.dst.display()));
         }
 
@@ -592,6 +596,22 @@ mod tests {
         let args = config.to_args();
         assert!(args.contains(&"--mode".to_string()));
         assert!(args.contains(&"o".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_uses_writable_bindmount_when_requested() {
+        let mut config = NsjailConfig::default();
+        config.sandbox.security.namespace.mount_points = vec![MountConfig {
+            src: PathBuf::from("/tmp/source"),
+            dst: PathBuf::from("/tmp/destination"),
+            mount_type: MountType::Bind,
+            read_only: false,
+        }];
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--bindmount".to_string()));
+        assert!(!args.contains(&"--bindmount_ro".to_string()));
     }
 
     #[test]

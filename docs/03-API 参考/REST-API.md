@@ -109,12 +109,22 @@
 
 使用 Privy access token 创建会话。
 
+`privy_access_token` 为推荐字段名，接口同时兼容历史别名 `privy_token`。服务端会将 token 长度限制为不超过 `2048` 个字符；超长请求会在进入认证逻辑前直接返回 `400 Bad Request`。
+
 **请求体**:
 
 ```json
 {
   "privy_access_token": "privy_access_token",
   "invitation_token": "optional_invitation_token"
+}
+```
+
+兼容旧调用方时，也可以发送：
+
+```json
+{
+  "privy_token": "privy_access_token"
 }
 ```
 
@@ -141,6 +151,26 @@
   "current_membership": null
 }
 ```
+
+**错误响应 (400 Bad Request, token 过长)**:
+
+```json
+{
+  "error": "invalid_request",
+  "message": "服务器内部错误",
+  "error_description": "服务器内部错误",
+  "i18n": {
+    "key": "errors.auth.token_too_long"
+  },
+  "locale": "zh-CN"
+}
+```
+
+**错误响应说明**:
+
+- 缺少 `privy_access_token` / `privy_token`、请求体 JSON 非法、未知字段：返回 `400 Bad Request`，`error=invalid_request`
+- `privy_access_token` 或 `privy_token` 长度大于 `2048`：返回 `400 Bad Request`，`error=invalid_request`，`i18n.key=errors.auth.token_too_long`
+- token 格式无效或认证失败：返回 `401 Unauthorized`
 
 ### `POST /api/v1/auth/access-token`
 
@@ -192,6 +222,11 @@
 
 ```json
 {
+  "userId": "550e8400-e29b-41d4-a716-446655440000",
+  "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+  "username": "alice@example.com",
+  "scopes": ["admin"],
+  "locale": "zh-CN",
   "user": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "display_name": "Alice",
@@ -242,6 +277,9 @@
 
 撤销当前 web session。
 
+**认证**:
+- 只接受 web session token
+
 **响应 (200 OK)**:
 
 ```json
@@ -283,11 +321,22 @@
 
 两个入口调用同一 handler。
 
+**认证**:
+- 只接受 web session token
+
 **请求体**:
 
 ```json
 {
   "invitation_token": "invite_token"
+}
+```
+
+兼容旧调用方时，也可以发送：
+
+```json
+{
+  "code": "invite_token"
 }
 ```
 
@@ -440,8 +489,37 @@
 
 **Query**:
 - `tenant_id` (UUID, 必填)
+- `limit` (可选，正整数；当前仅做参数校验，不实际分页)
 
-**响应**: `ApiSuccessResponse<Vec<FrontendInvitationListItem>>`。
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "invitation": {
+        "id": "550e8400-e29b-41d4-a716-446655440030",
+        "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+        "role": "member",
+        "inviteeType": "email",
+        "inviteeEmail": "user@example.com",
+        "inviteeWallet": null,
+        "createdBy": "550e8400-e29b-41d4-a716-446655440000",
+        "expiresAt": "2026-04-12T10:00:00Z",
+        "consumedAt": null,
+        "consumedBy": null,
+        "status": "pending",
+        "maxUses": 1,
+        "useCount": 0,
+        "createdAt": "2026-04-11T10:00:00Z"
+      },
+      "inviteToken": "",
+      "inviteUrl": ""
+    }
+  ]
+}
+```
 
 #### `POST /api/v1/invitations`
 
@@ -458,7 +536,35 @@
 }
 ```
 
-**响应**: `ApiSuccessResponse<FrontendInvitationListItem>`。
+`expiresInHours` 默认为 `24`，最小值为 `1`。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "invitation": {
+      "id": "550e8400-e29b-41d4-a716-446655440030",
+      "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+      "role": "member",
+      "inviteeType": "email",
+      "inviteeEmail": "user@example.com",
+      "inviteeWallet": null,
+      "createdBy": "550e8400-e29b-41d4-a716-446655440000",
+      "expiresAt": "2026-04-12T10:00:00Z",
+      "consumedAt": null,
+      "consumedBy": null,
+      "status": "pending",
+      "maxUses": 1,
+      "useCount": 0,
+      "createdAt": "2026-04-11T10:00:00Z"
+    },
+    "inviteToken": "invite_token_value",
+    "inviteUrl": "/invitation/accept?token=invite_token_value"
+  }
+}
+```
 
 #### `POST /api/v1/invitations/:invitation_id/revoke`
 
@@ -507,6 +613,7 @@
 ```json
 {
   "access_token": "v4.local.xxx",
+  "token": "v4.local.xxx",
   "token_id": "550e8400-e29b-41d4-a716-446655440000",
   "token_type": "Bearer",
   "subject_type": "user",
@@ -538,7 +645,7 @@
 ### `POST /api/v1/tokens/verify`
 
 **认证**:
-- 需要 `tokens:read`、`tenant:admin` 或 `admin`
+- 公开接口，不要求 `Authorization` 头
 
 **请求体**:
 
@@ -599,7 +706,7 @@
 ### 端点
 
 - `POST /api/v1/profile/automation-tokens`
-- `GET /api/v1/profile/automation-tokens`
+- `GET /api/v1/profile/automation-tokens` 当前未实现业务列表，固定返回 `404 Not Found`
 - `GET /api/v1/profile/automation-tokens/:token_id`
 - `POST /api/v1/profile/automation-tokens/:token_id/revoke`
 
@@ -654,8 +761,7 @@
 }
 ```
 
-列表、详情、撤销接口分别返回：
-- `Vec<TokenMetadataResponse>`
+详情、撤销接口分别返回：
 - `TokenMetadataResponse`
 - `TokenMetadataResponse`
 
@@ -723,6 +829,39 @@
 
 **响应**: `ApiSuccessResponse<ServiceAccountResponse>`。
 
+### `GET /api/v1/service-accounts`
+
+返回当前 tenant 下的 Service Account 列表。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440100",
+      "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+      "name": "CI Bot",
+      "description": "automation bot",
+      "role": "service_account",
+      "scope_ceiling": ["credential:read", "tokens:read"],
+      "status": "active",
+      "created_by": "550e8400-e29b-41d4-a716-446655440000",
+      "created_at": "2026-04-11T10:00:00Z",
+      "updated_at": "2026-04-11T10:00:00Z",
+      "deleted_at": null
+    }
+  ]
+}
+```
+
+### `GET /api/v1/service-accounts/:service_account_id`
+
+返回单个 Service Account。
+
+**响应**: `ApiSuccessResponse<ServiceAccountResponse>`。
+
 ### `PATCH /api/v1/service-accounts/:service_account_id`
 
 **请求体**:
@@ -750,7 +889,30 @@
 }
 ```
 
-**响应**: `ApiSuccessResponse<CreatedTokenResponse>`。
+`ttl_seconds` 与 `expires_in` 都可用；如果两者同时提供，值必须相同。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "v4.local.xxx",
+    "token": "v4.local.xxx",
+    "token_id": "550e8400-e29b-41d4-a716-446655440200",
+    "token_type": "Bearer",
+    "subject_type": "service_account",
+    "issued_from": "service_account",
+    "display_name": "CI job token",
+    "expires_in": 3600,
+    "scope": "credential:read",
+    "granted_scopes": ["credential:read"],
+    "issued_at": 1741702800,
+    "expires_at": 1741706400,
+    "revoked_at": null
+  }
+}
+```
 
 ### `GET /api/v1/service-accounts/:service_account_id/tokens`
 
@@ -1180,6 +1342,9 @@
 
 ### `GET /api/v1/sandbox/sessions`
 
+**Query**:
+- `status` 可选，允许值为 `creating`、`ready`、`executing`、`paused`、`closed`
+
 **响应**: `ApiSuccessResponse<ListSessionsResponse>`。
 
 ### `GET /api/v1/sandbox/sessions/:id`
@@ -1237,6 +1402,13 @@
 ### `GET /api/v1/sandbox/stats`
 
 返回 `ApiSuccessResponse<SandboxStatsApiResponse>`。
+
+### `GET /api/v1/sandbox/sessions/:id/ws/:credential_id`
+
+建立 Sandbox WebSocket 连接。
+
+**认证**:
+- 需要 `sandbox:execute`
 
 ## 专项文档
 

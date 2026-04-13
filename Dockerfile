@@ -70,7 +70,7 @@ RUN set -eu; \
     rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware
 
-ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6
+ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-playwright1.58.2
 
 FROM ${RUNTIME_BASE_IMAGE}
 
@@ -83,6 +83,7 @@ COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
 COPY --from=builder /app/target/sgx-enclave/libcredbridge_sgx_urts_bridge.so /app/libcredbridge_sgx_urts_bridge.so
 COPY --from=builder /app/migrations /app/migrations
+COPY frontend/scripts /app/frontend/scripts
 COPY docker/scripts/healthcheck.sh /app/healthcheck.sh
 COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 

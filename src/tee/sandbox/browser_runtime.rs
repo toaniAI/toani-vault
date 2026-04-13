@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -16,6 +16,7 @@ pub struct SandboxBrowserRuntime {
 struct BrowserRuntimeProcess {
     child: Child,
     stdin: ChildStdin,
+    stderr: BufReader<ChildStderr>,
     stdout: BufReader<ChildStdout>,
 }
 
@@ -78,11 +79,16 @@ impl SandboxBrowserRuntime {
             .stdout
             .take()
             .ok_or_else(|| SandboxError::Process("browser runtime missing stdout".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| SandboxError::Process("browser runtime missing stderr".to_string()))?;
 
         let runtime = Self {
             inner: Arc::new(Mutex::new(BrowserRuntimeProcess {
                 child,
                 stdin,
+                stderr: BufReader::new(stderr),
                 stdout: BufReader::new(stdout),
             })),
         };
@@ -282,9 +288,16 @@ impl SandboxBrowserRuntime {
             .await
             .map_err(SandboxError::Io)?;
         if line.trim().is_empty() {
-            return Err(SandboxError::Process(
-                "browser runtime closed without response".to_string(),
-            ));
+            let status = process.child.wait().await.map_err(SandboxError::Io)?;
+            let mut stderr = String::new();
+            let _ = process.stderr.read_to_string(&mut stderr).await;
+            let stderr = stderr.trim();
+            let detail = if stderr.is_empty() {
+                format!("browser runtime closed without response (status: {status})")
+            } else {
+                format!("browser runtime closed without response (status: {status}): {stderr}")
+            };
+            return Err(SandboxError::Process(detail));
         }
 
         let response: Value = serde_json::from_str(line.trim()).map_err(|error| {

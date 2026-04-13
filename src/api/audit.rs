@@ -37,7 +37,7 @@ use crate::api::middleware::{TokenScope, ValidatedToken};
 use crate::audit::immudb_store::AuditStorage as ImmuDbRecorderStorage;
 use crate::audit::{
     AuditEntry, AuditFilter, AuditRecorder, ImmuDbAuditStore, MemoryAuditStorage, RecorderError,
-    SignedAuditEntry, SigningKeyPair, VerificationProof,
+    SignedAuditEntry, SigningKeyPair, VerificationProof, hash_user_id,
 };
 
 /// 审计 API 状态
@@ -750,6 +750,27 @@ fn extract_token_from_request(req: &axum::extract::Request) -> Option<&Validated
     req.extensions().get::<ValidatedToken>()
 }
 
+fn current_audit_user_hash(token: &ValidatedToken) -> String {
+    hash_user_id(token.principal_id())
+}
+
+fn enforce_self_audit_scope(
+    token: &ValidatedToken,
+    requested_user_id_hash: Option<&String>,
+) -> Result<String, &'static str> {
+    let current_user_id_hash = current_audit_user_hash(token);
+
+    if requested_user_id_hash.is_some() && requested_user_id_hash != Some(&current_user_id_hash) {
+        return Err("权限不足：只能查看当前主体自己的审计日志");
+    }
+
+    Ok(current_user_id_hash)
+}
+
+fn entry_belongs_to_current_subject(token: &ValidatedToken, entry: &SignedAuditEntry) -> bool {
+    entry.entry.user_id_hash == current_audit_user_hash(token)
+}
+
 /// 查询审计日志列表
 ///
 /// GET /api/v1/audit/logs
@@ -820,11 +841,22 @@ pub async fn list_audit_logs(
             .into_response();
     }
 
-    // 构建过滤器
+    let current_user_id_hash = match enforce_self_audit_scope(token, params.user_id_hash.as_ref()) {
+        Ok(hash) => hash,
+        Err(message) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(AuditLogListResponse::error(message)),
+            )
+                .into_response();
+        }
+    };
+
+    // 构建过滤器，注入用户隔离约束
     let filter = AuditFilter {
         start_time: params.start_time.map(|t| t.as_millis()),
         end_time: params.end_time.map(|t| t.as_millis()),
-        user_id_hash: params.user_id_hash.clone(),
+        user_id_hash: Some(current_user_id_hash),
         action: params.action,
         risk_tier: params.risk_tier,
         outcome: params.outcome,
@@ -924,6 +956,14 @@ pub async fn get_audit_log_detail(
         }
     };
 
+    if !entry_belongs_to_current_subject(token, &entry) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(AuditLogDetailResponse::error("审计条目未找到")),
+        )
+            .into_response();
+    }
+
     // 获取验证证明
     let proof = match state.storage.get_verification_proof(entry.log_index).await {
         Ok(Some(p)) => Some(MerkleProofResponse {
@@ -1006,11 +1046,22 @@ pub async fn export_audit_logs(
             .into_response();
     }
 
+    let current_user_id_hash = match enforce_self_audit_scope(token, params.user_id_hash.as_ref()) {
+        Ok(hash) => hash,
+        Err(message) => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(AuditExportResponse::error(message)),
+            )
+                .into_response();
+        }
+    };
+
     // 构建过滤器
     let filter = AuditFilter {
         start_time: params.start_time,
         end_time: params.end_time,
-        user_id_hash: params.user_id_hash.clone(),
+        user_id_hash: Some(current_user_id_hash),
         action: params.action,
         risk_tier: None,
         outcome: None,
@@ -1205,6 +1256,19 @@ pub async fn verify_audit_log(
             }
         }
     };
+
+    if !entry_belongs_to_current_subject(token, &entry) {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(AuditVerifyResponse::not_found(
+                params
+                    .log_index
+                    .map(|index| format!("索引: {index}"))
+                    .unwrap_or_else(|| params.id.clone()),
+            )),
+        )
+            .into_response();
+    }
 
     // 执行验证
     let mut details = Vec::new();

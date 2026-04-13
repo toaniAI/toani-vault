@@ -208,6 +208,24 @@ impl NsjailSandbox {
         let mut scoped_config = self.config.clone();
         scoped_config.command = command;
         scoped_config.cwd = cwd;
+        let sandbox_work_dir = self.working_dir();
+        if !scoped_config
+            .sandbox
+            .security
+            .namespace
+            .mount_points
+            .iter()
+            .any(|mount| mount.src == sandbox_work_dir && mount.dst == sandbox_work_dir)
+        {
+            scoped_config.sandbox.security.namespace.mount_points.push(
+                crate::tee::sandbox::config::MountConfig {
+                    src: sandbox_work_dir.clone(),
+                    dst: sandbox_work_dir,
+                    mount_type: crate::tee::sandbox::config::MountType::Bind,
+                    read_only: false,
+                },
+            );
+        }
         for (key, value) in env {
             scoped_config.env.insert(key, value);
         }

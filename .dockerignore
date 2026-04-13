@@ -62,7 +62,9 @@ docker-compose*.yml
 Dockerfile*
 
 # Node.js (if any)
-frontend/
+frontend/*
+!frontend/scripts/
+!frontend/scripts/**
 node_modules/
 npm-debug.log
 yarn-error.log

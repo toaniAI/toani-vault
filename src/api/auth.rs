@@ -1878,7 +1878,21 @@ pub async fn revoke_invitation_handler(
 mod tests {
     use super::*;
     use crate::api::middleware::TokenScope;
-    use std::collections::HashMap;
+    use async_trait::async_trait;
+    use axum::{
+        Router,
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use http_body_util::BodyExt;
+    use std::{
+        collections::HashMap,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+    use tower::ServiceExt;
 
     #[test]
     fn test_user_profile_serialization() {
@@ -2753,5 +2767,214 @@ mod tests {
         let result_without: Result<CreateSessionRequest, _> = serde_json::from_value(json_without);
         assert!(result_without.is_ok());
         assert_eq!(result_without.unwrap().invitation_token, None);
+    }
+
+    #[derive(Default)]
+    struct CountingAuthService {
+        create_user_calls: AtomicUsize,
+    }
+
+    impl CountingAuthService {
+        fn create_user_call_count(&self) -> usize {
+            self.create_user_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl AuthService for CountingAuthService {
+        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+            self.create_user_calls.fetch_add(1, Ordering::SeqCst);
+            Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
+        }
+
+        async fn get_or_create_external_identity(
+            &self,
+            _: Uuid,
+            _: crate::auth::IdentityProvider,
+            _: &str,
+            _: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, AuthError> {
+            unreachable!("BUG-18237 handler rejection tests should not request identities")
+        }
+
+        async fn create_tenant_invitation(
+            &self,
+            _: Uuid,
+            _: MembershipRole,
+            _: InviteeType,
+            _: Option<String>,
+            _: Option<String>,
+            _: Uuid,
+            _: i64,
+        ) -> Result<(TenantInvitation, String), AuthError> {
+            unreachable!("BUG-18237 handler rejection tests should not create invitations")
+        }
+
+        async fn consume_invitation(
+            &self,
+            _: &str,
+            _: Uuid,
+        ) -> Result<TenantMembership, AuthError> {
+            unreachable!("BUG-18237 handler rejection tests should not consume invitations")
+        }
+
+        async fn create_session(
+            &self,
+            _: Uuid,
+            _: Option<Uuid>,
+            _: CreateUserRequest,
+        ) -> Result<(crate::auth::AuthSession, String), AuthError> {
+            unreachable!("BUG-18237 boundary tests stop before session creation")
+        }
+
+        async fn get_active_membership(
+            &self,
+            _: Uuid,
+            _: Uuid,
+        ) -> Result<Option<TenantMembership>, AuthError> {
+            unreachable!("BUG-18237 handler rejection tests should not load memberships")
+        }
+
+        async fn audit_log(
+            &self,
+            _: crate::auth::AuthEventType,
+            _: Option<Uuid>,
+            _: Option<serde_json::Value>,
+        ) -> Result<(), AuthError> {
+            Ok(())
+        }
+
+        async fn verify_session(&self, _: &str) -> Result<crate::auth::AuthSession, AuthError> {
+            unreachable!("BUG-18237 tests do not verify sessions")
+        }
+
+        async fn revoke_session(&self, _: Uuid, _: &str) -> Result<(), AuthError> {
+            unreachable!("BUG-18237 tests do not revoke sessions")
+        }
+
+        async fn get_user(&self, _: Uuid) -> Result<User, AuthError> {
+            unreachable!("BUG-18237 tests do not load users directly")
+        }
+
+        async fn get_user_identities(&self, _: Uuid) -> Result<Vec<ExternalIdentity>, AuthError> {
+            unreachable!("BUG-18237 boundary tests stop before identity lookup")
+        }
+
+        async fn get_user_memberships(&self, _: Uuid) -> Result<Vec<TenantMembership>, AuthError> {
+            unreachable!("BUG-18237 boundary tests stop before membership lookup")
+        }
+
+        async fn sync_mfa_status(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, AuthError> {
+            unreachable!("BUG-18235 tests do not sync MFA status")
+        }
+
+        async fn get_mfa_status(
+            &self,
+            _: Uuid,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, AuthError> {
+            unreachable!("BUG-18235 tests do not fetch MFA status")
+        }
+    }
+
+    fn create_auth_test_app(auth_service: Arc<dyn AuthService>) -> Router {
+        auth_routes().with_state(AuthApiState::new(auth_service))
+    }
+
+    async fn read_json_body(response: Response) -> serde_json::Value {
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("response body should be readable")
+            .to_bytes();
+        serde_json::from_slice(&bytes).expect("response should be valid JSON")
+    }
+
+    #[tokio::test]
+    async fn test_create_session_handler_missing_token_returns_400_invalid_request() {
+        let auth_service = Arc::new(CountingAuthService::default());
+        let app = create_auth_test_app(auth_service.clone());
+
+        let request = Request::builder()
+            .uri("/auth/session")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+
+        let body = read_json_body(response).await;
+        assert_eq!(body["error"], "invalid_request");
+        assert_eq!(auth_service.create_user_call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_handler_rejects_overlong_privy_token_alias_before_auth_call() {
+        let auth_service = Arc::new(CountingAuthService::default());
+        let app = create_auth_test_app(auth_service.clone());
+
+        let request = Request::builder()
+            .uri("/auth/session")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "privy_token": "x".repeat(2049),
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+
+        let body = read_json_body(response).await;
+        assert_eq!(body["error"], "invalid_request");
+        assert_eq!(auth_service.create_user_call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_handler_accepts_max_length_privy_token_alias() {
+        let auth_service = Arc::new(CountingAuthService::default());
+        let app = create_auth_test_app(auth_service.clone());
+
+        let request = Request::builder()
+            .uri("/auth/session")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "privy_token": "x".repeat(2048),
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let body = read_json_body(response).await;
+        assert_eq!(body["error"], "privy_auth_failed");
+        assert_eq!(auth_service.create_user_call_count(), 1);
     }
 }

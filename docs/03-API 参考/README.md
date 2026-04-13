@@ -61,7 +61,6 @@
 ### Profile Automation Token
 
 - `POST /api/v1/profile/automation-tokens`
-- `GET /api/v1/profile/automation-tokens`
 - `GET /api/v1/profile/automation-tokens/:token_id`
 - `POST /api/v1/profile/automation-tokens/:token_id/revoke`
 
@@ -123,6 +122,7 @@
 
 1. 直接返回业务对象
 - 例如 `POST /api/v1/auth/session`、`GET /api/v1/auth/me`、凭证 API、版本 API、token 成功响应
+- `POST /api/v1/auth/session` 的请求字段兼容 `privy_access_token` 与历史别名 `privy_token`；当 token 超长或请求体非法时，当前实现返回 `400 Bad Request` + `error=invalid_request`
 
 2. `ApiSuccessResponse<T>` 包装
 - 形状为：

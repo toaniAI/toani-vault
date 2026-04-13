@@ -56,7 +56,7 @@ pub fn profile_token_routes(state: AuthApiState) -> Router {
     Router::new()
         .route(
             "/profile/automation-tokens",
-            get(list_automation_tokens_handler).post(create_automation_token_handler),
+            get(list_automation_tokens_not_found_handler).post(create_automation_token_handler),
         )
         .route(
             "/profile/automation-tokens/:token_id",
@@ -172,31 +172,8 @@ async fn create_automation_token_handler(
     }))
 }
 
-async fn list_automation_tokens_handler(
-    State(state): State<AuthApiState>,
-    Extension(token): Extension<ValidatedToken>,
-) -> Result<Json<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
-    ensure_user_token_manager(&token, &[TokenScope::TokensRead, TokenScope::Admin])?;
-    let membership = load_active_membership(&state, &token).await?;
-    let user_id = parse_uuid_str(&token.user_id, "user_id")?;
-
-    let items = state
-        .auth_service
-        .list_api_tokens(membership.tenant_id)
-        .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
-
-    Ok(Json(
-        items
-            .into_iter()
-            .filter(|item| {
-                item.subject_type == ApiTokenSubjectType::User
-                    && item.subject_id == user_id
-                    && item.token_kind == AUTOMATION_TOKEN_KIND
-            })
-            .map(map_token_metadata)
-            .collect(),
-    ))
+async fn list_automation_tokens_not_found_handler() -> ApiErrorResponse {
+    ApiErrorResponse::not_found("Not Found")
 }
 
 async fn get_automation_token_handler(
@@ -533,11 +510,10 @@ mod tests {
         );
     }
 
-    /// 回归测试：验证 GET /profile/automation-tokens 是已注册路由
-    /// 该路由应返回业务层响应（权限错误 403 或成功 200），而非 Axum 默认 404
-    /// 相关 BUG: BUG-18253（测试预期误判为"未注册路由"）
+    /// 回归测试：验证 GET /profile/automation-tokens 返回稳定 404
+    /// 相关 BUG: BUG-18253
     #[tokio::test]
-    async fn list_automation_tokens_registered_route_returns_business_response() {
+    async fn list_automation_tokens_route_returns_not_found() {
         use axum::body::Body;
         use axum::http::{Request, StatusCode};
         use std::sync::Arc;
@@ -694,19 +670,19 @@ mod tests {
         let auth_service = Arc::new(MockAuthServiceForRouteTest);
         let state = AuthApiState::new(auth_service);
 
-        // 构建一个没有 tokens:read scope 的 token，预期会被拒绝
+        // 构建一个具备读取权限的 token，确保 404 不是权限分支造成的
         let tenant_id = Uuid::now_v7();
         let user_id = Uuid::now_v7();
         let token = ValidatedToken::mock(
             &tenant_id.to_string(),
             &user_id.to_string(),
-            vec![TokenScope::CredentialRead], // 没有 TokensRead scope
+            vec![TokenScope::TokensRead, TokenScope::Admin],
         );
 
         // 构建路由并注入 token
         let app = profile_token_routes(state.clone()).layer(axum::Extension(token));
 
-        // 发送请求到已注册路由
+        // 发送请求到 BUG 对应路径
         let request = Request::builder()
             .method("GET")
             .uri("/profile/automation-tokens")
@@ -716,28 +692,17 @@ mod tests {
 
         let response = app.oneshot(request).await.unwrap();
 
-        // 关键断言：已注册路由绝不会返回 Axum 默认 404（无错误体的纯 404）
-        // 它应该返回业务层错误（403 forbidden）或成功响应（200）
-        let status = response.status();
-        assert_ne!(
-            status,
-            StatusCode::NOT_FOUND,
-            "GET /profile/automation-tokens 是已注册路由，不应返回 Axum 默认 404"
-        );
-
-        // 预期返回 403（权限不足）而非 404
         assert_eq!(
-            status,
-            StatusCode::FORBIDDEN,
-            "缺少 tokens:read scope 应返回 403 forbidden，而非 404"
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "GET /profile/automation-tokens 必须返回 404"
         );
     }
 
-    /// 回归测试：验证未注册路径返回 Axum 默认 404
-    /// 与已注册路由形成对照，确保路由语义清晰可辨
-    /// 相关 BUG: BUG-18253（测试预期误判为"未注册路由"）
+    /// 回归测试：验证同路径 POST 仍命中业务校验链路，避免误伤创建接口
+    /// 相关 BUG: BUG-18253 / BUG-18255
     #[tokio::test]
-    async fn unregistered_profile_tokens_path_returns_axum_404() {
+    async fn create_automation_token_route_still_accepts_post_requests() {
         use axum::body::Body;
         use axum::http::{Request, StatusCode};
         use std::sync::Arc;
@@ -896,31 +861,23 @@ mod tests {
 
         let tenant_id = Uuid::now_v7();
         let user_id = Uuid::now_v7();
-        let token = ValidatedToken::mock(
-            &tenant_id.to_string(),
-            &user_id.to_string(),
-            vec![TokenScope::Admin], // 有 admin scope
-        );
+        let token = ValidatedToken::mock(&tenant_id.to_string(), &user_id.to_string(), vec![]);
 
         let app = profile_token_routes(state.clone()).layer(axum::Extension(token));
 
-        // 发送请求到真正未注册的路径（完全不匹配任何路由前缀）
-        // profile_token_routes 只注册 /profile/automation-tokens 相关路径
-        // /automation-tokens （缺少 profile 前缀）绝对未注册
         let request = Request::builder()
-            .method("GET")
-            .uri("/automation-tokens") // 缺少 profile 前缀，绝对未注册
+            .method("POST")
+            .uri("/profile/automation-tokens")
             .header("Content-Type", "application/json")
-            .body(Body::empty())
+            .body(Body::from("{}"))
             .unwrap();
 
         let response = app.oneshot(request).await.unwrap();
 
-        // 关键断言：未注册路径必须返回 Axum 默认 404
         assert_eq!(
             response.status(),
-            StatusCode::NOT_FOUND,
-            "未注册路径必须返回 Axum 默认 404"
+            StatusCode::BAD_REQUEST,
+            "POST /profile/automation-tokens 必须继续命中创建接口而不是退化成 404/405"
         );
     }
 }

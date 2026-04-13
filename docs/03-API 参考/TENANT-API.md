@@ -17,7 +17,6 @@
 ## 端点总览
 
 - `POST /api/v1/tenants`
-- `GET /api/v1/tenants`
 - `GET /api/v1/tenants/:id`
 - `GET /api/v1/tenants/:id/config`
 - `PUT /api/v1/tenants/:id/config`
@@ -134,31 +133,23 @@
 - `401 Unauthorized`: 当前 token 中的 `user_id` 无法解析为 UUID
 - `500 Internal Server Error`: 租户持久化失败、owner membership 创建失败、用户默认租户更新失败等
 
-## 获取租户列表
+## 缺少租户 ID 的详情请求
 
-**Endpoint**: `GET /api/v1/tenants`
+**Endpoint**: `GET /api/v1/tenants` 或 `GET /api/v1/tenants/`
 
-**当前实现要求**:
-- 需要已认证请求
-- 当前 handler 未显式校验额外 scope
+**当前实现行为**:
+- 这两个路径不再被视为“租户列表”接口
+- 真实服务会先经过 `NormalizePathLayer::trim_trailing_slash()`，因此 `/api/v1/tenants/` 会先归一化为 `/api/v1/tenants`
+- 归一化后的 `GET /api/v1/tenants` 会被明确当作“租户详情缺少 ID”处理，并返回 `404 Not Found`
 
-**成功响应 (200 OK)**:
+**失败响应 (404 Not Found)**:
 
 ```json
 {
-  "success": true,
-  "data": {
-    "tenants": [
-      {
-        "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-        "name": "Acme Corporation",
-        "status": "active",
-        "tier": "enterprise",
-        "created_at": "2026-04-11T10:00:00Z",
-        "updated_at": "2026-04-11T10:00:00Z"
-      }
-    ],
-    "total": 1
+  "success": false,
+  "error": {
+    "code": "TENANT_NOT_FOUND",
+    "message": "租户不存在"
   },
   "meta": {
     "request_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
