@@ -32,7 +32,7 @@ use axum::{
     Router,
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -42,6 +42,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock as AsyncRwLock;
+
+use super::response::ApiErrorResponse;
 
 /// 认证状态
 pub struct AttestationState {
@@ -1024,21 +1026,13 @@ async fn create_challenge(
 async fn verify_challenge_response(
     State(state): State<Arc<AttestationState>>,
     Json(request): Json<VerifyChallengeResponseRequest>,
-) -> impl IntoResponse {
+) -> Response {
     let quote_bytes = match STANDARD.decode(&request.quote_b64) {
         Ok(bytes) => bytes,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(VerifyChallengeResponseResult {
-                    success: false,
-                    verified: false,
-                    mrenclave: String::new(),
-                    mrsigner: String::new(),
-                    timestamp: 0,
-                    error: Some(format!("Invalid base64 quote: {e}")),
-                }),
-            );
+            // BUG-18354: 统一非法 payload 响应格式为 {"error":"invalid_request"}
+            return ApiErrorResponse::invalid_request(format!("Invalid base64 quote: {e}"))
+                .into_response();
         }
     };
 
@@ -1055,7 +1049,8 @@ async fn verify_challenge_response(
                     timestamp: 0,
                     error: Some("Verification failed: Challenge not found or expired".to_string()),
                 }),
-            );
+            )
+                .into_response();
         }
         Err(error) => {
             return (
@@ -1068,7 +1063,8 @@ async fn verify_challenge_response(
                     timestamp: 0,
                     error: Some(error.to_string()),
                 }),
-            );
+            )
+                .into_response();
         }
     };
 
@@ -1083,7 +1079,8 @@ async fn verify_challenge_response(
                 timestamp: 0,
                 error: Some("Verification failed: Challenge expired".to_string()),
             }),
-        );
+        )
+            .into_response();
     }
 
     let dcap_service = match state.dcap_service.read() {
@@ -1099,7 +1096,8 @@ async fn verify_challenge_response(
                     timestamp: 0,
                     error: Some("Failed to acquire DCAP service lock".to_string()),
                 }),
-            );
+            )
+                .into_response();
         }
     };
 
@@ -1117,6 +1115,7 @@ async fn verify_challenge_response(
                     error: None,
                 }),
             )
+                .into_response()
         }
         Err(e) => (
             StatusCode::OK,
@@ -1128,7 +1127,8 @@ async fn verify_challenge_response(
                 timestamp: 0,
                 error: Some(format!("Verification failed: {e}")),
             }),
-        ),
+        )
+            .into_response(),
     }
 }
 
