@@ -1470,6 +1470,103 @@ fn map_sandbox_error(error: SandboxError) -> Response {
     (status, Json(ApiErrorResponse::new(code, message))).into_response()
 }
 
+// ==================== 兜底处理器 ====================
+
+/// 兜底处理器：POST /sandbox/sessions/screenshot 缺少会话ID时返回404
+/// BUG-18227: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn screenshot_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "success": false,
+            "error": {
+                "code": "SESSION_NOT_FOUND",
+                "message": "沙箱会话不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
+/// 兜底处理器：POST /sandbox/sessions/pause 缺少会话ID时返回404
+/// BUG-18223: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn pause_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "success": false,
+            "error": {
+                "code": "SESSION_NOT_FOUND",
+                "message": "沙箱会话不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
+/// 兜底处理器：POST /sandbox/sessions/resume 缺少会话ID时返回404
+/// BUG-18224: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn resume_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "success": false,
+            "error": {
+                "code": "SESSION_NOT_FOUND",
+                "message": "沙箱会话不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
+/// 兜底处理器：POST /sandbox/sessions/execute 缺少会话ID时返回404
+/// 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn execute_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "success": false,
+            "error": {
+                "code": "SESSION_NOT_FOUND",
+                "message": "沙箱会话不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
+/// 兜底处理器：POST /sandbox/sessions/export 缺少会话ID时返回404
+/// 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn export_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "success": false,
+            "error": {
+                "code": "SESSION_NOT_FOUND",
+                "message": "沙箱会话不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
 // ==================== 路由构建 ====================
 
 /// 构建沙箱 API 路由
@@ -1489,6 +1586,22 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions/:id/screenshot", post(take_screenshot))
         .route("/sandbox/sessions/:id/export", post(export_data))
         .route("/sandbox/stats", get(get_stats))
+        // BUG-18227: 缺少会话ID的子路径兜底路由，返回404而非405
+        .route(
+            "/sandbox/sessions/screenshot",
+            post(screenshot_missing_id_handler),
+        )
+        // BUG-18223: 缺少会话ID的暂停路径兜底
+        .route("/sandbox/sessions/pause", post(pause_missing_id_handler))
+        // BUG-18224: 缺少会话ID的恢复路径兜底
+        .route("/sandbox/sessions/resume", post(resume_missing_id_handler))
+        // 缺少会话ID的执行路径兜底
+        .route(
+            "/sandbox/sessions/execute",
+            post(execute_missing_id_handler),
+        )
+        // 缺少会话ID的导出路径兜底
+        .route("/sandbox/sessions/export", post(export_missing_id_handler))
         // WebSocket 实时连接
         .route(
             "/sandbox/sessions/:id/ws/:credential_id",
@@ -1526,10 +1639,14 @@ mod tests {
     use crate::tee::sandbox::{SessionId, repository::SandboxOperationRecord};
     use crate::vault::models::{CreateCredentialRequest, EncryptedPayload, ServiceId};
     use crate::vault::storage::CredentialVault;
-    use axum::body::to_bytes;
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
     use chrono::Utc;
     use serde_json::Value;
     use std::sync::Arc;
+    use tower::ServiceExt;
     use uuid::Uuid;
 
     fn create_test_payload() -> EncryptedPayload {
@@ -1901,5 +2018,116 @@ mod tests {
                 .contains("creating"),
             "message should show valid statuses"
         );
+    }
+
+    // ==================== BUG-18227 回归测试：缺少会话ID返回404而非405 ====================
+
+    #[tokio::test]
+    async fn test_screenshot_missing_session_id_returns_not_found() {
+        // BUG-18227 回归测试：POST /sandbox/sessions/screenshot 缺少会话ID应返回404，
+        // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+        // 注意：兜底处理器不依赖状态，因此使用空状态即可测试路由匹配
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app = sandbox_routes().with_state(state);
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/sandbox/sessions/screenshot")
+            .header("content-type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "POST /sandbox/sessions/screenshot 应返回 404 Not Found"
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "SESSION_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn test_pause_missing_session_id_returns_not_found() {
+        // BUG-18223 回归测试：POST /sandbox/sessions/pause 缺少会话ID应返回404，
+        // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app = sandbox_routes().with_state(state);
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/sandbox/sessions/pause")
+            .header("content-type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "POST /sandbox/sessions/pause 应返回 404 Not Found"
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "SESSION_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn test_resume_missing_session_id_returns_not_found() {
+        // BUG-18224 回归测试：POST /sandbox/sessions/resume 缺少会话ID应返回404，
+        // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let app = sandbox_routes().with_state(state);
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/sandbox/sessions/resume")
+            .header("content-type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "POST /sandbox/sessions/resume 应返回 404 Not Found"
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"]["code"], "SESSION_NOT_FOUND");
     }
 }
