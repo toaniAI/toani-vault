@@ -1638,6 +1638,20 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions", get(list_sessions))
         // BUG-18225: 缺少会话ID的DELETE路径兜底，返回404而非405
         .route("/sandbox/sessions", delete(close_missing_id_handler))
+        // BUG-18223/18224/18227: 缺少会话ID的子路径兜底路由必须在动态路由之前注册
+        // 否则静态路径会被动态段 :id 优先捕获并返回405 Method Not Allowed
+        .route("/sandbox/sessions/pause", post(pause_missing_id_handler))
+        .route("/sandbox/sessions/resume", post(resume_missing_id_handler))
+        .route(
+            "/sandbox/sessions/screenshot",
+            post(screenshot_missing_id_handler),
+        )
+        .route(
+            "/sandbox/sessions/execute",
+            post(execute_missing_id_handler),
+        )
+        .route("/sandbox/sessions/export", post(export_missing_id_handler))
+        // 带动态段的路由（必须在静态兜底路由之后）
         .route("/sandbox/sessions/:id", get(get_session))
         .route("/sandbox/sessions/:id/execute", post(execute_operation))
         .route("/sandbox/operations/:operation_id", get(get_operation))
@@ -1647,22 +1661,6 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions/:id/screenshot", post(take_screenshot))
         .route("/sandbox/sessions/:id/export", post(export_data))
         .route("/sandbox/stats", get(get_stats))
-        // BUG-18227: 缺少会话ID的子路径兜底路由，返回404而非405
-        .route(
-            "/sandbox/sessions/screenshot",
-            post(screenshot_missing_id_handler),
-        )
-        // BUG-18223: 缺少会话ID的暂停路径兜底
-        .route("/sandbox/sessions/pause", post(pause_missing_id_handler))
-        // BUG-18224: 缺少会话ID的恢复路径兜底
-        .route("/sandbox/sessions/resume", post(resume_missing_id_handler))
-        // 缺少会话ID的执行路径兜底
-        .route(
-            "/sandbox/sessions/execute",
-            post(execute_missing_id_handler),
-        )
-        // 缺少会话ID的导出路径兜底
-        .route("/sandbox/sessions/export", post(export_missing_id_handler))
         // WebSocket 实时连接
         .route(
             "/sandbox/sessions/:id/ws/:credential_id",
