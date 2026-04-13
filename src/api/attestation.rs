@@ -31,6 +31,7 @@ use async_trait::async_trait;
 use axum::{
     Router,
     extract::State,
+    extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -1025,8 +1026,19 @@ async fn create_challenge(
 /// 验证客户端返回的挑战响应，确认客户端拥有正确的密钥
 async fn verify_challenge_response(
     State(state): State<Arc<AttestationState>>,
-    Json(request): Json<VerifyChallengeResponseRequest>,
+    payload: Result<Json<VerifyChallengeResponseRequest>, JsonRejection>,
 ) -> Response {
+    // BUG-18353: 拦截 JSON 反序列化错误（如缺少 quote_b64 字段），统一返回 400 + invalid_request
+    let request = match payload {
+        Ok(Json(req)) => req,
+        Err(e) => {
+            return ApiErrorResponse::invalid_request(format!(
+                "Invalid verify-response request payload: {e}"
+            ))
+            .into_response();
+        }
+    };
+
     let quote_bytes = match STANDARD.decode(&request.quote_b64) {
         Ok(bytes) => bytes,
         Err(e) => {

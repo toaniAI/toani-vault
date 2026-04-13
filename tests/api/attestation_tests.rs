@@ -552,3 +552,102 @@ async fn test_replay_protection() {
             .contains("Challenge not found")
     );
 }
+
+/// BUG-18353: 测试缺少 quote_b64 字段返回 400 + invalid_request
+/// 验证 JSON 反序列化失败场景的错误响应格式统一性
+#[tokio::test]
+async fn test_verify_response_missing_quote_b64_returns_400_invalid_request() {
+    let state = create_simulation_safe_test_state().await;
+    let app = attestation_routes(state);
+
+    // 发送缺少 quote_b64 字段的请求（仅包含 challenge_id）
+    let request_body = r#"{
+        "challenge_id": "chal_test_missing_field"
+    }"#;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/verify-response")
+        .header("Content-Type", "application/json")
+        .body(Body::from(request_body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // BUG-18353: 应返回 400 Bad Request（而非 Axum 默认的 422 Unprocessable Entity）
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // 验证响应体包含 "error": "invalid_request"
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str().unwrap(), "invalid_request");
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid verify-response request payload")
+    );
+}
+
+/// BUG-18353: 测试发送空 JSON 对象返回 400 + invalid_request
+#[tokio::test]
+async fn test_verify_response_empty_json_returns_400_invalid_request() {
+    let state = create_simulation_safe_test_state().await;
+    let app = attestation_routes(state);
+
+    let request_body = r#"{}"#;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/verify-response")
+        .header("Content-Type", "application/json")
+        .body(Body::from(request_body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str().unwrap(), "invalid_request");
+}
+
+/// BUG-18353: 测试使用错误字段名（response 而非 quote_b64）返回 400 + invalid_request
+/// 该场景直接复现原始 Bug 报告中的测试契约偏差问题
+#[tokio::test]
+async fn test_verify_response_wrong_field_name_returns_400_invalid_request() {
+    let state = create_simulation_safe_test_state().await;
+    let app = attestation_routes(state);
+
+    // 使用 "response" 字段而非后端期望的 "quote_b64"
+    let request_body = r#"{
+        "challenge_id": "chal_test_wrong_field",
+        "response": "some_value"
+    }"#;
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/verify-response")
+        .header("Content-Type", "application/json")
+        .body(Body::from(request_body))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // 应返回 400（而非 405，因为路径正确但字段错误）
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str().unwrap(), "invalid_request");
+}
