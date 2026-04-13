@@ -2376,4 +2376,52 @@ mod tests {
         let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
         assert_eq!(error.error, "invalid_request");
     }
+
+    #[tokio::test]
+    async fn test_get_session_invalid_uuid_route_returns_invalid_request() {
+        // BUG-18222 回归测试：GET /sandbox/sessions/not-a-uuid 应返回
+        // 400 + {"error":"invalid_request"}，且不会进入会话查询逻辑
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxRead]);
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/sandbox/sessions/not-a-uuid")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+
+        assert_eq!(payload["error"], "invalid_request");
+        assert!(
+            payload["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("UUID"),
+            "error message should mention UUID"
+        );
+    }
 }
