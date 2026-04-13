@@ -40,6 +40,7 @@ fn create_audit_token() -> ValidatedToken {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 
@@ -57,6 +58,7 @@ fn create_admin_token() -> ValidatedToken {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 
@@ -74,6 +76,7 @@ fn create_no_permission_token() -> ValidatedToken {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 
@@ -469,6 +472,7 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     };
 
     for expires_in in [900_u64, 1800_u64] {

@@ -31,19 +31,12 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        ApiTokenMetadata, CreateAccessTokenResponse, CreateAutomationTokenRequest,
-        CreateAutomationTokenResponse, CreateTokenRequest, CreateTokenResponse, CredBridgeError,
-        CredBridgeErrorCode, ListTokensResponse, RequestOptions, Result, RevokeTokenResponse,
-        TokenInfo, TokenScope, TokenStatsResponse,
+        ApiTokenMetadata, CreateAccessTokenResponse, CreateTokenRequest, CreateTokenResponse,
+        CredBridgeError, CredBridgeErrorCode, ListTokensResponse, RequestOptions, Result,
+        RevokeTokenResponse, TokenInfo, TokenScope, TokenStatsResponse,
     },
 };
 use std::sync::Arc;
-
-/// Token 验证响应
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TokenVerifyResponse {
-    valid: bool,
-}
 
 /// Token 管理器
 ///
@@ -179,7 +172,7 @@ impl TokenManager {
 
     /// 验证当前 Token
     ///
-    /// 向服务器发送验证请求，确认 Token 是否被撤销
+    /// 当前仅进行本地有效期校验，不再调用已删除的 `/tokens/verify` 接口。
     ///
     /// # 示例
     ///
@@ -199,29 +192,8 @@ impl TokenManager {
     /// }
     /// # }
     /// ```
-    pub async fn verify(&self, options: Option<RequestOptions>) -> Result<bool> {
-        let token = match self.client.get_token() {
-            Some(token) => token,
-            None => return Ok(false),
-        };
-
-        let body = serde_json::json!({ "token": token });
-
-        let result: Result<TokenVerifyResponse> = self
-            .client
-            .post_with_options("/tokens/verify", body, options)
-            .await;
-
-        match result {
-            Ok(response) => Ok(response.valid),
-            Err(e) => {
-                if e.is_auth_error() {
-                    Ok(false)
-                } else {
-                    Err(e)
-                }
-            }
-        }
+    pub async fn verify(&self, _options: Option<RequestOptions>) -> Result<bool> {
+        Ok(self.is_valid())
     }
 
     /// 撤销当前 Token
@@ -283,62 +255,18 @@ impl TokenManager {
     pub async fn create_access_token(
         &self,
         scopes: Vec<String>,
+        credential_ids: Vec<String>,
         expires_in: Option<u64>,
         options: Option<RequestOptions>,
     ) -> Result<CreateAccessTokenResponse> {
         let body = serde_json::json!({
             "scopes": scopes,
             "ttl_seconds": expires_in,
+            "credential_ids": credential_ids,
         });
 
         self.client
             .post_with_options("/auth/access-token", body, options)
-            .await
-    }
-
-    pub async fn create_automation_token(
-        &self,
-        request: CreateAutomationTokenRequest,
-        options: Option<RequestOptions>,
-    ) -> Result<CreateAutomationTokenResponse> {
-        self.client
-            .post_with_options("/profile/automation-tokens", request, options)
-            .await
-    }
-
-    pub async fn list_automation_tokens(
-        &self,
-        options: Option<RequestOptions>,
-    ) -> Result<Vec<ApiTokenMetadata>> {
-        self.client
-            .get_with_options("/profile/automation-tokens", options)
-            .await
-    }
-
-    pub async fn get_automation_token(
-        &self,
-        token_id: impl AsRef<str>,
-        options: Option<RequestOptions>,
-    ) -> Result<ApiTokenMetadata> {
-        self.client
-            .get_with_options(
-                &format!("/profile/automation-tokens/{}", token_id.as_ref()),
-                options,
-            )
-            .await
-    }
-
-    pub async fn revoke_automation_token(
-        &self,
-        token_id: impl AsRef<str>,
-        options: Option<RequestOptions>,
-    ) -> Result<ApiTokenMetadata> {
-        self.client
-            .post_with_options(
-                &format!("/profile/automation-tokens/{}/revoke", token_id.as_ref()),
-                serde_json::json!({}),
-                options,
-            )
             .await
     }
 
@@ -452,8 +380,8 @@ impl TokenManager {
     /// # async fn example() {
     /// # let client = Arc::new(CredBridgeClient::new(CredBridgeConfig::new("https://api.credbridge.io")).unwrap());
     /// let token_manager = TokenManager::new(client);
-    /// if token_manager.has_all_scopes(&[TokenScope::CredentialRead, TokenScope::CredentialDecrypt]) {
-    ///     println!("Can read and decrypt credentials");
+    /// if token_manager.has_all_scopes(&[TokenScope::CredentialRead, TokenScope::CredentialWrite]) {
+    ///     println!("Can read and write credentials");
     /// }
     /// # }
     /// ```

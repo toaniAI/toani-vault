@@ -12,7 +12,6 @@ pub mod i18n;
 pub mod logging_middleware;
 pub mod middleware;
 pub mod notifications;
-pub mod profile_tokens;
 pub mod rate_limit;
 pub mod response;
 pub mod routes;
@@ -51,7 +50,6 @@ pub use credentials::{AppState, AuditLogger, DefaultAuditLogger};
 pub use i18n::{LocaleResolverState, ResolvedLocale, locale_middleware};
 pub use middleware::{TokenScope, ValidatedToken};
 pub use notifications::notifications_routes;
-pub use profile_tokens::profile_token_routes;
 pub use sandbox::{SandboxState, sandbox_routes};
 pub use service_accounts::service_account_routes;
 pub use tenant::{TenantApiState, tenant_routes};
@@ -60,4 +58,4 @@ pub use tenant_middleware::{
     cross_tenant_check_middleware, tenant_isolation_middleware, validate_path_tenant_id,
     validate_query_tenant_id,
 };
-pub use tokens::{public_token_routes, token_routes};
+pub use tokens::token_routes;

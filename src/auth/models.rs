@@ -218,9 +218,9 @@ impl MembershipRole {
     /// # 映射规则（与 TokenScope::from_role 保持一致）
     /// | Role | Scopes |
     /// |------|--------|
-    /// | owner | admin, tenant:*, credential:*, sandbox:*, audit:read, members:*, invitations:*, tokens:*, users:manage, roles:manage |
-    /// | admin | tenant:read/write/admin, credential:*, sandbox:*, audit:read, members:*, invitations:*, tokens:*, users:manage |
-    /// | member | tenant:read, credential:read/write/decrypt, sandbox:*, audit:read, tokens:read/write |
+    /// | owner | admin, tenant:*, credential:read/write/delete, sandbox:*, audit:read, members:*, invitations:*, tokens:*, users:manage, roles:manage |
+    /// | admin | tenant:read/write/admin, credential:read/write/delete, sandbox:*, audit:read, members:*, invitations:*, tokens:*, users:manage |
+    /// | member | tenant:read, credential:read/write, sandbox:*, audit:read, tokens:read/write |
     /// | readonly | tenant:read, credential:read, tokens:read |
     pub fn default_scopes(&self) -> Vec<String> {
         match self {
@@ -231,7 +231,6 @@ impl MembershipRole {
                 "tenant:admin".to_string(),
                 "tenant:delete".to_string(),
                 "credential:read".to_string(),
-                "credential:decrypt".to_string(),
                 "credential:write".to_string(),
                 "credential:delete".to_string(),
                 "sandbox:read".to_string(),
@@ -254,7 +253,6 @@ impl MembershipRole {
                 "tenant:write".to_string(),
                 "tenant:admin".to_string(),
                 "credential:read".to_string(),
-                "credential:decrypt".to_string(),
                 "credential:write".to_string(),
                 "credential:delete".to_string(),
                 "sandbox:read".to_string(),
@@ -274,7 +272,6 @@ impl MembershipRole {
             MembershipRole::Member => vec![
                 "tenant:read".to_string(),
                 "credential:read".to_string(),
-                "credential:decrypt".to_string(),
                 "credential:write".to_string(),
                 "sandbox:read".to_string(),
                 "sandbox:write".to_string(),
@@ -1374,6 +1371,7 @@ pub struct ApiTokenMetadata {
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub scopes: Vec<String>,
+    pub credential_ids: Vec<String>,
     pub issued_membership_role_snapshot: Option<String>,
     pub permission_source: Option<String>,
     pub created_via: Option<String>,
@@ -1412,6 +1410,7 @@ impl ApiTokenMetadata {
             display_name: None,
             description: None,
             scopes: Vec::new(),
+            credential_ids: Vec::new(),
             issued_membership_role_snapshot: None,
             permission_source: None,
             created_via: None,
@@ -1428,6 +1427,11 @@ impl ApiTokenMetadata {
 
     pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
         self.scopes = scopes;
+        self
+    }
+
+    pub fn with_credential_ids(mut self, credential_ids: Vec<String>) -> Self {
+        self.credential_ids = credential_ids;
         self
     }
 

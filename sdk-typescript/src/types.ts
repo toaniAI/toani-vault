@@ -26,8 +26,6 @@ export enum CredentialType {
 export enum TokenScope {
   /** 凭证读取权限 */
   CredentialRead = "credential:read",
-  /** 凭证解密权限 */
-  CredentialDecrypt = "credential:decrypt",
   /** 凭证写入权限 */
   CredentialWrite = "credential:write",
   /** 审计日志读取权限 */
@@ -273,6 +271,8 @@ export interface TokenRefreshResult {
 export interface CreateTokenRequest {
   /** 请求的权限范围 */
   scopes: string[];
+  /** 允许访问的凭证白名单 */
+  credentialIds: string[];
   /** 过期时间（秒） */
   expiresIn?: number;
 }
@@ -299,6 +299,8 @@ export interface CreateTokenResponse {
 export interface AuthCreateAccessTokenRequest {
   /** 请求的权限范围 */
   scopes: string[];
+  /** 允许访问的凭证白名单 */
+  credentialIds: string[];
   /** 过期时间（秒） */
   ttlSeconds?: number;
 }
@@ -796,45 +798,6 @@ export interface AuthMembershipsResponse {
 /** 注销响应 */
 export interface AuthLogoutResponse {
   success: boolean;
-}
-
-export interface AuthAutomationToken {
-  tokenId: string;
-  tokenKind: string;
-  tokenName?: string;
-  tokenPrefix?: string;
-  tokenPreview?: string;
-  tokenType: string;
-  subjectType: string;
-  subjectId: string;
-  tenantId: string;
-  issuedFrom: string;
-  sessionId?: string;
-  membershipId?: string;
-  description?: string;
-  grantedScopes: string[];
-  issuedMembershipRoleSnapshot?: string;
-  permissionSource?: string;
-  createdVia?: string;
-  revokedReason?: string;
-  expiresAt: string;
-  revokedAt?: string;
-  createdAt: string;
-  lastUsedAt?: string;
-}
-
-export interface AuthCreateAutomationTokenRequest {
-  name: string;
-  description?: string;
-  scopes: string[];
-  ttlSeconds?: number;
-  createdVia?: "profile_dashboard" | "cli" | "sdk";
-}
-
-export interface AuthCreateAutomationTokenResponse {
-  tokenValue: string;
-  tokenPreview: string;
-  metadata: AuthAutomationToken;
 }
 
 // ============================================================================

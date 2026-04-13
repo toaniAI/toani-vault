@@ -122,9 +122,8 @@ pub use token::TokenManager;
 pub use types::{
     ApiTokenMetadata, AuditExportRequest, AuditExportResponse, AuditLogEntry, AuditLogFilter,
     AuditLogsResponse, AuditVerifyRequest, AuditVerifyResponse, CreateAccessTokenResponse,
-    CreateAutomationTokenRequest, CreateAutomationTokenResponse, CreateCredentialRequest,
-    CreateCredentialResponse, CreateSandboxSessionRequest, CreateSandboxSessionResponse,
-    CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
+    CreateCredentialRequest, CreateCredentialResponse, CreateSandboxSessionRequest,
+    CreateSandboxSessionResponse, CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
     CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError,
     CredBridgeErrorCode, CredentialFilter, CredentialMetadata, CredentialType,
     DecryptCredentialRequest, DecryptCredentialResponse, DeleteCredentialResponse,

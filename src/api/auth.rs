@@ -41,6 +41,7 @@ use crate::auth::{
     TenantInvitation, TenantMembership, User,
 };
 use crate::token::TOKEN_ISSUED_FROM_SESSION;
+use crate::vault::storage::CredentialVault;
 
 use super::token_blacklist::{TokenStore, create_token_store};
 
@@ -57,6 +58,8 @@ pub struct AuthApiState {
     pub token_store: TokenStore,
     /// 审计存储（可选）
     pub audit_storage: Option<Arc<dyn AuditStorage>>,
+    /// 凭证 Vault（用于 token 发放时校验白名单资源）
+    pub vault: Option<Arc<CredentialVault>>,
 }
 
 impl AuthApiState {
@@ -66,6 +69,7 @@ impl AuthApiState {
             auth_service,
             token_store: create_token_store(),
             audit_storage: None,
+            vault: None,
         }
     }
 
@@ -78,12 +82,18 @@ impl AuthApiState {
             auth_service,
             token_store,
             audit_storage: None,
+            vault: None,
         }
     }
 
     /// 设置审计存储
     pub fn with_audit_storage(mut self, storage: Arc<dyn AuditStorage>) -> Self {
         self.audit_storage = Some(storage);
+        self
+    }
+
+    pub fn with_vault(mut self, vault: Arc<CredentialVault>) -> Self {
+        self.vault = Some(vault);
         self
     }
 
@@ -192,6 +202,8 @@ pub struct CreateAccessTokenRequest {
     pub scopes: Vec<String>,
     #[serde(default)]
     pub ttl_seconds: Option<u64>,
+    #[serde(default)]
+    pub credential_ids: Vec<String>,
 }
 
 /// access token 响应
@@ -206,6 +218,7 @@ pub struct AccessTokenResponse {
     pub expires_at: u64,
     pub expires_in: u64,
     pub granted_scopes: Vec<String>,
+    pub credential_ids: Vec<String>,
     pub revoked_at: Option<String>,
 }
 
@@ -1003,6 +1016,7 @@ pub async fn create_access_token_handler(
         CreateTokenRequest {
             scopes: request.scopes,
             expires_in: request.ttl_seconds,
+            credential_ids: request.credential_ids,
         },
     )
     .await?;
@@ -1017,6 +1031,7 @@ pub async fn create_access_token_handler(
         expires_at: created.expires_at,
         expires_in: created.expires_in,
         granted_scopes: created.granted_scopes,
+        credential_ids: created.credential_ids,
         revoked_at: created.revoked_at,
     }))
 }
@@ -2176,6 +2191,7 @@ mod tests {
             metadata,
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         };
 
         assert!(is_web_session_token(&base));

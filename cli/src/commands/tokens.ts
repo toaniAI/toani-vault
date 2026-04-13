@@ -23,7 +23,17 @@ export async function runTokens(
             .map((s) => s.trim())
             .filter(Boolean)
         : ["credential:read"];
-      const result = await sdk.token.create({ scopes, expiresIn });
+      const credentialIdsRaw = options["credential-ids"] as string | undefined;
+      if (!credentialIdsRaw) {
+        throw new Error(
+          "Usage: toani tokens create --scope <scope1,scope2> --credential-ids <id1,id2> [--expires-in 3600]",
+        );
+      }
+      const credentialIds = credentialIdsRaw
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const result = await sdk.token.create({ scopes, credentialIds, expiresIn });
       printResult(result, config.output);
       return;
     }
@@ -39,13 +49,6 @@ export async function runTokens(
       }
       const result = await client.get(`/tokens/${tokenId}`);
       printResult(result, config.output);
-      return;
-    }
-    case "verify": {
-      const token = options.token as string | undefined;
-      if (token) sdk.token.setToken(token);
-      const result = await sdk.token.verify();
-      printResult({ valid: result }, config.output);
       return;
     }
     case "stats": {
@@ -70,7 +73,7 @@ export async function runTokens(
     }
     default:
       throw new Error(
-        "Usage: toani tokens <create|list|get|verify|stats|revoke> [options]",
+        "Usage: toani tokens <create|list|get|stats|revoke> [options]",
       );
   }
 }

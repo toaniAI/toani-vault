@@ -17,7 +17,7 @@ use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
 use crate::api::websocket::handle_socket;
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
-use crate::models::CredentialType;
+use crate::models::{CredentialMetadata, CredentialType};
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     config::SandboxConfig,
@@ -27,7 +27,10 @@ use crate::tee::sandbox::{
     session::SandboxSession,
     types::{OperationRequest, OperationType, SessionId, SessionRequest},
 };
-use crate::vault::models::{CredentialId, TenantId, UserId, VaultEntry, VaultError};
+use crate::token::TOKEN_ISSUED_FROM_ACCESS_TOKEN;
+use crate::vault::models::{
+    CredentialFilter, CredentialId, ServiceId, TenantId, UserId, VaultEntry, VaultError,
+};
 use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
@@ -139,7 +142,11 @@ struct SessionCredentialMaterial {
 #[derive(Debug, Deserialize)]
 pub struct CreateSessionRequest {
     /// 凭证 ID
+    #[serde(default)]
     pub credential_id: Option<Uuid>,
+    /// 服务标识；用于按当前 token 白名单解析唯一凭证
+    #[serde(default)]
+    pub service_id: Option<String>,
     /// 原始意图描述
     pub original_intent: String,
     /// 会话元数据（可选）
@@ -352,14 +359,21 @@ pub async fn create_session(
         token.tenant_id, token.user_id
     );
 
-    let credential_id = match validate_create_session_credential_id(request.credential_id) {
+    let credential_id = match resolve_create_session_credential(
+        state.vault.as_ref(),
+        &token,
+        request.credential_id,
+        request.service_id.as_deref(),
+    ) {
         Ok(credential_id) => credential_id,
-        Err(message) => return ApiErrorResponse::unprocessable_entity(message).into_response(),
+        Err(CreateSessionCredentialError::MissingReference(message)) => {
+            return ApiErrorResponse::unprocessable_entity(message).into_response();
+        }
+        Err(CreateSessionCredentialError::InvalidReference(message)) => {
+            return ApiErrorResponse::invalid_request(message).into_response();
+        }
+        Err(CreateSessionCredentialError::Sandbox(error)) => return map_sandbox_error(error),
     };
-
-    if let Err(error) = ensure_credential_exists(state.vault.as_ref(), &token, credential_id) {
-        return map_sandbox_error(error);
-    }
 
     // 构建会话请求
     let session_request = SessionRequest {
@@ -599,7 +613,7 @@ pub async fn execute_operation(
     Json(request): Json<ExecuteOperationRequest>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
-    if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
 
@@ -686,7 +700,7 @@ pub async fn pause_session(
     Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:write
-    if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxWrite).await {
         return e;
     }
 
@@ -733,7 +747,7 @@ pub async fn resume_session(
     Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:write
-    if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxWrite).await {
         return e;
     }
 
@@ -780,7 +794,7 @@ pub async fn close_session(
     Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:write
-    if let Err(e) = check_scope(&token, TokenScope::SandboxWrite).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxWrite).await {
         return e;
     }
 
@@ -816,7 +830,7 @@ pub async fn take_screenshot(
     Path(id_str): Path<String>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
-    if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
 
@@ -873,7 +887,7 @@ pub async fn export_data(
     Json(request): Json<ExportDataRequest>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
-    if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
 
@@ -1032,8 +1046,24 @@ async fn check_scope(token: &ValidatedToken, required: TokenScope) -> Result<(),
 }
 
 async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Response> {
-    check_scope(token, TokenScope::SandboxWrite).await?;
-    check_scope(token, TokenScope::CredentialDecrypt).await
+    check_scope(token, TokenScope::CredentialRead).await?;
+
+    if token.issued_from() == TOKEN_ISSUED_FROM_ACCESS_TOKEN {
+        return Ok(());
+    }
+
+    check_scope(token, TokenScope::SandboxWrite).await
+}
+
+async fn check_sandbox_control_scope(
+    token: &ValidatedToken,
+    required_scope: TokenScope,
+) -> Result<(), Response> {
+    if token.issued_from() == TOKEN_ISSUED_FROM_ACCESS_TOKEN {
+        return check_scope(token, TokenScope::CredentialRead).await;
+    }
+
+    check_scope(token, required_scope).await
 }
 
 async fn resolve_operation_parameters(
@@ -1413,6 +1443,12 @@ fn ensure_credential_exists(
     token: &ValidatedToken,
     credential_id: Uuid,
 ) -> Result<(), SandboxError> {
+    if !token.can_access_credential(&credential_id.to_string()) {
+        return Err(SandboxError::Other(
+            "forbidden: credential is not allowed by the current token whitelist".to_string(),
+        ));
+    }
+
     let vault = vault.ok_or_else(|| {
         SandboxError::Config("sandbox credential validation requires credential vault".to_string())
     })?;
@@ -1433,10 +1469,144 @@ fn ensure_credential_exists(
     }
 }
 
-fn validate_create_session_credential_id(
+#[derive(Debug)]
+enum CreateSessionCredentialError {
+    MissingReference(&'static str),
+    InvalidReference(String),
+    Sandbox(SandboxError),
+}
+
+impl From<SandboxError> for CreateSessionCredentialError {
+    fn from(value: SandboxError) -> Self {
+        Self::Sandbox(value)
+    }
+}
+
+fn resolve_create_session_credential(
+    vault: Option<&Arc<CredentialVault>>,
+    token: &ValidatedToken,
     credential_id: Option<Uuid>,
-) -> Result<Uuid, &'static str> {
-    credential_id.ok_or("missing required field: credential_id")
+    service_id: Option<&str>,
+) -> Result<Uuid, CreateSessionCredentialError> {
+    if let Some(credential_id) = credential_id {
+        ensure_credential_exists(vault, token, credential_id)?;
+        if let Some(service_id) = service_id {
+            let service_id = normalize_requested_service_id(service_id)?;
+            ensure_credential_matches_service_id(vault, token, credential_id, service_id)?;
+        }
+        return Ok(credential_id);
+    }
+
+    let service_id = normalize_requested_service_id(service_id.ok_or(
+        CreateSessionCredentialError::MissingReference(
+            "missing required field: credential_id or service_id",
+        ),
+    )?)?;
+
+    let metadata = resolve_credential_metadata_by_service_id(vault, token, service_id)?;
+
+    Uuid::parse_str(&metadata.credential_id).map_err(|error| {
+        CreateSessionCredentialError::InvalidReference(format!(
+            "resolved credential_id is invalid: {error}"
+        ))
+    })
+}
+
+fn normalize_requested_service_id(service_id: &str) -> Result<&str, CreateSessionCredentialError> {
+    let normalized = service_id.trim();
+    if normalized.is_empty() {
+        return Err(CreateSessionCredentialError::InvalidReference(
+            "service_id must not be empty".to_string(),
+        ));
+    }
+
+    Ok(normalized)
+}
+
+fn ensure_credential_matches_service_id(
+    vault: Option<&Arc<CredentialVault>>,
+    token: &ValidatedToken,
+    credential_id: Uuid,
+    expected_service_id: &str,
+) -> Result<(), CreateSessionCredentialError> {
+    let vault = vault.ok_or_else(|| {
+        CreateSessionCredentialError::Sandbox(SandboxError::Config(
+            "sandbox credential validation requires credential vault".to_string(),
+        ))
+    })?;
+    let credential_id_model =
+        CredentialId::from_string(credential_id.to_string()).map_err(|error| {
+            CreateSessionCredentialError::InvalidReference(format!(
+                "invalid credential id: {error}"
+            ))
+        })?;
+    let tenant_id = TenantId::new(token.tenant_id.clone());
+    let user_id = UserId::new(token.user_id.clone());
+    let metadata = vault
+        .get_credential_metadata(&credential_id_model, &tenant_id, &user_id)
+        .map_err(|error| {
+            CreateSessionCredentialError::Sandbox(SandboxError::Other(format!(
+                "credential metadata lookup failed: {error}"
+            )))
+        })?
+        .ok_or_else(|| {
+            CreateSessionCredentialError::Sandbox(SandboxError::Session(
+                crate::tee::sandbox::error::SessionError::credential_not_found(credential_id),
+            ))
+        })?;
+
+    if metadata.service_id != expected_service_id {
+        return Err(CreateSessionCredentialError::InvalidReference(format!(
+            "credential_id does not match service_id '{expected_service_id}'",
+        )));
+    }
+
+    Ok(())
+}
+
+fn resolve_credential_metadata_by_service_id(
+    vault: Option<&Arc<CredentialVault>>,
+    token: &ValidatedToken,
+    service_id: &str,
+) -> Result<CredentialMetadata, CreateSessionCredentialError> {
+    let vault = vault.ok_or_else(|| {
+        CreateSessionCredentialError::Sandbox(SandboxError::Config(
+            "sandbox credential validation requires credential vault".to_string(),
+        ))
+    })?;
+    let tenant_id = TenantId::new(token.tenant_id.clone());
+    let user_id = UserId::new(token.user_id.clone());
+    let result = vault
+        .list_credentials(
+            &tenant_id,
+            &user_id,
+            CredentialFilter {
+                service_id: Some(ServiceId::new(service_id)),
+                credential_type: None,
+                include_deleted: false,
+                only_valid: true,
+            },
+        )
+        .map_err(|error| {
+            CreateSessionCredentialError::Sandbox(SandboxError::Other(format!(
+                "credential lookup failed: {error}"
+            )))
+        })?;
+    let mut matches = result
+        .credentials
+        .into_iter()
+        .filter(|item| token.can_access_credential(&item.credential_id))
+        .collect::<Vec<_>>();
+
+    match matches.len() {
+        0 => Err(CreateSessionCredentialError::InvalidReference(format!(
+            "no credential matched service_id '{service_id}' within the current token scope",
+        ))),
+        1 => Ok(matches.remove(0)),
+        _ => Err(CreateSessionCredentialError::InvalidReference(format!(
+            "multiple credentials share service_id '{service_id}' within the current token scope",
+        ))),
+    }
 }
 
 /// 解析 UUID
@@ -1523,6 +1693,11 @@ fn map_sandbox_error(error: SandboxError) -> Response {
                 .trim()
                 .to_string(),
             StatusCode::BAD_REQUEST,
+        ),
+        SandboxError::Other(message) if message.starts_with("forbidden:") => (
+            ErrorCode::Forbidden,
+            message.trim_start_matches("forbidden:").trim().to_string(),
+            StatusCode::FORBIDDEN,
         ),
         SandboxError::Other(message) if message.starts_with("selector_not_found:") => (
             ErrorCode::InvalidRequest,
@@ -1692,7 +1867,7 @@ async fn websocket_upgrade(
     Extension(token): Extension<ValidatedToken>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
-    if let Err(e) = check_scope(&token, TokenScope::SandboxExecute).await {
+    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
 
@@ -1804,7 +1979,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_create_session_scopes_requires_credential_decrypt() {
+    async fn test_check_create_session_scopes_requires_credential_read() {
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
 
         let response = check_create_session_scopes(&token)
@@ -1823,8 +1998,8 @@ mod tests {
             body["message"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("credential:decrypt"),
-            "message should mention required decrypt scope"
+                .contains("credential:read"),
+            "message should mention required read scope"
         );
     }
 
@@ -1833,12 +2008,25 @@ mod tests {
         let token = create_mock_token(
             "tenant_123",
             "user_456",
-            vec![TokenScope::SandboxWrite, TokenScope::CredentialDecrypt],
+            vec![TokenScope::SandboxWrite, TokenScope::CredentialRead],
         );
 
         check_create_session_scopes(&token)
             .await
-            .expect("token with sandbox:write + credential:decrypt should pass");
+            .expect("token with sandbox:write + credential:read should pass");
+    }
+
+    #[tokio::test]
+    async fn test_check_create_session_scopes_accepts_dashboard_access_token_with_read_scope_only()
+    {
+        let mut token =
+            create_mock_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+        token.issued_from = TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string();
+        token.allowed_credential_ids = Some(vec![Uuid::new_v4().to_string()]);
+
+        check_create_session_scopes(&token)
+            .await
+            .expect("dashboard-issued access token with credential:read should pass");
     }
 
     #[test]
@@ -1902,9 +2090,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_validate_create_session_credential_id_missing_returns_422_unprocessable_entity() {
-        let message = validate_create_session_credential_id(None)
-            .expect_err("missing credential_id should return unprocessable_entity response");
+    async fn test_resolve_create_session_credential_missing_reference_returns_422() {
+        let error = resolve_create_session_credential(
+            None,
+            &create_mock_token("t", "u", vec![]),
+            None,
+            None,
+        )
+        .expect_err("missing references should fail");
+        let message = match error {
+            CreateSessionCredentialError::MissingReference(message) => message,
+            other => panic!("expected missing reference error, got {other:?}"),
+        };
         let response = ApiErrorResponse::unprocessable_entity(message).into_response();
 
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -1919,13 +2116,13 @@ mod tests {
             body["message"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("credential_id"),
-            "message should mention credential_id"
+                .contains("credential_id or service_id"),
+            "message should mention credential reference options"
         );
     }
 
     #[test]
-    fn test_create_session_request_missing_credential_id_deserializes_to_none() {
+    fn test_create_session_request_missing_credential_reference_deserializes_to_none() {
         let raw = serde_json::json!({
             "original_intent": "open page",
             "metadata": {
@@ -1937,6 +2134,7 @@ mod tests {
             serde_json::from_value(raw).expect("request should deserialize");
 
         assert_eq!(request.credential_id, None);
+        assert_eq!(request.service_id, None);
     }
 
     #[test]
@@ -1951,6 +2149,21 @@ mod tests {
             serde_json::from_value(raw).expect("request should deserialize");
 
         assert_eq!(request.credential_id, Some(credential_id));
+        assert_eq!(request.service_id, None);
+    }
+
+    #[test]
+    fn test_create_session_request_with_service_id_deserializes() {
+        let raw = serde_json::json!({
+            "service_id": "github-prod",
+            "original_intent": "open page"
+        });
+
+        let request: CreateSessionRequest =
+            serde_json::from_value(raw).expect("request should deserialize");
+
+        assert_eq!(request.credential_id, None);
+        assert_eq!(request.service_id.as_deref(), Some("github-prod"));
     }
 
     #[test]

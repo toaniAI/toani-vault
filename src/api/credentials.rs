@@ -12,13 +12,13 @@ use crate::api::i18n::I18nMetadata;
 use crate::api::middleware::{
     AuthError, TokenScope, ValidatedToken, require_any_scope, require_scope,
 };
+use crate::crypto::CredentialCryptoContext;
 use crate::crypto::hkdf::KeyHierarchy;
-use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
 use crate::models::{CredentialMetadata, CredentialType};
 use crate::tee::SharedEnclave;
 use crate::vault::models::{
     CreateCredentialRequest, CredentialFilter, CredentialId, EncryptedPayload, ServiceId, TenantId,
-    UserId, VaultEntry, VaultError,
+    UserId, VaultError,
 };
 use crate::vault::storage::CredentialVault;
 use axum::{
@@ -815,124 +815,15 @@ pub struct DecryptCredentialResponse {
 
 /// POST /api/v1/credentials/:id/decrypt - 解密凭证
 pub async fn decrypt_credential_endpoint(
-    State(state): State<AppState>,
-    Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<String>,
+    State(_state): State<AppState>,
+    Extension(_token): Extension<ValidatedToken>,
+    Path(_id): Path<String>,
     Json(_request): Json<DecryptCredentialRequest>,
 ) -> Result<Json<DecryptCredentialResponse>, ApiError> {
-    // 验证 Scope: credential:decrypt
-    require_scope(TokenScope::CredentialDecrypt)(&token).map_err(ApiError::from_auth_error)?;
-
-    let credential_id = CredentialId::from_string(id.clone())
-        .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
-
-    let tenant_id = TenantId::new(&token.tenant_id);
-    let user_id = UserId::new(&token.user_id);
-
-    // 获取完整凭证（含加密载荷）
-    let entry = state
-        .vault
-        .get_credential(&credential_id, &tenant_id, &user_id)
-        .map_err(vault_error_to_api_error)?
-        .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
-
-    // 检查凭证是否已过期
-    if entry.is_expired() {
-        return Err(ApiError::new("credential_expired", "凭证已过期"));
-    }
-
-    let tee_snapshot = tee_runtime_snapshot(&state).await;
-    let plaintext_bytes = match decrypt_credential_in_tee(&state, &entry).await {
-        Ok(data) => {
-            state.audit_logger.log_decryption_attempt(
-                &token.tenant_id,
-                &token.user_id,
-                &id,
-                true,
-                &token.token_id,
-                &tee_snapshot.mrenclave_label,
-            );
-            data
-        }
-        Err(e) => {
-            state.audit_logger.log_decryption_attempt(
-                &token.tenant_id,
-                &token.user_id,
-                &id,
-                false,
-                &token.token_id,
-                &tee_snapshot.mrenclave_label,
-            );
-            return Err(ApiError::new("internal_error", e));
-        }
-    };
-
-    // 解析明文为 JSON
-    let plaintext_data: serde_json::Value = match serde_json::from_slice(&plaintext_bytes) {
-        Ok(v) => v,
-        Err(_) => match String::from_utf8(plaintext_bytes) {
-            Ok(s) => serde_json::Value::String(s),
-            Err(e) => {
-                return Err(ApiError::new(
-                    "invalid_request",
-                    format!("Failed to decode plaintext as UTF-8: {e}"),
-                ));
-            }
-        },
-    };
-
-    Ok(Json(DecryptCredentialResponse {
-        credential_id: entry.credential_id.as_str().to_string(),
-        service_id: entry.service_id.as_str().to_string(),
-        credential_type: entry.credential_type.as_str().to_string(),
-        plaintext_data,
-    }))
-}
-
-/// 在 TEE 内解密凭证
-async fn decrypt_credential_in_tee(
-    state: &AppState,
-    entry: &VaultEntry,
-) -> Result<Vec<u8>, String> {
-    let tee_snapshot = tee_runtime_snapshot(state).await;
-    let blob = EncryptedBlob {
-        version: entry.encrypted_payload.version,
-        algorithm: entry.encrypted_payload.algorithm.clone(),
-        kdf: entry.encrypted_payload.kdf.clone(),
-        nonce: entry.encrypted_payload.nonce.clone(),
-        auth_tag: entry.encrypted_payload.auth_tag.clone(),
-        ciphertext: entry.encrypted_payload.ciphertext.clone(),
-        aad_hash: None,
-    };
-    let context = CredentialCryptoContext::new(
-        entry.tenant_id.as_str(),
-        entry.user_id.hash(),
-        entry.credential_id.as_str(),
-    );
-
-    if tee_snapshot.enclave_initialized {
-        let mut enclave = state.enclave.lock().await;
-        enclave
-            .decrypt_credential(
-                entry.tenant_id.as_str(),
-                entry.user_id.hash(),
-                entry.credential_id.as_str(),
-                &blob,
-            )
-            .map_err(|e| format!("TEE 解密失败: {e}"))
-    } else {
-        warn!(
-            tenant_id = entry.tenant_id.as_str(),
-            credential_id = entry.credential_id.as_str(),
-            tee_runtime_mode = tee_snapshot.execution_mode,
-            "TEE 不可用，decrypt credential 回退到软件密钥路径"
-        );
-
-        let hierarchy = state.key_hierarchy.read().await;
-        context
-            .decrypt_with_hierarchy(&hierarchy, &blob)
-            .map_err(|e| format!("软件路径解密失败: {e}"))
-    }
+    Err(ApiError::new(
+        "forbidden",
+        "Direct credential decryption is disabled; use sandbox execution instead",
+    ))
 }
 
 /// 删除凭证响应

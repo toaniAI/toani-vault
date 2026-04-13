@@ -49,6 +49,7 @@ fn create_test_token(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) ->
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 

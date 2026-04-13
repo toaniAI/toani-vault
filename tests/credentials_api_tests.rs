@@ -89,6 +89,7 @@ fn create_test_token(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) ->
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 
@@ -670,10 +671,9 @@ async fn test_delete_nonexistent_credential_returns_404() {
     );
 }
 
-/// 测试解密过期凭证应返回 422 而非 500
-/// 复现 BUG-18105: 解密凭证，凭证已过期应该返回422，实际返回500
+/// 直接解密端点已被产品面下线，应统一拒绝访问
 #[tokio::test]
-async fn test_decrypt_expired_credential_returns_422() {
+async fn test_decrypt_endpoint_is_disabled_for_expired_credentials_too() {
     let state = setup_test_state().await;
     let tenant_id = TenantId::new("tenant_123");
     let user_id = UserId::new("user_456");
@@ -734,11 +734,10 @@ async fn test_decrypt_expired_credential_returns_422() {
 
     let response = app.oneshot(request).await.unwrap();
 
-    // BUG-18105: 过期凭证应返回 422 Unprocessable Entity，而非 500 Internal Server Error
     assert_eq!(
         response.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "BUG-18105: 过期凭证解密应返回 422，而不是 {:?}",
+        StatusCode::FORBIDDEN,
+        "direct decrypt endpoint should be disabled regardless of credential state, got {:?}",
         response.status()
     );
 
@@ -748,13 +747,12 @@ async fn test_decrypt_expired_credential_returns_422() {
         .unwrap();
     let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert_eq!(body_json["error"], "credential_expired");
+    assert_eq!(body_json["error"], "forbidden");
 }
 
-/// BUG-18156: 测试租户A解密租户B的凭证应返回403而非500
-/// 跨租户隔离违规应返回业务错误（403 Forbidden），而非内部服务器错误
+/// 直接解密端点已被产品面下线，应统一拒绝访问
 #[tokio::test]
-async fn test_decrypt_cross_tenant_credential_returns_403() {
+async fn test_decrypt_cross_tenant_credential_returns_forbidden() {
     let state = setup_test_state().await;
     let tenant_b = TenantId::new("tenant_b");
     let user_b = UserId::new("user_b");
@@ -791,11 +789,10 @@ async fn test_decrypt_cross_tenant_credential_returns_403() {
 
     let response = app.oneshot(request).await.unwrap();
 
-    // 应返回 403 Forbidden，而非 500 Internal Server Error
     assert_eq!(
         response.status(),
         StatusCode::FORBIDDEN,
-        "BUG-18156: 跨租户解密应返回 403，而不是 {:?}",
+        "direct decrypt endpoint should stay forbidden, got {:?}",
         response.status()
     );
 

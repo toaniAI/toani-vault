@@ -67,6 +67,8 @@ pub struct RequestContext {
     pub membership_id: Option<String>,
     /// 会话 ID（可选）
     pub session_id: Option<String>,
+    /// 资源级凭证白名单
+    pub allowed_credential_ids: Option<Vec<String>>,
     /// 请求ID（用于追踪）
     pub request_id: String,
     /// 当前请求解析后的 locale
@@ -88,6 +90,7 @@ impl RequestContext {
             scopes,
             membership_id: None,
             session_id: None,
+            allowed_credential_ids: None,
             request_id: generate_request_id(),
             resolved_locale: crate::api::i18n::DEFAULT_LOCALE.to_string(),
         }
@@ -108,6 +111,7 @@ impl RequestContext {
                 .collect(),
             membership_id: token.membership_id.clone(),
             session_id: token.session_id().map(|s| s.to_string()),
+            allowed_credential_ids: token.allowed_credential_ids.clone(),
             request_id: generate_request_id(),
             resolved_locale: crate::api::i18n::DEFAULT_LOCALE.to_string(),
         }

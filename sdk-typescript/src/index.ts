@@ -22,9 +22,12 @@
  *   },
  * });
  *
- * // 解密凭证
- * const decrypted = await sdk.credentials.decrypt(credential.credentialId);
- * console.log(decrypted.plaintextData);
+ * // 使用手工签发 token 创建 sandbox 会话
+ * const session = await sdk.sandbox.createSession({
+ *   serviceId: 'schwab',
+ *   originalIntent: 'sign in to dashboard',
+ * });
+ * console.log(session.sessionId);
  * ```
  */
 
@@ -109,9 +112,6 @@ export {
   // Auth 类型
   type AuthCreateAccessTokenRequest,
   type AuthCreateAccessTokenResponse,
-  type AuthAutomationToken,
-  type AuthCreateAutomationTokenRequest,
-  type AuthCreateAutomationTokenResponse,
   type AuthIdentityInfo,
   type AuthUserProfile,
   type AuthMembershipInfo,

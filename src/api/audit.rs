@@ -1374,6 +1374,7 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         }
     }
 
@@ -1390,6 +1391,7 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         }
     }
 
@@ -1419,6 +1421,7 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         };
         assert!(!has_audit_permission(&no_scope_token));
     }

@@ -405,6 +405,7 @@ async fn create_service_account_token_handler(
         expires_in: ttl_seconds,
         scope,
         granted_scopes: metadata.scopes.clone(),
+        credential_ids: Vec::new(),
         issued_at,
         expires_at,
         revoked_at: None,
@@ -556,6 +557,7 @@ mod tests {
             metadata: HashMap::new(),
             subject_type: "user".to_string(),
             issued_from: "profile".to_string(),
+            allowed_credential_ids: None,
         }
     }
 

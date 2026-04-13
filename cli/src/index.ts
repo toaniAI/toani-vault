@@ -1,14 +1,6 @@
 #!/usr/bin/env node
 import { loadConfig, saveConfig } from "./config/store.js";
-import {
-  runAudit,
-  runAuth,
-  runConfig,
-  runCredentials,
-  runSandbox,
-  runServiceAccounts,
-  runTokens,
-} from "./commands/index.js";
+import { runSandbox } from "./commands/index.js";
 import { printResult } from "./output/print.js";
 import type { OutputFormat } from "./types/cli.js";
 
@@ -21,13 +13,7 @@ Usage:
   toani [--output json|table] [--base-url URL] [--token TOKEN] <group> <command> [options]
 
 Groups:
-  auth         status/logout/me/memberships/use-tenant/token/access-token
-  config       init/show/set/get
-  credentials  list/get/create/update/delete/decrypt/versions/rollback
-  tokens       create/list/get/verify/stats/revoke
-  service-accounts  create/list/get/update/token
   sandbox      create-session/list-sessions/get-session/terminate/execute/get-operation/stats
-  audit        logs/export/verify
 `);
 }
 
@@ -96,26 +82,8 @@ async function main(): Promise<void> {
   }
 
   switch (group) {
-    case "auth":
-      await runAuth(runtimeConfig, subArgs);
-      return;
-    case "config":
-      await runConfig(runtimeConfig, subArgs);
-      return;
-    case "credentials":
-      await runCredentials(runtimeConfig, subArgs);
-      return;
-    case "tokens":
-      await runTokens(runtimeConfig, subArgs);
-      return;
-    case "service-accounts":
-      await runServiceAccounts(runtimeConfig, subArgs);
-      return;
     case "sandbox":
       await runSandbox(runtimeConfig, subArgs);
-      return;
-    case "audit":
-      await runAudit(runtimeConfig, subArgs);
       return;
     case "--version":
     case "-v":

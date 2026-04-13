@@ -30,8 +30,6 @@ pub mod tokens {
     pub const CREATE: &str = "/tokens";
     /// 获取 Token 统计
     pub const STATS: &str = "/tokens/stats";
-    /// 验证 Token
-    pub const VERIFY: &str = "/tokens/verify";
     /// 撤销 Token
     pub const REVOKE: &str = "/tokens/:id/revoke";
 }

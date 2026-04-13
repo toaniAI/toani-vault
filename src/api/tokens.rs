@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::{
     auth::AuthApiState,
-    middleware::{TokenScope, ValidatedToken, validate_paseto_token},
+    middleware::{TokenScope, ValidatedToken},
     response::ApiErrorResponse,
 };
 use crate::audit::{AuditAction, Outcome};
@@ -22,6 +22,7 @@ use crate::token::{
     TOKEN_ISSUED_FROM_ACCESS_TOKEN, TOKEN_ISSUED_FROM_SERVICE_ACCOUNT,
     TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER, TokenClaims,
 };
+use crate::vault::models::{CredentialId, TenantId, UserId};
 
 pub(crate) const TOKEN_SECRET_KEY: [u8; 32] = [0u8; 32];
 
@@ -31,6 +32,8 @@ pub struct CreateTokenRequest {
     pub scopes: Vec<String>,
     #[serde(default)]
     pub expires_in: Option<u64>,
+    #[serde(default)]
+    pub credential_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -45,6 +48,7 @@ pub struct CreatedTokenResponse {
     pub expires_in: u64,
     pub scope: String,
     pub granted_scopes: Vec<String>,
+    pub credential_ids: Vec<String>,
     pub issued_at: u64,
     pub expires_at: u64,
     pub revoked_at: Option<String>,
@@ -66,6 +70,7 @@ pub struct TokenMetadataResponse {
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub granted_scopes: Vec<String>,
+    pub credential_ids: Vec<String>,
     pub issued_membership_role_snapshot: Option<String>,
     pub permission_source: Option<String>,
     pub created_via: Option<String>,
@@ -74,24 +79,6 @@ pub struct TokenMetadataResponse {
     pub revoked_at: Option<String>,
     pub created_at: String,
     pub last_used_at: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VerifyTokenRequest {
-    #[serde(default)]
-    pub token: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct VerifyTokenResponse {
-    pub valid: bool,
-    pub token_id: Option<String>,
-    pub user_id: Option<String>,
-    pub tenant_id: Option<String>,
-    pub scopes: Option<Vec<String>>,
-    pub expires_at: Option<u64>,
-    pub subject_type: Option<String>,
-    pub issued_from: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -116,12 +103,6 @@ pub fn token_routes(state: AuthApiState) -> Router {
         .route("/tokens/:token_id", get(get_token_handler))
         .route("/tokens/stats", get(get_token_stats_handler))
         .route("/tokens/:token_id/revoke", post(revoke_token_handler))
-        .with_state(state)
-}
-
-pub fn public_token_routes(state: AuthApiState) -> Router {
-    Router::new()
-        .route("/tokens/verify", post(verify_token_handler))
         .with_state(state)
 }
 
@@ -163,6 +144,12 @@ pub async fn issue_access_token_from_user_token(
         ));
     }
 
+    if request.credential_ids.is_empty() {
+        return Err(ApiErrorResponse::invalid_request(
+            "At least one credential_id is required",
+        ));
+    }
+
     let requested_scopes = request
         .scopes
         .iter()
@@ -172,11 +159,19 @@ pub async fn issue_access_token_from_user_token(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    if requested_scopes != vec![TokenScope::CredentialRead] {
+        return Err(ApiErrorResponse::invalid_request(
+            "Only credential:read scope is supported for dashboard-issued tokens",
+        ));
+    }
+
     if requested_scopes.iter().any(|scope| !token.has_scope(scope)) {
         return Err(ApiErrorResponse::forbidden(
             "Requested scopes must be a subset of the current token scopes",
         ));
     }
+
+    let credential_ids = resolve_allowed_credential_ids(state, token, &request.credential_ids)?;
 
     let ttl_seconds = normalize_ttl(request.expires_in);
     let granted_scopes = requested_scopes
@@ -217,7 +212,8 @@ pub async fn issue_access_token_from_user_token(
         unix_to_datetime(claims.exp)?,
     )
     .with_token_kind("user_access_token")
-    .with_scopes(granted_scopes.clone());
+    .with_scopes(granted_scopes.clone())
+    .with_credential_ids(credential_ids.clone());
     let metadata = if let Some(session_id) = token.session_id() {
         metadata.with_session_id(parse_uuid_str(session_id, "session_id")?)
     } else {
@@ -245,6 +241,7 @@ pub async fn issue_access_token_from_user_token(
                 "subject_type": TOKEN_SUBJECT_TYPE_USER,
                 "token_id": token_id,
                 "scopes": granted_scopes,
+                "credential_ids": credential_ids,
                 "expires_in": ttl_seconds,
                 "session_id": token.session_id(),
                 "membership_id": token.membership_id(),
@@ -267,74 +264,11 @@ pub async fn issue_access_token_from_user_token(
             .map(TokenScope::as_str)
             .map(str::to_string)
             .collect(),
+        credential_ids,
         issued_at: claims.iat.unwrap_or_else(unix_now),
         expires_at: claims.exp,
         revoked_at: None,
     })
-}
-
-async fn verify_token_handler(
-    State(state): State<AuthApiState>,
-    Json(request): Json<VerifyTokenRequest>,
-) -> Result<Json<VerifyTokenResponse>, ApiErrorResponse> {
-    let token = request
-        .token
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiErrorResponse::invalid_request("Missing required field: token"))?;
-
-    let validated = match validate_paseto_token(token, &TOKEN_SECRET_KEY, "en") {
-        Ok(token) => token,
-        Err(_) => return Ok(Json(invalid_token_response())),
-    };
-
-    let is_blacklisted = state
-        .token_store
-        .is_blacklisted(&validated.token_id)
-        .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
-
-    if is_blacklisted || validated.is_expired() {
-        return Ok(Json(verify_token_response(false, &validated)));
-    }
-
-    if let Some(metadata) = state
-        .auth_service
-        .get_api_token_metadata(&validated.token_id)
-        .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?
-    {
-        if !metadata.is_active() {
-            return Ok(Json(verify_token_response(false, &validated)));
-        }
-
-        let _ = state
-            .auth_service
-            .mark_api_token_used(&metadata.id, Utc::now())
-            .await;
-    }
-
-    Ok(Json(verify_token_response(true, &validated)))
-}
-
-fn verify_token_response(valid: bool, validated: &ValidatedToken) -> VerifyTokenResponse {
-    VerifyTokenResponse {
-        valid,
-        token_id: Some(validated.token_id.clone()),
-        user_id: Some(validated.user_id.clone()),
-        tenant_id: Some(validated.tenant_id.clone()),
-        scopes: Some(
-            validated
-                .scopes
-                .iter()
-                .map(|scope| scope.as_str().to_string())
-                .collect(),
-        ),
-        expires_at: Some(validated.expires_at),
-        subject_type: Some(validated.subject_type.clone()),
-        issued_from: Some(validated.issued_from.clone()),
-    }
 }
 
 async fn revoke_token_handler(
@@ -582,17 +516,64 @@ async fn get_token_stats_handler(
     }))
 }
 
-fn invalid_token_response() -> VerifyTokenResponse {
-    VerifyTokenResponse {
-        valid: false,
-        token_id: None,
-        user_id: None,
-        tenant_id: None,
-        scopes: None,
-        expires_at: None,
-        subject_type: None,
-        issued_from: None,
+#[allow(clippy::result_large_err)]
+fn resolve_allowed_credential_ids(
+    state: &AuthApiState,
+    token: &ValidatedToken,
+    requested_ids: &[String],
+) -> Result<Vec<String>, ApiErrorResponse> {
+    let vault = state
+        .vault
+        .as_ref()
+        .ok_or_else(|| ApiErrorResponse::internal_error("Credential vault is not configured"))?;
+    let tenant_id = TenantId::new(token.tenant_id.clone());
+    let user_id = UserId::new(token.user_id.clone());
+    let mut unique_ids = Vec::new();
+
+    for requested_id in requested_ids {
+        let normalized = requested_id.trim();
+        if normalized.is_empty() {
+            return Err(ApiErrorResponse::invalid_request(
+                "credential_ids must not contain empty values",
+            ));
+        }
+
+        if !token.can_access_credential(normalized) {
+            return Err(ApiErrorResponse::forbidden(
+                "Requested credential_ids must be allowed by the current token",
+            ));
+        }
+
+        let credential_id = CredentialId::from_string(normalized.to_string())
+            .map_err(|_| ApiErrorResponse::invalid_request("Invalid credential_id"))?;
+
+        match vault.get_credential_metadata(&credential_id, &tenant_id, &user_id) {
+            Ok(Some(_)) => {
+                let normalized = credential_id.as_str().to_string();
+                if !unique_ids.contains(&normalized) {
+                    unique_ids.push(normalized);
+                }
+            }
+            Ok(None) => {
+                return Err(ApiErrorResponse::forbidden(
+                    "Requested credential_ids must be accessible to the current user",
+                ));
+            }
+            Err(error) => {
+                return Err(ApiErrorResponse::internal_error(format!(
+                    "Credential access check failed: {error}"
+                )));
+            }
+        }
     }
+
+    if unique_ids.is_empty() {
+        return Err(ApiErrorResponse::invalid_request(
+            "At least one credential_id is required",
+        ));
+    }
+
+    Ok(unique_ids)
 }
 
 fn normalize_ttl(expires_in: Option<u64>) -> u64 {
@@ -633,6 +614,7 @@ pub(crate) fn map_token_metadata(item: ApiTokenMetadata) -> TokenMetadataRespons
         display_name: item.display_name,
         description: item.description,
         granted_scopes: item.scopes,
+        credential_ids: item.credential_ids,
         issued_membership_role_snapshot: item.issued_membership_role_snapshot,
         permission_source: item.permission_source,
         created_via: item.created_via,
@@ -656,7 +638,7 @@ mod tests {
     use super::*;
     use crate::api::{
         auth::AuthApiState,
-        middleware::{TokenScope, ValidatedToken},
+        middleware::{TokenScope, ValidatedToken, validate_paseto_token},
         token_blacklist::create_token_store,
     };
     use crate::auth::{
@@ -667,8 +649,15 @@ mod tests {
         },
         service::{AuthService, MfaStatusSnapshot},
     };
+    use crate::crypto::constants;
+    use crate::models::CredentialType;
+    use crate::vault::{
+        models::EncryptedPayload,
+        storage::{CredentialVault, create_credential},
+    };
     use async_trait::async_trait;
     use serde_json::Value as JsonValue;
+    use std::sync::Arc;
     use uuid::Uuid;
 
     struct DummyAuthService;
@@ -775,11 +764,43 @@ mod tests {
         }
     }
 
-    fn test_state() -> AuthApiState {
-        AuthApiState::new_with_token_store(
-            std::sync::Arc::new(DummyAuthService),
-            create_token_store(),
+    fn seed_test_state() -> (AuthApiState, String) {
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let payload = EncryptedPayload::new(
+            constants::PROTOCOL_VERSION,
+            constants::ALGORITHM_AES_256_GCM,
+            constants::KDF_HKDF_SHA256,
+            vec![0u8; constants::NONCE_LENGTH],
+            vec![0u8; constants::AUTH_TAG_LENGTH],
+            vec![1, 2, 3, 4],
+        );
+        let entry = create_credential(
+            vault.as_ref(),
+            "00000000-0000-0000-0000-000000000123",
+            "00000000-0000-0000-0000-000000000456",
+            "sandbox-demo",
+            CredentialType::ApiKey,
+            payload,
+            None,
         )
+        .expect("test credential should be created");
+        let state =
+            AuthApiState::new_with_token_store(Arc::new(DummyAuthService), create_token_store())
+                .with_vault(vault);
+
+        (state, entry.credential_id.as_str().to_string())
+    }
+
+    fn create_token_request(
+        credential_id: &str,
+        scopes: &[&str],
+        expires_in: Option<u64>,
+    ) -> CreateTokenRequest {
+        CreateTokenRequest {
+            scopes: scopes.iter().map(|scope| (*scope).to_string()).collect(),
+            expires_in,
+            credential_ids: vec![credential_id.to_string()],
+        }
     }
 
     fn session_token(scopes: Vec<TokenScope>) -> ValidatedToken {
@@ -802,17 +823,19 @@ mod tests {
 
     #[tokio::test]
     async fn create_token_returns_paseto_for_subset_scopes() {
+        let (state, credential_id) = seed_test_state();
         let response = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
                 TokenScope::AuditRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string(), "audit:read".to_string()],
-                expires_in: Some(3600),
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(3600),
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -820,24 +843,27 @@ mod tests {
 
         assert!(response.access_token.starts_with("v4.local."));
         assert_eq!(response.token, response.access_token);
-        assert_eq!(response.scope, "credential:read audit:read");
+        assert_eq!(response.scope, "credential:read");
         assert_eq!(response.expires_in, 3600);
         assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
         assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_ACCESS_TOKEN);
+        assert_eq!(response.credential_ids, vec![credential_id]);
     }
 
     #[tokio::test]
     async fn create_token_response_includes_token_alias_matching_access_token() {
+        let (state, credential_id) = seed_test_state();
         let response = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(3600),
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(3600),
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -849,16 +875,18 @@ mod tests {
 
     #[tokio::test]
     async fn create_token_respects_minimum_ttl_option() {
+        let (state, credential_id) = seed_test_state();
         let response = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(900),
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(900),
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -869,16 +897,18 @@ mod tests {
 
     #[tokio::test]
     async fn create_token_uses_default_ttl_when_not_provided() {
+        let (state, credential_id) = seed_test_state();
         let response = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: None,
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                None,
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -888,18 +918,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn verify_token_round_trip_succeeds_for_same_tenant() {
+    async fn created_token_keeps_restricted_credential_ids_in_paseto_validation() {
+        let (state, credential_id) = seed_test_state();
         let created = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::TokensRead,
                 TokenScope::CredentialRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(120),
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(120),
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -907,59 +939,27 @@ mod tests {
 
         assert_eq!(created.expires_in, MIN_TOKEN_TTL_SECONDS);
 
-        let verified = verify_token_handler(
-            State(test_state()),
-            Json(VerifyTokenRequest {
-                token: Some(created.access_token),
-            }),
-        )
-        .await
-        .expect("token verify should succeed")
-        .0;
+        let validated = validate_paseto_token(&created.access_token, &TOKEN_SECRET_KEY, "en")
+            .expect("created token should validate");
 
-        assert!(verified.valid);
-        assert_eq!(
-            verified.tenant_id.as_deref(),
-            Some("00000000-0000-0000-0000-000000000123")
-        );
-        assert_eq!(
-            verified.subject_type.as_deref(),
-            Some(TOKEN_SUBJECT_TYPE_USER)
-        );
-        assert_eq!(
-            verified.issued_from.as_deref(),
-            Some(TOKEN_ISSUED_FROM_ACCESS_TOKEN)
-        );
-        assert_eq!(
-            verified.scopes.unwrap_or_default(),
-            vec!["credential:read".to_string()]
-        );
-    }
-
-    #[tokio::test]
-    async fn verify_token_without_token_field_returns_invalid_request() {
-        let error = verify_token_handler(
-            State(test_state()),
-            Json(VerifyTokenRequest { token: None }),
-        )
-        .await
-        .expect_err("missing token field must fail");
-
-        assert_eq!(error.error, "invalid_request");
+        assert_eq!(validated.token_id, created.token_id);
+        assert!(validated.has_scope(&TokenScope::CredentialRead));
     }
 
     #[tokio::test]
     async fn create_token_caps_ttl_at_maximum() {
+        let (state, credential_id) = seed_test_state();
         let response = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(MAX_TOKEN_TTL_SECONDS + 1),
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(MAX_TOKEN_TTL_SECONDS + 1),
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -974,15 +974,17 @@ mod tests {
             .expect("missing scopes should deserialize as empty");
         assert!(request.scopes.is_empty());
         assert_eq!(request.expires_in, Some(300));
+        assert!(request.credential_ids.is_empty());
     }
 
     #[tokio::test]
     async fn create_token_missing_scopes_returns_400_invalid_request() {
+        let (state, _) = seed_test_state();
         let request: CreateTokenRequest =
             serde_json::from_value(json!({})).expect("missing scopes should deserialize");
 
         let err = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
@@ -998,8 +1000,9 @@ mod tests {
 
     #[tokio::test]
     async fn create_token_empty_scopes_returns_400_invalid_request() {
+        let (state, credential_id) = seed_test_state();
         let err = create_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::CredentialRead,
@@ -1007,6 +1010,7 @@ mod tests {
             Json(CreateTokenRequest {
                 scopes: vec![],
                 expires_in: None,
+                credential_ids: vec![credential_id],
             }),
         )
         .await
@@ -1018,7 +1022,7 @@ mod tests {
 
     #[tokio::test]
     async fn revoke_token_blacklists_current_access_token() {
-        let state = test_state();
+        let (state, credential_id) = seed_test_state();
         let created = create_token_handler(
             State(state.clone()),
             Extension(session_token(vec![
@@ -1026,10 +1030,11 @@ mod tests {
                 TokenScope::TokensRevoke,
                 TokenScope::CredentialRead,
             ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(120),
-            }),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(120),
+            )),
         )
         .await
         .expect("token creation should succeed")
@@ -1059,7 +1064,7 @@ mod tests {
 
     #[tokio::test]
     async fn revoke_other_token_without_permission_returns_403() {
-        let state = test_state();
+        let (state, _) = seed_test_state();
         let token = session_token(vec![TokenScope::CredentialRead]);
         let target_token_id = "00000000-0000-0000-0000-000000000999".to_string();
 
@@ -1134,7 +1139,7 @@ mod tests {
     // BUG-18200: Session token 撤销不存在的 token 应返回 404 而非 400
     #[tokio::test]
     async fn revoke_nonexistent_token_with_revoke_scope_returns_404() {
-        let state = test_state();
+        let (state, _) = seed_test_state();
         let nonexistent_token_id = "00000000-0000-0000-0000-000000000001";
 
         // 创建一个有 revoke 权限的 session token
@@ -1157,7 +1162,7 @@ mod tests {
     // BUG-18200: 确保 session token 撤销自己仍返回 400
     #[tokio::test]
     async fn revoke_self_session_token_returns_400() {
-        let state = test_state();
+        let (state, _) = seed_test_state();
         let token = session_token(vec![TokenScope::TokensRevoke]);
 
         // session_token 的 session_id 是 "00000000-0000-0000-0000-000000000789"
@@ -1181,8 +1186,9 @@ mod tests {
 
     #[tokio::test]
     async fn get_token_invalid_uuid_returns_400_invalid_request() {
+        let (state, _) = seed_test_state();
         let result = get_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![TokenScope::TokensRead])),
             Path("not-a-valid-uuid".to_string()),
         )
@@ -1196,8 +1202,9 @@ mod tests {
 
     #[tokio::test]
     async fn get_token_valid_uuid_not_found_returns_404() {
+        let (state, _) = seed_test_state();
         let result = get_token_handler(
-            State(test_state()),
+            State(state),
             Extension(session_token(vec![
                 TokenScope::TokensRead,
                 TokenScope::TenantAdmin,
@@ -1230,6 +1237,7 @@ mod tests {
             display_name: Some("CredBridge CLI".to_string()),
             description: Some("regression fixture".to_string()),
             granted_scopes: vec!["tokens:read".to_string()],
+            credential_ids: vec![Uuid::new_v4().to_string()],
             issued_membership_role_snapshot: Some("tenant_admin".to_string()),
             permission_source: Some("membership".to_string()),
             created_via: Some("api".to_string()),

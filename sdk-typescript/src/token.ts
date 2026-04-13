@@ -25,16 +25,6 @@ import {
   CredBridgeErrorCode,
 } from "./types.js";
 
-/** Token 验证响应 */
-interface TokenVerifyResponse {
-  valid: boolean;
-  token_id?: string;
-  user_id?: string;
-  tenant_id?: string;
-  scopes?: string[];
-  expires_at?: number;
-}
-
 /** Token 撤销响应 */
 interface TokenRevokeResponse {
   revoked: boolean;
@@ -212,46 +202,6 @@ export class TokenManager {
   }
 
   /**
-   * 验证当前 Token
-   *
-   * 向服务器发送验证请求，确认 Token 是否被撤销
-   *
-   * @param options - 请求选项
-   * @returns 验证结果
-   *
-   * @example
-   * ```typescript
-   * const isValid = await sdk.token.verify();
-   * if (!isValid) {
-   *   console.log('Token is invalid or revoked');
-   * }
-   * ```
-   */
-  public async verify(options?: RequestOptions): Promise<boolean> {
-    const token = this.client.getToken();
-    if (!token) {
-      return false;
-    }
-
-    try {
-      const response = await this.client.post<TokenVerifyResponse>(
-        "/tokens/verify",
-        { token },
-        { ...options, skipRetry: true },
-      );
-      return response.valid;
-    } catch (error) {
-      if (error instanceof CredBridgeError) {
-        // 如果是认证错误，Token 无效
-        if (error.isAuthError()) {
-          return false;
-        }
-      }
-      throw error;
-    }
-  }
-
-  /**
    * 创建新的平台 Token
    */
   public async create(
@@ -263,6 +213,7 @@ export class TokenManager {
       {
         scopes: request.scopes,
         expires_in: request.expiresIn,
+        credential_ids: request.credentialIds,
       },
       options,
     );

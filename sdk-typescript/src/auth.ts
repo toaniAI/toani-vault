@@ -6,9 +6,6 @@ import type { CredBridgeClient } from "./client.js";
 import {
   type AuthCreateAccessTokenRequest,
   type AuthCreateAccessTokenResponse,
-  type AuthAutomationToken,
-  type AuthCreateAutomationTokenRequest,
-  type AuthCreateAutomationTokenResponse,
   type AuthIdentityInfo,
   type AuthLogoutResponse,
   type AuthMeResponse,
@@ -74,35 +71,6 @@ interface AuthCreateAccessTokenResponseApi {
   expires_in: number;
   granted_scopes: string[];
   revoked_at?: string | null;
-}
-
-interface AuthAutomationTokenApi {
-  token_id: string;
-  token_kind: string;
-  token_name?: string;
-  token_prefix?: string;
-  token_type: string;
-  subject_type: string;
-  subject_id: string;
-  tenant_id: string;
-  issued_from: string;
-  session_id?: string;
-  membership_id?: string;
-  description?: string;
-  granted_scopes: string[];
-  issued_membership_role_snapshot?: string;
-  permission_source?: string;
-  created_via?: string;
-  revoked_reason?: string;
-  expires_at: string;
-  revoked_at?: string | null;
-  created_at: string;
-  last_used_at?: string | null;
-}
-
-interface AuthCreateAutomationTokenResponseApi extends AuthAutomationTokenApi {
-  token_value: string;
-  token_preview: string;
 }
 
 function mapIdentity(identity: AuthIdentityInfoApi): AuthIdentityInfo {
@@ -178,37 +146,6 @@ function mapCreateAccessTokenResponse(
   };
 }
 
-function mapAutomationToken(
-  response: AuthAutomationTokenApi,
-): AuthAutomationToken {
-  return {
-    tokenId: response.token_id,
-    tokenKind: response.token_kind,
-    tokenName: response.token_name,
-    tokenPrefix: response.token_prefix,
-    tokenPreview: response.token_prefix
-      ? `${response.token_prefix}...`
-      : undefined,
-    tokenType: response.token_type,
-    subjectType: response.subject_type,
-    subjectId: response.subject_id,
-    tenantId: response.tenant_id,
-    issuedFrom: response.issued_from,
-    sessionId: response.session_id,
-    membershipId: response.membership_id,
-    description: response.description,
-    grantedScopes: response.granted_scopes,
-    issuedMembershipRoleSnapshot: response.issued_membership_role_snapshot,
-    permissionSource: response.permission_source,
-    createdVia: response.created_via,
-    revokedReason: response.revoked_reason,
-    expiresAt: response.expires_at,
-    revokedAt: response.revoked_at ?? undefined,
-    createdAt: response.created_at,
-    lastUsedAt: response.last_used_at ?? undefined,
-  };
-}
-
 /**
  * Auth 服务
  */
@@ -228,6 +165,7 @@ export class AuthService {
       {
         scopes: request.scopes,
         ttl_seconds: request.ttlSeconds,
+        credential_ids: request.credentialIds,
       },
       options,
     );
@@ -275,62 +213,5 @@ export class AuthService {
     return {
       memberships: response.memberships.map(mapMembership),
     };
-  }
-
-  public async createAutomationToken(
-    request: AuthCreateAutomationTokenRequest,
-    options?: RequestOptions,
-  ): Promise<AuthCreateAutomationTokenResponse> {
-    const response =
-      await this.client.post<AuthCreateAutomationTokenResponseApi>(
-        "/profile/automation-tokens",
-        {
-          name: request.name,
-          description: request.description,
-          scopes: request.scopes,
-          ttl_seconds: request.ttlSeconds,
-          created_via: request.createdVia,
-        },
-        options,
-      );
-
-    return {
-      tokenValue: response.token_value,
-      tokenPreview: response.token_preview,
-      metadata: mapAutomationToken(response),
-    };
-  }
-
-  public async listAutomationTokens(
-    options?: RequestOptions,
-  ): Promise<AuthAutomationToken[]> {
-    const response = await this.client.get<AuthAutomationTokenApi[]>(
-      "/profile/automation-tokens",
-      options,
-    );
-    return response.map(mapAutomationToken);
-  }
-
-  public async getAutomationToken(
-    tokenId: string,
-    options?: RequestOptions,
-  ): Promise<AuthAutomationToken> {
-    const response = await this.client.get<AuthAutomationTokenApi>(
-      `/profile/automation-tokens/${tokenId}`,
-      options,
-    );
-    return mapAutomationToken(response);
-  }
-
-  public async revokeAutomationToken(
-    tokenId: string,
-    options?: RequestOptions,
-  ): Promise<AuthAutomationToken> {
-    const response = await this.client.post<AuthAutomationTokenApi>(
-      `/profile/automation-tokens/${tokenId}/revoke`,
-      {},
-      options,
-    );
-    return mapAutomationToken(response);
   }
 }

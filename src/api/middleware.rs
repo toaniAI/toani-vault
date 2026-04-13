@@ -176,7 +176,7 @@ impl TokenScope {
     /// # 映射规则
     /// - **owner**: 所有权限（包含 Admin）
     /// - **admin**: credential:*, sandbox:*, tokens:*, audit:read, members:*, invitations:*
-    /// - **member**: credential:read/write/decrypt, sandbox:*, tokens:read, tokens:write
+    /// - **member**: credential:read/write, sandbox:*, tokens:read, tokens:write
     /// - **readonly**: credential:read, tokens:read
     pub fn from_role(role: crate::auth::models::MembershipRole) -> Vec<TokenScope> {
         use crate::auth::models::MembershipRole;
@@ -188,7 +188,6 @@ impl TokenScope {
                 TokenScope::TenantAdmin,
                 TokenScope::TenantDelete,
                 TokenScope::CredentialRead,
-                TokenScope::CredentialDecrypt,
                 TokenScope::CredentialWrite,
                 TokenScope::CredentialDelete,
                 TokenScope::SandboxRead,
@@ -211,7 +210,6 @@ impl TokenScope {
                 TokenScope::TenantWrite,
                 TokenScope::TenantAdmin,
                 TokenScope::CredentialRead,
-                TokenScope::CredentialDecrypt,
                 TokenScope::CredentialWrite,
                 TokenScope::CredentialDelete,
                 TokenScope::SandboxRead,
@@ -231,7 +229,6 @@ impl TokenScope {
             MembershipRole::Member => vec![
                 TokenScope::TenantRead,
                 TokenScope::CredentialRead,
-                TokenScope::CredentialDecrypt,
                 TokenScope::CredentialWrite,
                 TokenScope::SandboxRead,
                 TokenScope::SandboxWrite,
@@ -285,6 +282,8 @@ pub struct ValidatedToken {
     pub subject_type: String,
     /// 令牌来源
     pub issued_from: String,
+    /// 资源级凭证白名单；None 表示不受限
+    pub allowed_credential_ids: Option<Vec<String>>,
 }
 
 impl ValidatedToken {
@@ -338,6 +337,17 @@ impl ValidatedToken {
         self.subject_type == TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT
     }
 
+    pub fn allowed_credential_ids(&self) -> Option<&[String]> {
+        self.allowed_credential_ids.as_deref()
+    }
+
+    pub fn can_access_credential(&self, credential_id: &str) -> bool {
+        match &self.allowed_credential_ids {
+            None => true,
+            Some(ids) => ids.iter().any(|id| id == credential_id),
+        }
+    }
+
     /// 创建用于测试的模拟 Token
     #[cfg(test)]
     pub fn mock(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) -> Self {
@@ -360,6 +370,7 @@ impl ValidatedToken {
             metadata: HashMap::new(),
             subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         }
     }
 }
@@ -456,7 +467,7 @@ async fn validate_token(
     auth_service: &Arc<dyn AuthService>,
     locale: &str,
 ) -> Result<ValidatedToken, AuthError> {
-    let validation_result = match validate_paseto_token(token, secret_key, locale) {
+    let mut validation_result = match validate_paseto_token(token, secret_key, locale) {
         Ok(token) => token,
         Err(_) => validate_session_token(token, auth_service, locale).await?,
     };
@@ -501,6 +512,10 @@ async fn validate_token(
         .get_api_token_metadata(&validation_result.token_id)
         .await
     {
+        if !metadata.credential_ids.is_empty() {
+            validation_result.allowed_credential_ids = Some(metadata.credential_ids.clone());
+        }
+
         if metadata.revoked_at.is_some() {
             let mut params = I18nParams::new();
             let reason = metadata
@@ -640,6 +655,7 @@ async fn validate_session_token(
             metadata,
             subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         });
     }
 
@@ -655,6 +671,7 @@ async fn validate_session_token(
         metadata,
         subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     })
 }
 
@@ -787,6 +804,7 @@ pub(crate) fn validate_paseto_token(
         metadata,
         subject_type,
         issued_from,
+        allowed_credential_ids: None,
     })
 }
 
@@ -966,6 +984,7 @@ pub mod tests {
             metadata: HashMap::new(),
             subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         }
     }
 

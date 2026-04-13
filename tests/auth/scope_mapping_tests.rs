@@ -40,7 +40,7 @@ fn test_owner_role_scopes() {
     assert!(scopes.contains(&"admin".to_string()));
 
     // 验证 scope 数量
-    assert_eq!(scopes.len(), 23);
+    assert_eq!(scopes.len(), 22);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn test_admin_role_scopes() {
     assert!(scopes.contains(&"invitations:write".to_string()));
 
     // 验证 scope 数量
-    assert_eq!(scopes.len(), 20);
+    assert_eq!(scopes.len(), 19);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn test_member_role_scopes() {
     assert!(!scopes.contains(&"invitations:write".to_string()));
 
     // 验证 scope 数量
-    assert_eq!(scopes.len(), 10);
+    assert_eq!(scopes.len(), 9);
 }
 
 #[test]

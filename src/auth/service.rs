@@ -1031,21 +1031,24 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let scopes =
             serde_json::to_value(&metadata.scopes).map_err(AuthError::SerializationError)?;
+        let credential_ids = serde_json::to_value(&metadata.credential_ids)
+            .map_err(AuthError::SerializationError)?;
 
         let row = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
             INSERT INTO api_tokens (
                 id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                 session_id, membership_id, token_name, token_prefix, display_name, description,
-                scopes, issued_membership_role_snapshot, permission_source, created_via,
-                revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
-                expires_at, revoked_at, created_at, last_used_at
+                scopes, credential_ids, issued_membership_role_snapshot, permission_source,
+                created_via, revoked_reason, oauth_client_id, oauth_grant_type,
+                oauth_subject_mode, expires_at, revoked_at, created_at, last_used_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                    $18, $19, $20, $21, $22, $23, $24, $25)
+                    $18, $19, $20, $21, $22, $23, $24, $25, $26)
             RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      ARRAY(SELECT jsonb_array_elements_text(credential_ids)) AS credential_ids,
                       issued_membership_role_snapshot, permission_source, created_via,
                       revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
@@ -1065,6 +1068,7 @@ impl AuthServiceImpl {
         .bind(&metadata.display_name)
         .bind(&metadata.description)
         .bind(&scopes)
+        .bind(&credential_ids)
         .bind(&metadata.issued_membership_role_snapshot)
         .bind(&metadata.permission_source)
         .bind(&metadata.created_via)
@@ -1093,6 +1097,7 @@ impl AuthServiceImpl {
             SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1120,6 +1125,7 @@ impl AuthServiceImpl {
             SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1149,6 +1155,7 @@ impl AuthServiceImpl {
             SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1178,6 +1185,7 @@ impl AuthServiceImpl {
             RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      ARRAY(SELECT jsonb_array_elements_text(credential_ids)) AS credential_ids,
                       issued_membership_role_snapshot, permission_source, created_via,
                       revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
@@ -1206,6 +1214,7 @@ impl AuthServiceImpl {
             RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
+                      ARRAY(SELECT jsonb_array_elements_text(credential_ids)) AS credential_ids,
                       issued_membership_role_snapshot, permission_source, created_via,
                       revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at

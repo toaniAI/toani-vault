@@ -72,74 +72,8 @@ export async function runAuth(
       return;
     }
     case "token": {
-      const nested = options._[0];
-
-      if (nested === "create") {
-        requireBearer(config);
-        const name = requireArg(
-          options,
-          "name",
-          "Usage: toani auth token create --name <name> --scope <scope1,scope2> [--ttl-seconds 86400] [--save]",
-        );
-        const scopes = requireArg(options, "scope")
-          .split(",")
-          .map((scope) => scope.trim())
-          .filter(Boolean);
-        const ttlRaw = options["ttl-seconds"];
-        const ttlSeconds =
-          typeof ttlRaw === "string" ? Number(ttlRaw) : undefined;
-        const response = await sdk.auth.createAutomationToken(
-          {
-            name,
-            description: options.description as string | undefined,
-            scopes,
-            ttlSeconds,
-            createdVia: "cli",
-          },
-        );
-        const shouldSave = Boolean(options.save);
-        if (shouldSave) {
-          saveConfig({
-            ...config,
-            token: response.tokenValue,
-          });
-        }
-        printResult({ ...response, saved: shouldSave }, config.output);
-        return;
-      }
-
-      if (nested === "list") {
-        requireBearer(config);
-        const items = await sdk.auth.listAutomationTokens();
-        printResult(items, config.output);
-        return;
-      }
-
-      if (nested === "get") {
-        requireBearer(config);
-        const tokenId = options._[1];
-        if (!tokenId) {
-          throw new Error("Usage: toani auth token get <token-id>");
-        }
-        const item = await sdk.auth.getAutomationToken(tokenId);
-        printResult(item, config.output);
-        return;
-      }
-
-      if (nested === "revoke") {
-        requireBearer(config);
-        const tokenId =
-          options._[1] ?? (options["token-id"] as string | undefined);
-        if (!tokenId) {
-          throw new Error("Usage: toani auth token revoke <token-id>");
-        }
-        const item = await sdk.auth.revokeAutomationToken(tokenId);
-        printResult(item, config.output);
-        return;
-      }
-
       throw new Error(
-        "Usage: toani auth token <create|list|get|revoke> [options]",
+        "The CLI no longer manages tokens directly. Use the Dashboard Tokens page to issue or revoke tokens.",
       );
     }
     case "access-token": {
@@ -155,12 +89,25 @@ export async function runAuth(
           .split(",")
           .map((scope) => scope.trim())
           .filter(Boolean);
+        const credentialIdsRaw = options["credential-ids"] as
+          | string
+          | undefined;
+        if (!credentialIdsRaw) {
+          throw new Error(
+            "Usage: toani auth access-token create --scope <scope1,scope2> --credential-ids <id1,id2> [--ttl-seconds <seconds>] [--store]",
+          );
+        }
+        const credentialIds = credentialIdsRaw
+          .split(",")
+          .map((credentialId) => credentialId.trim())
+          .filter(Boolean);
         const ttlRaw = options["ttl-seconds"];
         const ttlSeconds =
           typeof ttlRaw === "string" ? Number(ttlRaw) : undefined;
         requireBearer(config);
         const result = await sdk.auth.createAccessToken({
           scopes,
+          credentialIds,
           ttlSeconds,
         });
 
