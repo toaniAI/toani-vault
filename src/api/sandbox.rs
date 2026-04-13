@@ -31,7 +31,7 @@ use crate::vault::models::{CredentialId, TenantId, UserId, VaultEntry, VaultErro
 use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
-    extract::{Path, Query, State, WebSocketUpgrade},
+    extract::{OriginalUri, Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -396,9 +396,25 @@ pub async fn create_session(
 /// GET /api/v1/sandbox/sessions - 列出会话
 pub async fn list_sessions(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
     Extension(token): Extension<ValidatedToken>,
     Query(query): Query<ListSessionsQuery>,
 ) -> Response {
+    // BUG-18221: 检测原始请求路径是否以尾斜杠结尾
+    // NormalizePathLayer 会将 /sandbox/sessions/ 归一化为 /sandbox/sessions
+    // 但原始 URI 保留了尾斜杠，用于判断是否是"缺少详情 id"的请求
+    // 如果原始路径带尾斜杠，返回 404 + {"error":"not_found"}
+    let original_path = original_uri.path();
+    if original_path.ends_with('/') {
+        // 路径以尾斜杠结尾，表示请求的是 `/sandbox/sessions/` 而非 `/sandbox/sessions`
+        // 这对应于"缺少详情路径参数 id"的语义，应返回 404
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "not_found" })),
+        )
+            .into_response();
+    }
+
     // 验证 Scope: sandbox:read
     if let Err(e) = check_scope(&token, TokenScope::SandboxRead).await {
         return e;
@@ -2422,6 +2438,99 @@ mod tests {
                 .unwrap_or_default()
                 .contains("UUID"),
             "error message should mention UUID"
+        );
+    }
+
+    // ==================== BUG-18221 回归测试：路径缺少ID时返回404而非200 ====================
+
+    #[tokio::test]
+    async fn test_list_sessions_trailing_slash_returns_not_found() {
+        // BUG-18221 回归测试：GET /sandbox/sessions/ 被 NormalizePathLayer 归一化为
+        // /sandbox/sessions 后，不应被路由到 list_sessions 返回 200。
+        // 修复方案：在 list_sessions 中检查 OriginalUri，如果原始路径以尾斜杠结尾，
+        // 返回 404 + {"error":"not_found"}
+        use axum::extract::OriginalUri;
+        use axum::http::Uri;
+
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxRead]);
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        // 构造请求时模拟 NormalizePathLayer 之前保存的原始 URI
+        // 原始 URI 以尾斜杠结尾，表示用户意图是获取详情但缺少 ID
+        let original_uri = Uri::from_static("/sandbox/sessions/");
+        let request = Request::builder()
+            .method("GET")
+            .uri("/sandbox/sessions") // 归一化后的路径
+            .extension(OriginalUri(original_uri))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "GET /sandbox/sessions/ (原始路径带尾斜杠) 应返回 404 Not Found"
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let payload: Value = serde_json::from_slice(&body).expect("json body");
+
+        assert_eq!(payload["error"], "not_found");
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_normal_path_returns_success() {
+        // 正常列表请求（无尾斜杠）仍应返回成功响应
+        // 这是 BUG-18221 修复的回归测试：确保正常的列表功能不受影响
+        use axum::extract::OriginalUri;
+        use axum::http::Uri;
+
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState {
+            pool,
+            config,
+            repository: None,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        };
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxRead]);
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        // 原始 URI 不以尾斜杠结尾，表示正常的列表请求
+        let original_uri = Uri::from_static("/sandbox/sessions");
+        let request = Request::builder()
+            .method("GET")
+            .uri("/sandbox/sessions")
+            .extension(OriginalUri(original_uri))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        // 由于没有实际数据，列表会成功返回空列表
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "GET /sandbox/sessions (正常列表请求) 应返回 200 OK"
         );
     }
 }
