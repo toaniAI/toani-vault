@@ -24,8 +24,6 @@ use crate::token::{
     TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TokenClaims,
 };
 
-use super::tokens::TOKEN_SECRET_KEY;
-
 #[derive(Debug, Deserialize)]
 pub struct CreateServiceAccountRequest {
     pub name: String,
@@ -352,7 +350,7 @@ async fn create_service_account_token_handler(
     let issued_at = claims.iat.unwrap_or_default();
     let expires_at = claims.exp;
 
-    let paseto_key = PasetoToken::key_from_bytes(&TOKEN_SECRET_KEY)
+    let paseto_key = PasetoToken::key_from_bytes(state.token_secret_key.as_slice())
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
     let access_token = PasetoToken::sign(&claims, &paseto_key)
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;

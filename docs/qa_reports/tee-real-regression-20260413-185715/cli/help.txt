@@ -1,0 +1,8 @@
+toani - Toani Vault CLI
+
+Usage:
+  toani [--output json|table] [--base-url URL] [--token TOKEN] <group> <command> [options]
+
+Groups:
+  sandbox      create-session/list-sessions/get-session/terminate/execute/get-operation/stats
+

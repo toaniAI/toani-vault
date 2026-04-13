@@ -24,8 +24,6 @@ use crate::token::{
 };
 use crate::vault::models::{CredentialId, TenantId, UserId};
 
-pub(crate) const TOKEN_SECRET_KEY: [u8; 32] = [0u8; 32];
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateTokenRequest {
     #[serde(default)]
@@ -197,7 +195,7 @@ pub async fn issue_access_token_from_user_token(
         claims = claims.with_session_id(session_id);
     }
 
-    let paseto_key = PasetoToken::key_from_bytes(&TOKEN_SECRET_KEY)
+    let paseto_key = PasetoToken::key_from_bytes(state.token_secret_key.as_slice())
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
     let access_token = PasetoToken::sign(&claims, &paseto_key)
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
@@ -921,7 +919,7 @@ mod tests {
     async fn created_token_keeps_restricted_credential_ids_in_paseto_validation() {
         let (state, credential_id) = seed_test_state();
         let created = create_token_handler(
-            State(state),
+            State(state.clone()),
             Extension(session_token(vec![
                 TokenScope::TokensWrite,
                 TokenScope::TokensRead,
@@ -939,8 +937,12 @@ mod tests {
 
         assert_eq!(created.expires_in, MIN_TOKEN_TTL_SECONDS);
 
-        let validated = validate_paseto_token(&created.access_token, &TOKEN_SECRET_KEY, "en")
-            .expect("created token should validate");
+        let validated = validate_paseto_token(
+            &created.access_token,
+            state.token_secret_key.as_slice(),
+            "en",
+        )
+        .expect("created token should validate");
 
         assert_eq!(validated.token_id, created.token_id);
         assert!(validated.has_scope(&TokenScope::CredentialRead));
@@ -1040,8 +1042,12 @@ mod tests {
         .expect("token creation should succeed")
         .0;
 
-        let validated = validate_paseto_token(&created.access_token, &TOKEN_SECRET_KEY, "en")
-            .expect("created token should validate");
+        let validated = validate_paseto_token(
+            &created.access_token,
+            state.token_secret_key.as_slice(),
+            "en",
+        )
+        .expect("created token should validate");
 
         let response = revoke_token_handler(
             State(state.clone()),

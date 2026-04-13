@@ -1,0 +1,1 @@
+{"success":true,"data":{"pool_status":"running","active_sessions":0,"warm_instances":0,"healthy":true,"error":"Insufficient warm instances: 0/2"}}

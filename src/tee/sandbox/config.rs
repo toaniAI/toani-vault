@@ -468,29 +468,24 @@ impl NsjailConfig {
 
         // Namespace
         let ns = &self.sandbox.security.namespace;
-        if ns.pid {
+        if !ns.pid {
             args.push("--disable_clone_newpid".to_string());
-            args.push("false".to_string());
         }
-        if ns.network {
+        if !ns.network {
             args.push("--disable_clone_newnet".to_string());
-            args.push("false".to_string());
         }
-        if ns.mount {
-            args.push("--disable_clone_newmnt".to_string());
-            args.push("false".to_string());
+        if !ns.mount {
+            // nsjail uses NEWNS (not NEWMNT) flag naming.
+            args.push("--disable_clone_newns".to_string());
         }
-        if ns.ipc {
+        if !ns.ipc {
             args.push("--disable_clone_newipc".to_string());
-            args.push("false".to_string());
         }
-        if ns.uts {
+        if !ns.uts {
             args.push("--disable_clone_newuts".to_string());
-            args.push("false".to_string());
         }
-        if ns.user {
+        if !ns.user {
             args.push("--disable_clone_newuser".to_string());
-            args.push("false".to_string());
         }
 
         // Resource limits
@@ -596,6 +591,8 @@ mod tests {
         let args = config.to_args();
         assert!(args.contains(&"--mode".to_string()));
         assert!(args.contains(&"o".to_string()));
+        assert!(!args.contains(&"--disable_clone_newmnt".to_string()));
+        assert!(!args.contains(&"false".to_string()));
     }
 
     #[test]
@@ -612,6 +609,16 @@ mod tests {
 
         assert!(args.contains(&"--bindmount".to_string()));
         assert!(!args.contains(&"--bindmount_ro".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_disables_mount_namespace_with_newns_flag() {
+        let mut config = NsjailConfig::default();
+        config.sandbox.security.namespace.mount = false;
+        let args = config.to_args();
+
+        assert!(args.contains(&"--disable_clone_newns".to_string()));
+        assert!(!args.contains(&"--disable_clone_newmnt".to_string()));
     }
 
     #[test]

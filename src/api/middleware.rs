@@ -469,7 +469,21 @@ async fn validate_token(
 ) -> Result<ValidatedToken, AuthError> {
     let mut validation_result = match validate_paseto_token(token, secret_key, locale) {
         Ok(token) => token,
-        Err(_) => validate_session_token(token, auth_service, locale).await?,
+        Err(error) => {
+            // PASETO-like tokens should fail fast with a token error instead of falling
+            // back to session-token lookup (which produces misleading "session not found").
+            if token.starts_with("v4.local.") || token.starts_with("v4.public.") {
+                let mut params = I18nParams::new();
+                params.insert("reason".to_string(), Value::String(error));
+                return Err(AuthError::new(
+                    "invalid_token",
+                    locale,
+                    "errors.auth.invalid_token",
+                    params,
+                ));
+            }
+            validate_session_token(token, auth_service, locale).await?
+        }
     };
 
     // 检查是否过期

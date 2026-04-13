@@ -1,0 +1,12 @@
++OK
++OK
+*1
+$22
+CHAIN_ERROR_WHITE_LIST
+$143
+# Keyspace
+db2:keys=26,expires=0,avg_ttl=0
+db8:keys=6,expires=0,avg_ttl=0
+db3:keys=1,expires=0,avg_ttl=0
+db0:keys=812,expires=0,avg_ttl=0
+

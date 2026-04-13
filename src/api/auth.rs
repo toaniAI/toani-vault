@@ -60,6 +60,8 @@ pub struct AuthApiState {
     pub audit_storage: Option<Arc<dyn AuditStorage>>,
     /// 凭证 Vault（用于 token 发放时校验白名单资源）
     pub vault: Option<Arc<CredentialVault>>,
+    /// PASETO 签名密钥（需与认证中间件验证密钥一致）
+    pub token_secret_key: Vec<u8>,
 }
 
 impl AuthApiState {
@@ -70,6 +72,7 @@ impl AuthApiState {
             token_store: create_token_store(),
             audit_storage: None,
             vault: None,
+            token_secret_key: vec![0u8; 32],
         }
     }
 
@@ -83,6 +86,7 @@ impl AuthApiState {
             token_store,
             audit_storage: None,
             vault: None,
+            token_secret_key: vec![0u8; 32],
         }
     }
 
@@ -94,6 +98,11 @@ impl AuthApiState {
 
     pub fn with_vault(mut self, vault: Arc<CredentialVault>) -> Self {
         self.vault = Some(vault);
+        self
+    }
+
+    pub fn with_token_secret_key(mut self, token_secret_key: Vec<u8>) -> Self {
+        self.token_secret_key = token_secret_key;
         self
     }
 

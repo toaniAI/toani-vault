@@ -522,7 +522,8 @@ async fn initialize_app_state(
     let auth_state =
         AuthApiState::new_with_token_store(std::sync::Arc::new(auth_service), token_store)
             .with_audit_storage(audit_storage.clone())
-            .with_vault(credential_state.vault.clone());
+            .with_vault(credential_state.vault.clone())
+            .with_token_secret_key(resolve_token_secret_key());
     info!(module = "auth", status = "ready", "认证模块就绪");
 
     // --- Rate Limit ---
@@ -730,9 +731,8 @@ fn create_cors_layer(config: &ServerConfig) -> CorsLayer {
 fn build_api_routes(app_state: AppState) -> Router {
     // 创建 Token 存储用于黑名单检查
     let token_store = app_state.auth_state.token_store.clone();
-    // Generate a secret key for PASETO token validation
-    // In production, this should come from a secure configuration or Vault
-    let secret_key = vec![0u8; 32]; // Placeholder - should be from config
+    // Token 签名与验证使用同一份密钥，避免签发后立即校验失败。
+    let secret_key = app_state.auth_state.token_secret_key.clone();
 
     // 认证路由（公开，不需要认证）
     let locale_state = LocaleResolverState::new(
@@ -842,6 +842,19 @@ fn build_api_routes(app_state: AppState) -> Router {
     router = router.merge(sandbox_routes);
 
     router.layer(Extension(app_state))
+}
+
+fn resolve_token_secret_key() -> Vec<u8> {
+    if let Ok(raw) = env::var("TOKEN_SECRET_KEY") {
+        let bytes = raw.as_bytes();
+        if !bytes.is_empty() {
+            let mut key = vec![0u8; 32];
+            let copy_len = bytes.len().min(32);
+            key[..copy_len].copy_from_slice(&bytes[..copy_len]);
+            return key;
+        }
+    }
+    vec![0u8; 32]
 }
 
 async fn initialize_database_pool() -> Result<DatabasePool, Box<dyn std::error::Error>> {
