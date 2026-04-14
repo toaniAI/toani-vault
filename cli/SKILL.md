@@ -2,122 +2,300 @@
 
 ## 目标
 
-为 AI 代理提供一套稳定、可复用的 `@toani/vault-cli`（`toani`）调用规范，用于 CredBridge 的认证、凭证、Token、服务账号、沙箱执行与审计操作。
+给 AI agent 一份低歧义、可直接执行的 `@toani/vault-cli` / `toani` 使用规范。
 
-## 安装手段
+这个 skill 的重点不是解释 TEE 理论，而是告诉 agent:
 
-- Registry 安装（推荐）：
+- 这是一个命令行工具，入口是 `toani ...`
+- 当前公开能力只有 `config` 和 `sandbox`
+- 所谓 sandbox 是远端 TEE 浏览器会话 API，不是 agent 自己的 node、worker、tool session、对话状态
+- 要操作页面，必须走 `toani sandbox create-session` 和 `toani sandbox execute`
+
+## 先读这一段
+
+如果你是另一个 agent，请先建立下面的心智模型:
+
+1. `toani` 是 CLI，不是 SDK 片段，也不是伪代码。
+2. `sandbox` 指 CredBridge 后端提供的远端 TEE 沙盒会话。
+3. 不要把 `sandbox` 理解成 OpenClaw、自定义 agent runtime、节点树、browser tab registry、workflow node。
+4. 页面操作不是“直接调用浏览器工具”，而是调用:
+   `toani sandbox execute <sessionId> --operation-type <type> --params '<json>'`
+5. 如果需要页面上下文，先 `create-session`，再 `execute`，必要时 `get-operation` 和 `get-session`，结束时 `terminate`。
+
+## 当前发布版真实能力面
+
+以当前仓库实现为准，公开命令组只有:
+
+- `config`
+- `sandbox`
+- `--version`
+- `--help`
+
+不要假设存在这些命令组，除非你先验证过当前二进制:
+
+- `auth`
+- `credentials`
+- `tokens`
+- `service-accounts`
+- `audit`
+
+如果你看到旧文档提到这些能力，优先相信当前 CLI 帮助和 `cli/src/index.ts`。
+
+## 安装
+
+- Registry 安装:
 
 ```bash
-npm install -g @toani/vault-cli@0.0.2
+npm install -g @toani/vault-cli@0.0.5
 ```
 
-- 本地源码安装（用于开发/调试）：
+- 本地源码安装:
 
 ```bash
 cd /Users/yvan/AIWorkspace/credbridge/cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.2.tgz
+npm install -g ./toani-vault-cli-0.0.5.tgz
 ```
 
-- 先决条件：
+- 先决条件:
 
 ```bash
 node -v   # >= 22
 npm -v
 ```
 
-## 工具说明
+## 全局参数与解析优先级
 
-- 可执行命令：`toani`
-- 包名：`@toani/vault-cli`
-- 主要命令组：
-- `auth`：登录状态、会话交换、成员信息、访问令牌管理
-- `config`：初始化配置、查看/修改配置项
-- `credentials`：凭证增删改查、解密、版本回滚
-- `tokens`：Token 创建、校验、统计、吊销
-- `service-accounts`：服务账号与子 token 管理
-- `sandbox`：沙箱会话创建、执行操作、查询操作
-- `audit`：审计日志检索、导出、校验
-- 全局参数：
-- `--output json|table`
-- `--base-url <URL>`
-- `--token <TOKEN>`
+- 可执行命令: `toani`
+- 包名: `@toani/vault-cli`
+- 全局参数:
+  - `--output json|table`
+  - `--base-url <URL>`
+  - `--token <TOKEN>`
 
-## 使用方式
+Base URL 解析优先级:
 
-- 地址解析优先级（高到低）：
-- `--base-url`
-- `TOANI_BASE_URL`
-- `CREDBRIDGE_BASE_URL`
-- `config.baseUrl`
-- 默认值：`https://dev-credbridge.bitkinetic.com/`
+1. `--base-url`
+2. `TOANI_BASE_URL`
+3. `CREDBRIDGE_BASE_URL`
+4. `config.baseUrl`
+5. 默认值 `https://dev-credbridge.bitkinetic.com/`
 
-- Token 解析优先级（高到低）：
-- `--token`
-- `config.token`
-- `config.sessionToken`
+Token 解析优先级:
 
-- 初始化建议：
+1. `--token`
+2. `config.token`
+3. `TOANI_VAULT_TOKEN`
+4. `CREDBRIDGE_TOKEN`
 
-```bash
-toani config init --url https://dev-credbridge.bitkinetic.com/ --token <API_ACCESS_TOKEN>
-toani auth status
-```
+注意:
 
-- 面向 AI 的输出建议：
-- 自动化链路默认使用 `--output json`，便于结构化解析
-- 交互排障使用 `table`，便于人工阅读
+- 传入 `--base-url`、`--token`、`--output` 会写回 `~/.toani/config.json`
+- 自动化默认用 `--output json`
+- 人工排障可用 `--output table`
 
-## 最佳使用案例
-
-- 案例 1：CI/CD 中按环境切换地址，不落盘改配置
+## 标准初始化
 
 ```bash
-export TOANI_BASE_URL=https://dev-credbridge.bitkinetic.com/
-toani --output json credentials list --service-id svc_xxx
+export TOANI_BASE_URL="https://dev-credbridge.bitkinetic.com"
+export TOANI_VAULT_TOKEN="<BEARER_TOKEN>"
+
+toani config init --url https://dev-credbridge.bitkinetic.com --token <BEARER_TOKEN>
+toani config show
+toani --help
 ```
 
-- 案例 2：最小步骤创建并验证服务账号 token
+## Sandbox 命令表
 
 ```bash
-toani service-accounts create --name bot-ci --scope credential:read,credential:write
-toani service-accounts token create <service-account-id> --scope credential:read --ttl-seconds 3600
-toani tokens verify --token <TOKEN>
+toani sandbox create-session --service-id <serviceId> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
+toani sandbox list-sessions
+toani sandbox get-session <sessionId>
+toani sandbox terminate <sessionId>
+toani sandbox execute <sessionId> --operation-type <type> [--params '<json>']
+toani sandbox get-operation <operationId>
+toani sandbox stats
 ```
 
-- 案例 3：审计导出与校验闭环
+### `sandbox execute` 支持的 `operation-type`
+
+- `navigate`
+- `click`
+- `fill`
+- `get_text`
+- `get_attribute`
+- `execute_script`
+- `wait`
+- `screenshot`
+- `export`
+
+### `--params` 常见字段
+
+根据操作类型组合使用:
+
+- `url`
+- `selector`
+- `value`
+- `script`
+- `bindings`
+- `attribute`
+
+## Agent 必须遵守的执行流程
+
+### 场景 1: 打开页面
 
 ```bash
-toani audit logs --from 2026-04-01T00:00:00Z --to 2026-04-09T00:00:00Z --limit 200
-toani audit export --format json --from 2026-04-01T00:00:00Z --to 2026-04-09T00:00:00Z
-toani audit verify --payload '{"log_id":"..."}'
+toani sandbox create-session \
+  --service-id svc_example \
+  --original-intent "Open login page in TEE sandbox" \
+  --start-url "https://target-site.com/login"
+
+toani sandbox execute <sessionId> \
+  --operation-type navigate \
+  --params '{"url":"https://target-site.com/login"}'
 ```
 
-## 常见异常与建议解决办法
+### 场景 2: 点击按钮
 
-- 异常：`Unknown command group` 或参数报缺失
-- 建议：先执行 `toani --help`，确认命令组与参数名；所有 `--xxx` 选项区分完整拼写
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
+```
 
-- 异常：401/403（鉴权失败）
-- 建议：优先检查 `--token` 是否覆盖了配置；执行 `toani auth status` 与 `toani tokens verify`
+### 场景 3: 输入用户名或密码
 
-- 异常：连接失败或超时（DNS/网络/TLS）
-- 建议：确认 `TOANI_BASE_URL` 或 `--base-url` 是否正确；用 `curl <base-url>/health` 先测连通性
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=email]","value":"user@example.com"}'
+```
 
-- 异常：返回非预期环境数据
-- 建议：检查地址优先级是否被环境变量覆盖；必要时在命令中显式传 `--base-url`
+如果值来自凭证解析链路，再按后端契约传结构化值，不要自行发明字段。
 
-- 异常：本地配置污染（历史 token/地址）
-- 建议：执行 `toani config show` 审核；必要时 `toani config set baseUrl <url>` 和 `toani config set token <token>`
+### 场景 4: 等待元素出现
 
-- 异常：发布 npm 包时报 2FA/Scope 权限错误
-- 建议：使用具备 publish 权限的 token；确认组织 scope 成员身份与包访问级别（public/private）设置
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type wait \
+  --params '{"selector":"#dashboard"}'
+```
+
+### 场景 5: 读取文本
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type get_text \
+  --params '{"selector":"h1"}'
+```
+
+### 场景 6: 取属性
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type get_attribute \
+  --params '{"selector":"a.download","attribute":"href"}'
+```
+
+### 场景 7: 执行脚本
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type execute_script \
+  --params '{"script":"return document.title"}'
+```
+
+### 场景 8: 截图
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type screenshot \
+  --params '{}'
+```
+
+### 场景 9: 查询异步操作结果
+
+```bash
+toani sandbox get-operation <operationId>
+```
+
+### 场景 10: 结束会话
+
+```bash
+toani sandbox terminate <sessionId>
+```
+
+## 推荐工作流
+
+当 agent 需要“在 TEE 页面里操作”时，按下面顺序执行:
+
+1. `toani config show`
+2. `toani sandbox create-session ...`
+3. `toani sandbox execute ...`
+4. 如果返回 `operationId`，再 `toani sandbox get-operation <operationId>`
+5. 需要确认当前会话状态时，执行 `toani sandbox get-session <sessionId>`
+6. 完成后执行 `toani sandbox terminate <sessionId>`
+
+不要跳过 `create-session` 直接脑补一个 session。
+
+## 明确禁止的误用
+
+下面这些都不对:
+
+- 把 TEE sandbox 理解成 agent 自己的 nodes / graph / workflow node
+- 说“进入 sandbox 节点”而不是调用 `toani sandbox ...`
+- 在没有 `sessionId` 的情况下直接执行 `sandbox execute`
+- 发明 CLI 没有实现的命令组
+- 把 `sandbox` 当成本地 Playwright、浏览器 devtools、OpenClaw 内置网页操作器
+- 用自然语言描述代替具体命令和参数
+
+## 最小可执行模板
+
+```bash
+toani config init --url https://dev-credbridge.bitkinetic.com --token <BEARER_TOKEN>
+
+toani sandbox create-session \
+  --service-id svc_example \
+  --original-intent "Investigate target page in TEE sandbox" \
+  --start-url "https://target-site.com/login"
+
+toani sandbox execute <sessionId> \
+  --operation-type navigate \
+  --params '{"url":"https://target-site.com/login"}'
+
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
+
+toani sandbox get-session <sessionId>
+toani sandbox terminate <sessionId>
+```
+
+## 常见错误与修复
+
+- 错误: `Unknown command group`
+  - 修复: 先执行 `toani --help`，不要使用旧文档里的未发布命令组
+
+- 错误: `Missing required option --service-id` 或 `--original-intent`
+  - 修复: `create-session` 这两个参数必填
+
+- 错误: `Missing required option --operation-type`
+  - 修复: `execute` 必须显式传 `--operation-type`
+
+- 错误: `Invalid JSON for --params`
+  - 修复: `--params` 必须是合法 JSON 字符串，推荐单引号包裹整段 JSON
+
+- 错误: 401/403
+  - 修复: 检查 `--token`、环境变量、`~/.toani/config.json` 的优先级覆盖关系
+
+- 错误: 连到错误环境
+  - 修复: 显式传 `--base-url`，再用 `toani config show` 确认
 
 ## 安全注意事项
 
-- 本地配置文件路径：`~/.toani/config.json`
-- 文件中含 token 信息，禁止提交到仓库
-- 自动化场景优先使用环境变量注入 token，不在脚本中明文硬编码
+- 本地配置文件路径: `~/.toani/config.json`
+- 配置文件可能包含 token，禁止提交到仓库
+- 自动化优先用环境变量注入 token
+- 不要把 bearer token 写进长期保存的脚本、截图、日志

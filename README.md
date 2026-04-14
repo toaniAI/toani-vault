@@ -91,7 +91,11 @@ For the latest CLI install and usage details, see:
 npm install -g @toani/vault-cli@0.0.5
 
 # Install from source
-cargo install --path cli
+cd cli
+npm install
+npm run build
+npm pack
+npm install -g ./toani-vault-cli-0.0.5.tgz
 
 # Verify installation
 toani --version
@@ -116,13 +120,16 @@ toani sandbox list-sessions
 
 #### Sandbox Operations (`sandbox`)
 
-The CLI exposes `config init/show` plus sandbox operations. Tokens must be issued manually in the
-Dashboard, and the restricted `credential_ids` allowlist determines which credentials the sandbox
-may resolve.
+The current published CLI exposes `config init/show` plus sandbox operations. Tokens must be issued
+manually in the Dashboard, and the restricted `credential_ids` allowlist determines which
+credentials the sandbox may resolve.
+
+Do not assume the public CLI also exposes `auth`, `credentials`, `tokens`, `service-accounts`, or
+`audit` groups unless you have verified a newer build.
 
 | Command                                                                      | Description             |
 | ---------------------------------------------------------------------------- | ----------------------- |
-| `toani sandbox create-session --credential-id <id> --original-intent <desc>` | Create sandbox session  |
+| `toani sandbox create-session --service-id <service> --original-intent <desc>` | Create sandbox session  |
 | `toani sandbox list-sessions`                                                | List active sessions    |
 | `toani sandbox get-session <id>`                                             | Get session details     |
 | `toani sandbox terminate <id>`                                               | Terminate session       |
@@ -135,82 +142,33 @@ may resolve.
 ```bash
 # Create a sandbox session for a credential
 toani sandbox create-session \
+  --service-id <service-id> \
   --credential-id <cred-id> \
   --original-intent "Database backup operation"
 
 # Execute operation in sandbox
 toani sandbox execute <session-id> \
-  --operation-type "database_query" \
-  --params '{"query": "SELECT * FROM users"}'
+  --operation-type "navigate" \
+  --params '{"url":"https://target-site.com/login"}'
 
 # View sandbox statistics
 toani sandbox stats
 ```
 
-#### Audit Logs (`audit`)
-
-| Command                     | Description                |
-| --------------------------- | -------------------------- |
-| `toani audit logs`          | Query audit logs           |
-| `toani audit export <file>` | Export audit logs          |
-| `toani audit verify`        | Verify audit log integrity |
-
-**Examples:**
-
-```bash
-# Query recent audit logs
-toani audit logs --limit 100
-
-# Query with time range and filter
-toani audit logs \
-  --from "2024-01-01T00:00:00Z" \
-  --to "2024-01-31T23:59:59Z" \
-  --action "credential_access"
-
-# Export to JSON file
-toani audit export audit-export.json
-
-# Export to CSV
-toani audit export audit-export.csv --format csv
-
-# Verify audit integrity
-toani audit verify
-```
-
 #### Configuration (`config`)
 
-| Command                          | Description                   |
-| -------------------------------- | ----------------------------- |
-| `toani config init`              | Initialize configuration      |
-| `toani config show`              | Display current configuration |
-| `toani config set <key> <value>` | Set configuration value       |
-| `toani config get <key>`         | Get configuration value       |
-
-**Configuration Keys:**
-
-- `url` - Toani Vault service URL
-- `token` - API authentication token
-- `output_format` - Output format: `table` or `json`
-- `timeout` - Request timeout in seconds
+| Command             | Description                   |
+| ------------------- | ----------------------------- |
+| `toani config init` | Initialize configuration      |
+| `toani config show` | Display current configuration |
 
 **Examples:**
 
 ```bash
-# Interactive initialization
-toani config init
-
-# Initialize with parameters
 toani config init \
-  --url https://api.toani.ai \
+  --url https://dev-credbridge.bitkinetic.com \
   --token "v4.local.xxx"
 
-# Set output format to JSON
-toani config set output_format json
-
-# Set timeout to 60 seconds
-toani config set timeout 60
-
-# View current config
 toani config show
 ```
 
@@ -218,32 +176,25 @@ toani config show
 
 | Option                  | Description                                       |
 | ----------------------- | ------------------------------------------------- |
-| `-o, --output <format>` | Output format: `table` or `json` (default: table) |
-| `-c, --config <path>`   | Custom configuration file path                    |
-| `-v, --verbose`         | Enable verbose logging                            |
+| `--output <format>`     | Output format: `table` or `json` (default: table) |
+| `--base-url <url>`      | Override service URL                              |
+| `--token <token>`       | Override bearer token                             |
 | `-h, --help`            | Show help information                             |
-| `-V, --version`         | Show version information                          |
+| `-v, --version`         | Show version information                          |
 
 ### Environment Variables
 
-| Variable           | Description                                                |
-| ------------------ | ---------------------------------------------------------- |
-| `CREDBRIDGE_URL`   | Service URL override                                       |
-| `CREDBRIDGE_TOKEN` | API token override                                         |
-| `HOME`             | Configuration directory (default: `~/.config/credbridge/`) |
+| Variable                | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `TOANI_BASE_URL`        | Service URL override                            |
+| `CREDBRIDGE_BASE_URL`   | Secondary service URL override                  |
+| `TOANI_VAULT_TOKEN`     | Primary token override                          |
+| `CREDBRIDGE_TOKEN`      | Secondary token override                        |
+| `HOME`                  | Base directory for `~/.toani/config.json`       |
 
 ### Configuration File
 
-The CLI stores configuration in `~/.config/credbridge/config.toml`:
-
-```toml
-url = "https://api.toani.ai"
-token = "v4.local.xxx"
-output_format = "table"
-timeout = 30
-```
-
-Configuration file permissions are automatically set to `0600` (user read/write only).
+The CLI stores configuration in `~/.toani/config.json`.
 
 ---
 
