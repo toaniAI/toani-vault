@@ -64,7 +64,7 @@ L0: SGX Sealing Key
 
 ## CLI 使用指南
 
-Toani Vault 提供了功能强大的命令行工具，适用于运维人员和自动化工作流。
+Toani Vault 提供了一个面向 sandbox 的命令行工具，支持本地 `config` 配置以及携带 bearer token 发起受限沙箱请求。
 
 CLI 最新安装与使用说明请优先参考：
 
@@ -75,7 +75,7 @@ CLI 最新安装与使用说明请优先参考：
 
 ```bash
 # 从 npm 安装（推荐）
-npm install -g @toani/vault-cli@0.0.1
+npm install -g @toani/vault-cli@0.0.4
 
 # 从源码安装
 cargo install --path cli
@@ -87,117 +87,23 @@ toani --version
 ### 快速开始
 
 ```bash
-# 1. 配置 CLI 连接到 Toani Vault 服务
-toani config init --url https://api.toani.ai --token <your-token>
+# 1. 先在 Dashboard 手工签发受限 token
+# 2. 先把服务地址写入本地配置
+export TOANI_BASE_URL="https://dev-credbridge.bitkinetic.com"
+export TOANI_VAULT_TOKEN="<dashboard-issued-token>"
 
-# 或使用交互式模式
-toani config init
+toani config init --url https://dev-credbridge.bitkinetic.com
 
-# 2. 验证连接
-toani auth status
-
-# 3. 开始管理凭证
-toani credentials list
+# 3. 再用 CLI 调用 sandbox
+toani sandbox stats
+toani sandbox list-sessions
 ```
 
 ### CLI 命令概览
 
-#### 认证命令 (`auth`)
-
-| 命令                                           | 描述                    |
-| ---------------------------------------------- | ----------------------- |
-| `toani config init --url <url> --token <token>` | 配置 CLI bearer token   |
-| `toani auth status`                            | 检查登录状态            |
-| `toani auth logout`                            | 清理本地 bearer token   |
-
-#### 凭证管理 (`credentials`)
-
-| 命令                                        | 描述             |
-| ------------------------------------------- | ---------------- |
-| `toani credentials list`                    | 列出所有凭证     |
-| `toani credentials get <id>`                | 获取凭证详情     |
-| `toani credentials create`                  | 创建新凭证       |
-| `toani credentials update <id>`             | 更新现有凭证     |
-| `toani credentials delete <id>`             | 删除凭证         |
-| `toani credentials decrypt <id>`            | 解密并查看凭证值 |
-| `toani credentials versions <id>`           | 查看版本历史     |
-| `toani credentials rollback <id> <version>` | 回滚到指定版本   |
-
-**支持的凭证类型：**
-
-- `api_key` - API 密钥
-- `username_password` - 用户名/密码对
-- `oauth_refresh` - OAuth 刷新令牌
-- `session_cookie` - 会话 Cookie
-- `ssh_key` - SSH 密钥
-- `certificate` - TLS/SSL 证书
-- `database_connection` - 数据库连接字符串
-- `kyc_document` - KYC 文档
-
-**示例：**
-
-```bash
-# 创建 API Key 凭证
-toani credentials create \
-  --name "production-api-key" \
-  --type api_key \
-  --value "sk-live-xxx"
-
-# 创建带元数据的凭证
-toani credentials create \
-  --name "db-credentials" \
-  --type username_password \
-  --value "secret-password" \
-  --metadata "username=admin" \
-  --metadata "host=db.example.com"
-
-# 按类型过滤列表
-toani credentials list --type api_key
-
-# 解密查看凭证
-toani credentials decrypt <credential-id>
-
-# 删除（带确认）
-toani credentials delete <credential-id>
-
-# 强制删除（不确认）
-toani credentials delete <credential-id> --force
-
-# 查看版本历史
-toani credentials versions <credential-id>
-
-# 回滚到上一版本
-toani credentials rollback <credential-id> 3
-```
-
-#### Token 管理 (`tokens`)
-
-| 命令                                | 描述             |
-| ----------------------------------- | ---------------- |
-| `toani tokens create --name <name>` | 创建新的访问令牌 |
-| `toani tokens list`                 | 列出所有令牌     |
-| `toani tokens revoke <id>`          | 撤销令牌         |
-| `toani tokens verify [token]`       | 验证令牌有效性   |
-
-**示例：**
-
-```bash
-# 创建指定权限和过期时间的令牌
-toani tokens create \
-  --name "ci-token" \
-  --expires-in 7200 \
-  --scopes "credential:read,credential:write"
-
-# 验证当前令牌
-toani tokens verify
-
-# 验证指定令牌
-toani tokens verify "v4.local.xxx"
-```
-
 #### 沙箱操作 (`sandbox`)
 
-在隔离的 TEE 沙箱会话中执行凭证消费操作。
+CLI 暴露 `config init/show` 和 sandbox 命令。token 必须先在 Dashboard 手工签发，且 `credential_ids` 白名单决定沙箱可以解析哪些凭证。
 
 | 命令                                                                         | 描述         |
 | ---------------------------------------------------------------------------- | ------------ |

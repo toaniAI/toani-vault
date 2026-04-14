@@ -15,7 +15,7 @@
 //!
 //! **Tenant Schema (tenant_xxx)** - 由本模块管理:
 //! - `credentials`: 凭证存储
-//! - `scope_tokens`: Scope Token
+//! - `scope_tokens`: 遗留 Scope Token 表（当前公开口径以 `api_tokens.credential_ids` 为准）
 //! - `audit_logs`: 租户级审计日志
 //! - `tenant_roles`: 租户角色定义 (副本)
 //! - `user_roles`: 用户角色关联
@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_credentials_service ON credentials(service_id);
 CREATE INDEX IF NOT EXISTS idx_credentials_type ON credentials(credential_type);
 CREATE INDEX IF NOT EXISTS idx_credentials_expires ON credentials(expires_at) WHERE expires_at IS NOT NULL;
 
--- Scope Token 表
+-- Legacy Scope Token 表（保留兼容；当前公开授权边界不再依赖此表）
 CREATE TABLE IF NOT EXISTS scope_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     token_id VARCHAR(64) NOT NULL UNIQUE,

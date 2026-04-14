@@ -4,7 +4,7 @@
 
 Toani Vault is an AI-native, zero-trust credential vault built around Intel SGX TEE. The current
 repository centers on one main service runtime, a React console, Rust and TypeScript SDKs, and a
-CLI for operators and agent-facing automation.
+sandbox-only CLI for bearer-token driven operations.
 
 ## What It Provides
 
@@ -63,7 +63,7 @@ Primary implementation areas:
 - `src/tee/`: TEE lifecycle, attestation, sealing, sandbox, hardware runtime bridge
 - `src/token/`: PASETO and session handling
 - `src/vault/`: credential persistence and storage backends
-- `cli/`: operator and automation CLI
+- `cli/`: sandbox-only CLI
 - `sdk-rust/` and `sdk-typescript/`: client SDKs
 - `frontend/`: React web console
 
@@ -77,7 +77,7 @@ Primary implementation areas:
 
 ## CLI Usage Guide
 
-Toani Vault provides a powerful CLI tool for operators and automation workflows.
+Toani Vault provides a sandbox-focused CLI for local config plus bearer-token authorized sandbox flows.
 
 For the latest CLI install and usage details, see:
 
@@ -88,7 +88,7 @@ For the latest CLI install and usage details, see:
 
 ```bash
 # Install from npm (recommended)
-npm install -g @toani/vault-cli@0.0.2
+npm install -g @toani/vault-cli@0.0.4
 
 # Install from source
 cargo install --path cli
@@ -100,117 +100,25 @@ toani --version
 ### Quick Start
 
 ```bash
-# 1. Configure CLI with your Toani Vault server
-toani config init --url https://api.toani.ai --token <your-token>
+# 1. Issue a restricted token in the Dashboard
+# 2. Persist the service URL locally
+export TOANI_BASE_URL="https://dev-credbridge.bitkinetic.com"
+export TOANI_VAULT_TOKEN="<dashboard-issued-token>"
 
-# Or use interactive mode
-toani config init
+toani config init --url https://dev-credbridge.bitkinetic.com
 
-# 2. Verify connection
-toani auth status
-
-# 3. Start managing credentials
-toani credentials list
+# 3. Call sandbox APIs with the CLI
+toani sandbox stats
+toani sandbox list-sessions
 ```
 
 ### CLI Commands Overview
 
-#### Authentication (`auth`)
-
-| Command                                        | Description                    |
-| ---------------------------------------------- | ------------------------------ |
-| `toani config init --url <url> --token <token>` | Configure CLI bearer token     |
-| `toani auth status`                            | Check login status             |
-| `toani auth logout`                            | Clear local bearer token       |
-
-#### Credential Management (`credentials`)
-
-| Command                                     | Description                       |
-| ------------------------------------------- | --------------------------------- |
-| `toani credentials list`                    | List all credentials              |
-| `toani credentials get <id>`                | Get credential details            |
-| `toani credentials create`                  | Create a new credential           |
-| `toani credentials update <id>`             | Update existing credential        |
-| `toani credentials delete <id>`             | Delete a credential               |
-| `toani credentials decrypt <id>`            | Decrypt and view credential value |
-| `toani credentials versions <id>`           | List version history              |
-| `toani credentials rollback <id> <version>` | Rollback to specific version      |
-
-**Credential Types Supported:**
-
-- `api_key` - API keys
-- `username_password` - Username/password pairs
-- `oauth_refresh` - OAuth refresh tokens
-- `session_cookie` - Session cookies
-- `ssh_key` - SSH keys
-- `certificate` - TLS/SSL certificates
-- `database_connection` - Database connection strings
-- `kyc_document` - KYC documents
-
-**Examples:**
-
-```bash
-# Create an API key credential
-toani credentials create \
-  --name "production-api-key" \
-  --type api_key \
-  --value "sk-live-xxx"
-
-# Create credential with metadata
-toani credentials create \
-  --name "db-credentials" \
-  --type username_password \
-  --value "secret-password" \
-  --metadata "username=admin" \
-  --metadata "host=db.example.com"
-
-# List credentials with type filter
-toani credentials list --type api_key
-
-# Decrypt and view credential
-toani credentials decrypt <credential-id>
-
-# Delete with confirmation
-toani credentials delete <credential-id>
-
-# Force delete without confirmation
-toani credentials delete <credential-id> --force
-
-# View version history
-toani credentials versions <credential-id>
-
-# Rollback to previous version
-toani credentials rollback <credential-id> 3
-```
-
-#### Token Management (`tokens`)
-
-| Command                             | Description             |
-| ----------------------------------- | ----------------------- |
-| `toani tokens create --name <name>` | Create new access token |
-| `toani tokens list`                 | List all tokens         |
-| `toani tokens revoke <id>`          | Revoke a token          |
-| `toani tokens verify [token]`       | Verify token validity   |
-
-**Examples:**
-
-```bash
-# Create token with specific scopes and expiration
-toani tokens create \
-  --name "ci-token" \
-  --expires-in 7200 \
-  --scopes "credential:read,credential:write"
-
-# Verify current token
-toani tokens verify
-
-# Verify specific token
-toani tokens verify "v4.local.xxx"
-```
-
 #### Sandbox Operations (`sandbox`)
 
-Execute credential-consuming operations in isolated TEE sandbox sessions.
+The CLI exposes `config init/show` plus sandbox operations. Tokens must be issued manually in the
+Dashboard, and the restricted `credential_ids` allowlist determines which credentials the sandbox
+may resolve.
 
 | Command                                                                      | Description             |
 | ---------------------------------------------------------------------------- | ----------------------- |

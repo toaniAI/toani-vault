@@ -13,15 +13,17 @@ npm install -g @toani/vault-cli
 
 ## Configure
 
-Current CLI only supports the `sandbox` command group plus global flags.
-Use a bearer token directly via command flags or environment variables:
+Current CLI supports `config` for local setup and `sandbox` for execution.
+Issue a restricted token in the Dashboard first, then either persist the service URL with
+`config init` or pass values directly via flags and environment variables:
 
 ```bash
-export TOANI_BASE_URL="https://your-api.example.com"
+export TOANI_BASE_URL="https://dev-credbridge.bitkinetic.com"
 export TOANI_VAULT_TOKEN="<BEARER_TOKEN>"
 
+toani config init --url https://dev-credbridge.bitkinetic.com
 toani sandbox stats
-toani --base-url https://your-api.example.com --token <BEARER_TOKEN> sandbox list-sessions
+toani --base-url https://dev-credbridge.bitkinetic.com --token <BEARER_TOKEN> sandbox list-sessions
 ```
 
 When `--base-url`, `--token`, or `--output` are passed, the CLI persists those values to `~/.toani/config.json` for the active profile.
@@ -53,6 +55,8 @@ Base URL resolution priority:
 ## Commands
 
 ```bash
+toani config init --url <service-url> [--token <BEARER_TOKEN>]
+toani config show
 toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
@@ -65,6 +69,7 @@ toani --version
 
 ## Notes
 
+- Dashboard is the only supported manual token issuance surface for public CLI usage.
 - CLI integrations only use bearer tokens. Browser-side Privy/session flows are not exposed as CLI commands.
-- The published CLI does not currently expose `config`, `auth`, `credentials`, `tokens`, `service-accounts`, or `audit` command groups.
+- The published CLI exposes `config` plus the `sandbox` command group.
 - `sandbox terminate` maps to the backend close-session route (`DELETE /api/v1/sandbox/sessions/:id`).

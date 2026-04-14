@@ -158,8 +158,10 @@ pub struct CreateSessionRequest {
 pub struct CreateSessionResponse {
     /// 会话 ID
     pub session_id: Uuid,
-    /// 沙箱 ID
+    /// 运行时沙箱上下文 ID（兼容字段）
     pub sandbox_id: Uuid,
+    /// 运行时 / TEE 上下文 ID
+    pub runtime_context_id: Uuid,
     /// 会话状态
     pub status: String,
     /// 创建时间
@@ -192,8 +194,10 @@ pub struct ListSessionsResponse {
 pub struct SessionSummary {
     /// 会话 ID
     pub session_id: Uuid,
-    /// 沙箱 ID
+    /// 运行时沙箱上下文 ID（兼容字段）
     pub sandbox_id: Uuid,
+    /// 运行时 / TEE 上下文 ID
+    pub runtime_context_id: Uuid,
     /// 凭证 ID
     pub credential_id: Uuid,
     /// 状态
@@ -213,8 +217,10 @@ pub struct SessionSummary {
 pub struct SessionDetailResponse {
     /// 会话 ID
     pub session_id: Uuid,
-    /// 沙箱 ID
+    /// 运行时沙箱上下文 ID（兼容字段）
     pub sandbox_id: Uuid,
+    /// 运行时 / TEE 上下文 ID
+    pub runtime_context_id: Uuid,
     /// 租户 ID
     pub tenant_id: Uuid,
     /// 用户 ID
@@ -391,12 +397,16 @@ pub async fn create_session(
             let response = CreateSessionResponse {
                 session_id: context.session_id.into(),
                 sandbox_id: context.sandbox_id.into(),
+                runtime_context_id: context.sandbox_id.into(),
                 status: format!("{:?}", session.status().await).to_lowercase(),
                 created_at: context.created_at.to_string(),
                 expires_at: context.expires_at.to_string(),
             };
 
-            info!("Session {} created successfully", response.session_id);
+            info!(
+                "Session {} created successfully with runtime context {}",
+                response.session_id, response.runtime_context_id
+            );
 
             (StatusCode::CREATED, Json(ApiSuccessResponse::new(response))).into_response()
         }
@@ -468,6 +478,7 @@ pub async fn list_sessions(
                     .map(|record| SessionSummary {
                         session_id: record.session_id.into(),
                         sandbox_id: record.sandbox_id,
+                        runtime_context_id: record.sandbox_id,
                         credential_id: record.credential_id,
                         status: record.status.clone(),
                         original_intent: record.original_intent,
@@ -508,6 +519,7 @@ pub async fn list_sessions(
             sessions.push(SessionSummary {
                 session_id: context.session_id.into(),
                 sandbox_id: context.sandbox_id.into(),
+                runtime_context_id: context.sandbox_id.into(),
                 credential_id: context.credential_id,
                 status: session_status,
                 original_intent: context.original_intent.clone(),
@@ -554,6 +566,7 @@ pub async fn get_session(
                 let response = SessionDetailResponse {
                     session_id: record.session_id.into(),
                     sandbox_id: record.sandbox_id,
+                    runtime_context_id: record.sandbox_id,
                     tenant_id: record.tenant_id,
                     user_id: record.created_by,
                     credential_id: record.credential_id,
@@ -585,6 +598,7 @@ pub async fn get_session(
             let response = SessionDetailResponse {
                 session_id: context.session_id.into(),
                 sandbox_id: context.sandbox_id.into(),
+                runtime_context_id: context.sandbox_id.into(),
                 tenant_id: context.tenant_id,
                 user_id: context.user_id,
                 credential_id: context.credential_id,
@@ -2745,5 +2759,21 @@ mod tests {
             StatusCode::OK,
             "GET /sandbox/sessions (正常列表请求) 应返回 200 OK"
         );
+    }
+
+    #[test]
+    fn test_create_session_response_includes_runtime_context_id() {
+        let runtime_context_id = Uuid::new_v4();
+        let response = CreateSessionResponse {
+            session_id: Uuid::new_v4(),
+            sandbox_id: runtime_context_id,
+            runtime_context_id,
+            status: "ready".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            expires_at: "2024-01-01T00:30:00Z".to_string(),
+        };
+
+        let json = serde_json::to_value(response).expect("serialize create session response");
+        assert_eq!(json["sandbox_id"], json["runtime_context_id"]);
     }
 }

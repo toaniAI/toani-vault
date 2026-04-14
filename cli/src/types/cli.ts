@@ -3,7 +3,6 @@ export type OutputFormat = "json" | "table";
 export interface CliProfile {
   baseUrl?: string;
   token?: string;
-  automationToken?: string;
   sessionToken?: string;
   currentTenantId?: string;
   output?: OutputFormat;
@@ -13,7 +12,6 @@ export interface CliProfile {
 export interface CliConfig {
   baseUrl: string;
   token?: string;
-  automationToken?: string;
   sessionToken?: string;
   currentTenantId?: string;
   output: OutputFormat;

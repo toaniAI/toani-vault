@@ -40,11 +40,7 @@ export function loadConfig(): CliConfig {
         : DEFAULT_CONFIG.timeout;
   const baseUrl =
     activeProfile.baseUrl ?? parsed.baseUrl ?? DEFAULT_CONFIG.baseUrl;
-  const token =
-    activeProfile.token ??
-    activeProfile.automationToken ??
-    parsed.token ??
-    parsed.automationToken;
+  const token = activeProfile.token ?? parsed.token;
   const sessionToken = activeProfile.sessionToken ?? parsed.sessionToken;
   const currentTenantId =
     activeProfile.currentTenantId ?? parsed.currentTenantId;
@@ -53,7 +49,6 @@ export function loadConfig(): CliConfig {
     ...parsed,
     baseUrl,
     token,
-    automationToken: undefined,
     sessionToken,
     currentTenantId,
     currentProfile,
