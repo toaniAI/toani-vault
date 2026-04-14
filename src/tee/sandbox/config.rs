@@ -570,9 +570,7 @@ impl NsjailConfig {
             .seccomp
             .denylist
             .iter()
-            .filter(|syscall| {
-                !Self::BROWSER_RUNTIME_RELAXED_SYSCALLS.contains(&syscall.as_str())
-            })
+            .filter(|syscall| !Self::BROWSER_RUNTIME_RELAXED_SYSCALLS.contains(&syscall.as_str()))
             .cloned()
             .collect::<Vec<_>>();
 
