@@ -348,7 +348,16 @@ impl TokenManager {
             None => return false,
         };
 
-        token_info.scopes.contains(&scope) || token_info.scopes.contains(&TokenScope::Admin)
+        token_info.scopes.contains(&TokenScope::Admin)
+            || token_info.scopes.contains(&scope)
+            || (token_info.scopes.contains(&TokenScope::CredentialRead)
+                && matches!(
+                    scope,
+                    TokenScope::CredentialDecrypt
+                        | TokenScope::SandboxRead
+                        | TokenScope::SandboxWrite
+                        | TokenScope::SandboxExecute
+                ))
     }
 
     /// 检查 Token 是否具有指定的任一 Scope

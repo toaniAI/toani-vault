@@ -172,10 +172,9 @@ pub async fn issue_access_token_from_user_token(
     let credential_ids = resolve_allowed_credential_ids(state, token, &request.credential_ids)?;
 
     let ttl_seconds = normalize_ttl(request.expires_in);
-    let granted_scopes = requested_scopes
-        .iter()
-        .map(TokenScope::as_str)
-        .map(str::to_string)
+    let granted_scopes = TokenScope::expand_credential_read_permissions(&requested_scopes)
+        .into_iter()
+        .map(|scope| scope.as_str().to_string())
         .collect::<Vec<_>>();
     let scope_string = granted_scopes.join(" ");
     let mut claims = TokenClaims::new(
@@ -257,11 +256,7 @@ pub async fn issue_access_token_from_user_token(
         display_name: None,
         expires_in: ttl_seconds,
         scope: scope_string,
-        granted_scopes: requested_scopes
-            .iter()
-            .map(TokenScope::as_str)
-            .map(str::to_string)
-            .collect(),
+        granted_scopes: granted_scopes.clone(),
         credential_ids,
         issued_at: claims.iat.unwrap_or_else(unix_now),
         expires_at: claims.exp,
@@ -845,7 +840,20 @@ mod tests {
 
         assert!(response.access_token.starts_with("v4.local."));
         assert_eq!(response.token, response.access_token);
-        assert_eq!(response.scope, "credential:read");
+        assert_eq!(
+            response.scope,
+            "credential:read credential:decrypt sandbox:write sandbox:read sandbox:execute"
+        );
+        assert_eq!(
+            response.granted_scopes,
+            vec![
+                "credential:read".to_string(),
+                "credential:decrypt".to_string(),
+                "sandbox:write".to_string(),
+                "sandbox:read".to_string(),
+                "sandbox:execute".to_string()
+            ]
+        );
         assert_eq!(response.expires_in, 3600);
         assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
         assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_ACCESS_TOKEN);
@@ -950,6 +958,10 @@ mod tests {
 
         assert_eq!(validated.token_id, created.token_id);
         assert!(validated.has_scope(&TokenScope::CredentialRead));
+        assert!(validated.has_scope(&TokenScope::CredentialDecrypt));
+        assert!(validated.has_scope(&TokenScope::SandboxWrite));
+        assert!(validated.has_scope(&TokenScope::SandboxRead));
+        assert!(validated.has_scope(&TokenScope::SandboxExecute));
     }
 
     #[tokio::test]

@@ -21,6 +21,107 @@ find_existing_path() {
     return 1
 }
 
+is_truthy() {
+    value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    case "$value" in
+        1|true|yes|on)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+require_subid_entry() {
+    file_path="$1"
+    account_name="$2"
+
+    [ -f "$file_path" ] || fail "$file_path is missing"
+
+    if ! awk -F: -v user="$account_name" '$1 == user { found = 1 } END { exit found ? 0 : 1 }' "$file_path"; then
+        fail "$file_path does not contain a subordinate id range for current user '$account_name'"
+    fi
+}
+
+ensure_nsjail_userns_prerequisites() {
+    if is_truthy "${CREDBRIDGE_SKIP_NSJAIL_PREFLIGHT:-false}"; then
+        log "skipping nsjail/userns preflight because CREDBRIDGE_SKIP_NSJAIL_PREFLIGHT is enabled"
+        return 0
+    fi
+
+    current_uid="$(id -u)"
+    current_gid="$(id -g)"
+    current_user="$(id -un 2>/dev/null || true)"
+    [ -n "$current_user" ] || fail "unable to determine current runtime user"
+
+    log "current runtime user=$current_user uid=$current_uid gid=$current_gid"
+
+    nsjail_binary="${NSJAIL_PATH:-$(command -v nsjail 2>/dev/null || true)}"
+    [ -n "$nsjail_binary" ] || fail "nsjail executable not found; install nsjail or set NSJAIL_PATH"
+    [ -x "$nsjail_binary" ] || fail "nsjail executable is not executable: $nsjail_binary"
+    export NSJAIL_PATH="$nsjail_binary"
+    log "effective NSJAIL_PATH=$NSJAIL_PATH"
+
+    newuidmap_binary="$(command -v newuidmap 2>/dev/null || true)"
+    [ -n "$newuidmap_binary" ] || fail "newuidmap executable not found; install uidmap"
+    [ -x "$newuidmap_binary" ] || fail "newuidmap executable is not executable: $newuidmap_binary"
+    [ -u "$newuidmap_binary" ] || fail "newuidmap is missing the setuid bit: $newuidmap_binary"
+
+    newgidmap_binary="$(command -v newgidmap 2>/dev/null || true)"
+    [ -n "$newgidmap_binary" ] || fail "newgidmap executable not found; install uidmap"
+    [ -x "$newgidmap_binary" ] || fail "newgidmap executable is not executable: $newgidmap_binary"
+    [ -u "$newgidmap_binary" ] || fail "newgidmap is missing the setuid bit: $newgidmap_binary"
+
+    log "uidmap helpers verified: newuidmap=$newuidmap_binary newgidmap=$newgidmap_binary"
+
+    require_subid_entry /etc/subuid "$current_user"
+    require_subid_entry /etc/subgid "$current_user"
+    log "subordinate id ranges found for current user '$current_user'"
+
+    userns_clone_file="/proc/sys/kernel/unprivileged_userns_clone"
+    if [ -r "$userns_clone_file" ]; then
+        userns_clone_value="$(cat "$userns_clone_file")"
+        [ "$userns_clone_value" = "1" ] || fail "$userns_clone_file is $userns_clone_value; expected 1"
+        log "kernel.unprivileged_userns_clone=$userns_clone_value"
+    else
+        log "kernel user namespace toggle not readable at $userns_clone_file; continuing"
+    fi
+
+    [ -d /sys/fs/cgroup ] || fail "/sys/fs/cgroup is not mounted"
+    log "/sys/fs/cgroup is mounted"
+
+    if is_truthy "${CREDBRIDGE_SKIP_NSJAIL_SMOKE_TEST:-false}"; then
+        log "skipping nsjail smoke test because CREDBRIDGE_SKIP_NSJAIL_SMOKE_TEST is enabled"
+        return 0
+    fi
+
+    inside_uid="${CREDBRIDGE_NSJAIL_INSIDE_UID:-0}"
+    outside_uid="${CREDBRIDGE_NSJAIL_OUTSIDE_UID:-1000}"
+    uid_count="${CREDBRIDGE_NSJAIL_UID_COUNT:-1}"
+    inside_gid="${CREDBRIDGE_NSJAIL_INSIDE_GID:-0}"
+    outside_gid="${CREDBRIDGE_NSJAIL_OUTSIDE_GID:-1000}"
+    gid_count="${CREDBRIDGE_NSJAIL_GID_COUNT:-1}"
+
+    log "running nsjail smoke test with uid_mapping=${inside_uid}:${outside_uid}:${uid_count} gid_mapping=${inside_gid}:${outside_gid}:${gid_count}"
+
+    smoke_output_file="$(mktemp)"
+    if ! "$nsjail_binary" --mode o \
+        --uid_mapping "${inside_uid}:${outside_uid}:${uid_count}" \
+        --gid_mapping "${inside_gid}:${outside_gid}:${gid_count}" \
+        -- /bin/sh -c 'id >/dev/null && echo NSJAIL_USERNS_OK' >"$smoke_output_file" 2>&1; then
+        cat "$smoke_output_file" >&2
+        rm -f "$smoke_output_file"
+        fail "nsjail smoke test failed; user namespace mapping is not usable for current runtime user '$current_user'"
+    fi
+
+    smoke_output="$(cat "$smoke_output_file")"
+    rm -f "$smoke_output_file"
+
+    printf '%s\n' "$smoke_output" | grep -q "NSJAIL_USERNS_OK" || fail "nsjail smoke test did not produce success marker"
+    log "nsjail smoke test passed"
+}
+
 normalize_json_bool() {
     value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
 
@@ -145,6 +246,7 @@ EOF
 }
 
 ensure_browser_runtime_prerequisites
+ensure_nsjail_userns_prerequisites
 
 TEE_MODE_VALUE="${TEE_MODE:-simulation}"
 

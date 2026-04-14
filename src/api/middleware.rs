@@ -244,6 +244,41 @@ impl TokenScope {
             ],
         }
     }
+
+    pub fn is_implied_by_credential_read(&self) -> bool {
+        matches!(
+            self,
+            TokenScope::CredentialDecrypt
+                | TokenScope::SandboxWrite
+                | TokenScope::SandboxRead
+                | TokenScope::SandboxExecute
+        )
+    }
+
+    pub fn expand_credential_read_permissions(scopes: &[TokenScope]) -> Vec<TokenScope> {
+        let mut expanded = Vec::new();
+
+        for scope in scopes {
+            if !expanded.contains(scope) {
+                expanded.push(scope.clone());
+            }
+        }
+
+        if scopes.contains(&TokenScope::CredentialRead) {
+            for implied in [
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxExecute,
+            ] {
+                if !expanded.contains(&implied) {
+                    expanded.push(implied);
+                }
+            }
+        }
+
+        expanded
+    }
 }
 
 impl std::str::FromStr for TokenScope {
@@ -289,7 +324,10 @@ pub struct ValidatedToken {
 impl ValidatedToken {
     /// 检查是否包含指定 scope
     pub fn has_scope(&self, scope: &TokenScope) -> bool {
-        self.scopes.contains(scope) || self.scopes.contains(&TokenScope::Admin)
+        self.scopes.contains(&TokenScope::Admin)
+            || self.scopes.contains(scope)
+            || (self.scopes.contains(&TokenScope::CredentialRead)
+                && scope.is_implied_by_credential_read())
     }
 
     /// 检查是否包含任一指定 scope

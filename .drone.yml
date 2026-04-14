@@ -139,11 +139,19 @@ steps:
     commands:
       - test -f nsjail-3.6.tar.gz
 
-  - name: check-runtime-base-image
+  - name: verify-nsjail-runtime-contract
     image: alpine:3.21
     pull: if-not-exists
     depends_on:
       - verify-nsjail-archive
+    commands:
+      - sh docker/scripts/verify-nsjail-runtime-contract.sh
+
+  - name: check-runtime-base-image
+    image: alpine:3.21
+    pull: if-not-exists
+    depends_on:
+      - verify-nsjail-runtime-contract
     environment:
       REPO_USER:
         from_secret: docker-hub-username

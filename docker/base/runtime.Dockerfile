@@ -103,4 +103,10 @@ COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail
 RUN chmod +x /usr/local/bin/nsjail \
     && ln -sf /usr/local/bin/nsjail /usr/bin/nsjail \
     && command -v newuidmap \
-    && command -v newgidmap
+    && command -v newgidmap \
+    && test -u /usr/bin/newuidmap \
+    && test -u /usr/bin/newgidmap \
+    && printf '%s\n' 'root:100000:65536' >> /etc/subuid \
+    && printf '%s\n' 'root:100000:65536' >> /etc/subgid \
+    && printf '%s\n' 'appuser:100000:65536' >> /etc/subuid \
+    && printf '%s\n' 'appuser:100000:65536' >> /etc/subgid
