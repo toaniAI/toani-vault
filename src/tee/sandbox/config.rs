@@ -400,6 +400,8 @@ pub struct NsjailConfig {
     pub cwd: PathBuf,
     /// 环境变量
     pub env: HashMap<String, String>,
+    /// 临时为 browser runtime 关闭 seccomp，避免 node/playwright/chromium 启动即触发 SIGSYS。
+    pub disable_seccomp_for_browser_runtime: bool,
     /// UID 映射
     pub uid_map: UidMap,
     /// GID 映射
@@ -413,6 +415,7 @@ impl Default for NsjailConfig {
             command: vec!["sh".to_string()],
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
+            disable_seccomp_for_browser_runtime: false,
             uid_map: UidMap::default(),
             gid_map: GidMap::default(),
         }
@@ -513,9 +516,14 @@ impl NsjailConfig {
         }
 
         // Seccomp
-        if !self.sandbox.security.privileged {
+        if !self.sandbox.security.privileged && !self.disable_seccomp_for_browser_runtime {
             args.push("--seccomp_string".to_string());
             args.push(self.generate_seccomp_bpf());
+        } else if self.disable_seccomp_for_browser_runtime {
+            // FIXME: This is a stopgap to restore sandbox browser execution in TEE/Drone.
+            // The current seccomp denylist blocks node/playwright/chromium startup syscalls
+            // (notably clone/execve), causing nsjail SIGSYS failures. Replace this bypass with
+            // a browser-specific seccomp profile instead of keeping browser runtime unconfined.
         }
 
         // Working directory
@@ -627,6 +635,27 @@ mod tests {
 
         assert!(args.contains(&"--disable_clone_newns".to_string()));
         assert!(!args.contains(&"--disable_clone_newmnt".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_skips_seccomp_for_browser_runtime() {
+        let config = NsjailConfig {
+            disable_seccomp_for_browser_runtime: true,
+            ..NsjailConfig::default()
+        };
+
+        let args = config.to_args();
+
+        assert!(!args.contains(&"--seccomp_string".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_keeps_seccomp_enabled_by_default() {
+        let config = NsjailConfig::default();
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--seccomp_string".to_string()));
     }
 
     #[test]

@@ -223,6 +223,7 @@ impl NsjailSandboxPool {
             command: vec!["sleep".to_string(), "3600".to_string()], // 长时间运行的占位命令
             cwd: std::path::PathBuf::from("/"),
             env,
+            disable_seccomp_for_browser_runtime: false,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }

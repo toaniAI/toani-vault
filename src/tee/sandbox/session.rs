@@ -953,6 +953,7 @@ mod tests {
             command: vec!["sleep".to_string(), "60".to_string()],
             cwd: std::path::PathBuf::from("/"),
             env: HashMap::new(),
+            disable_seccomp_for_browser_runtime: false,
             uid_map: Default::default(),
             gid_map: Default::default(),
         });

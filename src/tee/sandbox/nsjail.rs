@@ -198,6 +198,7 @@ impl NsjailSandbox {
         command: Vec<String>,
         cwd: PathBuf,
         env: HashMap<String, String>,
+        disable_seccomp_for_browser_runtime: bool,
     ) -> Result<Child, SandboxError> {
         if command.is_empty() {
             return Err(SandboxError::Process(
@@ -208,6 +209,7 @@ impl NsjailSandbox {
         let mut scoped_config = self.config.clone();
         scoped_config.command = command;
         scoped_config.cwd = cwd;
+        scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
         let sandbox_work_dir = self.working_dir();
         if !scoped_config
             .sandbox
@@ -520,6 +522,7 @@ mod tests {
             command: vec!["sleep".to_string(), "100".to_string()],
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
+            disable_seccomp_for_browser_runtime: false,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
