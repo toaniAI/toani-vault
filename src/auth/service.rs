@@ -38,7 +38,11 @@ pub trait AuthService: Send + Sync {
     ///
     /// 解析 Privy Token，获取用户信息，如果用户不存在则创建新用户。
     /// 同时绑定外部身份。
-    async fn create_user_from_privy(&self, privy_token: &str) -> Result<User, AuthError>;
+    async fn create_user_from_privy(
+        &self,
+        privy_token: &str,
+        hinted_email: Option<&str>,
+    ) -> Result<User, AuthError>;
 
     /// 获取或创建外部身份
     ///
@@ -491,6 +495,20 @@ impl AuthServiceImpl {
         existing_identity.is_none()
     }
 
+    fn normalize_email_hint(email: Option<&str>) -> Option<String> {
+        email
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_ascii_lowercase())
+    }
+
+    fn resolve_privy_email(
+        privy_email: Option<&str>,
+        hinted_email: Option<&str>,
+    ) -> Option<String> {
+        Self::normalize_email_hint(privy_email).or_else(|| Self::normalize_email_hint(hinted_email))
+    }
+
     /// 生成首次登录默认租户名。
     fn build_default_tenant_name(privy_response: &PrivyAuthResponse, user: &User) -> String {
         privy_response
@@ -729,6 +747,36 @@ impl AuthServiceImpl {
         )
         .bind(identity_id)
         .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok(row)
+    }
+
+    async fn update_external_identity_email(
+        &self,
+        identity_id: Uuid,
+        email: &str,
+    ) -> Result<ExternalIdentity, AuthError> {
+        let pool = self
+            .db_pool
+            .as_ref()
+            .ok_or_else(|| AuthError::InternalError("Database pool not initialized".to_string()))?;
+
+        let row = sqlx::query_as::<_, ExternalIdentity>(
+            r#"
+            UPDATE external_identities
+            SET email = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, user_id, provider, provider_subject, wallet_address, email,
+                      provider_profile, is_verified, is_primary, mfa_verified, mfa_verified_at,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(identity_id)
+        .bind(email)
         .fetch_one(pool)
         .await
         .map_err(AuthError::DatabaseError)?;
@@ -1949,9 +1997,15 @@ impl AuthServiceImpl {
 
 #[async_trait]
 impl AuthService for AuthServiceImpl {
-    async fn create_user_from_privy(&self, privy_token: &str) -> Result<User, AuthError> {
+    async fn create_user_from_privy(
+        &self,
+        privy_token: &str,
+        hinted_email: Option<&str>,
+    ) -> Result<User, AuthError> {
         // 1. 验证 Privy Token
         let privy_response = self.verify_privy_token(privy_token).await?;
+        let resolved_email =
+            AuthServiceImpl::resolve_privy_email(privy_response.email.as_deref(), hinted_email);
 
         // 2. 查找或创建外部身份
         let existing_identity = self
@@ -1962,6 +2016,13 @@ impl AuthService for AuthServiceImpl {
 
         // 3. 如果外部身份已存在，返回关联用户
         if let Some(identity) = existing_identity {
+            if let Some(email) = resolved_email.as_deref() {
+                if identity.email.as_deref() != Some(email) {
+                    self.update_external_identity_email(identity.id, email)
+                        .await?;
+                }
+            }
+
             if let Some(user) = self.query_user(identity.user_id).await? {
                 return Ok(user);
             }
@@ -2016,8 +2077,8 @@ impl AuthService for AuthServiceImpl {
         if let Some(wallet) = &privy_response.wallet_address {
             identity.wallet_address = Some(wallet.clone());
         }
-        if let Some(email) = &privy_response.email {
-            identity.email = Some(email.clone());
+        if let Some(email) = resolved_email {
+            identity.email = Some(email);
         }
         if let Some(profile) = &privy_response.profile {
             identity.provider_profile = Some(profile.clone());
@@ -2909,6 +2970,23 @@ mod tests {
 
         let name = AuthServiceImpl::build_default_tenant_name(&response, &user);
         assert_eq!(name, format!("Default Tenant for {}", user.id));
+    }
+
+    #[test]
+    fn test_resolve_privy_email_prefers_token_claim() {
+        let email = AuthServiceImpl::resolve_privy_email(
+            Some("Owner@Example.com "),
+            Some("fallback@example.com"),
+        );
+
+        assert_eq!(email.as_deref(), Some("owner@example.com"));
+    }
+
+    #[test]
+    fn test_resolve_privy_email_falls_back_to_hint() {
+        let email = AuthServiceImpl::resolve_privy_email(None, Some(" User@Example.com "));
+
+        assert_eq!(email.as_deref(), Some("user@example.com"));
     }
 
     #[test]

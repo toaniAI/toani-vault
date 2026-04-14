@@ -1011,6 +1011,7 @@ pub mod tests {
         async fn create_user_from_privy(
             &self,
             _privy_token: &str,
+            _hinted_email: Option<&str>,
         ) -> Result<User, ServiceAuthError> {
             unreachable!()
         }

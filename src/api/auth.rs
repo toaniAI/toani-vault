@@ -153,6 +153,9 @@ pub struct CreateSessionRequest {
     /// 支持两种字段名：`privy_access_token`（推荐）和 `privy_token`（兼容别名）
     #[serde(alias = "privy_token")]
     pub privy_access_token: String,
+    /// 从 Privy SDK 用户对象读取的邮箱（可选，作为后端已验证身份的补充资料）
+    #[serde(default)]
+    pub privy_email: Option<String>,
     /// 邀请 Token（可选，用于首次加入租户）
     #[serde(default)]
     pub invitation_token: Option<String>,
@@ -868,7 +871,7 @@ pub async fn create_session_handler(
     // 1. 从 Privy Token 创建或获取用户
     let user = match state
         .auth_service
-        .create_user_from_privy(&request.privy_access_token)
+        .create_user_from_privy(&request.privy_access_token, request.privy_email.as_deref())
         .await
     {
         Ok(u) => {
@@ -2807,7 +2810,11 @@ mod tests {
 
     #[async_trait]
     impl AuthService for CountingAuthService {
-        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, AuthError> {
             self.create_user_calls.fetch_add(1, Ordering::SeqCst);
             Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
         }

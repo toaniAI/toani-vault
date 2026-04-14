@@ -400,7 +400,7 @@ pub struct NsjailConfig {
     pub cwd: PathBuf,
     /// 环境变量
     pub env: HashMap<String, String>,
-    /// 临时为 browser runtime 关闭 seccomp，避免 node/playwright/chromium 启动即触发 SIGSYS。
+    /// 为 browser runtime 使用单独的放宽 seccomp 策略，允许 node/playwright/chromium 启动。
     pub disable_seccomp_for_browser_runtime: bool,
     /// UID 映射
     pub uid_map: UidMap,
@@ -465,6 +465,9 @@ impl Default for GidMap {
 }
 
 impl NsjailConfig {
+    const BROWSER_RUNTIME_RELAXED_SYSCALLS: [&'static str; 5] =
+        ["execve", "execveat", "fork", "vfork", "clone"];
+
     /// 生成 nsjail 命令行参数
     pub fn to_args(&self) -> Vec<String> {
         let mut args = vec!["--mode".to_string(), "o".to_string()]; // One-shot mode
@@ -516,14 +519,13 @@ impl NsjailConfig {
         }
 
         // Seccomp
-        if !self.sandbox.security.privileged && !self.disable_seccomp_for_browser_runtime {
+        if !self.sandbox.security.privileged {
             args.push("--seccomp_string".to_string());
-            args.push(self.generate_seccomp_bpf());
-        } else if self.disable_seccomp_for_browser_runtime {
-            // FIXME: This is a stopgap to restore sandbox browser execution in TEE/Drone.
-            // The current seccomp denylist blocks node/playwright/chromium startup syscalls
-            // (notably clone/execve), causing nsjail SIGSYS failures. Replace this bypass with
-            // a browser-specific seccomp profile instead of keeping browser runtime unconfined.
+            args.push(if self.disable_seccomp_for_browser_runtime {
+                self.generate_browser_runtime_seccomp_bpf()
+            } else {
+                self.generate_seccomp_bpf()
+            });
         }
 
         // Working directory
@@ -558,7 +560,26 @@ impl NsjailConfig {
 
     /// 生成 seccomp kafel 策略字符串（供 nsjail --seccomp_string 使用）
     fn generate_seccomp_bpf(&self) -> String {
-        let denylist = &self.sandbox.security.seccomp.denylist;
+        self.generate_seccomp_bpf_with_denylist(&self.sandbox.security.seccomp.denylist)
+    }
+
+    fn generate_browser_runtime_seccomp_bpf(&self) -> String {
+        let denylist = self
+            .sandbox
+            .security
+            .seccomp
+            .denylist
+            .iter()
+            .filter(|syscall| {
+                !Self::BROWSER_RUNTIME_RELAXED_SYSCALLS.contains(&syscall.as_str())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        self.generate_seccomp_bpf_with_denylist(&denylist)
+    }
+
+    fn generate_seccomp_bpf_with_denylist(&self, denylist: &[String]) -> String {
         let policy_name = match self.sandbox.security.seccomp.default_policy {
             SeccompPolicy::Browser => "browser",
             SeccompPolicy::Minimal => "minimal",
@@ -646,7 +667,19 @@ mod tests {
 
         let args = config.to_args();
 
-        assert!(!args.contains(&"--seccomp_string".to_string()));
+        assert!(args.contains(&"--seccomp_string".to_string()));
+        let seccomp_idx = args
+            .iter()
+            .position(|arg| arg == "--seccomp_string")
+            .expect("seccomp string should be present");
+        let seccomp_policy = &args[seccomp_idx + 1];
+        assert!(!seccomp_policy.contains("    execve\n"));
+        assert!(!seccomp_policy.contains("    execveat\n"));
+        assert!(!seccomp_policy.contains("    fork\n"));
+        assert!(!seccomp_policy.contains("    vfork\n"));
+        assert!(!seccomp_policy.contains("    clone\n"));
+        assert!(seccomp_policy.contains("ptrace"));
+        assert!(seccomp_policy.contains("process_vm_writev"));
     }
 
     #[test]

@@ -61,9 +61,8 @@ impl SandboxBrowserRuntime {
         );
         env.insert("PLAYWRIGHT_BROWSERS_PATH".to_string(), "0".to_string());
 
-        // FIXME: Temporary stopgap for TEE/Drone recovery. The shared nsjail seccomp denylist
-        // blocks node/playwright/chromium startup syscalls and kills the browser runtime with
-        // SIGSYS. Revert this bypass after introducing a browser-specific seccomp profile.
+        // Browser runtime uses a dedicated relaxed seccomp profile so node/playwright/chromium
+        // can start without dropping all syscall filtering for the scoped process.
         let mut child = sandbox
             .spawn_scoped_process(
                 vec![

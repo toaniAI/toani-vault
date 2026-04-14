@@ -166,7 +166,11 @@ async fn test_verify_token_writes_audit_log_visible_to_audit_api() {
 
     #[async_trait]
     impl AuthService for MockAuthService {
-        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, AuthError> {
             Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
         }
         async fn get_or_create_external_identity(
@@ -360,7 +364,11 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
 
     #[async_trait]
     impl AuthService for MockAuthService {
-        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, AuthError> {
             Err(AuthError::PrivyAuthenticationFailed("mock".to_string()))
         }
         async fn get_or_create_external_identity(

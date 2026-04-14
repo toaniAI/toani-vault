@@ -662,7 +662,11 @@ mod tests {
 
     #[async_trait]
     impl AuthService for DummyAuthService {
-        async fn create_user_from_privy(&self, _privy_token: &str) -> Result<User, AuthError> {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, AuthError> {
             Err(AuthError::InternalError("unused".to_string()))
         }
 
