@@ -1,7 +1,7 @@
 //! nsjail 沙箱实现
 
 use crate::tee::sandbox::{
-    config::NsjailConfig,
+    config::{MountConfig, NsjailConfig},
     error::{SandboxError, SecurityError},
     types::{SandboxId, SandboxStatus, WarmInstanceInfo},
 };
@@ -199,6 +199,7 @@ impl NsjailSandbox {
         cwd: PathBuf,
         env: HashMap<String, String>,
         disable_seccomp_for_browser_runtime: bool,
+        extra_mounts: Vec<MountConfig>,
     ) -> Result<Child, SandboxError> {
         if command.is_empty() {
             return Err(SandboxError::Process(
@@ -206,31 +207,13 @@ impl NsjailSandbox {
             ));
         }
 
-        let mut scoped_config = self.config.clone();
-        scoped_config.command = command;
-        scoped_config.cwd = cwd;
-        scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
-        let sandbox_work_dir = self.working_dir();
-        if !scoped_config
-            .sandbox
-            .security
-            .namespace
-            .mount_points
-            .iter()
-            .any(|mount| mount.src == sandbox_work_dir && mount.dst == sandbox_work_dir)
-        {
-            scoped_config.sandbox.security.namespace.mount_points.push(
-                crate::tee::sandbox::config::MountConfig {
-                    src: sandbox_work_dir.clone(),
-                    dst: sandbox_work_dir,
-                    mount_type: crate::tee::sandbox::config::MountType::Bind,
-                    read_only: false,
-                },
-            );
-        }
-        for (key, value) in env {
-            scoped_config.env.insert(key, value);
-        }
+        let scoped_config = self.scoped_process_config(
+            command,
+            cwd,
+            env,
+            disable_seccomp_for_browser_runtime,
+            extra_mounts,
+        );
 
         let mut cmd = Command::new(&scoped_config.sandbox.nsjail_path);
         cmd.args(scoped_config.to_args())
@@ -241,6 +224,53 @@ impl NsjailSandbox {
         cmd.spawn().map_err(|error| {
             SandboxError::Process(format!("failed to spawn scoped process: {error}"))
         })
+    }
+
+    fn scoped_process_config(
+        &self,
+        command: Vec<String>,
+        cwd: PathBuf,
+        env: HashMap<String, String>,
+        disable_seccomp_for_browser_runtime: bool,
+        extra_mounts: Vec<MountConfig>,
+    ) -> NsjailConfig {
+        let mut scoped_config = self.config.clone();
+        scoped_config.command = command;
+        scoped_config.cwd = cwd;
+        scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
+
+        let sandbox_work_dir = self.working_dir();
+        Self::push_mount_if_missing(
+            &mut scoped_config.sandbox.security.namespace.mount_points,
+            MountConfig {
+                src: sandbox_work_dir.clone(),
+                dst: sandbox_work_dir,
+                mount_type: crate::tee::sandbox::config::MountType::Bind,
+                read_only: false,
+            },
+        );
+
+        for mount in extra_mounts {
+            Self::push_mount_if_missing(
+                &mut scoped_config.sandbox.security.namespace.mount_points,
+                mount,
+            );
+        }
+
+        for (key, value) in env {
+            scoped_config.env.insert(key, value);
+        }
+
+        scoped_config
+    }
+
+    fn push_mount_if_missing(mounts: &mut Vec<MountConfig>, mount: MountConfig) {
+        if !mounts
+            .iter()
+            .any(|existing| existing.src == mount.src && existing.dst == mount.dst)
+        {
+            mounts.push(mount);
+        }
     }
 
     /// 获取沙箱统计信息
@@ -583,6 +613,49 @@ mod tests {
             error,
             SandboxError::Security(SecurityError::Cgroup(_))
         ));
+    }
+
+    #[test]
+    fn test_scoped_process_config_adds_browser_runtime_mounts() {
+        let sandbox = NsjailSandbox::new(create_test_config());
+        let extra_mount = MountConfig {
+            src: PathBuf::from("/app/src/tee/sandbox/scripts"),
+            dst: PathBuf::from("/app/src/tee/sandbox/scripts"),
+            mount_type: crate::tee::sandbox::config::MountType::Bind,
+            read_only: true,
+        };
+        let scoped_config = sandbox.scoped_process_config(
+            vec!["/usr/bin/node".to_string(), "script.cjs".to_string()],
+            PathBuf::from("/tmp/runtime"),
+            HashMap::new(),
+            true,
+            vec![extra_mount.clone()],
+        );
+
+        assert!(
+            scoped_config
+                .sandbox
+                .security
+                .namespace
+                .mount_points
+                .iter()
+                .any(|mount| mount.src == extra_mount.src
+                    && mount.dst == extra_mount.dst
+                    && mount.read_only)
+        );
+
+        let sandbox_work_dir = sandbox.working_dir();
+        assert!(
+            scoped_config
+                .sandbox
+                .security
+                .namespace
+                .mount_points
+                .iter()
+                .any(|mount| mount.src == sandbox_work_dir
+                    && mount.dst == sandbox_work_dir
+                    && !mount.read_only)
+        );
     }
 
     #[tokio::test]

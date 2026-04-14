@@ -1,4 +1,8 @@
-use crate::tee::sandbox::{error::SandboxError, nsjail::NsjailSandbox};
+use crate::tee::sandbox::{
+    config::{MountConfig, MountType},
+    error::SandboxError,
+    nsjail::NsjailSandbox,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -61,6 +65,11 @@ impl SandboxBrowserRuntime {
         let node_binary = resolve_node_binary()?;
         let node_path = resolve_node_path()?;
         let playwright_browsers_path = resolve_playwright_browsers_path()?;
+        let extra_mounts = browser_runtime_mounts(
+            &script_path,
+            Path::new(&node_path),
+            Path::new(&playwright_browsers_path),
+        );
         let mut env = HashMap::new();
         env.insert("HOME".to_string(), home_dir.to_string_lossy().to_string());
         env.insert("TMPDIR".to_string(), tmp_dir.to_string_lossy().to_string());
@@ -95,6 +104,7 @@ impl SandboxBrowserRuntime {
                 runtime_dir,
                 env,
                 true,
+                extra_mounts,
             )
             .await?;
         let stdin = child
@@ -442,4 +452,70 @@ fn is_executable_file(path: &Path) -> bool {
     std::fs::metadata(path)
         .map(|metadata| metadata.is_file())
         .unwrap_or(false)
+}
+
+fn browser_runtime_mounts(
+    script_path: &Path,
+    node_path: &Path,
+    playwright_browsers_path: &Path,
+) -> Vec<MountConfig> {
+    let mut mounts = Vec::new();
+
+    if let Some(script_dir) = script_path.parent() {
+        push_read_only_bind_mount(&mut mounts, script_dir);
+    }
+    push_read_only_bind_mount(&mut mounts, node_path);
+    push_read_only_bind_mount(&mut mounts, playwright_browsers_path);
+
+    mounts
+}
+
+fn push_read_only_bind_mount(mounts: &mut Vec<MountConfig>, path: &Path) {
+    if mounts
+        .iter()
+        .any(|mount| mount.src == path && mount.dst == path)
+    {
+        return;
+    }
+
+    mounts.push(MountConfig {
+        src: path.to_path_buf(),
+        dst: path.to_path_buf(),
+        mount_type: MountType::Bind,
+        read_only: true,
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_browser_runtime_mounts_include_runtime_paths() {
+        let mounts = browser_runtime_mounts(
+            Path::new("/app/src/tee/sandbox/scripts/sandbox_executor.cjs"),
+            Path::new("/opt/credbridge-browser-runtime/node_modules"),
+            Path::new(
+                "/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers",
+            ),
+        );
+
+        assert!(mounts.iter().any(|mount| {
+            mount.src == Path::new("/app/src/tee/sandbox/scripts")
+                && mount.dst == Path::new("/app/src/tee/sandbox/scripts")
+                && mount.read_only
+        }));
+        assert!(mounts.iter().any(|mount| {
+            mount.src == Path::new("/opt/credbridge-browser-runtime/node_modules")
+                && mount.dst == Path::new("/opt/credbridge-browser-runtime/node_modules")
+                && mount.read_only
+        }));
+        assert!(mounts.iter().any(|mount| {
+            mount.src
+                == Path::new("/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers")
+                && mount.dst
+                    == Path::new("/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers")
+                && mount.read_only
+        }));
+    }
 }
