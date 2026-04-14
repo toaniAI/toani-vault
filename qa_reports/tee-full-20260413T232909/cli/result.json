@@ -1,0 +1,102 @@
+{
+  "claim_id": "C10",
+  "status": "failed",
+  "failure_class": "product",
+  "summary": "The live CLI could persist a real bearer token into config, but the published build does not expose the README-documented command surface. The current entrypoint only routes the sandbox group; README-promised config/auth/credentials/tokens/audit commands all fail locally with `Unknown command group`. The exposed sandbox commands also do not give a usable acceptance path with current-run auth material: the opaque session token is rejected or revoked, and the valid access token is limited to `credential:read`, so the live sandbox API returns `403 insufficient_scope`.",
+  "artifacts": [
+    "notes.md",
+    "commands.txt",
+    "raw/help.command.txt",
+    "raw/help.stdout.txt",
+    "raw/help.stderr.txt",
+    "raw/help.exit.txt",
+    "raw/config-init.command.txt",
+    "raw/config-init.stdout.txt",
+    "raw/config-init.stderr.txt",
+    "raw/config-init.exit.txt",
+    "raw/auth-status.command.txt",
+    "raw/auth-status.stderr.txt",
+    "raw/auth-status.exit.txt",
+    "raw/credentials-list.command.txt",
+    "raw/credentials-list.stderr.txt",
+    "raw/credentials-list.exit.txt",
+    "raw/tokens-list.command.txt",
+    "raw/tokens-list.stderr.txt",
+    "raw/tokens-list.exit.txt",
+    "raw/audit-logs.command.txt",
+    "raw/audit-logs.stderr.txt",
+    "raw/audit-logs.exit.txt",
+    "raw/sandbox-create-session-negative.command.txt",
+    "raw/sandbox-create-session-negative.stderr.txt",
+    "raw/sandbox-create-session-negative.exit.txt",
+    "raw/sandbox-stats-session.command.txt",
+    "raw/sandbox-stats-session.stderr.txt",
+    "raw/sandbox-stats-session.exit.txt",
+    "raw/sandbox-get-session-negative.command.txt",
+    "raw/sandbox-get-session-negative.stderr.txt",
+    "raw/sandbox-get-session-negative.exit.txt",
+    "raw/sandbox-stats-access-quoted.command.txt",
+    "raw/sandbox-stats-access-quoted.stderr.txt",
+    "raw/sandbox-stats-access-quoted.exit.txt",
+    "raw/sandbox-list-sessions-access.command.txt",
+    "raw/sandbox-list-sessions-access.stderr.txt",
+    "raw/sandbox-list-sessions-access.exit.txt",
+    "raw/config-after-sandbox-stats.json",
+    "raw/config-access.json",
+    "raw/curl-sandbox-stats-access.headers.txt",
+    "raw/curl-sandbox-stats-access.body.txt",
+    "raw/curl-sandbox-stats-access.status.txt",
+    "raw/curl-sandbox-stats-session.headers.txt",
+    "raw/curl-sandbox-stats-session.body.txt",
+    "raw/curl-sandbox-stats-session.status.txt"
+  ],
+  "created_ids": [],
+  "runtime_log_needed": false,
+  "contract_findings": [
+    {
+      "type": "command_surface_drift",
+      "observed": "The published CLI help and entrypoint expose only the `sandbox` group.",
+      "expected": "README documents `config`, `auth`, `credentials`, `tokens`, `audit`, and `service-accounts` groups in addition to `sandbox`."
+    },
+    {
+      "type": "bootstrap_drift",
+      "observed": "`toani config init --url ... --token ...` fails with `Unknown command group: config`.",
+      "expected": "README recommends `toani config init` as the primary bootstrap flow."
+    },
+    {
+      "type": "auth_group_unavailable",
+      "observed": "`toani auth status` fails locally with `Unknown command group: auth`.",
+      "expected": "README documents `auth status`, `auth me`, `auth memberships`, and token-management subcommands."
+    },
+    {
+      "type": "credentials_group_unavailable",
+      "observed": "`toani credentials list` fails locally with `Unknown command group: credentials`.",
+      "expected": "README documents create/list/get/delete/decrypt credential flows."
+    },
+    {
+      "type": "tokens_group_unavailable",
+      "observed": "`toani tokens list` fails locally with `Unknown command group: tokens`.",
+      "expected": "README documents create/list/get/verify/stats/revoke token flows."
+    },
+    {
+      "type": "audit_group_unavailable",
+      "observed": "`toani audit logs` fails locally with `Unknown command group: audit`.",
+      "expected": "README documents audit log listing/export/verify commands."
+    },
+    {
+      "type": "implicit_config_behavior",
+      "observed": "Passing global `--base-url` and `--token` on a sandbox invocation writes `~/.toani/config.json` even without a `config` command.",
+      "expected": "README presents explicit `config init` / `config show` / `config set` command workflows."
+    },
+    {
+      "type": "scope_mismatch_for_exposed_group",
+      "observed": "The valid current-run access token carries `credential:read`; direct HTTP to `/api/v1/sandbox/stats` returns `403 insufficient_scope` requiring `sandbox:read`.",
+      "expected": "A real bearer token flow suitable for the documented CLI use cases should be obtainable and usable for the exposed command group."
+    },
+    {
+      "type": "error_reporting_gap",
+      "observed": "CLI `sandbox stats` and `sandbox list-sessions` exit non-zero with empty stdout/stderr when the live API rejects the request.",
+      "expected": "CLI should surface the underlying API error text or status in stderr."
+    }
+  ]
+}

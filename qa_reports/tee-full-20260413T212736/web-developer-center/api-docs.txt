@@ -1,0 +1,58 @@
+Developer Tools
+Developer Center
+
+System overview, API docs, SDK examples, and an interactive API tester
+
+Overview
+API Docs
+SDK Examples
+Tester
+API authentication
+All API requests require a valid access token.
+Header format
+The SDK and tester use the same authentication rules so you can reuse flows during local validation and integration debugging.
+Authorization: Bearer <your-access-token>
+Token types
+Session Token: minted by the backend after the browser completes Privy login and used for the active web session.
+Dashboard Manual Token: issued from the Dashboard Tokens page, then exchanged for short-lived sandbox access tokens.
+Service Account Token: machine identity token for tenant-scoped automation.
+Token format
+Uses the PASETO v4.local format, which is safer than JWT and supports symmetric encryption.
+CLI onboarding
+
+The CLI cannot complete Privy login directly and there is no username/password login endpoint. Sign in on the web first, issue a manual token from the Dashboard Tokens page, exchange it via /api/v1/auth/access-token, then call sandbox APIs.
+
+toani config init --url https://your-api.example.com --token <SHORT_LIVED_SANDBOX_TOKEN>
+API endpoints
+Reference for common API routes
+POST
+/api/v1/auth/access-token
+POST
+/api/v1/sandbox/sessions
+GET
+/api/v1/sandbox/sessions
+GET
+/api/v1/sandbox/sessions/:id
+POST
+/api/v1/sandbox/sessions/:id/execute
+POST
+/api/v1/sandbox/sessions/:id/pause
+POST
+/api/v1/sandbox/sessions/:id/resume
+DELETE
+/api/v1/sandbox/sessions/:id
+POST
+/api/v1/sandbox/sessions/:id/screenshot
+POST
+/api/v1/sandbox/sessions/:id/export
+Error codes
+invalid_request
+Invalid request parameters
+unauthorized
+Unauthenticated or token expired
+forbidden
+Insufficient permissions
+not_found
+Resource not found
+token_expired
+Token expired

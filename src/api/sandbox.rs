@@ -670,7 +670,12 @@ pub async fn execute_operation(
         Ok(value) => value,
         Err(response) => return response,
     };
-    redact_persisted_parameters(&operation_type, &request.parameters, &mut audit_parameters);
+    redact_persisted_parameters(
+        &operation_type,
+        &request.parameters,
+        &resolved_parameters,
+        &mut audit_parameters,
+    );
 
     // 构建操作请求
     let operation = OperationRequest {
@@ -1108,6 +1113,7 @@ async fn resolve_operation_parameters(
 fn redact_persisted_parameters(
     operation_type: &OperationType,
     original_parameters: &HashMap<String, serde_json::Value>,
+    resolved_parameters: &HashMap<String, serde_json::Value>,
     persisted_parameters: &mut HashMap<String, serde_json::Value>,
 ) {
     match operation_type {
@@ -1134,8 +1140,133 @@ fn redact_persisted_parameters(
                 redact_nested_strings(bindings);
             }
         }
+        OperationType::HttpRequest => {
+            for (key, persisted_value) in persisted_parameters.iter_mut() {
+                redact_http_request_value(
+                    key,
+                    original_parameters.get(key),
+                    resolved_parameters.get(key),
+                    persisted_value,
+                );
+            }
+        }
         _ => {}
     }
+}
+
+fn redact_http_request_value(
+    key: &str,
+    original_value: Option<&serde_json::Value>,
+    resolved_value: Option<&serde_json::Value>,
+    persisted_value: &mut serde_json::Value,
+) {
+    let sensitive_key = is_sensitive_http_key(key);
+    let credential_backed = original_value.is_some_and(is_credential_reference_value);
+
+    if sensitive_key || credential_backed {
+        match persisted_value {
+            serde_json::Value::String(_) | serde_json::Value::Object(_) => {
+                *persisted_value = serde_json::Value::String("[REDACTED]".to_string());
+                return;
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    *item = serde_json::Value::String("[REDACTED]".to_string());
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    match persisted_value {
+        serde_json::Value::Object(persisted_map) => {
+            if let (
+                Some(serde_json::Value::Object(original_map)),
+                Some(serde_json::Value::Object(resolved_map)),
+            ) = (original_value, resolved_value)
+            {
+                for (nested_key, nested_persisted) in persisted_map.iter_mut() {
+                    redact_http_request_value(
+                        nested_key,
+                        original_map.get(nested_key),
+                        resolved_map.get(nested_key),
+                        nested_persisted,
+                    );
+                }
+                return;
+            }
+
+            if let Some(serde_json::Value::Object(original_map)) = original_value {
+                for (nested_key, nested_persisted) in persisted_map.iter_mut() {
+                    redact_http_request_value(
+                        nested_key,
+                        original_map.get(nested_key),
+                        None,
+                        nested_persisted,
+                    );
+                }
+            }
+        }
+        serde_json::Value::Array(persisted_items) => {
+            if let (
+                Some(serde_json::Value::Array(original_items)),
+                Some(serde_json::Value::Array(resolved_items)),
+            ) = (original_value, resolved_value)
+            {
+                for (index, nested_persisted) in persisted_items.iter_mut().enumerate() {
+                    redact_http_request_value(
+                        key,
+                        original_items.get(index),
+                        resolved_items.get(index),
+                        nested_persisted,
+                    );
+                }
+                return;
+            }
+
+            if let Some(serde_json::Value::Array(original_items)) = original_value {
+                for (index, nested_persisted) in persisted_items.iter_mut().enumerate() {
+                    redact_http_request_value(
+                        key,
+                        original_items.get(index),
+                        None,
+                        nested_persisted,
+                    );
+                }
+            }
+        }
+        serde_json::Value::String(_) => {
+            if (sensitive_key || credential_backed)
+                && matches!(resolved_value, Some(serde_json::Value::String(_)))
+            {
+                *persisted_value = serde_json::Value::String("[REDACTED]".to_string());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_sensitive_http_key(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase();
+    normalized == "authorization"
+        || normalized == "cookie"
+        || normalized == "set-cookie"
+        || normalized == "api_key"
+        || normalized == "api-key"
+        || normalized == "secret"
+        || normalized.contains("token")
+}
+
+fn is_credential_reference_value(value: &serde_json::Value) -> bool {
+    let serde_json::Value::Object(map) = value else {
+        return false;
+    };
+    map.len() == 1
+        && map
+            .get("$credential")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|field| !field.trim().is_empty())
 }
 
 fn redact_nested_strings(value: &mut serde_json::Value) {
@@ -1639,6 +1770,7 @@ fn parse_operation_type(s: &str) -> Option<OperationType> {
         "export" => Some(OperationType::Export),
         "execute_script" => Some(OperationType::ExecuteScript),
         "wait" => Some(OperationType::Wait),
+        "http_request" => Some(OperationType::HttpRequest),
         "custom" => Some(OperationType::Custom),
         _ => None,
     }
@@ -1938,7 +2070,86 @@ mod tests {
             parse_operation_type("screenshot"),
             Some(OperationType::Screenshot)
         ));
+        assert!(matches!(
+            parse_operation_type("http_request"),
+            Some(OperationType::HttpRequest)
+        ));
         assert!(parse_operation_type("invalid").is_none());
+    }
+
+    #[test]
+    fn test_redact_persisted_parameters_redacts_http_request_secrets() {
+        let original_parameters = HashMap::from([
+            (
+                "method".to_string(),
+                serde_json::Value::String("POST".to_string()),
+            ),
+            (
+                "headers".to_string(),
+                serde_json::json!({
+                    "Authorization": { "$credential": "api_key" },
+                    "X-Trace": "keep"
+                }),
+            ),
+            (
+                "body".to_string(),
+                serde_json::json!({
+                    "access_token": "plain-token",
+                    "profile": {
+                        "refresh_token": { "$credential": "refresh_token" },
+                        "visible": "ok"
+                    }
+                }),
+            ),
+        ]);
+        let resolved_parameters = HashMap::from([
+            (
+                "method".to_string(),
+                serde_json::Value::String("POST".to_string()),
+            ),
+            (
+                "headers".to_string(),
+                serde_json::json!({
+                    "Authorization": "Bearer secret",
+                    "X-Trace": "keep"
+                }),
+            ),
+            (
+                "body".to_string(),
+                serde_json::json!({
+                    "access_token": "plain-token",
+                    "profile": {
+                        "refresh_token": "resolved-refresh",
+                        "visible": "ok"
+                    }
+                }),
+            ),
+        ]);
+        let mut persisted_parameters = original_parameters.clone();
+
+        redact_persisted_parameters(
+            &OperationType::HttpRequest,
+            &original_parameters,
+            &resolved_parameters,
+            &mut persisted_parameters,
+        );
+
+        assert_eq!(
+            persisted_parameters["headers"]["Authorization"],
+            serde_json::Value::String("[REDACTED]".to_string())
+        );
+        assert_eq!(
+            persisted_parameters["body"]["access_token"],
+            serde_json::Value::String("[REDACTED]".to_string())
+        );
+        assert_eq!(
+            persisted_parameters["body"]["profile"]["refresh_token"],
+            serde_json::Value::String("[REDACTED]".to_string())
+        );
+        assert_eq!(
+            persisted_parameters["body"]["profile"]["visible"],
+            serde_json::json!("ok")
+        );
     }
 
     #[test]

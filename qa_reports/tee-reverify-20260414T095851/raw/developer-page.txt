@@ -1,0 +1,98 @@
+TOANI VAULT
+
+TEE protected
+Security Status
+Passed
+Crypto
+AES-256
+Audit
+immudb
+MAIN FEATURES
+Credentials
+Tokens
+Developer Center
+ADMINISTRATION
+Users
+Toani.ai runtime
+
+SGX / SEV protected execution, attestation-aware access, and immutable audit tracing.
+
+rtk-bug-18218
+layout.role.owner
+Home
+Developer Center
+
+Trusted credential operations workspace
+
+English
+rtk-bug-18218
+layout.role.owner
+Developer Tools
+Developer Center
+
+System overview, API docs, SDK examples, and an interactive API tester
+
+Overview
+API Docs
+SDK Examples
+Tester
+TEE Protection
+Credential storage backed by a trusted execution environment
+Intel SGX / AMD SEV support
+Remote attestation verification
+Encrypted memory isolation
+Tamper-resistant audit logs
+End-to-end encryption
+AES-256-GCM encryption standard
+Encrypted transport from the client
+Ciphertext storage on the server
+HKDF-based key derivation
+Scheduled key rotation
+Immutable audit
+immudb immutable database
+Cryptographic integrity verification
+Tamper-resistant log chain
+Real-time audit tracing
+Compliance report export
+🛡️
+TEE Sandbox Browser
+A securely isolated environment for web automation
+nsjail Linux Namespace isolation
+Seccomp syscall filtering
+cgroup resource limits
+AI operation review engine
+Data redaction and watermarking
+Technical architecture
+Toani Vault system component overview
+Backend service (Rust + Axum)
+A high-performance async HTTP service that handles credential management, token auth, sandbox orchestration, and audit logging.
+TEE runtime
+An isolated secure enclave for cryptographic operations and sensitive key management.
+Storage layer
+PostgreSQL stores credential metadata, immudb stores audit logs, and Redis stores cache and session data.
+Vault integration
+HashiCorp Vault provides dynamic key management, secret engines, and access control.
+Supported credential types
+Username & Password
+
+The most common credential type for website logins and application authentication.
+
+API Key
+
+Server-side API authentication with optional key + secret pairing.
+
+OAuth Token
+
+OAuth 2.0 / OIDC token management with refresh support.
+
+Session Cookie
+
+Web session cookie management with secure flags and expiration policies.
+
+KYC Document
+
+Identity document storage for compliant KYC workflows.
+
+Client Certificate
+
+Client TLS certificate management with mutual authentication support.

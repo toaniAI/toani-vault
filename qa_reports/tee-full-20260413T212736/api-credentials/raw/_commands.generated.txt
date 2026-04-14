@@ -1,0 +1,7 @@
+[2026-04-13T13:41:23Z] curl -sS -X POST https://dev-credbridge.bitkinetic.com/api/v1/auth/session -H Content-Type: application/json --data @/var/folders/tj/3kjqp54961z7rj_29fwksc4h0000gn/T/tmp.Qf4CRoam3e
+[2026-04-13T13:41:23Z] curl -sS -X POST https://dev-credbridge.bitkinetic.com/api/v1/credentials -H Authorization: Bearer <redacted> -H Content-Type: application/json --data @/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/02-create.request.json
+[2026-04-13T13:41:23Z] curl -sS -X GET https://dev-credbridge.bitkinetic.com/api/v1/credentials?service_id=tee-full-case07-20260413T212736&page=1&page_size=20 -H Authorization: Bearer <redacted>
+[2026-04-13T13:41:23Z] curl -sS -X GET https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8713-52b0-7ae2-8785-0e48119da368 -H Authorization: Bearer <redacted>
+[2026-04-13T13:41:23Z] curl -sS -X POST https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8713-52b0-7ae2-8785-0e48119da368/decrypt -H Authorization: Bearer <redacted> -H Content-Type: application/json --data @/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/05-decrypt.request.json
+[2026-04-13T13:41:24Z] curl -sS -X DELETE https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8713-52b0-7ae2-8785-0e48119da368 -H Authorization: Bearer <redacted>
+[2026-04-13T13:41:24Z] curl -sS -X GET https://dev-credbridge.bitkinetic.com/api/v1/credentials?service_id=tee-full-case07-20260413T212736&page=1&page_size=20 -H Authorization: Bearer <redacted>

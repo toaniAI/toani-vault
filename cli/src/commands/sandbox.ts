@@ -66,11 +66,17 @@ export async function runSandbox(
         selector: params.selector as string | undefined,
         value: params.value as string | { $credential: string } | undefined,
         url: params.url as string | undefined,
+        method: params.method as string | undefined,
+        headers: params.headers as
+          | Record<string, string | { $credential: string }>
+          | undefined,
+        body: params.body,
         script: params.script as string | undefined,
         bindings: params.bindings as
           | Record<string, string | { $credential: string }>
           | undefined,
         attribute: params.attribute as string | undefined,
+        timeout: params.timeout_ms as number | undefined,
       });
       printResult(result, config.output);
       return;

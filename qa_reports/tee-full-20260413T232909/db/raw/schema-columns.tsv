@@ -1,0 +1,8 @@
+api_tokens	id, token_type, subject_type, subject_id, tenant_id, issued_from, session_id, membership_id, display_name, scopes, expires_at, revoked_at, created_at, last_used_at, token_kind, token_name, token_prefix, description, issued_membership_role_snapshot, permission_source, created_via, revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode, credential_ids
+audit_logs	id, tenant_id, event_type, event_data, action, user_id, user_id_hash, ip_address, user_agent, event_category, metadata, created_at, log_index, entry_id, service, risk_tier, outcome, signed_entry
+auth_audit_logs	id, event_type, severity, user_id, identity_id, tenant_id, membership_id, invitation_id, session_id, event_data, ip_address, user_agent, created_at
+auth_sessions	id, user_id, session_token_hash, identity_id, active_membership_id, mfa_status, mfa_verified_at, user_agent, ip_address, expires_at, last_active_at, revoked_at, revoked_reason, created_at, updated_at
+credentials	credential_id, tenant_id, user_id_hash, service_id, credential_type, encrypted_payload, version, created_at, updated_at, expires_at, is_deleted
+sandbox_operations	id, session_id, tenant_id, operation_type, status, input_params, output_result, error_message, started_at, completed_at, execution_duration_ms, tee_attestation_report, credential_id, created_at
+sandbox_sessions	id, tenant_id, created_by, status, started_at, expires_at, terminated_at, termination_reason, tee_context_id, security_policy, metadata, created_at, updated_at, credential_id, original_intent
+scope_tokens	id, token_id, credential_id, scopes, constraints, issued_at, expires_at, revoked_at, usage_count

@@ -1,0 +1,21 @@
+rtk node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js --help
+rtk env HOME=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/home node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js config init --url https://dev-credbridge.bitkinetic.com/ --token <SESSION_TOKEN>
+rtk env HOME=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/home node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js --base-url https://dev-credbridge.bitkinetic.com/ --token <SESSION_TOKEN> sandbox stats
+rtk env HOME=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/home_access node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js --base-url https://dev-credbridge.bitkinetic.com/ --token <ACCESS_TOKEN> sandbox stats
+rtk env HOME=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/home_access node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js --base-url https://dev-credbridge.bitkinetic.com/ --token <ACCESS_TOKEN> sandbox list-sessions
+rtk node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js auth status
+rtk node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js credentials list
+rtk node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js tokens list
+rtk node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js audit logs
+rtk node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js sandbox create-session
+rtk env HOME=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/home node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js --base-url https://dev-credbridge.bitkinetic.com/ --token <SESSION_TOKEN> sandbox get-session nonexistent-case10
+rtk curl -sS -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-access.headers.txt -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-access.body.txt -w "%{http_code}\n" -H "Authorization: Bearer <ACCESS_TOKEN>" https://dev-credbridge.bitkinetic.com/api/v1/sandbox/stats
+rtk curl -sS -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-session.headers.txt -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-session.body.txt -w "%{http_code}\n" -H "Authorization: Bearer <SESSION_TOKEN>" https://dev-credbridge.bitkinetic.com/api/v1/sandbox/stats
+rtk sed -n '1,180p' /Users/yvan/AIWorkspace/credbridge/cli/src/index.ts
+rtk sed -n '1,180p' /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js
+rtk sed -n '1,80p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/help.stdout.txt
+rtk sed -n '1,80p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/auth-status.stderr.txt
+rtk cat /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-access.status.txt
+rtk cat /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-access.body.txt
+rtk cat /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-session.status.txt
+rtk cat /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/cli/raw/curl-sandbox-stats-session.body.txt

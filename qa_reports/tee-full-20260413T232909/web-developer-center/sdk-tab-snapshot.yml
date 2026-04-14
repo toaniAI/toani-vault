@@ -1,0 +1,189 @@
+- generic [ref=e2]:
+  - generic [ref=e8]:
+    - generic [ref=e11]:
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - img [ref=e16]
+          - generic [ref=e27]:
+            - paragraph [ref=e28]: TOANI VAULT
+            - generic [ref=e29]: TEE 保护中
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e33]: 安全状态
+            - generic [ref=e34]: 已通过
+          - generic [ref=e35]:
+            - generic [ref=e36]:
+              - generic [ref=e37]: Crypto
+              - generic [ref=e38]: AES-256
+            - generic [ref=e39]:
+              - generic [ref=e40]: Audit
+              - generic [ref=e41]: immudb
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - generic [ref=e44]: 主要功能
+          - list [ref=e46]:
+            - listitem [ref=e47]:
+              - link "凭证管理" [ref=e48] [cursor=pointer]:
+                - /url: /credentials
+                - img [ref=e50]
+                - generic [ref=e54]: 凭证管理
+            - listitem [ref=e55]:
+              - link "Token 管理" [ref=e56] [cursor=pointer]:
+                - /url: /tokens
+                - img [ref=e58]
+                - generic [ref=e60]: Token 管理
+            - listitem [ref=e61]:
+              - link "开发者中心" [ref=e62] [cursor=pointer]:
+                - /url: /developer
+                - img [ref=e64]
+                - generic [ref=e67]: 开发者中心
+        - generic [ref=e68]:
+          - generic [ref=e69]: 系统管理
+          - list [ref=e71]:
+            - listitem [ref=e72]:
+              - link "用户管理" [ref=e73] [cursor=pointer]:
+                - /url: /users
+                - img [ref=e75]
+                - generic [ref=e80]: 用户管理
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - img [ref=e83]
+            - text: Toani.ai runtime
+          - paragraph [ref=e86]: SGX / SEV protected execution, attestation-aware access, and immutable audit tracing.
+      - list [ref=e88]:
+        - listitem [ref=e89]:
+          - button "rtk-bug-18218 layout.role.owner" [ref=e90] [cursor=pointer]:
+            - img [ref=e93]
+            - generic [ref=e96]:
+              - generic [ref=e97]: rtk-bug-18218
+              - generic [ref=e98]: layout.role.owner
+            - img [ref=e99]
+      - button "Toggle Sidebar" [ref=e101]
+    - generic [ref=e102]:
+      - banner [ref=e103]:
+        - generic [ref=e104]:
+          - generic [ref=e106]:
+            - navigation "breadcrumb" [ref=e107]:
+              - list [ref=e108]:
+                - listitem [ref=e109]:
+                  - link "首页" [ref=e110] [cursor=pointer]:
+                    - /url: /credentials
+                    - img [ref=e111]
+                    - text: 首页
+                - listitem [ref=e115]:
+                  - img [ref=e116]
+                - listitem [ref=e118]:
+                  - link "开发者中心" [disabled] [ref=e119]
+            - paragraph [ref=e120]: Trusted credential operations workspace
+          - generic [ref=e121]:
+            - button "简体中文" [ref=e122] [cursor=pointer]:
+              - img
+              - generic [ref=e123]: 简体中文
+            - generic [ref=e124]:
+              - img [ref=e127]
+              - generic [ref=e130]:
+                - generic [ref=e131]: rtk-bug-18218
+                - generic [ref=e132]: layout.role.owner
+      - main [ref=e133]:
+        - generic [ref=e135]:
+          - generic [ref=e138]:
+            - generic [ref=e140]: 开发工具
+            - heading "开发者中心" [level=1] [ref=e141]
+            - paragraph [ref=e142]: 系统说明、API 文档、SDK 示例和交互式测试工具
+          - generic [ref=e143]:
+            - tablist [ref=e144]:
+              - tab "系统说明" [ref=e145] [cursor=pointer]:
+                - img [ref=e146]
+                - generic [ref=e148]: 系统说明
+              - tab "API 文档" [ref=e149] [cursor=pointer]:
+                - img [ref=e150]
+                - generic [ref=e155]: API 文档
+              - tab "SDK 示例" [active] [selected] [ref=e156] [cursor=pointer]:
+                - img [ref=e157]
+                - generic [ref=e160]: SDK 示例
+              - tab "测试工具" [ref=e161] [cursor=pointer]:
+                - img [ref=e162]
+                - generic [ref=e164]: 测试工具
+            - tabpanel "SDK 示例" [ref=e545]:
+              - generic [ref=e546]:
+                - generic [ref=e547]:
+                  - generic [ref=e549]:
+                    - generic [ref=e550]: SDK 安装
+                    - generic [ref=e551]: Toani Vault 的 TypeScript/JavaScript SDK 快速开始
+                  - generic [ref=e553]:
+                    - generic [ref=e554]:
+                      - code [ref=e555]: npm install @toani/vault-sdk
+                      - button "复制" [ref=e556] [cursor=pointer]:
+                        - img
+                        - generic [ref=e557]: 复制
+                    - paragraph [ref=e558]: SDK 源码位于项目根目录 sdk-typescript/，可本地链接开发测试。包名已从 @credbridge/sdk 迁移到 @toani/vault-sdk。旧包名已弃用。
+                    - code [ref=e559]: npm link ../../sdk-typescript
+                - generic [ref=e560]:
+                  - generic [ref=e561]:
+                    - generic [ref=e562]:
+                      - generic [ref=e563]: 基础使用示例
+                      - generic [ref=e564]: 沙箱会话端到端示例
+                    - button "复制" [ref=e566] [cursor=pointer]:
+                      - img
+                      - generic [ref=e567]: 复制
+                  - code [ref=e575]: "import { ToaniVaultSDK } from '@toani/vault-sdk'; // 初始化 SDK (注: CredBridgeSDK 已弃用，请迁移到 ToaniVaultSDK) const sdk = new ToaniVaultSDK({ baseUrl: 'http://localhost:8082', token: 'v4.local.your-token-here', timeout: 30000, }); // 创建沙箱会话 const session = await sdk.sandbox.createSession({ service_id: 'github-prod', original_intent: '抓取仓库公开信息' }); // 在沙箱里执行浏览器动作 await sdk.sandbox.navigate(session.id, 'https://github.com/openai'); await sdk.sandbox.waitForSelector(session.id, 'main'); const title = await sdk.sandbox.getText(session.id, 'title'); console.log('页面标题:', title); // 关闭会话 await sdk.sandbox.closeSession(session.id);"
+                - generic [ref=e576]:
+                  - generic [ref=e577]:
+                    - generic [ref=e578]:
+                      - generic [ref=e579]:
+                        - generic [ref=e580]: Token 引导
+                        - generic [ref=e581]: 直接使用 sandbox token 调用保留接口
+                      - button "复制" [ref=e583] [cursor=pointer]:
+                        - img
+                        - generic [ref=e584]: 复制
+                    - code [ref=e592]: "// 直接使用 Dashboard Tokens 页面签发的 sandbox token const response = await fetch('http://localhost:8082/api/v1/sandbox/stats', { method: 'GET', headers: { Authorization: 'Bearer <SANDBOX_TOKEN>' } }); const stats = await response.json(); console.log('Sandbox stats:', stats);"
+                  - generic [ref=e593]:
+                    - generic [ref=e594]:
+                      - generic [ref=e595]:
+                        - generic [ref=e596]: 错误处理
+                        - generic [ref=e597]: 面向 sandbox 的错误处理示例
+                      - button "复制" [ref=e599] [cursor=pointer]:
+                        - img
+                        - generic [ref=e600]: 复制
+                    - code [ref=e608]: "import { CredBridgeError, CredBridgeErrorCode } from '@toani/vault-sdk'; // 注: 错误类名称保持为 CredBridgeError 和 CredBridgeErrorCode // 包名已从 @credbridge/sdk 迁移到 @toani/vault-sdk try { await sdk.sandbox.createSession({ service_id: 'blocked-service', original_intent: 'run restricted action' }); } catch (error) { if (error instanceof CredBridgeError) { switch (error.code) { case CredBridgeErrorCode.NotFound: console.error('沙箱会话不存在'); break; case CredBridgeErrorCode.Unauthorized: console.error('Token 已过期，需要重新登录'); break; case CredBridgeErrorCode.Forbidden: console.error('权限不足（缺少 sandbox scope）'); break; default: console.error('API 错误:', error.message); } } }"
+                - generic [ref=e609]:
+                  - generic [ref=e610]:
+                    - generic [ref=e611]:
+                      - generic [ref=e612]: 沙箱浏览器自动化
+                      - generic [ref=e613]: 在 TEE 隔离环境中安全执行网页操作
+                    - button "复制" [ref=e615] [cursor=pointer]:
+                      - img
+                      - generic [ref=e616]: 复制
+                  - generic [ref=e618]:
+                    - code [ref=e625]: "import { ToaniVaultSDK } from '@toani/vault-sdk'; const sdk = new ToaniVaultSDK({ baseUrl: 'http://localhost:8082', token: 'v4.local.your-token-here', }); // 1. 创建沙箱会话 const session = await sdk.sandbox.createSession({ credential_id: 'your-credential-id', security_policy: { max_memory_mb: 512, max_cpu_percent: 50, max_execution_time_seconds: 300, allowed_domains: ['example.com'], allow_file_downloads: false } }); console.log('Session created:', session.id); // 2. 导航到网页 await sdk.sandbox.navigate(session.id, 'https://example.com/login'); // 3. 填写表单并登录 await sdk.sandbox.fill(session.id, '#username', { $credential: 'username' }); await sdk.sandbox.fill(session.id, '#password', { $credential: 'password' }); await sdk.sandbox.click(session.id, '#login-btn'); // 4. 等待页面加载完成 await sdk.sandbox.waitForSelector(session.id, '.dashboard'); // 5. 获取数据 const data = await sdk.sandbox.getText(session.id, '.balance'); console.log('Balance:', data); // 6. 截图 const screenshot = await sdk.sandbox.takeScreenshot(session.id, { full_page: true, quality: 90 }); // 7. 导出数据 const exportData = await sdk.sandbox.exportData(session.id, { format: 'json', selector: '.data-table', redact_sensitive: true, apply_watermark: true }); // 8. 关闭会话 await sdk.sandbox.closeSession(session.id);"
+                    - generic [ref=e627]:
+                      - img [ref=e629]
+                      - generic [ref=e631]:
+                        - generic [ref=e632]: 安全特性
+                        - list [ref=e634]:
+                          - listitem [ref=e635]: TEE 可信执行环境保护会话执行。
+                          - listitem [ref=e636]: AI 审核引擎自动检测可疑操作。
+                          - listitem [ref=e637]: 数据导出自动脱敏和加水印。
+                          - listitem [ref=e638]: 资源限制覆盖 CPU、内存和执行时间。
+                          - listitem [ref=e639]: Linux Namespace 和 Seccomp 提供沙箱隔离。
+                - generic [ref=e640]:
+                  - generic [ref=e642]:
+                    - generic [ref=e643]: 运行示例
+                    - generic [ref=e644]: 项目内置的示例代码
+                  - generic [ref=e646]:
+                    - paragraph [ref=e647]: 项目 examples/typescript/ 目录包含完整示例。
+                    - generic [ref=e648]:
+                      - generic [ref=e649]:
+                        - code [ref=e650]: npm run basic
+                        - paragraph [ref=e651]: 基础使用示例
+                      - generic [ref=e652]:
+                        - code [ref=e653]: npm run batch
+                        - paragraph [ref=e654]: 批量操作示例
+                      - generic [ref=e655]:
+                        - code [ref=e656]: npm run token
+                        - paragraph [ref=e657]: Token 管理示例
+                      - generic [ref=e658]:
+                        - code [ref=e659]: npm run error
+                        - paragraph [ref=e660]: 错误处理示例
+  - region "Notifications (F8)":
+    - list

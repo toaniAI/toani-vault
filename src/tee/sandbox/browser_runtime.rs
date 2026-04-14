@@ -305,35 +305,31 @@ impl SandboxBrowserRuntime {
         let serialized = serde_json::to_string(&message).map_err(|error| {
             SandboxError::Serialization(format!("failed to encode browser message: {error}"))
         })?;
-        process
-            .stdin
-            .write_all(serialized.as_bytes())
-            .await
-            .map_err(SandboxError::Io)?;
-        process
-            .stdin
-            .write_all(b"\n")
-            .await
-            .map_err(SandboxError::Io)?;
-        process.stdin.flush().await.map_err(SandboxError::Io)?;
+        if let Err(error) = process.stdin.write_all(serialized.as_bytes()).await {
+            return Err(browser_runtime_io_error("write request", &mut process, error).await);
+        }
+        if let Err(error) = process.stdin.write_all(b"\n").await {
+            return Err(
+                browser_runtime_io_error("write request terminator", &mut process, error).await,
+            );
+        }
+        if let Err(error) = process.stdin.flush().await {
+            return Err(browser_runtime_io_error("flush request", &mut process, error).await);
+        }
 
         let mut line = String::new();
-        process
-            .stdout
-            .read_line(&mut line)
-            .await
-            .map_err(SandboxError::Io)?;
+        if let Err(error) = process.stdout.read_line(&mut line).await {
+            return Err(browser_runtime_io_error("read response", &mut process, error).await);
+        }
         if line.trim().is_empty() {
             let status = process.child.wait().await.map_err(SandboxError::Io)?;
             let mut stderr = String::new();
             let _ = process.stderr.read_to_string(&mut stderr).await;
-            let stderr = stderr.trim();
-            let detail = if stderr.is_empty() {
-                format!("browser runtime closed without response (status: {status})")
-            } else {
-                format!("browser runtime closed without response (status: {status}): {stderr}")
-            };
-            return Err(SandboxError::Process(detail));
+            return Err(SandboxError::Process(browser_runtime_exit_detail(
+                "closed without response",
+                status,
+                stderr.trim(),
+            )));
         }
 
         let response: Value = serde_json::from_str(line.trim()).map_err(|error| {
@@ -351,6 +347,36 @@ impl SandboxBrowserRuntime {
         }
 
         Ok(response)
+    }
+}
+
+async fn browser_runtime_io_error(
+    action: &str,
+    process: &mut BrowserRuntimeProcess,
+    error: std::io::Error,
+) -> SandboxError {
+    if let Ok(Some(status)) = process.child.try_wait() {
+        let mut stderr = String::new();
+        let _ = process.stderr.read_to_string(&mut stderr).await;
+        return SandboxError::Process(browser_runtime_exit_detail(
+            &format!("failed to {action}"),
+            status,
+            stderr.trim(),
+        ));
+    }
+
+    SandboxError::Io(error)
+}
+
+fn browser_runtime_exit_detail(
+    context: &str,
+    status: impl std::fmt::Display,
+    stderr: &str,
+) -> String {
+    if stderr.is_empty() {
+        format!("browser runtime {context} (status: {status})")
+    } else {
+        format!("browser runtime {context} (status: {status}): {stderr}")
     }
 }
 
@@ -517,5 +543,19 @@ mod tests {
                     == Path::new("/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers")
                 && mount.read_only
         }));
+    }
+
+    #[test]
+    fn test_browser_runtime_exit_detail_includes_stderr_when_present() {
+        let detail = browser_runtime_exit_detail(
+            "failed to read response",
+            "exit status: 1",
+            "nsjail: bad uid map",
+        );
+
+        assert_eq!(
+            detail,
+            "browser runtime failed to read response (status: exit status: 1): nsjail: bad uid map"
+        );
     }
 }

@@ -1,0 +1,31 @@
+{
+  "claim_id": "C03",
+  "status": "passed",
+  "failure_class": "none",
+  "summary": "Credential creation via UI succeeded for service_id tee-full-20260413T232909-webcred-20260413154821. No dedicated detail surface was exposed from the credential list card. Delete action was surfaced and completed. No plaintext secret was observed in UI text or captured credential API responses.",
+  "artifacts": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/credentials-snapshot.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/credentials-before-create.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/new-credential-modal.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/credentials-after-create.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/credentials-after-detail-attempt.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/credentials-after-delete-attempt.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/interaction.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/network-responses.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/network-log.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/state-after.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/trace.trace",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/trace.network"
+  ],
+  "created_ids": [
+    {
+      "credential_id": "019d8787-9b6e-7ff2-b785-1b04f9a5132d",
+      "label": "tee-full-20260413T232909-webcred-20260413154821"
+    }
+  ],
+  "runtime_log_needed": false,
+  "contract_findings": [
+    "No dedicated credential detail route or dialog surfaced from the created credential card.",
+    "UI body text and captured `/api/v1/credentials` responses did not expose plaintext username/password or `plaintext_data`."
+  ]
+}

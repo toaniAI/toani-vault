@@ -542,13 +542,13 @@ impl NsjailConfig {
         args.push("--uid_mapping".to_string());
         args.push(format!(
             "{}:{}:{}",
-            self.uid_map.outside_uid, self.uid_map.inside_uid, self.uid_map.count
+            self.uid_map.inside_uid, self.uid_map.outside_uid, self.uid_map.count
         ));
 
         args.push("--gid_mapping".to_string());
         args.push(format!(
             "{}:{}:{}",
-            self.gid_map.outside_gid, self.gid_map.inside_gid, self.gid_map.count
+            self.gid_map.inside_gid, self.gid_map.outside_gid, self.gid_map.count
         ));
 
         // Command
@@ -687,6 +687,36 @@ mod tests {
         let args = config.to_args();
 
         assert!(args.contains(&"--seccomp_string".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_uid_gid_mappings_use_inside_outside_count_order() {
+        let config = NsjailConfig {
+            uid_map: UidMap {
+                inside_uid: 2000,
+                outside_uid: 3000,
+                count: 2,
+            },
+            gid_map: GidMap {
+                inside_gid: 4000,
+                outside_gid: 5000,
+                count: 3,
+            },
+            ..NsjailConfig::default()
+        };
+
+        let args = config.to_args();
+        let uid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--uid_mapping")
+            .expect("uid mapping arg should be present");
+        let gid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--gid_mapping")
+            .expect("gid mapping arg should be present");
+
+        assert_eq!(args[uid_mapping_idx + 1], "2000:3000:2");
+        assert_eq!(args[gid_mapping_idx + 1], "4000:5000:3");
     }
 
     #[test]

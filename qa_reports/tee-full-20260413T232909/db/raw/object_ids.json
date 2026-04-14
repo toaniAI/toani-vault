@@ -1,0 +1,127 @@
+{
+  "credential_ids": [
+    "019d8714-3949-7f32-8804-9c593f7c7a3e",
+    "019d8787-9b6e-7ff2-b785-1b04f9a5132d",
+    "019d878b-f659-7bc0-8aaa-a252f8a8a02f"
+  ],
+  "token_ids": [
+    "019d8783-468b-7ff3-ad32-2ec324442ecf",
+    "019d8783-4eb7-7d51-94c1-6a0c86ce49fe",
+    "019d878b-f77e-7220-a5de-65ace7aab707",
+    "019d878c-ae5f-7f70-a8b6-38d63fd47173"
+  ],
+  "session_ids": [
+    "019d8782-40de-7db1-9e11-d133749ba8a0",
+    "019d878b-f5f5-7b61-8925-58c82d141ae1",
+    "019d878b-ba47-7962-9180-95a0a541a870",
+    "019d878e-e873-7c21-9e24-030937ed5509",
+    "1f481c4c-2a4e-4900-a92a-953bd60c0405"
+  ],
+  "sandbox_ids": [
+    "3bb759de-662d-4fee-b458-d604552ff237"
+  ],
+  "operation_ids": [
+    "a187c233-2098-4ce8-bfef-35bc8eb9193b"
+  ],
+  "audit_ids": [],
+  "sources": [
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/result.json",
+      "claim_id": "C06",
+      "ids": [
+        {
+          "kind": "session_id",
+          "value": "019d8782-40de-7db1-9e11-d133749ba8a0"
+        },
+        {
+          "kind": "access_token_id",
+          "value": "019d8783-4eb7-7d51-94c1-6a0c86ce49fe"
+        }
+      ]
+    },
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-credentials/result.json",
+      "claim_id": "C07",
+      "ids": [
+        {
+          "kind": "credential_id",
+          "value": "019d878b-f659-7bc0-8aaa-a252f8a8a02f"
+        },
+        {
+          "kind": "session_id",
+          "value": "019d878b-f5f5-7b61-8925-58c82d141ae1"
+        },
+        {
+          "kind": "token_id",
+          "value": "019d878b-f77e-7220-a5de-65ace7aab707"
+        }
+      ]
+    },
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-tokens/result.json",
+      "claim_id": "C08",
+      "ids": [
+        {
+          "kind": "session_id",
+          "value": "019d878b-ba47-7962-9180-95a0a541a870"
+        },
+        {
+          "kind": "token_id",
+          "value": "019d878c-ae5f-7f70-a8b6-38d63fd47173"
+        }
+      ]
+    },
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-sandbox/result.json",
+      "claim_id": "C09",
+      "ids": [
+        {
+          "kind": "session_id",
+          "value": "019d878e-e873-7c21-9e24-030937ed5509"
+        },
+        {
+          "kind": "sandbox_session_id",
+          "value": "1f481c4c-2a4e-4900-a92a-953bd60c0405"
+        },
+        {
+          "kind": "sandbox_id",
+          "value": "3bb759de-662d-4fee-b458-d604552ff237"
+        },
+        {
+          "kind": "operation_id",
+          "value": "a187c233-2098-4ce8-bfef-35bc8eb9193b"
+        }
+      ]
+    },
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/result.json",
+      "claim_id": "C03",
+      "ids": [
+        {
+          "kind": "credential_id",
+          "value": "019d8787-9b6e-7ff2-b785-1b04f9a5132d"
+        }
+      ]
+    },
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-tokens/result.json",
+      "claim_id": "C04",
+      "ids": [
+        {
+          "kind": "token_id",
+          "value": "019d8783-468b-7ff3-ad32-2ec324442ecf"
+        }
+      ]
+    },
+    {
+      "file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/residual-test-data.md",
+      "claim_id": "cross-case",
+      "ids": [
+        {
+          "kind": "credential_id",
+          "value": "019d8714-3949-7f32-8804-9c593f7c7a3e"
+        }
+      ]
+    }
+  ]
+}

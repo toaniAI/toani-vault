@@ -1,0 +1,79 @@
+{
+  "cookies": [
+    {
+      "name": "cf_clearance",
+      "value": "j6NWda7RYtRhe9XYX6UhN3s3rSwtiu69EQihKzjYjSY-1776087521-1.2.1.1-XRX_QzLB4wjPf.LH2Xn.VLsBvk.UzWq0oHbb3mYvmRubyuD5m_dXHIPskwNcDp5HqeaVDkw2ATGjbRVG0BwpMTUFkw8sZcxmFlRc2K6oNOvv5xoBb2Y2a8w.lO0Jqn03go4mpmxkAy621YBUIqQoQ4hQqdgGnJrh_YwaKAaDX7fBHuL4E4ZbvcpD6q3AbH0DTBkUPtsZGX234Y5uzSDnd4FvEEl49RtCE3jiRPSLQ9MN2LRPWJR55g.GrGZEuN07aCKYk_u1RwsGma0kR_jxkEOr84ouTnaD.vDHjkkbDdRMDvR7whSjPepsvYqsbHdyH2EpjfqnIEIi_EZyocnXRQ",
+      "domain": ".privy.io",
+      "path": "/",
+      "expires": 1807623521.136385,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None",
+      "partitionKey": "https://bitkinetic.com",
+      "_crHasCrossSiteAncestor": true
+    },
+    {
+      "name": "privy-session",
+      "value": "t",
+      "domain": "dev-credbridge.bitkinetic.com",
+      "path": "/",
+      "expires": 1778679530,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Strict"
+    },
+    {
+      "name": "privy-token",
+      "value": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54OG5wNWkwMDBwMGNsMWM1eGRpeWNkIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwODc1MzAsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzkzMH0.7rg7No7hjM00A-WJTPEj3_b_Fim8VkohExBFP76rBYpLJRf86pYTLKBU2rL_MANpRmJ56LjcyKZqH0J7cf17dA",
+      "domain": "dev-credbridge.bitkinetic.com",
+      "path": "/",
+      "expires": 1776173930,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Strict"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://dev-credbridge.bitkinetic.com",
+      "localStorage": [
+        {
+          "name": "base-acc-sdk.store",
+          "value": "{\"state\":{\"chains\":[],\"keys\":{},\"account\":{},\"spendPermissions\":[],\"config\":{\"version\":\"1.1.1\",\"metadata\":{\"appName\":\"Toani Vault\",\"appLogoUrl\":\"\",\"appChainIds\":[1,1,11155111,17000,42161,421614,10,11155420,137,80002,42220,44787,314,314159,8453,84532,80085,56,43419,13371,42,59144,59140,43114,43113,1868,130,7777777,999,999999999,690,17069]},\"preference\":{\"telemetry\":false}}},\"version\":0}"
+        },
+        {
+          "name": "privy:sent:cmniaifov006t0cl1af6l5xqs:8125845997447003",
+          "value": "t"
+        },
+        {
+          "name": "privy:refresh_token",
+          "value": "\"hpb0HGxB9mQo35ie39ff2iabfcRV4oK8Yha6CkGk7hNvf6mxGpe2vJA4Nw7XhzjbvN1-x0hXejoQfz8iu4Rgaw\""
+        },
+        {
+          "name": "auth-storage",
+          "value": "{\"state\":{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"status\":\"active\",\"displayName\":\"rtk-bug-18218\",\"defaultTenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"onboardingCompleted\":true,\"identities\":[{\"provider\":\"privy\",\"walletAddress\":null,\"email\":null,\"isPrimary\":true,\"mfaVerified\":false}],\"primaryIdentity\":{\"provider\":\"privy\",\"walletAddress\":null,\"email\":null,\"isPrimary\":true,\"mfaVerified\":false},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}],\"activeMembership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}],\"currentTenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"onboardingCompleted\":true},\"version\":0}"
+        },
+        {
+          "name": "privy:connections",
+          "value": "[{\"address\":\"0x4371969640Fd5Cd3d0F5eF3F2B91B513A5F84cb7\",\"connectorType\":\"embedded\",\"walletClientType\":\"privy\",\"connectedAt\":1776087530524,\"id\":\"io.privy.wallet\"}]"
+        },
+        {
+          "name": "privy:caid",
+          "value": "\"75af0491-6cd8-45c7-bf8a-5080a72218a5\""
+        },
+        {
+          "name": "privy:cmniaifov006t0cl1af6l5xqs:recent-login-method",
+          "value": "\"email\""
+        },
+        {
+          "name": "privy:token",
+          "value": "\"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54OG5wNWkwMDBwMGNsMWM1eGRpeWNkIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwODc1MzAsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzkzMH0.7rg7No7hjM00A-WJTPEj3_b_Fim8VkohExBFP76rBYpLJRf86pYTLKBU2rL_MANpRmJ56LjcyKZqH0J7cf17dA\""
+        },
+        {
+          "name": "privy:pat",
+          "value": "\"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueDhucDVpMDAwcDBjbDFjNXhkaXljZCIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDg3NTMwLCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzkzMH0.wsiPVHPofskKUJEnISfU-GhCQMjxHniujsA-ShrOml_GI_UhUFA-pMXsovPwjr2D1rZdrrF8B_xXtF6aWPFUOg\""
+        }
+      ]
+    }
+  ]
+}

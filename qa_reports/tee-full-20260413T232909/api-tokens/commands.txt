@@ -1,0 +1,32 @@
+All commands were executed with the required `rtk` prefix.
+
+Representative commands:
+
+```bash
+rtk mkdir -p /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-tokens/raw
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl -X POST "$BASE/auth/session" ...'
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl -X POST "$BASE/tokens" ...'
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl "$BASE/tokens" ...'
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl "$BASE/tokens/$TOKEN_ID" ...'
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl "$BASE/tokens/stats" ...'
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl -X POST "$BASE/tokens/verify" ...'
+rtk bash -lc 'BASE=https://dev-credbridge.bitkinetic.com/api/v1; ... curl -X POST "$BASE/tokens/$TOKEN_ID/revoke" ...'
+```
+
+Generated raw artifacts in `raw/`:
+
+- `session.*`
+- `create-valid.*`
+- `create-invalid-scope.*`
+- `create-missing-credential-ids.*`
+- `create-invalid-credential.*`
+- `list.*`
+- `get.*`
+- `stats.*`
+- `verify.*`
+- `revoke.*`
+- `get-after-revoke.*`
+- `list-after-revoke.*`
+- `list-invalid-token.*`
+- `get-invalid-token.*`
+- `revoke-invalid-token.*`

@@ -1,0 +1,11 @@
+{
+  "run_id": "tee-full-20260413T212736",
+  "case_id": "case11",
+  "status": "completed",
+  "claim_result": "failed",
+  "failure_class": "product",
+  "summary": "PostgreSQL reconciliation found created credentials, sandbox session, sandbox operation, and auth sessions, but did not find rows in credbridge_vault.scope_tokens for the token IDs issued during this run.",
+  "evidence_paths": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/db/runtime_reconciliation.txt"
+  ]
+}

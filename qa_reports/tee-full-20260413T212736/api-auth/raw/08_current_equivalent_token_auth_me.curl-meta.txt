@@ -1,0 +1,5 @@
+http_code=403
+content_type=application/json
+url_effective=https://dev-credbridge.bitkinetic.com/api/v1/auth/me
+remote_ip=10.11.25.9
+time_total=0.084109

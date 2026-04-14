@@ -164,6 +164,9 @@ export class SandboxService {
     if (request.selector !== undefined) parameters.selector = request.selector;
     if (request.value !== undefined) parameters.value = request.value;
     if (request.url !== undefined) parameters.url = request.url;
+    if (request.method !== undefined) parameters.method = request.method;
+    if (request.headers !== undefined) parameters.headers = request.headers;
+    if (request.body !== undefined) parameters.body = request.body;
     if (request.script !== undefined) parameters.script = request.script;
     if (request.bindings !== undefined) parameters.bindings = request.bindings;
     if (request.attribute !== undefined)

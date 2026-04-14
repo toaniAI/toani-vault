@@ -1,0 +1,19 @@
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/residual-test-data.md
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/result.json
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-tokens/result.json
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/db/result.json
+rtk rg -n 'ACTIVE_TOKENS_PREFIX|REVOKED_TOKENS_PREFIX|TOKEN_METADATA_PREFIX|auth_sessions|api_tokens|scope_tokens' /Users/yvan/AIWorkspace/credbridge/src/token/redis_store.rs /Users/yvan/AIWorkspace/credbridge/src/auth/service.rs /Users/yvan/AIWorkspace/credbridge/src/api/token_blacklist.rs > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/redis/raw/source-key-shapes.txt
+rtk python3 - <<'PY'
+# Raw RESP probe against Redis DB 3 because local redis-cli is unavailable:
+# - AUTH <redacted> / SELECT 3 / PING / DBSIZE / INFO keyspace
+# - EXISTS / TYPE / TTL / ZCARD / ZRANGE for credbridge:tokens:{tenant}:active
+# - EXISTS / TYPE / TTL / SCARD / SMEMBERS for credbridge:tokens:{tenant}:revoked
+# - EXISTS / TYPE / TTL / HGETALL / ZSCORE / SISMEMBER for credbridge:token:{token_id}
+# - SCAN for credbridge:* / credbridge:token:* / credbridge:tokens:* / token:blacklist:*
+# - SCAN for each recorded token/session/sandbox/operation ID
+PY
+rtk python3 - <<'PY'
+# Full-db fallback probe:
+# - KEYS *
+# - TYPE / TTL / members for CHAIN_ERROR_WHITE_LIST
+PY

@@ -1,0 +1,11 @@
+{
+  "name": "05-sandbox-create-session",
+  "method": "POST",
+  "url": "https://dev-credbridge.bitkinetic.com/api/v1/sandbox/sessions",
+  "timestamp": "2026-04-13T13:44:03Z",
+  "http_code": "201",
+  "curl_exit": 0,
+  "headers_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/05-sandbox-create-session.headers",
+  "body_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/05-sandbox-create-session.body.json",
+  "stderr_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/05-sandbox-create-session.stderr.txt"
+}

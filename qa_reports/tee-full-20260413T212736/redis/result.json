@@ -1,0 +1,11 @@
+{
+  "run_id": "tee-full-20260413T212736",
+  "case_id": "case12",
+  "status": "completed",
+  "claim_result": "failed",
+  "failure_class": "env",
+  "summary": "Redis DB 3 did not expose credbridge:tokens:* or credbridge:token:* keys for the token IDs created during this run; TTL probes returned -2.",
+  "evidence_paths": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/redis/redis_probe.json"
+  ]
+}

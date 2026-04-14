@@ -1,0 +1,18 @@
+AUTH: OK
+SELECT: OK
+PING: PONG
+DBSIZE: 1
+INFO keyspace: # Keyspace
+db2:keys=26,expires=0,avg_ttl=0
+db0:keys=812,expires=0,avg_ttl=0
+db8:keys=6,expires=0,avg_ttl=0
+db3:keys=1,expires=0,avg_ttl=0
+
+SCAN 0 MATCH * COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH credbridge:* COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH credbridge:token:* COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH credbridge:tokens:* COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH token:blacklist:* COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH *019d89bc-a72f-7ad2-b572-33f4ed97e07a* COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH *b0311586-a92b-4e2e-8810-cee0defef091* COUNT 500: ['72057594037927936', []]
+SCAN 0 MATCH *f00a6a90-bdc6-4a1a-a836-a6c181220c2e* COUNT 500: ['72057594037927936', []]

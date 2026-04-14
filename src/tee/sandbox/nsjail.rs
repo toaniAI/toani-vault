@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Once};
 use time::OffsetDateTime;
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -87,7 +88,15 @@ impl NsjailSandbox {
         }
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
+                if let Some(status) = child.try_wait().map_err(SandboxError::Io)? {
+                    let detail =
+                        describe_child_exit("failed to start nsjail", &mut child, status).await;
+                    error!("Failed to start nsjail sandbox {}: {}", self.id, detail);
+                    *self.status.write().await = SandboxStatus::Error;
+                    return Err(SandboxError::Process(detail));
+                }
+
                 let pid = child.id().unwrap_or(0);
                 info!("Nsjail sandbox started: {} (PID: {})", self.id, pid);
                 self.process = Some(child);
@@ -221,9 +230,17 @@ impl NsjailSandbox {
             .stderr(Stdio::piped())
             .stdin(Stdio::piped());
 
-        cmd.spawn().map_err(|error| {
+        let mut child = cmd.spawn().map_err(|error| {
             SandboxError::Process(format!("failed to spawn scoped process: {error}"))
-        })
+        })?;
+
+        if let Some(status) = child.try_wait().map_err(SandboxError::Io)? {
+            let detail =
+                describe_child_exit("failed to spawn scoped process", &mut child, status).await;
+            return Err(SandboxError::Process(detail));
+        }
+
+        Ok(child)
     }
 
     fn scoped_process_config(
@@ -478,6 +495,24 @@ impl NsjailSandbox {
         }
 
         Ok(count)
+    }
+}
+
+async fn describe_child_exit(
+    context: &str,
+    child: &mut Child,
+    status: std::process::ExitStatus,
+) -> String {
+    let mut stderr = String::new();
+    if let Some(mut stream) = child.stderr.take() {
+        let _ = stream.read_to_string(&mut stderr).await;
+    }
+
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        format!("{context}: process exited early with status {status}")
+    } else {
+        format!("{context}: process exited early with status {status}: {stderr}")
     }
 }
 

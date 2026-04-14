@@ -1,0 +1,24 @@
+{
+  "run_id": "tee-full-20260413T212736",
+  "case_id": "case09",
+  "status": "completed",
+  "claim_result": "failed",
+  "failure_class": "env",
+  "summary": "Sandbox create/list/get/terminate succeeded with a real session token, but execute failed at runtime because nsjail could not compile the sandboxing policy.",
+  "created_ids": {
+    "credential_id": "019d8712-a9a5-77c2-bb22-8438ecf659fc",
+    "session_id": "a5526d1b-937e-4b45-8966-0b70560da684",
+    "operation_id": "946c3d60-18ab-46b4-abab-56a2a72a79e1"
+  },
+  "cleanup_status": "session_terminated_credential_deleted",
+  "samples": {
+    "create_session": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/create_session.body",
+    "get_session": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/get_session.body",
+    "execute_operation": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/execute_operation.body",
+    "get_operation": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/get_operation.body",
+    "terminate_session": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/terminate_session.body"
+  },
+  "evidence_paths": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/commands.txt"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "baseUrl": "https://dev-credbridge.bitkinetic.com/",
+  "token": "5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0",
+  "output": "table",
+  "timeout": 30000,
+  "profiles": {
+    "default": {
+      "baseUrl": "https://dev-credbridge.bitkinetic.com/",
+      "token": "5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0",
+      "output": "table",
+      "timeout": 30000
+    }
+  },
+  "currentProfile": "default"
+}

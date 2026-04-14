@@ -1167,10 +1167,44 @@ pub struct SandboxSessionDetail {
     pub is_expired: bool,
 }
 
+/// 沙箱操作类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxOperationType {
+    Navigate,
+    Click,
+    Fill,
+    GetText,
+    Screenshot,
+    Export,
+    ExecuteScript,
+    Wait,
+    HttpRequest,
+    Custom,
+}
+
+impl std::fmt::Display for SandboxOperationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            SandboxOperationType::Navigate => "navigate",
+            SandboxOperationType::Click => "click",
+            SandboxOperationType::Fill => "fill",
+            SandboxOperationType::GetText => "get_text",
+            SandboxOperationType::Screenshot => "screenshot",
+            SandboxOperationType::Export => "export",
+            SandboxOperationType::ExecuteScript => "execute_script",
+            SandboxOperationType::Wait => "wait",
+            SandboxOperationType::HttpRequest => "http_request",
+            SandboxOperationType::Custom => "custom",
+        };
+        write!(f, "{value}")
+    }
+}
+
 /// 沙箱执行请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteSandboxOperationRequest {
-    pub operation_type: String,
+    pub operation_type: SandboxOperationType,
     pub description: String,
     pub parameters: HashMap<String, serde_json::Value>,
 }

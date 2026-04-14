@@ -1,0 +1,204 @@
+### Result
+{"target":"https://dev-credbridge.bitkinetic.com","service_id":"tee-full-20260413T232909-webcred-20260413154821","username":"tee-full-20260413T232909-webcred-user","password":"tee-full-20260413T232909-webcred-Pw!2026","list_rendered":true,"created_visible_in_ui":true,"detail_surface":{"surfaced":false,"mode":"not_available","finalUrl":"https://dev-credbridge.bitkinetic.com/credentials","bodyExcerpt":"TOANI VAULT\n\nTEE 保护中\n安全状态\n已通过\nCrypto\nAES-256\nAudit\nimmudb\n主要功能\n凭证管理\nToken 管理\n开发者中心\n系统管理\n用户管理\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\n首页\n凭证管理\n\nTrusted credential operations workspace\n\n简体中文\nrtk-bug-18218\nlayout.role.owner\nTEE PROTECTED\n凭证管理\n\n安全存储和管理您的敏感凭证与密钥。\n\n过滤\n新建凭证\nTEE 加密保护\n所有凭证均使用 AES-256-GCM 加密存储于 TEE 可信执行环境。\n安全\n\n凭证总数\n\n5\n\n密码凭证\n\n5\n\nAPI 密钥\n\n0\n\nOAuth Token\n\n0\n\n过滤\n按服务标识、凭证类型和有效状态筛选。\n默认视图\n展开筛选\n凭证列表\n当前显示 5 条结果\n5 条总计\ntee-full-20260413T232909-webcred-20260413154821\n用户名/密码\nID: 019d8787...\n创建于 2026/4/13 23:48:24\n删除\ntee-full-case10-20260413T212736\n用户名/密码\nID: 019d8714...\n创建于 2026/4/13 21:42:22\n删除\nui-tee-real-20260413-185715\n用户名/密码\nID: 019d868b...\n创建于 2026/4/13 19:12:39\n删除\ntee-real-20260413-185715\n用户名/密码\nID: 019d8684...\n创建于 2026/4/13 19:05:12\n删除\nlive-chain-20260413\n用户名/密码\nID: 019d8649...\n创建于 2026/4/13 18:01:14\n删除"},"delete_surface":{"surfaced":true,"confirmed":true,"stillVisible":false},"plaintext_exposed_in_ui":false,"plaintext_exposed_in_responses":false,"create_response":{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials","method":"POST","status":201,"ok":true,"bodyText":"{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"service_id\":\"tee-full-20260413T232909-webcred-20260413154821\",\"credential_type\":\"username_password\",\"created_at\":\"1776095304\",\"expires_at\":null}","bodyJson":{"credential_id":"019d8787-9b6e-7ff2-b785-1b04f9a5132d","service_id":"tee-full-20260413T232909-webcred-20260413154821","credential_type":"username_password","created_at":"1776095304","expires_at":null}},"delete_response":{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8787-9b6e-7ff2-b785-1b04f9a5132d","method":"DELETE","status":200,"ok":true,"bodyText":"{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"deleted\":true}","bodyJson":{"credential_id":"019d8787-9b6e-7ff2-b785-1b04f9a5132d","deleted":true}},"created_ids":[{"credential_id":"019d8787-9b6e-7ff2-b785-1b04f9a5132d","label":"tee-full-20260413T232909-webcred-20260413154821"}],"response_log":[{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials","method":"GET","status":200,"ok":true,"bodyText":"{\"credentials\":[{\"credential_id\":\"019d8714-3949-7f32-8804-9c593f7c7a3e\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-case10-20260413T212736\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T13:42:22Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":4}","bodyJson":{"credentials":[{"credential_id":"019d8714-3949-7f32-8804-9c593f7c7a3e","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-full-case10-20260413T212736","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T13:42:22Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d868b-272a-7333-92b7-b21d5a3241b5","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"ui-tee-real-20260413-185715","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T11:12:39Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8684-529b-7753-8e4f-34d9a99296b0","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-real-20260413-185715","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T11:05:12Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8649-c57c-7721-88f9-becb31a8ef0a","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"live-chain-20260413","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T10:01:14Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"}],"total":4}},{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials","method":"POST","status":201,"ok":true,"bodyText":"{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"service_id\":\"tee-full-20260413T232909-webcred-20260413154821\",\"credential_type\":\"username_password\",\"created_at\":\"1776095304\",\"expires_at\":null}","bodyJson":{"credential_id":"019d8787-9b6e-7ff2-b785-1b04f9a5132d","service_id":"tee-full-20260413T232909-webcred-20260413154821","credential_type":"username_password","created_at":"1776095304","expires_at":null}},{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials","method":"GET","status":200,"ok":true,"bodyText":"{\"credentials\":[{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-20260413T232909-webcred-20260413154821\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T15:48:24Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8714-3949-7f32-8804-9c593f7c7a3e\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-case10-20260413T212736\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T13:42:22Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":5}","bodyJson":{"credentials":[{"credential_id":"019d8787-9b6e-7ff2-b785-1b04f9a5132d","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-full-20260413T232909-webcred-20260413154821","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T15:48:24Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8714-3949-7f32-8804-9c593f7c7a3e","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-full-case10-20260413T212736","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T13:42:22Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d868b-272a-7333-92b7-b21d5a3241b5","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"ui-tee-real-20260413-185715","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T11:12:39Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8684-529b-7753-8e4f-34d9a99296b0","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-real-20260413-185715","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T11:05:12Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8649-c57c-7721-88f9-becb31a8ef0a","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"live-chain-20260413","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T10:01:14Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"}],"total":5}},{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8787-9b6e-7ff2-b785-1b04f9a5132d","method":"DELETE","status":200,"ok":true,"bodyText":"{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"deleted\":true}","bodyJson":{"credential_id":"019d8787-9b6e-7ff2-b785-1b04f9a5132d","deleted":true}},{"url":"https://dev-credbridge.bitkinetic.com/api/v1/credentials","method":"GET","status":200,"ok":true,"bodyText":"{\"credentials\":[{\"credential_id\":\"019d8714-3949-7f32-8804-9c593f7c7a3e\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-case10-20260413T212736\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T13:42:22Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":4}","bodyJson":{"credentials":[{"credential_id":"019d8714-3949-7f32-8804-9c593f7c7a3e","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-full-case10-20260413T212736","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T13:42:22Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d868b-272a-7333-92b7-b21d5a3241b5","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"ui-tee-real-20260413-185715","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T11:12:39Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8684-529b-7753-8e4f-34d9a99296b0","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"tee-real-20260413-185715","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T11:05:12Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"},{"credential_id":"019d8649-c57c-7721-88f9-becb31a8ef0a","credential_type":"username_password","user_id_hash":"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc","service_id":"live-chain-20260413","tenant_id":"019d8414-bf83-7641-a3fb-ad93d58715bd","created_at":"2026-04-13T10:01:14Z","expires_at":null,"is_deleted":false,"version":1,"status":"active"}],"total":4}}],"page_url":"https://dev-credbridge.bitkinetic.com/credentials","title":"Toani Vault","body_excerpt":"TOANI VAULT\n\nTEE 保护中\n安全状态\n已通过\nCrypto\nAES-256\nAudit\nimmudb\n主要功能\n凭证管理\nToken 管理\n开发者中心\n系统管理\n用户管理\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\n首页\n凭证管理\n\nTrusted credential operations workspace\n\n简体中文\nrtk-bug-18218\nlayout.role.owner\nTEE PROTECTED\n凭证管理\n\n安全存储和管理您的敏感凭证与密钥。\n\n过滤\n新建凭证\nTEE 加密保护\n所有凭证均使用 AES-256-GCM 加密存储于 TEE 可信执行环境。\n安全\n\n凭证总数\n\n5\n\n密码凭证\n\n5\n\nAPI 密钥\n\n0\n\nOAuth Token\n\n0\n\n过滤\n按服务标识、凭证类型和有效状态筛选。\n默认视图\n展开筛选\n凭证列表\n当前显示 5 条结果\n5 条总计\ntee-full-20260413T232909-webcred-20260413154821\n用户名/密码\nID: 019d8787...\n创建于 2026/4/13 23:48:24\n删除\ntee-full-case10-20260413T212736\n用户名/密码\nID: 019d8714...\n创建于 2026/4/13 21:42:22\n删除\nui-tee-real-20260413-185715\n用户名/密码\nID: 019d868b...\n创建于 2026/4/13 19:12:39\n删除\ntee-real-20260413-185715\n用户名/密码\nID: 019d8684...\n创建于 2026/4/13 19:05:12\n删除\nlive-chain-20260413\n用户名/密码\nID: 019d8649...\n创建于 2026/4/13 18:01:14\n删除"}
+### Ran Playwright code
+```js
+await (async page => {
+  const OUT_DIR =
+    '/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials';
+  const BASE = 'https://dev-credbridge.bitkinetic.com';
+  const PREFIX = 'tee-full-20260413T232909-webcred';
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  const serviceId = `${PREFIX}-${stamp}`;
+  const username = `${PREFIX}-user`;
+  const password = `${PREFIX}-Pw!2026`;
+
+  const responseLog = [];
+  const createdIds = [];
+  let createResponse = null;
+  let deleteResponse = null;
+  let detailSurface = {
+    surfaced: false,
+    mode: 'not_available',
+    finalUrl: '',
+    bodyExcerpt: '',
+  };
+
+  const jsonSafe = async response => {
+    try {
+      const text = await response.text();
+      try {
+        return { text, json: JSON.parse(text) };
+      } catch {
+        return { text, json: null };
+      }
+    } catch (error) {
+      return {
+        text: `__read_error__: ${error instanceof Error ? error.message : String(error)}`,
+        json: null,
+      };
+    }
+  };
+
+  page.on('response', async response => {
+    const url = response.url();
+    if (!url.includes('/api/v1/credentials')) return;
+    const method = response.request().method();
+    const payload = await jsonSafe(response);
+    const entry = {
+      url,
+      method,
+      status: response.status(),
+      ok: response.ok(),
+      bodyText: payload.text,
+      bodyJson: payload.json,
+    };
+    responseLog.push(entry);
+    if (method === 'POST') {
+      createResponse = entry;
+      if (payload.json?.credential_id) {
+        createdIds.push({
+          credential_id: payload.json.credential_id,
+          label: payload.json.service_id ?? serviceId,
+        });
+      }
+    }
+    if (method === 'DELETE') {
+      deleteResponse = entry;
+    }
+  });
+
+  const textHasPlaintext = text =>
+    Boolean(
+      text &&
+        [username, password, 'plaintext_data', '"password"', '"username"'].some(token => text.includes(token)),
+    );
+
+  const bodyText = async () => (await page.locator('body').innerText().catch(() => '')).slice(0, 8000);
+
+  await page.goto(`${BASE}/credentials`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
+  await page.screenshot({
+    path: `${OUT_DIR}/credentials-before-create.png`,
+    fullPage: true,
+  });
+
+  const beforeBody = await bodyText();
+  const listVisible = await page
+    .getByRole('heading', { name: /凭证管理|Credentials/i })
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  await page.getByRole('button', { name: /新建凭证|new credential/i }).first().click();
+  await page.waitForTimeout(1000);
+  await page.screenshot({
+    path: `${OUT_DIR}/new-credential-modal.png`,
+    fullPage: true,
+  });
+
+  const inputs = page.locator('input');
+  await inputs.nth(0).fill(serviceId);
+  await inputs.nth(1).fill(username);
+  await inputs.nth(2).fill(password);
+
+  await page
+    .getByRole('button', { name: /安全创建|创建|create|submit/i })
+    .last()
+    .click();
+
+  await page.waitForTimeout(3000);
+  await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+  await page.screenshot({
+    path: `${OUT_DIR}/credentials-after-create.png`,
+    fullPage: true,
+  });
+
+  const createdHeading = page.getByRole('heading', { name: new RegExp(serviceId, 'i') }).first();
+  const createdVisible = await createdHeading.isVisible().catch(() => false);
+  const afterCreateBody = await bodyText();
+
+  if (createdVisible) {
+    const startUrl = page.url();
+    await createdHeading.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const currentUrl = page.url();
+    const afterClickBody = await bodyText();
+    const dialogVisible = await page.locator('[role="dialog"]').first().isVisible().catch(() => false);
+
+    detailSurface = {
+      surfaced: currentUrl !== startUrl || dialogVisible,
+      mode: currentUrl !== startUrl ? 'route' : dialogVisible ? 'dialog' : 'not_available',
+      finalUrl: currentUrl,
+      bodyExcerpt: afterClickBody,
+    };
+
+    await page.screenshot({
+      path: `${OUT_DIR}/credentials-after-detail-attempt.png`,
+      fullPage: true,
+    });
+  }
+
+  let deleteSurface = { surfaced: false, confirmed: false, stillVisible: createdVisible };
+  const createdCard = page
+    .locator('div')
+    .filter({
+      has: page.getByRole('heading', { name: new RegExp(serviceId, 'i') }),
+    })
+    .filter({
+      has: page.getByRole('button', { name: /删除|delete/i }),
+    })
+    .first();
+
+  if ((await createdCard.count()) > 0) {
+    const deleteButton = createdCard.getByRole('button', { name: /删除|delete/i }).first();
+    deleteSurface.surfaced = await deleteButton.isVisible().catch(() => false);
+    if (deleteSurface.surfaced) {
+      await deleteButton.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForTimeout(1000);
+      const confirm = page.getByRole('button', { name: /确认|确定|删除|confirm/i }).last();
+      if (await confirm.isVisible().catch(() => false)) {
+        await confirm.click({ timeout: 5000 }).catch(() => {});
+        deleteSurface.confirmed = true;
+      }
+      await page.waitForTimeout(2500);
+      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+      deleteSurface.stillVisible = await createdHeading.isVisible().catch(() => false);
+      await page.screenshot({
+        path: `${OUT_DIR}/credentials-after-delete-attempt.png`,
+        fullPage: true,
+      });
+    }
+  }
+
+  const plaintextInUi =
+    textHasPlaintext(afterCreateBody) ||
+    textHasPlaintext(detailSurface.bodyExcerpt) ||
+    textHasPlaintext(beforeBody);
+
+  const plaintextInResponses = responseLog.some(entry => textHasPlaintext(entry.bodyText));
+
+  const output = {
+    target: BASE,
+    service_id: serviceId,
+    username,
+    password,
+    list_rendered: listVisible,
+    created_visible_in_ui: createdVisible,
+    detail_surface: detailSurface,
+    delete_surface: deleteSurface,
+    plaintext_exposed_in_ui: plaintextInUi,
+    plaintext_exposed_in_responses: plaintextInResponses,
+    create_response: createResponse,
+    delete_response: deleteResponse,
+    created_ids: createdIds,
+    response_log: responseLog,
+    page_url: page.url(),
+    title: await page.title(),
+    body_excerpt: afterCreateBody,
+  };
+  return output;
+}
+)(page);
+```
+### Events
+- New console entries: .playwright-cli/console-2026-04-13T15-44-39-332Z.log#L6-L8

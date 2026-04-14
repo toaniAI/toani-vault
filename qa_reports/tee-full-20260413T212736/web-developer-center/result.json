@@ -1,0 +1,49 @@
+{
+  "case_id": "case05",
+  "run_id": "tee-full-20260413T212736",
+  "scope": "Developer Center contract/content only",
+  "status": "completed",
+  "claim_result": "failed",
+  "failure_class": "product",
+  "summary": "Developer Center remains stale on token/integration guidance: API Docs and SDK Examples still instruct users to issue dashboard/manual tokens and exchange them for short-lived sandbox access tokens. No decrypt guidance appeared in the captured API Docs or SDK Examples text for this run.",
+  "findings": {
+    "stale_automation_or_manual_token_guidance": true,
+    "stale_decrypt_guidance": false,
+    "outdated_integration_guidance": true
+  },
+  "details": [
+    {
+      "area": "API Docs",
+      "status": "stale",
+      "excerpt": "Dashboard Manual Token: issued from the Dashboard Tokens page, then exchanged for short-lived sandbox access tokens."
+    },
+    {
+      "area": "API Docs",
+      "status": "stale",
+      "excerpt": "The CLI cannot complete Privy login directly and there is no username/password login endpoint. Sign in on the web first, issue a manual token from the Dashboard Tokens page, exchange it via /api/v1/auth/access-token, then call sandbox APIs."
+    },
+    {
+      "area": "SDK Examples",
+      "status": "stale",
+      "excerpt": "Exchange dashboard token for short-lived sandbox access token"
+    },
+    {
+      "area": "SDK Examples",
+      "status": "stale",
+      "excerpt": "// Exchange a dashboard-issued manual token for a short-lived access token"
+    },
+    {
+      "area": "Decrypt guidance",
+      "status": "fresh_or_absent",
+      "excerpt": "No decrypt guidance matched in captured API Docs or SDK Examples text."
+    }
+  ],
+  "evidence": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-developer-center/01-login.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-developer-center/03-api-docs.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-developer-center/04-sdk-examples.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-developer-center/api-docs.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-developer-center/sdk-examples.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-developer-center/browser-findings.json"
+  ]
+}

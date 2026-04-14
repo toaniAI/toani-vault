@@ -1,0 +1,58 @@
+{
+  "claim_id": "C06",
+  "status": "passed",
+  "failure_class": "none",
+  "summary": "Auth session and current-user flows worked in the live TEE environment. A fresh web session token created from the stored Privy token succeeded on /api/v1/auth/me and /api/v1/auth/memberships, logout revoked that session as expected, missing and invalid token negatives returned 401, and an issued access token was rejected by /api/v1/auth/me with 403. Live contract drift exists on /api/v1/auth/access-token: credential_ids is effectively required and dashboard-issued tokens currently only support credential:read scope.",
+  "artifacts": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/notes.md",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/commands.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/session.request.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/session.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/memberships.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token-valid.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/credentials-list.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-missing-token.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-invalid-token.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-with-access-token.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/memberships-with-access-token.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/logout.response.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-after-logout.response.json"
+  ],
+  "created_ids": [
+    {
+      "type": "session_id",
+      "value": "019d8782-40de-7db1-9e11-d133749ba8a0"
+    },
+    {
+      "type": "access_token_id",
+      "value": "019d8783-4eb7-7d51-94c1-6a0c86ce49fe"
+    }
+  ],
+  "runtime_log_needed": false,
+  "contract_findings": [
+    {
+      "endpoint": "/api/v1/auth/access-token",
+      "type": "request_contract_mismatch",
+      "observed": "credential_ids is required in live behavior",
+      "expected": "docs show credential_ids omitted as valid"
+    },
+    {
+      "endpoint": "/api/v1/auth/access-token",
+      "type": "scope_contract_mismatch",
+      "observed": "dashboard-issued token flow accepted credential:read and rejected tokens:read",
+      "expected": "docs describe general user-scope subset issuance"
+    },
+    {
+      "endpoint": "/api/v1/auth/me",
+      "type": "token_type_boundary",
+      "observed": "web session token accepted, issued access token rejected with 403"
+    },
+    {
+      "endpoint": "/api/v1/auth/memberships",
+      "type": "token_type_boundary",
+      "observed": "issued access token accepted"
+    }
+  ]
+}

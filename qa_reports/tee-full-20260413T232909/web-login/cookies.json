@@ -1,0 +1,20 @@
+[
+  {
+    "name": "cf_clearance",
+    "value": "wkaqsFz1jAe.HxfOiE7Tu1MuzEzP14_OYDph0UvHxdA-1776094643-1.2.1.1-oRMBlvM_5F73ifLFfn5oQp_Pv1MgqcuVIeuRlOgmI9zFTmsL.Azf8x5EkKaDfDRxgU_8QIVBTAFMiOOaQt177x82QIzmKUelXKUUgf9.UNFjDJ7dmbP9gaXpn7jyiv5xldWAegUwqYl7pamVjgVGW_pZUAhkwfr_yAz5lvkFfcmKceGroGxG17nRUWRSh56N.vq9RfqYJkarUBHF.FmBRwOUcuXAzkbu.7.a7qVvl1LTU_vVLc1f3TJNJBRuR2.wNq2.Lp7jM7OPfCGPZbt4_2.wLUh2QiDLJ0_t3HB7YoXMUdKioomqLTxaMCZasXcNGSAajUKaEyJgXvUDi_IO.w",
+    "domain": ".privy.io",
+    "path": "/"
+  },
+  {
+    "name": "privy-session",
+    "value": "t",
+    "domain": "dev-credbridge.bitkinetic.com",
+    "path": "/"
+  },
+  {
+    "name": "privy-token",
+    "value": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54Y3dkMmQwMTVlMGNqbXFkNnY3b2IxIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwOTQ2NTMsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.mm1Gk8wE0J2wtaHvEl2i6PLBlB34AHgqB-e4afmyyLjwa4GfkZkUByLm6cdxDcxNsOtUwu36ILyH_3lcy8m2Ww",
+    "domain": "dev-credbridge.bitkinetic.com",
+    "path": "/"
+  }
+]

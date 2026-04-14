@@ -1,0 +1,13 @@
+{
+  "key": "credbridge:token:019d8783-468b-7ff3-ad32-2ec324442ecf",
+  "exists": 0,
+  "type": "+none",
+  "ttl": -2,
+  "hgetall": [],
+  "zscore_active": null,
+  "sismember_revoked": 0,
+  "scan_any": [
+    "72057594037927936",
+    []
+  ]
+}

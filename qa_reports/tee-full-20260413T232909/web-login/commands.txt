@@ -1,0 +1,17 @@
+1. `rtk playwright-cli -s=case02-20260413 open https://dev-credbridge.bitkinetic.com/login`
+2. `rtk playwright-cli -s=case02-20260413 tracing-start`
+3. `rtk playwright-cli -s=case02-20260413 screenshot --filename=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/before-login.png`
+4. `rtk playwright-cli -s=case02-20260413 run-code --filename /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/case02-login.fn.js > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/login-result.raw.txt`
+5. `rtk node -e "...extract login-result.json from login-result.raw.txt..."`
+6. `rtk playwright-cli -s=case02-20260413 state-save /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/storage-state.json`
+7. `rtk playwright-cli -s=case02-20260413 cookie-list --raw > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/cookies.json`
+8. `rtk playwright-cli -s=case02-20260413 localstorage-list --raw > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/localstorage.json`
+9. `rtk playwright-cli -s=case02-20260413 sessionstorage-list --raw > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/sessionstorage.json`
+10. `rtk playwright-cli -s=case02-20260413 network --request-body --request-headers > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/network-log.txt`
+11. `rtk playwright-cli -s=case02-20260413 run-code --filename /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/case02-observe.fn.js > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/playwright-observation.raw.txt`
+12. `rtk node -e "...extract playwright-observation.json from playwright-observation.raw.txt..."`
+13. `rtk playwright-cli -s=case02-20260413 tracing-stop > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/tracing-stop.txt`
+14. `rtk cp .playwright-cli/traces/trace-1776094643637.trace /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/trace.trace`
+15. `rtk cp .playwright-cli/traces/trace-1776094643637.network /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/trace.network`
+16. `rtk node - <<'NODE' ...normalize cookies/localstorage/sessionstorage raw output to JSON... NODE`
+17. `rtk node /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/build-case02-report.mjs`

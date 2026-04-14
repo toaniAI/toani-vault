@@ -1,0 +1,73 @@
+{
+  "run_id": "tee-full-20260413T212736",
+  "case_id": "case07",
+  "status": "passed",
+  "failure_class": null,
+  "environment": "https://dev-credbridge.bitkinetic.com/",
+  "object_prefix": "tee-full-case07-20260413T212736",
+  "actor": {
+    "user_id": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+    "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd"
+  },
+  "claims": [
+    {
+      "id": "case07-create",
+      "status": "passed",
+      "evidence": [
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/02-create.request.json",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/02-create.body",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/02-create.curl-meta.txt"
+      ]
+    },
+    {
+      "id": "case07-list-metadata-only",
+      "status": "passed",
+      "evidence": [
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/03-list.body",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/03-list.curl-meta.txt"
+      ]
+    },
+    {
+      "id": "case07-get-metadata-only",
+      "status": "passed",
+      "evidence": [
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/04-get.body",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/04-get.curl-meta.txt"
+      ]
+    },
+    {
+      "id": "case07-decrypt-rejected",
+      "status": "passed",
+      "expected_status": 403,
+      "expected_error": "forbidden",
+      "evidence": [
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/05-decrypt.request.json",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/05-decrypt.body",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/05-decrypt.curl-meta.txt"
+      ]
+    },
+    {
+      "id": "case07-delete-cleanup",
+      "status": "passed",
+      "evidence": [
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/06-delete.body",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/06-delete.curl-meta.txt",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/07-post-delete-list.body",
+        "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/07-post-delete-list.curl-meta.txt"
+      ]
+    }
+  ],
+  "created_ids": [
+    {
+      "object_type": "credential",
+      "id": "019d8713-52b0-7ae2-8785-0e48119da368",
+      "cleanup_status": "deleted_and_absent_from_filtered_list"
+    }
+  ],
+  "first_failure": null,
+  "evidence_paths": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/notes.md",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/commands.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-credentials/raw/_execution-summary.json"
+  ]
+}

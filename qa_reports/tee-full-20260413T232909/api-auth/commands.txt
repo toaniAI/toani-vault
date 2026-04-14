@@ -1,0 +1,41 @@
+rtk bash -lc '
+set -euo pipefail
+RAW_DIR="/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw"
+mkdir -p "$RAW_DIR"
+python3 - <<\"PY\"
+import json
+with open("/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/storage-state.json") as f:
+    data=json.load(f)
+for origin in data.get("origins", []):
+    if origin.get("origin") == "https://dev-credbridge.bitkinetic.com":
+        for item in origin.get("localStorage", []):
+            if item.get("name") == "privy:token":
+                print(json.loads(item["value"]))
+                raise SystemExit
+raise SystemExit("privy token not found")
+PY
+'
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/session.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/session.headers.txt -w "%{http_code}" -H "content-type: application/json" -X POST "https://dev-credbridge.bitkinetic.com/api/v1/auth/session" --data @/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/session.request.json
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-session-token>" "https://dev-credbridge.bitkinetic.com/api/v1/auth/me"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/memberships.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/memberships.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-session-token>" "https://dev-credbridge.bitkinetic.com/api/v1/auth/memberships"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token.headers.txt -w "%{http_code}" -H "content-type: application/json" -H "Authorization: Bearer <redacted-session-token>" -X POST "https://dev-credbridge.bitkinetic.com/api/v1/auth/access-token" --data @/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token.request.json
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/credentials-list.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/credentials-list.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-session-token>" "https://dev-credbridge.bitkinetic.com/api/v1/credentials?limit=1"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token-valid.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token-valid.headers.txt -w "%{http_code}" -H "content-type: application/json" -H "Authorization: Bearer <redacted-session-token>" -X POST "https://dev-credbridge.bitkinetic.com/api/v1/auth/access-token" --data @/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/access-token-valid.request.json
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-missing-token.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-missing-token.headers.txt -w "%{http_code}" "https://dev-credbridge.bitkinetic.com/api/v1/auth/me"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-invalid-token.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-invalid-token.headers.txt -w "%{http_code}" -H "Authorization: Bearer invalid-token" "https://dev-credbridge.bitkinetic.com/api/v1/auth/me"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-with-access-token.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-with-access-token.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-access-token>" "https://dev-credbridge.bitkinetic.com/api/v1/auth/me"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/memberships-with-access-token.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/memberships-with-access-token.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-access-token>" "https://dev-credbridge.bitkinetic.com/api/v1/auth/memberships"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/logout.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/logout.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-session-token>" -X POST "https://dev-credbridge.bitkinetic.com/api/v1/auth/logout"
+
+rtk curl -sS -o /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-after-logout.response.json -D /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/raw/me-after-logout.headers.txt -w "%{http_code}" -H "Authorization: Bearer <redacted-session-token>" "https://dev-credbridge.bitkinetic.com/api/v1/auth/me"

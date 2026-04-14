@@ -1,0 +1,83 @@
+{
+  "baseUrl": "https://dev-credbridge.bitkinetic.com",
+  "email": "test-7226@privy.io",
+  "captured": {
+    "backendSessionToken": "5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0",
+    "privyAccessToken": [
+      [
+        "privy:sent:cmniaifov006t0cl1af6l5xqs:8125845997447003",
+        "t"
+      ],
+      [
+        "privy:refresh_token",
+        "\"m77Hs9rnEabzuZ4eq18T_qFbKoCK1YslRjjJfH_D9WhJCkANTvFQ6ncq_Z5txe_AtERBFYfrR1gaEo7ZNiNMzg\""
+      ],
+      [
+        "auth-storage",
+        "{\"state\":{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"status\":\"active\",\"displayName\":\"rtk-bug-18218\",\"defaultTenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"onboardingCompleted\":true,\"identities\":[{\"provider\":\"privy\",\"walletAddress\":null,\"email\":null,\"isPrimary\":true,\"mfaVerified\":false}],\"primaryIdentity\":{\"provider\":\"privy\",\"walletAddress\":null,\"email\":null,\"isPrimary\":true,\"mfaVerified\":false},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}],\"activeMembership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}],\"currentTenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"onboardingCompleted\":true},\"version\":0}"
+      ],
+      [
+        "privy:connections",
+        "[{\"address\":\"0x4371969640Fd5Cd3d0F5eF3F2B91B513A5F84cb7\",\"connectorType\":\"embedded\",\"walletClientType\":\"privy\",\"connectedAt\":1776087265889,\"id\":\"io.privy.wallet\"}]"
+      ],
+      [
+        "privy:caid",
+        "\"25470a5f-79fa-4d1d-bf11-5be1e02080d9\""
+      ],
+      [
+        "privy:cmniaifov006t0cl1af6l5xqs:recent-login-method",
+        "\"email\""
+      ],
+      [
+        "privy:token",
+        "\"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54OGkwemUwMHRsMGJsNXA2aDB3eXFhIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwODcyNjUsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzY2NX0.GHvAV0OlHXPrq6dU1ZuGBgoW4kJ0E8arsz17Po0P_xz-5mV2dS_qZUaI-nKSe8kQCBsC6O8Z9WoafupZJasqpw\""
+      ],
+      [
+        "privy:pat",
+        "\"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueDhpMHplMDB0bDBibDVwNmgwd3lxYSIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDg3MjY1LCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzY2NX0.owyWXZHt3IOW3YMuklZTT3GMPAaNq3HwCGUGCj60npAECA0mDCObGnU1YJ6wjApucu68WJYph7vkxELdeP_LHw\""
+      ]
+    ]
+  },
+  "pages": {
+    "credentials": {
+      "url": "https://dev-credbridge.bitkinetic.com/credentials",
+      "title": "Toani Vault",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nCredentials\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nTEE PROTECTED\nCredentials\n\nSecurely store and manage your sensitive credentials and keys.\n\nFilter\nNew credential\nTEE Encryption Protection\nAll credentials are encrypted with AES-256-GCM and stored inside the trusted TEE runtime.\nSecure\n\nTotal credentials\n\n3\n\nPassword credentials\n\n3\n\nAPI keys\n\n0\n\nOAuth tokens\n\n0\n\nFilters\nFilter by service ID, credential type, and validity.\nDefault view\nShow filters\nCredential List\nShowing 3 results\n3 total\nui-tee-real-20260413-185715\nUsername / Password\nID: 019d868b...\nCreated 4/13/2026, 7:12:39 PM\nDelete\ntee-real-20260413-185715\nUsername / Password\nID: 019d8684...\nCreated 4/13/2026, 7:05:12 PM\nDelete\nlive-chain-20260413\nUsername / Password\nID: 019d8649...\nCreated 4/13/2026, 6:01:14 PM\nDelete",
+      "checks": {
+        "noDecryptAction": true
+      }
+    },
+    "tokens": {
+      "url": "https://dev-credbridge.bitkinetic.com/tokens",
+      "title": "Toani Vault",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nTokens\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nPASETO V4.LOCAL\nTokens\n\nManage API access tokens, issuance, verification, and usage guidance from one page.\n\nLEAST PRIVILEGE\nCREDENTIAL:READ\nGenerate token\nIssue a token after selecting scopes and expiry. The full token is shown only once after creation.\n0 SCOPE\nRead credentials\n\nRead credentials\n\nView credential metadata\n\ncredential:read\n允许使用的 Credentials *\n仅沙箱内可解析这些凭证\n\nui-tee-real-20260413-185715\n\nusername_password\n\n019d868b-272a-7333-92b7-b21d5a3241b5\n可选\n\ntee-real-20260413-185715\n\nusername_password\n\n019d8684-529b-7753-8e4f-34d9a99296b0\n可选\n\nlive-chain-20260413\n\nusername_password\n\n019d8649-c57c-7721-88f9-becb31a8ef0a\n可选\nToken expiry\n1 hour\n15 minutes\n1 hour\n6 hours\n1 day\n7 days\nGenerate token\nBefore issuance\nConfirm the use case, scope, and expiry before issuing a token.\nLeast privilege\n此页面只会签发 `credential:read`，并强制要求选择可用凭证白名单。\n• 只能在 Dashboard 手工获取 token。\n• token 仅用于 sandbox 占位符解析与注入。\n• 未列入白名单的凭证不会在沙箱内被解析。",
+      "checks": {
+        "hasCredentialRead": true,
+        "noVerifyToken": true,
+        "noAutomationToken": true
+      }
+    },
+    "profile": {
+      "url": "https://dev-credbridge.bitkinetic.com/profile",
+      "title": "Toani Vault",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nProfile\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nACCOUNT SETTINGS\nProfile\n\nManage your account information\n\nWallet Identity\nYour primary login identity\nNo wallet identity detected. Please log in again or contact support.\nSecurity Settings\nMulti-factor authentication status\nMFA Status\nMFA Disabled\nSet up in Privy\nTenant & Membership\nCurrent tenant and role information\n\nCurrent Tenant\n\nTenant ID: 019d8414-bf83-7641-a3fb-ad93d58715bd\n\nOwner\n\n019d8414-bf83-7641-a3fb-ad93d58715bd\n\nOwner • Current • Default\n\nDefault\nDisplay Name\nSet your display name\nDisplay Name\nSave\nAccount Actions\nSign out or delete your account\nSign Out\nDelete Account",
+      "checks": {
+        "noAutomationToken": true
+      }
+    },
+    "developer-center": {
+      "url": "https://dev-credbridge.bitkinetic.com/developer",
+      "title": "Toani Vault",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nDeveloper Center\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nDeveloper Tools\nDeveloper Center\n\nSystem overview, API docs, SDK examples, and an interactive API tester\n\nOverview\nAPI Docs\nSDK Examples\nTester\nTEE Protection\nCredential storage backed by a trusted execution environment\nIntel SGX / AMD SEV support\nRemote attestation verification\nEncrypted memory isolation\nTamper-resistant audit logs\nEnd-to-end encryption\nAES-256-GCM encryption standard\nEncrypted transport from the client\nCiphertext storage on the server\nHKDF-based key derivation\nScheduled key rotation\nImmutable audit\nimmudb immutable database\nCryptographic integrity verification\nTamper-resistant log chain\nReal-time audit tracing\nCompliance report export\n🛡️\nTEE Sandbox Browser\nA securely isolated environment for web automation\nnsjail Linux Namespace isolation\nSeccomp syscall filtering\ncgroup resource limits\nAI operation review engine\nData redaction and watermarking\nTechnical architecture\nToani Vault system component overview\nBackend service (Rust + Axum)\nA high-performance async HTTP service that handles credential management, token auth, sandbox orchestration, and audit logging.\nTEE runtime\nAn isolated secure enclave for cryptographic operations and sensitive key management.\nStorage layer\nPostgreSQL stores credential metadata, immudb stores audit logs, and Redis stores cache and session data.\nVault integration\nHashiCorp Vault provides dynamic key management, secret engines, and access control.\nSupported credential types\nUsername & Password\n\nThe most common credential type for website logins and application authentication.\n\nAPI Key\n\nServer-side API authentication with optional key + ",
+      "checks": {
+        "noDecryptExample": true,
+        "noVerifyTokenExample": true,
+        "noAutomationTokenExample": true
+      }
+    }
+  },
+  "network": {
+    "authSessionStatus": 200,
+    "authSessionBody": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870d-1b55-7e30-9e70-80a86fdf6db5\",\"session_token\":\"5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0\",\"expires_at\":\"2026-04-13T14:34:36.373350465+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+  }
+}

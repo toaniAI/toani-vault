@@ -1,0 +1,44 @@
+{
+  "claim_id": "C07",
+  "status": "passed",
+  "failure_class": null,
+  "summary": "Live credentials API passed create/list/get/delete using a fresh backend session minted from preserved Privy auth state. Metadata-only behavior held for list/get, delete behaved as a soft-delete tombstone, and direct decrypt was blocked with 403 on both a full-scope session token and a read-only access token.",
+  "artifacts": [
+    "notes.md",
+    "commands.txt",
+    "raw/auth-session.request.json",
+    "raw/auth-session.response.json",
+    "raw/create-valid.request.json",
+    "raw/create-valid.response.json",
+    "raw/list-valid.response.json",
+    "raw/get-valid.response.json",
+    "raw/access-token-case07.response.json",
+    "raw/decrypt-session-valid.response.json",
+    "raw/decrypt-access-valid-fixed.response.json",
+    "raw/delete-valid.response.json",
+    "raw/get-after-delete-valid.response.json",
+    "raw/runtime-values-valid.txt",
+    "raw/create.response.json",
+    "raw/list.response.json",
+    "raw/get.response.json"
+  ],
+  "created_ids": {
+    "credential_ids": [
+      "019d878b-f659-7bc0-8aaa-a252f8a8a02f"
+    ],
+    "session_ids": [
+      "019d878b-f5f5-7b61-8925-58c82d141ae1"
+    ],
+    "token_ids": [
+      "019d878b-f77e-7220-a5de-65ace7aab707"
+    ]
+  },
+  "runtime_log_needed": false,
+  "contract_findings": [
+    "Direct decrypt is disabled in the live service even though older docs still describe POST /api/v1/credentials/:id/decrypt returning plaintext.",
+    "Create returned created_at as an epoch-seconds string instead of the RFC3339 example shown in the REST docs.",
+    "Delete is soft-delete: GET after delete still returns 200 with is_deleted=true and status=deleted.",
+    "The earlier api-auth session token had been revoked by logout; this case had to mint a fresh backend session from preserved Privy auth evidence before running C07.",
+    "/api/v1/auth/access-token returns the issued token nested at data.access_token in the observed live response."
+  ]
+}

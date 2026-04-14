@@ -1,0 +1,11 @@
+{
+  "name": "07-sandbox-list-sessions",
+  "method": "GET",
+  "url": "https://dev-credbridge.bitkinetic.com/api/v1/sandbox/sessions",
+  "timestamp": "2026-04-13T13:44:03Z",
+  "http_code": "200",
+  "curl_exit": 0,
+  "headers_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/07-sandbox-list-sessions.headers",
+  "body_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/07-sandbox-list-sessions.body.json",
+  "stderr_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/07-sandbox-list-sessions.stderr.txt"
+}

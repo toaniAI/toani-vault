@@ -1,0 +1,64 @@
+{
+  "claim_id": "C05",
+  "status": "failed",
+  "failure_class": "product",
+  "summary": "Developer Center is reachable after Privy OTP login and the /developer route itself is live, but the visible API Docs / SDK Examples / CLI guidance are not contract-consistent. The page still steers CLI users toward dashboard-issued sandbox tokens and sandbox-only commands, while the current CLI README documents Automation Access bootstrap plus broader command families. SDK examples also hard-code localhost endpoints instead of the current live base URL.",
+  "artifacts": [
+    "notes.md",
+    "commands.txt",
+    "developer-api-tab.png",
+    "developer-sdk-tab.png",
+    "api-tab-snapshot.yml",
+    "sdk-tab-snapshot.yml",
+    "developer-api-visible.txt",
+    "developer-sdk-visible.txt",
+    "storage-state.json"
+  ],
+  "created_ids": [],
+  "runtime_log_needed": false,
+  "contract_findings": [
+    {
+      "id": "F1",
+      "title": "CLI bootstrap guidance is stale",
+      "mismatch": "Live API Docs tell users to obtain a sandbox token from the Web UI and call `toani ... sandbox stats` directly, but the current CLI contract recommends `Profile -> Automation Access` followed by `toani config init --url ... --token <AUTOMATION_TOKEN>`.",
+      "evidence_ref": [
+        "developer-api-visible.txt",
+        "developer-api-tab.png",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:16",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:24"
+      ]
+    },
+    {
+      "id": "F2",
+      "title": "CLI is presented as sandbox-only",
+      "mismatch": "Visible CLI guidance only documents a sandbox stats invocation, while the current CLI README exposes broader `auth`, `credentials`, `tokens`, `service-accounts`, `sandbox`, `audit`, and `config` command families.",
+      "evidence_ref": [
+        "developer-api-visible.txt",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:51",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:103"
+      ]
+    },
+    {
+      "id": "F3",
+      "title": "SDK examples use stale localhost base URLs",
+      "mismatch": "Visible SDK examples hard-code `http://localhost:8082` for SDK and raw fetch examples, which is inconsistent with the live environment target and the CLI README default/example base URL `https://dev-credbridge.bitkinetic.com/`.",
+      "evidence_ref": [
+        "developer-sdk-visible.txt",
+        "developer-sdk-tab.png",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:24",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:49"
+      ]
+    },
+    {
+      "id": "F4",
+      "title": "Token issuance guidance is narrower than the current CLI contract",
+      "mismatch": "The live page frames token issuance as `Tokens` page or restricted `/api/v1/auth/access-token` for sandbox use, but the current CLI contract documents multiple bearer-token flows including `auth token create`, `auth access-token create`, and service-account tokens.",
+      "evidence_ref": [
+        "developer-api-visible.txt",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:54",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:84",
+        "/Users/yvan/AIWorkspace/credbridge/cli/README.md:111"
+      ]
+    }
+  ]
+}

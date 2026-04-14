@@ -834,6 +834,8 @@ export enum OperationType {
   ExecuteScript = "execute_script",
   /** 等待元素 */
   WaitForSelector = "wait",
+  /** 直接发起 HTTP 请求 */
+  HttpRequest = "http_request",
   /** 截图 */
   Screenshot = "screenshot",
   /** 导出数据 */
@@ -946,6 +948,12 @@ export interface ExecuteOperationRequest {
   value?: string | SandboxCredentialReference;
   /** URL（用于导航操作） */
   url?: string;
+  /** HTTP 方法 */
+  method?: string;
+  /** HTTP 请求头 */
+  headers?: Record<string, string | SandboxCredentialReference>;
+  /** HTTP 请求体 */
+  body?: unknown;
   /** 脚本（用于执行脚本操作） */
   script?: string;
   /** 脚本绑定（支持 credential 引用） */

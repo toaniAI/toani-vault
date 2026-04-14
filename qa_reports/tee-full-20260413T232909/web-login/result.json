@@ -1,0 +1,50 @@
+{
+  "claim_id": "C02",
+  "status": "passed",
+  "failure_class": "none",
+  "summary": "Privy OTP login succeeded and landed on https://dev-credbridge.bitkinetic.com/credentials. Dashboard shell was visible and post-login route checks were recorded.",
+  "artifacts": [
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/before-login.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/post-submit.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/after-login.png",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/playwright-observation.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/storage-state.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/network-log.txt",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/cookies.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/localstorage.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/sessionstorage.json",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/notes.md",
+    "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/commands.txt"
+  ],
+  "created_ids": [],
+  "session_context": {
+    "storage_state": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/storage-state.json",
+    "localstorage": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/localstorage.json",
+    "sessionstorage": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/sessionstorage.json",
+    "cookies": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/cookies.json",
+    "bearer_candidates": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-login/bearer-candidates.json"
+  },
+  "runtime_log_needed": false,
+  "contract_findings": [
+    {
+      "route": "/",
+      "observed_final_url": "https://dev-credbridge.bitkinetic.com/credentials",
+      "type": "redirect"
+    },
+    {
+      "route": "/audit",
+      "observed_final_url": "https://dev-credbridge.bitkinetic.com/credentials",
+      "type": "redirect"
+    },
+    {
+      "route": "/tenants",
+      "observed_final_url": "https://dev-credbridge.bitkinetic.com/credentials",
+      "type": "redirect"
+    },
+    {
+      "route": "/settings",
+      "observed_final_url": "https://dev-credbridge.bitkinetic.com/credentials",
+      "type": "redirect"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+HTTP/2 405 
+date: Tue, 14 Apr 2026 02:05:35 GMT
+content-length: 0
+content-language: zh-CN
+vary: origin, access-control-request-method, access-control-request-headers
+access-control-allow-origin: *
+allow: GET,HEAD
+

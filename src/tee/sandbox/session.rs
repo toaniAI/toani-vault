@@ -20,9 +20,14 @@ use crate::tee::sandbox::{
 use crate::vault::models::{CredentialId, TenantId, UserId, VaultEntry};
 use crate::vault::storage::CredentialVault;
 use async_trait::async_trait;
+use reqwest::{
+    Client, Method, Url,
+    header::{HeaderMap, HeaderName, HeaderValue},
+};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -76,10 +81,14 @@ struct SessionCredentialMaterial {
     values: HashMap<String, Zeroizing<String>>,
 }
 
+#[derive(Debug)]
 struct SandboxExecutionOutput {
     data: Option<Value>,
     screenshot: Option<Vec<u8>>,
 }
+
+const DEFAULT_HTTP_REQUEST_TIMEOUT_MS: u64 = 30_000;
+const MAX_HTTP_RESPONSE_BODY_BYTES: usize = 64 * 1024;
 
 impl ActiveNsjailSession {
     pub fn new(id: SessionId, context: SessionContext, sandbox: NsjailSandbox) -> Self {
@@ -282,6 +291,125 @@ impl ActiveNsjailSession {
         parameters.get(key).and_then(Value::as_u64)
     }
 
+    fn required_http_method(parameters: &HashMap<String, Value>) -> Result<Method, SandboxError> {
+        let method = Self::required_string(parameters, "method")?;
+        Method::from_bytes(method.trim().to_ascii_uppercase().as_bytes()).map_err(|_| {
+            SandboxError::Other(format!("invalid_request: invalid method {}", method.trim()))
+        })
+    }
+
+    fn required_http_url(parameters: &HashMap<String, Value>) -> Result<Url, SandboxError> {
+        let url = Self::required_string(parameters, "url")?;
+        Url::parse(url.trim()).map_err(|_| {
+            SandboxError::Other(format!("invalid_request: invalid url {}", url.trim()))
+        })
+    }
+
+    fn optional_http_headers(
+        parameters: &HashMap<String, Value>,
+    ) -> Result<Option<HeaderMap>, SandboxError> {
+        let Some(headers_value) = parameters.get("headers") else {
+            return Ok(None);
+        };
+        let headers = headers_value.as_object().ok_or_else(|| {
+            SandboxError::Other("invalid_request: headers must be an object".to_string())
+        })?;
+
+        let mut header_map = HeaderMap::with_capacity(headers.len());
+        for (key, value) in headers {
+            let text = value.as_str().ok_or_else(|| {
+                SandboxError::Other(format!("invalid_request: headers.{key} must be a string"))
+            })?;
+            let name = HeaderName::try_from(key.as_str()).map_err(|_| {
+                SandboxError::Other(format!("invalid_request: invalid header name {key}"))
+            })?;
+            let header_value = HeaderValue::from_str(text).map_err(|_| {
+                SandboxError::Other(format!("invalid_request: invalid header value for {key}"))
+            })?;
+            header_map.append(name, header_value);
+        }
+
+        Ok(Some(header_map))
+    }
+
+    async fn execute_http_request(
+        &self,
+        parameters: &HashMap<String, Value>,
+    ) -> Result<SandboxExecutionOutput, SandboxError> {
+        let method = Self::required_http_method(parameters)?;
+        let url = Self::required_http_url(parameters)?;
+        let timeout_ms =
+            Self::optional_u64(parameters, "timeout_ms").unwrap_or(DEFAULT_HTTP_REQUEST_TIMEOUT_MS);
+        let client = Client::builder()
+            .timeout(Duration::from_millis(timeout_ms))
+            .build()
+            .map_err(|error| {
+                SandboxError::Other(format!("failed to build http client: {error}"))
+            })?;
+
+        let mut request = client.request(method, url);
+        if let Some(headers) = Self::optional_http_headers(parameters)? {
+            request = request.headers(headers);
+        }
+
+        if let Some(body) = parameters.get("body") {
+            request = match body {
+                Value::String(text) => request.body(text.clone()),
+                other => request.json(other),
+            };
+        }
+
+        let mut response = request
+            .send()
+            .await
+            .map_err(|error| SandboxError::Other(format!("http_request_failed: {error}")))?;
+        let status = response.status().as_u16();
+        let final_url = response.url().to_string();
+
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(key, value)| {
+                (
+                    key.as_str().to_string(),
+                    Value::String(value.to_str().unwrap_or_default().to_string()),
+                )
+            })
+            .collect::<serde_json::Map<String, Value>>();
+
+        let mut body = Vec::new();
+        let mut truncated = false;
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| SandboxError::Other(format!("http_request_failed: {error}")))?
+        {
+            if body.len() + chunk.len() > MAX_HTTP_RESPONSE_BODY_BYTES {
+                let remaining = MAX_HTTP_RESPONSE_BODY_BYTES.saturating_sub(body.len());
+                body.extend_from_slice(&chunk[..remaining]);
+                truncated = true;
+                break;
+            }
+            body.extend_from_slice(&chunk);
+        }
+
+        let response_body = match serde_json::from_slice::<Value>(&body) {
+            Ok(json_body) => json_body,
+            Err(_) => Value::String(String::from_utf8_lossy(&body).to_string()),
+        };
+
+        Ok(SandboxExecutionOutput {
+            data: Some(json!({
+                "status": status,
+                "headers": Value::Object(headers),
+                "body": response_body,
+                "url": final_url,
+                "truncated": truncated
+            })),
+            screenshot: None,
+        })
+    }
+
     async fn resolve_fill_value(&self, value: &Value) -> Result<(String, bool), SandboxError> {
         if let Some(raw) = value.as_str() {
             return Ok((raw.to_string(), false));
@@ -375,7 +503,6 @@ impl ActiveNsjailSession {
         &self,
         operation: &OperationRequest,
     ) -> Result<SandboxExecutionOutput, SandboxError> {
-        let browser = self.browser_runtime().await?;
         let parameters = operation.effective_parameters();
         debug!(
             "Executing sandbox operation {} ({})",
@@ -384,6 +511,7 @@ impl ActiveNsjailSession {
 
         match operation.operation_type {
             OperationType::Navigate => {
+                let browser = self.browser_runtime().await?;
                 let final_url = browser
                     .navigate(&Self::required_string(parameters, "url")?)
                     .await?;
@@ -393,6 +521,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::Click => {
+                let browser = self.browser_runtime().await?;
                 let selector = Self::required_string(parameters, "selector")?;
                 browser.click(&selector).await?;
                 Ok(SandboxExecutionOutput {
@@ -401,6 +530,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::Fill => {
+                let browser = self.browser_runtime().await?;
                 let selector = Self::required_string(parameters, "selector")?;
                 let raw_value = parameters.get("value").ok_or_else(|| {
                     SandboxError::Other("invalid_request: fill requires value".to_string())
@@ -431,6 +561,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::Wait => {
+                let browser = self.browser_runtime().await?;
                 let selector = parameters
                     .get("selector")
                     .and_then(Value::as_str)
@@ -451,6 +582,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::GetText => {
+                let browser = self.browser_runtime().await?;
                 let selector = Self::required_string(parameters, "selector")?;
                 let (text, redacted) = self.safe_get_text(&browser, &selector).await?;
                 Ok(SandboxExecutionOutput {
@@ -463,6 +595,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::Screenshot => {
+                let browser = self.browser_runtime().await?;
                 let screenshot = browser
                     .screenshot(&self.sensitive_selectors().await)
                     .await?;
@@ -472,6 +605,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::Export => {
+                let browser = self.browser_runtime().await?;
                 let selectors = parameters
                     .get("selectors")
                     .and_then(Value::as_array)
@@ -507,6 +641,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::ExecuteScript => {
+                let browser = self.browser_runtime().await?;
                 let script = Self::required_string(parameters, "script")?;
                 let (bindings, sensitive_values) = self.resolve_script_bindings(parameters).await?;
                 let result = browser.execute_script(&script, &bindings).await?;
@@ -515,6 +650,7 @@ impl ActiveNsjailSession {
                     screenshot: None,
                 })
             }
+            OperationType::HttpRequest => self.execute_http_request(parameters).await,
             OperationType::Custom => Err(SandboxError::Other(
                 "invalid_request: custom sandbox operations are not supported".to_string(),
             )),
@@ -807,10 +943,17 @@ fn sanitize_parameter_value(key: &str, value: &Value, sensitive: bool) -> Value 
         });
     }
 
-    let sensitive_key = matches!(
-        key,
-        "password" | "token" | "cookie" | "api_key" | "secret" | "bindings" | "credentialBindings"
-    );
+    let normalized = key.to_ascii_lowercase();
+    let sensitive_key = normalized == "authorization"
+        || normalized == "cookie"
+        || normalized == "set-cookie"
+        || normalized == "bindings"
+        || normalized == "credentialbindings"
+        || normalized == "credential_bindings"
+        || normalized == "api_key"
+        || normalized == "api-key"
+        || normalized == "secret"
+        || normalized.contains("token");
     if (sensitive || sensitive_key) && value.is_string() {
         return Value::String("[REDACTED]".to_string());
     }
@@ -946,6 +1089,10 @@ mod tests {
     use super::*;
     use crate::tee::sandbox::config::SandboxConfig;
     use crate::tee::sandbox::types::SandboxId;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
 
     fn create_test_session() -> ActiveNsjailSession {
         let sandbox = NsjailSandbox::new(crate::tee::sandbox::config::NsjailConfig {
@@ -1055,6 +1202,154 @@ mod tests {
 
         assert_eq!(result["token"], "[REDACTED]");
         assert_eq!(result["nested"][1], "[REDACTED]");
+    }
+
+    async fn spawn_test_http_server(body: String, content_type: &str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test server");
+        let address = listener.local_addr().expect("local addr");
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nX-Test: sandbox\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept request");
+            let mut buffer = [0_u8; 2048];
+            let _ = stream.read(&mut buffer).await;
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+        });
+
+        format!("http://{address}/")
+    }
+
+    #[tokio::test]
+    async fn test_http_request_does_not_initialize_browser_runtime() {
+        let session = create_test_session();
+        let url = spawn_test_http_server("{\"ok\":true}".to_string(), "application/json").await;
+        let operation = OperationRequest {
+            operation_id: Uuid::new_v4(),
+            operation_type: OperationType::HttpRequest,
+            description: "http request".to_string(),
+            parameters: HashMap::from([
+                ("method".to_string(), Value::String("GET".to_string())),
+                ("url".to_string(), Value::String(url.clone())),
+            ]),
+            resolved_parameters: HashMap::new(),
+            created_at: OffsetDateTime::now_utc(),
+        };
+
+        let output = session
+            .execute_in_sandbox(&operation)
+            .await
+            .expect("http request should succeed");
+
+        assert_eq!(
+            output.data.as_ref().and_then(|data| data.get("status")),
+            Some(&json!(200))
+        );
+        assert_eq!(
+            output
+                .data
+                .as_ref()
+                .and_then(|data| data.get("body"))
+                .and_then(|body| body.get("ok")),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            output
+                .data
+                .as_ref()
+                .and_then(|data| data.get("url"))
+                .and_then(Value::as_str),
+            Some(url.as_str())
+        );
+        assert!(session.browser_runtime.read().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_http_request_rejects_missing_method() {
+        let session = create_test_session();
+        let operation = OperationRequest {
+            operation_id: Uuid::new_v4(),
+            operation_type: OperationType::HttpRequest,
+            description: "missing method".to_string(),
+            parameters: HashMap::from([(
+                "url".to_string(),
+                Value::String("http://127.0.0.1".to_string()),
+            )]),
+            resolved_parameters: HashMap::new(),
+            created_at: OffsetDateTime::now_utc(),
+        };
+
+        let error = session
+            .execute_in_sandbox(&operation)
+            .await
+            .expect_err("missing method should fail");
+        assert!(
+            error
+                .to_string()
+                .contains("invalid_request: missing method")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_http_request_rejects_invalid_method_and_url() {
+        let session = create_test_session();
+        let invalid_method = OperationRequest {
+            operation_id: Uuid::new_v4(),
+            operation_type: OperationType::HttpRequest,
+            description: "invalid method".to_string(),
+            parameters: HashMap::from([
+                (
+                    "method".to_string(),
+                    Value::String("NOT A METHOD".to_string()),
+                ),
+                (
+                    "url".to_string(),
+                    Value::String("http://127.0.0.1".to_string()),
+                ),
+            ]),
+            resolved_parameters: HashMap::new(),
+            created_at: OffsetDateTime::now_utc(),
+        };
+        let invalid_url = OperationRequest {
+            operation_id: Uuid::new_v4(),
+            operation_type: OperationType::HttpRequest,
+            description: "invalid url".to_string(),
+            parameters: HashMap::from([
+                ("method".to_string(), Value::String("GET".to_string())),
+                ("url".to_string(), Value::String("://bad url".to_string())),
+            ]),
+            resolved_parameters: HashMap::new(),
+            created_at: OffsetDateTime::now_utc(),
+        };
+
+        let method_error = session
+            .execute_in_sandbox(&invalid_method)
+            .await
+            .expect_err("invalid method should fail");
+        let url_error = session
+            .execute_in_sandbox(&invalid_url)
+            .await
+            .expect_err("invalid url should fail");
+
+        assert!(
+            method_error
+                .to_string()
+                .contains("invalid_request: invalid method")
+        );
+        assert!(
+            url_error
+                .to_string()
+                .contains("invalid_request: invalid url")
+        );
+        assert!(session.browser_runtime.read().await.is_none());
     }
 
     #[test]

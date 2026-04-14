@@ -11,6 +11,7 @@ docs/internal/
 .qwen/
 .sealed/
 .cursor/
+.playwright-cli/
 
 # Build artifacts
 /target

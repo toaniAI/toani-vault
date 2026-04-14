@@ -1,0 +1,236 @@
+- generic [ref=e2]:
+  - generic [ref=e8]:
+    - generic [ref=e11]:
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - img [ref=e16]
+          - generic [ref=e27]:
+            - paragraph [ref=e28]: TOANI VAULT
+            - generic [ref=e29]: TEE 保护中
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e33]: 安全状态
+            - generic [ref=e34]: 已通过
+          - generic [ref=e35]:
+            - generic [ref=e36]:
+              - generic [ref=e37]: Crypto
+              - generic [ref=e38]: AES-256
+            - generic [ref=e39]:
+              - generic [ref=e40]: Audit
+              - generic [ref=e41]: immudb
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - generic [ref=e44]: 主要功能
+          - list [ref=e46]:
+            - listitem [ref=e47]:
+              - link "凭证管理" [ref=e48] [cursor=pointer]:
+                - /url: /credentials
+                - img [ref=e50]
+                - generic [ref=e54]: 凭证管理
+            - listitem [ref=e55]:
+              - link "Token 管理" [ref=e56] [cursor=pointer]:
+                - /url: /tokens
+                - img [ref=e58]
+                - generic [ref=e60]: Token 管理
+            - listitem [ref=e61]:
+              - link "开发者中心" [ref=e62] [cursor=pointer]:
+                - /url: /developer
+                - img [ref=e64]
+                - generic [ref=e67]: 开发者中心
+        - generic [ref=e68]:
+          - generic [ref=e69]: 系统管理
+          - list [ref=e71]:
+            - listitem [ref=e72]:
+              - link "用户管理" [ref=e73] [cursor=pointer]:
+                - /url: /users
+                - img [ref=e75]
+                - generic [ref=e80]: 用户管理
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - img [ref=e83]
+            - text: Toani.ai runtime
+          - paragraph [ref=e86]: SGX / SEV protected execution, attestation-aware access, and immutable audit tracing.
+      - list [ref=e88]:
+        - listitem [ref=e89]:
+          - button "rtk-bug-18218 layout.role.owner" [ref=e90] [cursor=pointer]:
+            - img [ref=e93]
+            - generic [ref=e96]:
+              - generic [ref=e97]: rtk-bug-18218
+              - generic [ref=e98]: layout.role.owner
+            - img [ref=e99]
+      - button "Toggle Sidebar" [ref=e101]
+    - generic [ref=e102]:
+      - banner [ref=e103]:
+        - generic [ref=e104]:
+          - generic [ref=e106]:
+            - navigation "breadcrumb" [ref=e107]:
+              - list [ref=e108]:
+                - listitem [ref=e109]:
+                  - link "首页" [ref=e110] [cursor=pointer]:
+                    - /url: /credentials
+                    - img [ref=e111]
+                    - text: 首页
+                - listitem [ref=e115]:
+                  - img [ref=e116]
+                - listitem [ref=e118]:
+                  - link "开发者中心" [disabled] [ref=e119]
+            - paragraph [ref=e120]: Trusted credential operations workspace
+          - generic [ref=e121]:
+            - button "简体中文" [ref=e122] [cursor=pointer]:
+              - img
+              - generic [ref=e123]: 简体中文
+            - generic [ref=e124]:
+              - img [ref=e127]
+              - generic [ref=e130]:
+                - generic [ref=e131]: rtk-bug-18218
+                - generic [ref=e132]: layout.role.owner
+      - main [ref=e133]:
+        - generic [ref=e135]:
+          - generic [ref=e138]:
+            - generic [ref=e140]: 开发工具
+            - heading "开发者中心" [level=1] [ref=e141]
+            - paragraph [ref=e142]: 系统说明、API 文档、SDK 示例和交互式测试工具
+          - generic [ref=e143]:
+            - tablist [ref=e144]:
+              - tab "系统说明" [ref=e145] [cursor=pointer]:
+                - img [ref=e146]
+                - generic [ref=e148]: 系统说明
+              - tab "API 文档" [selected] [ref=e149] [cursor=pointer]:
+                - img [ref=e150]
+                - generic [ref=e155]: API 文档
+              - tab "SDK 示例" [ref=e156] [cursor=pointer]:
+                - img [ref=e157]
+                - generic [ref=e160]: SDK 示例
+              - tab "测试工具" [ref=e161] [cursor=pointer]:
+                - img [ref=e162]
+                - generic [ref=e164]: 测试工具
+            - tabpanel "API 文档" [ref=e359]:
+              - generic [ref=e360]:
+                - generic [ref=e361]:
+                  - generic [ref=e363]:
+                    - generic [ref=e364]: API 认证
+                    - generic [ref=e365]: 所有 API 请求都需要携带有效的访问令牌
+                  - generic [ref=e367]:
+                    - generic [ref=e368]:
+                      - generic [ref=e369]:
+                        - img [ref=e371]
+                        - generic [ref=e374]:
+                          - generic [ref=e375]: 请求头格式
+                          - generic [ref=e376]: SDK 与测试工具遵循同一套认证规则，便于本地验证和集成调试时复用。
+                      - code [ref=e378]: "Authorization: Bearer <your-access-token>"
+                    - generic [ref=e379]:
+                      - generic [ref=e381]:
+                        - img [ref=e383]
+                        - generic [ref=e387]:
+                          - generic [ref=e388]: Token 类型
+                          - list [ref=e390]:
+                            - listitem [ref=e391]: Session Token：浏览器完成 Privy 登录后由后端签发，用于当前 Web 会话。
+                            - listitem [ref=e392]: Sandbox Token：在 Tokens 页面或受限 access-token 接口签发，仅用于 sandbox。
+                            - listitem [ref=e393]: Service Account Token：面向租户内机器身份，适合长期自动化任务。
+                      - generic [ref=e395]:
+                        - img [ref=e397]
+                        - generic [ref=e399]:
+                          - generic [ref=e400]: Token 格式
+                          - generic [ref=e401]: 使用 PASETO v4.local 格式，相比 JWT 更安全，并支持对称加密。
+                    - generic [ref=e403]:
+                      - img [ref=e405]
+                      - generic [ref=e407]:
+                        - generic [ref=e408]: 命令行接入方式
+                        - generic [ref=e410]:
+                          - paragraph [ref=e411]: 命令行不支持直接完成 Privy 登录。请先在 Web 端获取 sandbox token，再直接调用 sandbox 命令。
+                          - code [ref=e412]: toani --base-url https://your-api.example.com --token <SANDBOX_TOKEN> sandbox stats
+                - generic [ref=e413]:
+                  - generic [ref=e415]:
+                    - generic [ref=e416]: API 端点列表
+                    - generic [ref=e417]: 常用 API 接口说明
+                  - generic [ref=e419]:
+                    - generic [ref=e420]:
+                      - heading "POST /api/v1/auth/access-token" [level=3] [ref=e421]:
+                        - button "POST /api/v1/auth/access-token" [expanded] [active] [ref=e422] [cursor=pointer]:
+                          - generic [ref=e423]:
+                            - generic [ref=e424]: POST
+                            - code [ref=e425]: /api/v1/auth/access-token
+                          - img [ref=e426]
+                      - region "POST /api/v1/auth/access-token" [ref=e521]:
+                        - generic [ref=e523]:
+                          - paragraph [ref=e524]: 从当前会话签发受限 sandbox token（仅支持 credential:read + credential_ids）
+                          - generic [ref=e525]:
+                            - generic [ref=e528]: 请求体
+                            - code [ref=e534]: "{ \"scopes\": [\"credential:read\"], \"credential_ids\": [\"cred_123\"], \"ttl_seconds\": 1800 }"
+                          - generic [ref=e535]:
+                            - generic [ref=e538]: 响应体
+                            - code [ref=e544]: "{ \"access_token\": \"v4.local....\", \"token_id\": \"uuid\", \"granted_scopes\": [\"credential:read\"], \"credential_ids\": [\"cred_123\"], \"expires_in\": 1800, \"token_type\": \"Bearer\" }"
+                    - heading "POST /api/v1/sandbox/sessions" [level=3] [ref=e429]:
+                      - button "POST /api/v1/sandbox/sessions" [ref=e430] [cursor=pointer]:
+                        - generic [ref=e431]:
+                          - generic [ref=e432]: POST
+                          - code [ref=e433]: /api/v1/sandbox/sessions
+                        - img [ref=e434]
+                    - heading "GET /api/v1/sandbox/sessions" [level=3] [ref=e437]:
+                      - button "GET /api/v1/sandbox/sessions" [ref=e438] [cursor=pointer]:
+                        - generic [ref=e439]:
+                          - generic [ref=e440]: GET
+                          - code [ref=e441]: /api/v1/sandbox/sessions
+                        - img [ref=e442]
+                    - heading "GET /api/v1/sandbox/sessions/:id" [level=3] [ref=e445]:
+                      - button "GET /api/v1/sandbox/sessions/:id" [ref=e446] [cursor=pointer]:
+                        - generic [ref=e447]:
+                          - generic [ref=e448]: GET
+                          - code [ref=e449]: /api/v1/sandbox/sessions/:id
+                        - img [ref=e450]
+                    - heading "POST /api/v1/sandbox/sessions/:id/execute" [level=3] [ref=e453]:
+                      - button "POST /api/v1/sandbox/sessions/:id/execute" [ref=e454] [cursor=pointer]:
+                        - generic [ref=e455]:
+                          - generic [ref=e456]: POST
+                          - code [ref=e457]: /api/v1/sandbox/sessions/:id/execute
+                        - img [ref=e458]
+                    - heading "POST /api/v1/sandbox/sessions/:id/pause" [level=3] [ref=e461]:
+                      - button "POST /api/v1/sandbox/sessions/:id/pause" [ref=e462] [cursor=pointer]:
+                        - generic [ref=e463]:
+                          - generic [ref=e464]: POST
+                          - code [ref=e465]: /api/v1/sandbox/sessions/:id/pause
+                        - img [ref=e466]
+                    - heading "POST /api/v1/sandbox/sessions/:id/resume" [level=3] [ref=e469]:
+                      - button "POST /api/v1/sandbox/sessions/:id/resume" [ref=e470] [cursor=pointer]:
+                        - generic [ref=e471]:
+                          - generic [ref=e472]: POST
+                          - code [ref=e473]: /api/v1/sandbox/sessions/:id/resume
+                        - img [ref=e474]
+                    - heading "DELETE /api/v1/sandbox/sessions/:id" [level=3] [ref=e477]:
+                      - button "DELETE /api/v1/sandbox/sessions/:id" [ref=e478] [cursor=pointer]:
+                        - generic [ref=e479]:
+                          - generic [ref=e480]: DELETE
+                          - code [ref=e481]: /api/v1/sandbox/sessions/:id
+                        - img [ref=e482]
+                    - heading "POST /api/v1/sandbox/sessions/:id/screenshot" [level=3] [ref=e485]:
+                      - button "POST /api/v1/sandbox/sessions/:id/screenshot" [ref=e486] [cursor=pointer]:
+                        - generic [ref=e487]:
+                          - generic [ref=e488]: POST
+                          - code [ref=e489]: /api/v1/sandbox/sessions/:id/screenshot
+                        - img [ref=e490]
+                    - heading "POST /api/v1/sandbox/sessions/:id/export" [level=3] [ref=e493]:
+                      - button "POST /api/v1/sandbox/sessions/:id/export" [ref=e494] [cursor=pointer]:
+                        - generic [ref=e495]:
+                          - generic [ref=e496]: POST
+                          - code [ref=e497]: /api/v1/sandbox/sessions/:id/export
+                        - img [ref=e498]
+                - generic [ref=e500]:
+                  - generic [ref=e503]: 错误码参考
+                  - generic [ref=e505]:
+                    - generic [ref=e506]:
+                      - code [ref=e507]: invalid_request
+                      - generic [ref=e508]: 请求参数错误
+                    - generic [ref=e509]:
+                      - code [ref=e510]: unauthorized
+                      - generic [ref=e511]: 未认证或 Token 过期
+                    - generic [ref=e512]:
+                      - code [ref=e513]: forbidden
+                      - generic [ref=e514]: 权限不足
+                    - generic [ref=e515]:
+                      - code [ref=e516]: not_found
+                      - generic [ref=e517]: 资源不存在
+                    - generic [ref=e518]:
+                      - code [ref=e519]: token_expired
+                      - generic [ref=e520]: Token 已过期
+  - region "Notifications (F8)":
+    - list

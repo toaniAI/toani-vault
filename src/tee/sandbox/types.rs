@@ -273,8 +273,16 @@ pub enum OperationType {
     ExecuteScript,
     /// 等待元素
     Wait,
+    /// 直接发起 HTTP 请求
+    HttpRequest,
     /// 自定义操作
     Custom,
+}
+
+impl OperationType {
+    pub fn requires_browser(self) -> bool {
+        !matches!(self, OperationType::HttpRequest | OperationType::Custom)
+    }
 }
 
 impl std::fmt::Display for OperationType {
@@ -288,6 +296,7 @@ impl std::fmt::Display for OperationType {
             OperationType::Export => write!(f, "export"),
             OperationType::ExecuteScript => write!(f, "execute_script"),
             OperationType::Wait => write!(f, "wait"),
+            OperationType::HttpRequest => write!(f, "http_request"),
             OperationType::Custom => write!(f, "custom"),
         }
     }
@@ -491,5 +500,6 @@ mod tests {
     fn test_operation_type_display() {
         assert_eq!(OperationType::Navigate.to_string(), "navigate");
         assert_eq!(OperationType::Screenshot.to_string(), "screenshot");
+        assert_eq!(OperationType::HttpRequest.to_string(), "http_request");
     }
 }

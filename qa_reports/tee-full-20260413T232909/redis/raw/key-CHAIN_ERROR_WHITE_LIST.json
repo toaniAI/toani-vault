@@ -1,0 +1,12 @@
+{
+  "key": "CHAIN_ERROR_WHITE_LIST",
+  "type": "+set",
+  "ttl": -1,
+  "smembers": [
+    "already known",
+    "already in mempool",
+    "replacement transaction underpriced",
+    "zkMeSBT already exists",
+    "replacement fee too low"
+  ]
+}

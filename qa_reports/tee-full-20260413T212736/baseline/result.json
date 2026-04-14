@@ -1,0 +1,145 @@
+{
+  "run_id": "tee-full-20260413T212736",
+  "case_id": "case01",
+  "case_name": "Environment baseline and TEE health",
+  "target_base_url": "https://dev-credbridge.bitkinetic.com/",
+  "evidence_dir": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/baseline",
+  "started_at": "2026-04-13T13:30:10Z",
+  "finished_at": "2026-04-13T13:30:10Z",
+  "claim_result": "fail",
+  "failure_class": "env",
+  "summary": "Homepage and attestation endpoints are reachable and attestation reports healthy hardware TEE state, but /health, /ready, and /health/detail do not match the repository's backend health/readiness contract on the tested public host.",
+  "first_failure": {
+    "endpoint": "/health",
+    "observed_at": "2026-04-13T13:30:10Z",
+    "expected": {
+      "status_code": 200,
+      "content_type": "application/json",
+      "body_shape": {
+        "status": "alive",
+        "ready": true,
+        "version": "string",
+        "timestamp": "number"
+      }
+    },
+    "observed": {
+      "status_code": 200,
+      "content_type": "application/octet-stream",
+      "body_preview": "healthy"
+    },
+    "classification": "contract_mismatch"
+  },
+  "checks": [
+    {
+      "name": "homepage",
+      "endpoint": "/",
+      "status": "pass",
+      "observed_at": "2026-04-13T13:30:10Z",
+      "http_status": 200,
+      "content_type": "text/html",
+      "summary": "Homepage reachable; static SPA shell titled Toani Vault."
+    },
+    {
+      "name": "health",
+      "endpoint": "/health",
+      "status": "fail",
+      "observed_at": "2026-04-13T13:30:10Z",
+      "http_status": 200,
+      "content_type": "application/octet-stream",
+      "summary": "Returned plain text healthy instead of documented JSON liveness payload.",
+      "classification": "contract"
+    },
+    {
+      "name": "ready",
+      "endpoint": "/ready",
+      "status": "fail",
+      "observed_at": "2026-04-13T13:30:10Z",
+      "http_status": 200,
+      "content_type": "text/html",
+      "summary": "Returned homepage HTML instead of documented readiness JSON.",
+      "classification": "env"
+    },
+    {
+      "name": "health_detail",
+      "endpoint": "/health/detail",
+      "status": "fail",
+      "observed_at": "2026-04-13T13:30:10Z",
+      "http_status": 200,
+      "content_type": "application/octet-stream",
+      "summary": "Returned plain text healthy instead of detailed readiness JSON.",
+      "classification": "contract"
+    },
+    {
+      "name": "attestation_health",
+      "endpoint": "/api/v1/attestation/health",
+      "status": "pass",
+      "observed_at": "2026-04-13T13:30:10Z",
+      "http_status": 200,
+      "content_type": "application/json",
+      "summary": "Ready=true, requested_mode=hardware, effective_mode=hardware, detected_type=Intel SGX, quote_valid=true.",
+      "details": {
+        "requested_mode": "hardware",
+        "effective_mode": "hardware",
+        "root_key_source": "sgx_sealing_key",
+        "detected_type": "Intel SGX",
+        "enclave_state": "running",
+        "quote_valid": true,
+        "quote_expires_at": 1776088900
+      }
+    },
+    {
+      "name": "attestation_status",
+      "endpoint": "/api/v1/attestation/status",
+      "status": "pass",
+      "observed_at": "2026-04-13T13:30:10Z",
+      "http_status": 200,
+      "content_type": "application/json",
+      "summary": "Attestation authenticated and healthy; hardware and remote attestation available.",
+      "details": {
+        "success": true,
+        "status": "authenticated",
+        "health_status": "ready",
+        "hardware_available": true,
+        "remote_attestation_available": true,
+        "quote_valid": true,
+        "last_quote_generated_at": 1776085300
+      }
+    }
+  ],
+  "discovered_routes": {
+    "source_routes": [
+      "/health",
+      "/ready",
+      "/health/detail",
+      "/api/v1/attestation/health",
+      "/api/v1/attestation/status"
+    ],
+    "source_files": [
+      "/Users/yvan/AIWorkspace/credbridge/src/main.rs",
+      "/Users/yvan/AIWorkspace/credbridge/src/api/attestation.rs"
+    ]
+  },
+  "evidence_files": [
+    "commands.txt",
+    "notes.md",
+    "result.json",
+    "homepage.headers.txt",
+    "homepage.body",
+    "homepage.curl-meta.txt",
+    "health.headers.txt",
+    "health.body",
+    "health.curl-meta.txt",
+    "ready.headers.txt",
+    "ready.body",
+    "ready.curl-meta.txt",
+    "health-detail.headers.txt",
+    "health-detail.body",
+    "health-detail.curl-meta.txt",
+    "attestation-health.headers.txt",
+    "attestation-health.body",
+    "attestation-health.curl-meta.txt",
+    "attestation-status.headers.txt",
+    "attestation-status.body",
+    "attestation-status.curl-meta.txt"
+  ]
+}

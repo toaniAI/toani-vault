@@ -1,0 +1,11 @@
+{
+  "name": "09-sandbox-operation",
+  "method": "GET",
+  "url": "https://dev-credbridge.bitkinetic.com/api/v1/sandbox/operations/ef82b293-3956-4ac4-9b72-b1548d8803ff",
+  "timestamp": "2026-04-13T13:44:03Z",
+  "http_code": "200",
+  "curl_exit": 0,
+  "headers_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/09-sandbox-operation.headers",
+  "body_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/09-sandbox-operation.body.json",
+  "stderr_file": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/api-sandbox/raw/09-sandbox-operation.stderr.txt"
+}

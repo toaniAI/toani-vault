@@ -1,0 +1,20 @@
+{
+  "base_url": "https://dev-credbridge.bitkinetic.com",
+  "email": "test-7226@privy.io",
+  "prefix": "tee-full-case04-20260413T212736",
+  "created_token_id": "019d8711-29fe-7d61-a4e8-18e21f1b44a4",
+  "cleanup_supported": false,
+  "cleanup_status": "ui_not_supported",
+  "constraints": {
+    "scope_badges": [
+      "credential:read",
+      "credential:read",
+      "此页面只会签发 `credential:read`，并强制要求选择可用凭证白名单。"
+    ],
+    "submit_initially_disabled": true,
+    "credential_card_count": 3,
+    "submit_after_selection_disabled": false,
+    "scope_panel_text": "\n    TOANI VAULTTEE protectedSecurity StatusPassedCryptoAES-256AuditimmudbMain FeaturesCredentialsTokensDeveloper CenterAdministrationUsersToani.ai runtimeSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.rtk-bug-18218layout.role.ownerToggle SidebarHomeTokensTrusted credential operations workspaceEnglishrtk-bug-18218layout.role.ownerPASETO v4.localTokensManage API access tokens, issuance, verification, and usage guidance from one page.Least privilegecredential:readGenerate tokenIssue a token after selecting scopes and expiry. The full token is shown only once after creation.1 scopeRead credentialsRead credentialsView credential metadatacredential:read允许使用的 Credentials *仅沙箱内可解析这些凭证ui-tee-real-20260413-185715username_password019d868b-272a-7333-92b7-b21d5a3241b5Selectedtee-real-20260413-185715username_password019d8684-529b-7753-8e4f-34d9a99296b0可选live-chain-20260413username_password019d8649-c57c-7721-88f9-becb31a8ef0a可选Token expiry1 hour15 minutes1 hour6 hours1 day7 daysGenerate tokenBefore issuanceConfirm the use case, scope, and expiry before issuing a token.Least privilege此页面只会签发 `credential:read`，并强制要求选择可用凭证白名单。• 只能在 Dashboard 手工获取 token。• token 仅用于 sandbox 占位符解析与注入。• 未列入白名单的凭证不会在沙箱内被解析。\n  \n\n"
+  },
+  "blocker": null
+}

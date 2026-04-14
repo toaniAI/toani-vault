@@ -1,0 +1,12 @@
+rtk rg -n 'credential_id|token_id|session_id|operation_id|audit|sandbox_session_id|sandbox_id|access_token_id|fresh_session_id' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909 -g 'result.json' -g 'residual-test-data.md'
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/residual-test-data.md
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-auth/result.json
+rtk sed -n '1,240p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-credentials/result.json
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-tokens/result.json
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/api-sandbox/result.json
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-tokens/result.json
+rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/web-credentials/result.json
+rtk env PGPASSWORD=*** psql -h 10.11.25.9 -p 15432 -U dn -d credbridge -At -c "select table_name from information_schema.tables where table_schema='credbridge_vault' order by table_name;"
+rtk env PGPASSWORD=*** psql -h 10.11.25.9 -p 15432 -U dn -d credbridge -At -c "select table_name||':'||string_agg(column_name,', ' order by ordinal_position) from information_schema.columns where table_schema='credbridge_vault' and table_name in ('api_tokens','auth_sessions','audit_logs','auth_audit_logs','sandbox_sessions','sandbox_operations','scope_tokens') group by table_name order by table_name;"
+rtk bash /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/db/run_case11_queries.sh
+rtk env PGPASSWORD=*** psql -h 10.11.25.9 -p 15432 -U dn -d credbridge -At -F $'\\t' -c "select id, tee_context_id, status, credential_id, created_at from credbridge_vault.sandbox_sessions where tee_context_id = '3bb759de-662d-4fee-b458-d604552ff237';" > /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/db/raw/sandbox_context_lookup.tsv

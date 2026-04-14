@@ -1,0 +1,32 @@
+English
+Toani.ai secure vault
+Zero-trust credential operations for the Toani Vault control surface.
+
+Sign in with an email verification code to access the secure credential management platform. Email authentication is powered by Privy.
+
+Secure Credential Vault
+
+TEE-protected operations
+
+SGX / SEV attested
+PASETO v4
+Immutable audit
+Toani Vault
+
+Use an email verification code to access your secure credential vault
+
+SECURITY
+TEE attested
+SGX / SEV attested
+PASETO v4
+Immutable audit
+Sign in with Email Code
+
+Privy sends a one-time verification code to your email for secure sign-in
+
+All credentials are encrypted inside a TEE
+
+Toani Vault v1.0 · Toani.ai enterprise-grade security
+
+Log in or sign up
+Submit

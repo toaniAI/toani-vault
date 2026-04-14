@@ -1,0 +1,14 @@
+a187c233-2098-4ce8-bfef-35bc8eb9193b	1f481c4c-2a4e-4900-a92a-953bd60c0405	navigate	failed	019d8714-3949-7f32-8804-9c593f7c7a3e	进程错误: browser runtime closed without response (status: exit status: 255): [I][2026-04-13T15:56:23+0000] Mode: STANDALONE_ONCE
+[I][2026-04-13T15:56:23+0000] Jail parameters: hostname:'NSJAIL', chroot:'', process:'node', bind:[::]:0, max_conns:0, max_conns_per_ip:0, time_limit:600, daemonize:false, clone_newnet:true, clone_newuser:true, clone_newns:true, clone_newpid:true, clone_newipc:true, clone_newuts:true, cgroupv2:false, keep_caps:false, disable_no_new_privs:false, max_cpus:1
+[I][2026-04-13T15:56:23+0000] Mount: '/bin' -> '/bin' type:'' options:''
+[I][2026-04-13T15:56:23+0000] Mount: '/lib' -> '/lib' type:'' options:''
+[I][2026-04-13T15:56:23+0000] Mount: '/lib64' -> '/lib64' type:'' options:''
+[I][2026-04-13T15:56:23+0000] Mount: '/usr' -> '/usr' type:'' options:''
+[I][2026-04-13T15:56:23+0000] Mount: '/tmp/sandbox/3bb759de-662d-4fee-b458-d604552ff237' -> '/tmp/sandbox/3bb759de-662d-4fee-b458-d604552ff237' type:'' options:''
+[I][2026-04-13T15:56:23+0000] Mount: '/proc' type:'proc' options:'' dir:true
+[I][2026-04-13T15:56:23+0000] Uid map: inside_uid:1000 outside_uid:0 count:1 newuidmap:true
+[W][2026-04-13T15:56:23+0000][32] logParams():313 Process will be UID/EUID=0 in the global user namespace, and will have user root-level access to files
+[I][2026-04-13T15:56:23+0000] Gid map: inside_gid:1000 outside_gid:0 count:1 newgidmap:true
+[W][2026-04-13T15:56:23+0000][32] logParams():323 Process will be GID/EGID=0 in the global user namespace, and will have group root-level access to files
+[W][2026-04-13T15:56:23+0000][32] preparePolicy():125 Could not compile policy: 10:3: syntax error, unexpected '}', expecting IDENTIFIER or SYSCALL
+[F][2026-04-13T15:56:23+0000][32] main():359 Couldn't prepare sandboxing policy	2026-04-13 15:56:23.411248+00	2026-04-13 15:56:23.418625+00	7	2026-04-13 15:56:23.411656+00

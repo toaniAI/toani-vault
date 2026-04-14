@@ -1,0 +1,12 @@
+rtk rg -n "health/detail|attestation|/ready|/health|TEE|tee" docs src frontend cli -g '!target'
+rtk sed -n '1,120p' 'docs/03-API 参考/REST-API.md'
+rtk sed -n '1,320p' 'docs/03-API 参考/ATTESTATION-API.md'
+rtk mkdir -p /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/baseline/raw
+rtk bash -lc 'base="https://dev-credbridge.bitkinetic.com"; out="/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/baseline/raw"; curl -sS -D "$out/home.headers.txt" -o "$out/home.body.html" "$base/"; curl -sS -D "$out/health.headers.txt" -o "$out/health.body.json" "$base/health"; curl -sS -D "$out/ready.headers.txt" -o "$out/ready.body.json" "$base/ready"; curl -sS -D "$out/health_detail.headers.txt" -o "$out/health_detail.body.json" "$base/health/detail"; curl -sS -D "$out/attestation_health.headers.txt" -o "$out/attestation_health.body.json" "$base/api/v1/attestation/health"; curl -sS -D "$out/attestation_status.headers.txt" -o "$out/attestation_status.body.json" "$base/api/v1/attestation/status"'
+rtk bash -lc 'base="https://dev-credbridge.bitkinetic.com"; out="/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/baseline/raw"; curl -sS -D "$out/attestation_report.headers.txt" -o "$out/attestation_report.body.json" "$base/api/v1/attestation/report"; curl -sS -D "$out/attestation_quote.headers.txt" -o "$out/attestation_quote.body.json" "$base/api/v1/attestation/quote"'
+rtk rg -n "route\\(\\s*\\\"/(health|ready|health/detail)|health/detail|/ready\\\"|health_handler|ready_handler|detail_handler" src
+rtk sed -n '1,220p' src/main.rs
+rtk sed -n '930,1095p' src/main.rs
+rtk sed -n '1095,1155p' src/main.rs
+rtk bash -lc 'base="https://dev-credbridge.bitkinetic.com"; out="/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T232909/baseline/raw"; curl -sS -D "$out/api_root.headers.txt" -o "$out/api_root.body.json" "$base/api/v1/"; curl -sS -I "$base/ready" > "$out/ready.head.txt"; curl -sS -I "$base/health/detail" > "$out/health_detail.head.txt"; curl -sS -I "$base/health" > "$out/health.head.txt"'
+rtk date '+%Y-%m-%dT%H:%M:%S%z'

@@ -1,0 +1,412 @@
+[
+  {
+    "label": "01_auth_session",
+    "meta": {
+      "http_code": "200",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.076851"
+    },
+    "sample": {
+      "user": {
+        "id": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+        "display_name": "rtk-bug-18218",
+        "status": "active",
+        "onboarding_completed": true,
+        "default_tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "identities": [
+          {
+            "provider": "privy",
+            "subject": "did:privy:cmntx9sli00160clgsxmx4k34",
+            "wallet_address": null,
+            "email": null,
+            "is_verified": true,
+            "is_primary": true
+          }
+        ]
+      },
+      "session": {
+        "id": "019d8712-5ebf-7072-8960-892b347e58d6",
+        "session_token": "ouNLoSQuZJy-PR3pS4FKE4DVh-OJDlAZ6rtzdeBg4Kw",
+        "expires_at": "2026-04-13T14:40:21.311302636+00:00",
+        "mfa_status": "not_required"
+      },
+      "memberships": [
+        {
+          "id": "019d8414-bfb0-7f23-a2e7-6fc1184d3d48",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "role": "owner",
+          "status": "active",
+          "scopes": [
+            "admin",
+            "tenant:read",
+            "tenant:write",
+            "tenant:admin",
+            "tenant:delete",
+            "credential:read",
+            "credential:decrypt",
+            "credential:write",
+            "credential:delete",
+            "sandbox:read",
+            "sandbox:write",
+            "sandbox:execute",
+            "audit:read",
+            "members:read",
+            "members:write",
+            "members:invite",
+            "invitations:read",
+            "invitations:write",
+            "tokens:read",
+            "tokens:write",
+            "tokens:revoke",
+            "users:manage",
+            "roles:manage"
+          ],
+          "joined_at": "2026-04-12T23:44:05.552737+00:00"
+        }
+      ],
+      "current_tenant": {
+        "id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "name": null
+      },
+      "current_membership": {
+        "id": "019d8414-bfb0-7f23-a2e7-6fc1184d3d48",
+        "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "role": "owner",
+        "status": "active",
+        "scopes": [
+          "admin",
+          "tenant:read",
+          "tenant:write",
+          "tenant:admin",
+          "tenant:delete",
+          "credential:read",
+          "credential:decrypt",
+          "credential:write",
+          "credential:delete",
+          "sandbox:read",
+          "sandbox:write",
+          "sandbox:execute",
+          "audit:read",
+          "members:read",
+          "members:write",
+          "members:invite",
+          "invitations:read",
+          "invitations:write",
+          "tokens:read",
+          "tokens:write",
+          "tokens:revoke",
+          "users:manage",
+          "roles:manage"
+        ],
+        "joined_at": "2026-04-12T23:44:05.552737+00:00"
+      }
+    }
+  },
+  {
+    "label": "02_auth_me",
+    "meta": {
+      "http_code": "200",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/me",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.077049"
+    },
+    "sample": {
+      "userId": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+      "tenantId": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+      "username": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+      "scopes": [
+        "admin",
+        "tenant:read",
+        "tenant:write",
+        "tenant:admin",
+        "tenant:delete",
+        "credential:read",
+        "credential:decrypt",
+        "credential:write",
+        "credential:delete",
+        "sandbox:read",
+        "sandbox:write",
+        "sandbox:execute",
+        "audit:read",
+        "members:read",
+        "members:write",
+        "members:invite",
+        "invitations:read",
+        "invitations:write",
+        "tokens:read",
+        "tokens:write",
+        "tokens:revoke",
+        "users:manage",
+        "roles:manage"
+      ],
+      "locale": "zh-CN",
+      "user": {
+        "id": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+        "display_name": "rtk-bug-18218",
+        "status": "active",
+        "onboarding_completed": true,
+        "default_tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "identities": [
+          {
+            "provider": "privy",
+            "subject": "did:privy:cmntx9sli00160clgsxmx4k34",
+            "wallet_address": null,
+            "email": null,
+            "is_verified": true,
+            "is_primary": true
+          }
+        ]
+      },
+      "currentTenant": {
+        "id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "name": null
+      },
+      "currentMembership": {
+        "id": "019d8414-bfb0-7f23-a2e7-6fc1184d3d48",
+        "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "role": "owner",
+        "status": "active",
+        "scopes": [
+          "admin",
+          "tenant:read",
+          "tenant:write",
+          "tenant:admin",
+          "tenant:delete",
+          "credential:read",
+          "credential:decrypt",
+          "credential:write",
+          "credential:delete",
+          "sandbox:read",
+          "sandbox:write",
+          "sandbox:execute",
+          "audit:read",
+          "members:read",
+          "members:write",
+          "members:invite",
+          "invitations:read",
+          "invitations:write",
+          "tokens:read",
+          "tokens:write",
+          "tokens:revoke",
+          "users:manage",
+          "roles:manage"
+        ],
+        "joined_at": "2026-04-12T23:44:05.552737+00:00"
+      },
+      "memberships": [
+        {
+          "id": "019d8414-bfb0-7f23-a2e7-6fc1184d3d48",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "role": "owner",
+          "status": "active",
+          "scopes": [
+            "admin",
+            "tenant:read",
+            "tenant:write",
+            "tenant:admin",
+            "tenant:delete",
+            "credential:read",
+            "credential:decrypt",
+            "credential:write",
+            "credential:delete",
+            "sandbox:read",
+            "sandbox:write",
+            "sandbox:execute",
+            "audit:read",
+            "members:read",
+            "members:write",
+            "members:invite",
+            "invitations:read",
+            "invitations:write",
+            "tokens:read",
+            "tokens:write",
+            "tokens:revoke",
+            "users:manage",
+            "roles:manage"
+          ],
+          "joined_at": "2026-04-12T23:44:05.552737+00:00"
+        }
+      ],
+      "mfaStatus": "not_required"
+    }
+  },
+  {
+    "label": "03_auth_memberships",
+    "meta": {
+      "http_code": "200",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/memberships",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.087675"
+    },
+    "sample": {
+      "memberships": [
+        {
+          "id": "019d8414-bfb0-7f23-a2e7-6fc1184d3d48",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "role": "owner",
+          "status": "active",
+          "scopes": [
+            "admin",
+            "tenant:read",
+            "tenant:write",
+            "tenant:admin",
+            "tenant:delete",
+            "credential:read",
+            "credential:decrypt",
+            "credential:write",
+            "credential:delete",
+            "sandbox:read",
+            "sandbox:write",
+            "sandbox:execute",
+            "audit:read",
+            "members:read",
+            "members:write",
+            "members:invite",
+            "invitations:read",
+            "invitations:write",
+            "tokens:read",
+            "tokens:write",
+            "tokens:revoke",
+            "users:manage",
+            "roles:manage"
+          ],
+          "joined_at": "2026-04-12T23:44:05.552737+00:00"
+        }
+      ]
+    }
+  },
+  {
+    "label": "04_invalid_token_auth_me",
+    "meta": {
+      "http_code": "401",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/me",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.071183"
+    },
+    "sample": {
+      "error": "invalid_token",
+      "i18n": {
+        "key": "errors.auth.invalid_token",
+        "params": {
+          "reason": "\u4f1a\u8bdd\u672a\u627e\u5230: 00000000-0000-0000-0000-000000000000"
+        }
+      },
+      "locale": "zh-CN",
+      "message": "Token \u9a8c\u8bc1\u5931\u8d25: \u4f1a\u8bdd\u672a\u627e\u5230: 00000000-0000-0000-0000-000000000000"
+    }
+  },
+  {
+    "label": "05_missing_param_auth_session",
+    "meta": {
+      "http_code": "400",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.076663"
+    },
+    "sample": {
+      "error": "invalid_request",
+      "message": "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef",
+      "error_description": "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef",
+      "i18n": {
+        "key": "errors.auth.invalid_request",
+        "params": {
+          "detail": "Failed to deserialize the JSON body into the target type: missing field `privy_access_token` at line 1 column 2"
+        }
+      },
+      "locale": "zh-CN"
+    }
+  },
+  {
+    "label": "06_access_token_create",
+    "meta": {
+      "http_code": "400",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/access-token",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.087679"
+    },
+    "sample": {
+      "error": "invalid_request",
+      "i18n": {
+        "key": "errors.api.invalid_request"
+      },
+      "locale": "zh-CN",
+      "message": "At least one credential_id is required",
+      "success": false
+    }
+  },
+  {
+    "label": "07_access_token_create_current_equivalent",
+    "meta": {
+      "http_code": "200",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/access-token",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.079057"
+    },
+    "sample": {
+      "data": {
+        "access_token": "v4.local.cRQXrHEQd0rxW1TnCni_kUa4-83Dp5Wdf8oMHpr8wDC7AtOQKFdBXHhb57td-IhJid4zAne6CBXtYURCovNSEzvsSUXRwnadqY4xgmQ8phe9uXLVqzSp6l6jdpcLFyD79UCW01CSAY9PIY21Zs7jL3me4DPD8Mm38h3QkfWL09TAi-RDjogggl5e92vdAVNASpPYlWyU_q8fYmrPshQuairB_9gQw79c7yCyBDMes4S_dzhmi4sCyZpr1vrxr9GmsG9W1Tj59X90nBfjVUP_SwYpWmZ3hb8tOQt6rbH6PtmqE-VsRH5b5VDZe0EAvO1h1M8vrlG1RzMf2hlCeFVVOAoQGD3tMNanCFnLWWCe2N86kR6OBTYbzfyaK6GAiKFjL6tozkQqmbJr1bpIqtRQqFDxI71wg5-Ox-u4v1_XjO0RaAL6T-Sdw5L43O37q7_P8l850Ypa74sGKdYOiAmwUwu4L0an-INAeW3KduG_Ft_zca5PzCkBqV3kkL5pS9mjEOjr10dZ3fP9kYFGVYMnJ_vLdZo7j0rgcOYk5JFpCDSBXoyKvSJs2VWOa9Tv0FEMq6C7x4bLbZVdlmXixQ2QDguKZ2Wt5fT2PBqYKqgYX3Ubd0V2dFr9oHoJg70jYPs-Mp3W9ODutZG__KhAD3IXB7ynZDz0XrqjlUUrK671pQ4f1BrP3Z4TKyBJPecxxMPdv-NbTrqq8rUGurTxtSIZIFpI9kRuJxXpiRY",
+        "credential_ids": [
+          "019d868b-272a-7333-92b7-b21d5a3241b5"
+        ],
+        "display_name": null,
+        "expires_at": 1776088522,
+        "expires_in": 900,
+        "granted_scopes": [
+          "credential:read"
+        ],
+        "issued_from": "access_token",
+        "revoked_at": null,
+        "subject_type": "user",
+        "token_id": "019d8712-61c1-7432-97b2-783c9921aa60",
+        "token_type": "Bearer"
+      },
+      "success": true
+    }
+  },
+  {
+    "label": "08_current_equivalent_token_auth_me",
+    "meta": {
+      "http_code": "403",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/me",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.084109"
+    },
+    "sample": {
+      "error": "forbidden",
+      "message": "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef",
+      "error_description": "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef",
+      "i18n": {
+        "key": "errors.auth.insufficient_permissions"
+      },
+      "locale": "zh-CN"
+    }
+  },
+  {
+    "label": "09_current_equivalent_token_access_token_retry",
+    "meta": {
+      "http_code": "403",
+      "content_type": "application/json",
+      "url_effective": "https://dev-credbridge.bitkinetic.com/api/v1/auth/access-token",
+      "remote_ip": "10.11.25.9",
+      "time_total": "0.070157"
+    },
+    "sample": {
+      "error": "forbidden",
+      "i18n": {
+        "key": "errors.api.forbidden"
+      },
+      "locale": "zh-CN",
+      "message": "Missing required scope: tokens:write",
+      "success": false
+    }
+  }
+]

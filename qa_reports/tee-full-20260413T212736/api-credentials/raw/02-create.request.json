@@ -1,0 +1,8 @@
+{
+  "service_id": "tee-full-case07-20260413T212736",
+  "credential_type": "username_password",
+  "plaintext_data": {
+    "username": "tee-full-case07-20260413T212736-user",
+    "password": "secret-case07-20260413"
+  }
+}

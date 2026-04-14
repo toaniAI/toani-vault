@@ -1,0 +1,45 @@
+   entity    |                  id                  |                        service_id                        | state |       created_at       |          updated_at           
+-------------+--------------------------------------+----------------------------------------------------------+-------+------------------------+-------------------------------
+ credentials | 019d8714-3949-7f32-8804-9c593f7c7a3e | tee-full-case10-20260413T212736                          | false | 2026-04-13 13:42:22+00 | 2026-04-13 13:42:22+00
+ credentials | 019d8787-9b6e-7ff2-b785-1b04f9a5132d | tee-full-20260413T232909-webcred-20260413154821          | true  | 2026-04-13 15:48:24+00 | 2026-04-13 15:48:30.710712+00
+ credentials | 019d878b-f659-7bc0-8aaa-a252f8a8a02f | tee-full-case07-20260413T232909-service-20260413T155309Z | true  | 2026-04-13 15:53:09+00 | 2026-04-13 15:53:10.561458+00
+(3 rows)
+
+ entity | id | credential_id | scopes | revoked_at | expires_at | issued_at | usage_count 
+--------+----+---------------+--------+------------+------------+-----------+-------------
+(0 rows)
+
+      entity      |                  id                  |            credential_id             |   status   |                original_intent                 |          created_at           |          expires_at           |         terminated_at         
+------------------+--------------------------------------+--------------------------------------+------------+------------------------------------------------+-------------------------------+-------------------------------+-------------------------------
+ sandbox_sessions | 1f481c4c-2a4e-4900-a92a-953bd60c0405 | 019d8714-3949-7f32-8804-9c593f7c7a3e | terminated | tee-full-case09-20260413T232909-navigate-smoke | 2026-04-13 15:56:23.120452+00 | 2026-04-13 16:26:23.120034+00 | 2026-04-13 15:56:23.618448+00
+(1 row)
+
+       entity       |                  id                  |              session_id              | operation_type | status |          started_at           |         completed_at          |                                                                                                                                                                             error_message                                                                                                                                                                             
+--------------------+--------------------------------------+--------------------------------------+----------------+--------+-------------------------------+-------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ sandbox_operations | a187c233-2098-4ce8-bfef-35bc8eb9193b | 1f481c4c-2a4e-4900-a92a-953bd60c0405 | navigate       | failed | 2026-04-13 15:56:23.411248+00 | 2026-04-13 15:56:23.418625+00 | 进程错误: browser runtime closed without response (status: exit status: 255): [I][2026-04-13T15:56:23+0000] Mode: STANDALONE_ONCE                                                                                                                                                                                                                                    +
+                    |                                      |                                      |                |        |                               |                               | [I][2026-04-13T15:56:23+0000] Jail parameters: hostname:'NSJAIL', chroot:'', process:'node', bind:[::]:0, max_conns:0, max_conns_per_ip:0, time_limit:600, daemonize:false, clone_newnet:true, clone_newuser:true, clone_newns:true, clone_newpid:true, clone_newipc:true, clone_newuts:true, cgroupv2:false, keep_caps:false, disable_no_new_privs:false, max_cpus:1+
+                    |                                      |                                      |                |        |                               |                               | [I][2026-04-13T1
+(1 row)
+
+    entity     |                  id                  |               user_id                | active_membership_id |          expires_at           |          revoked_at           |          created_at           
+---------------+--------------------------------------+--------------------------------------+----------------------+-------------------------------+-------------------------------+-------------------------------
+ auth_sessions | 019d8782-40de-7db1-9e11-d133749ba8a0 | 019d7b1d-42e7-7071-bdae-63b777db2b6c |                      | 2026-04-13 16:42:33.694236+00 | 2026-04-13 15:43:43.105867+00 | 2026-04-13 15:42:33.694236+00
+ auth_sessions | 019d878b-ba47-7962-9180-95a0a541a870 | 019d7b1d-42e7-7071-bdae-63b777db2b6c |                      | 2026-04-13 16:52:54.599145+00 |                               | 2026-04-13 15:52:54.599145+00
+ auth_sessions | 019d878b-f5f5-7b61-8925-58c82d141ae1 | 019d7b1d-42e7-7071-bdae-63b777db2b6c |                      | 2026-04-13 16:53:09.877241+00 |                               | 2026-04-13 15:53:09.877241+00
+ auth_sessions | 019d878e-e873-7c21-9e24-030937ed5509 | 019d7b1d-42e7-7071-bdae-63b777db2b6c |                      | 2026-04-13 16:56:23.027367+00 |                               | 2026-04-13 15:56:23.027367+00
+(4 rows)
+
+         created_at         | action |    event_type     | outcome |                                                                                                          event_data                                                                                                          | metadata 
+----------------------------+--------+-------------------+---------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------
+ 2026-04-13 15:53:58.117+00 |        | token_revoke      | success | {"id": "019d878c-b265-7280-a53f-a6bae70c63ec", "action": "token_revoke", "params": [["details", {"plain": "{\"audit_event\":\"access_token_revoked\",\"issued_from\":\"access_token\",\"revoked_by\":\"019d7b1d-42e7-7071-bd | 
+ 2026-04-13 15:53:57.088+00 |        | token_issue       | success | {"id": "019d878c-ae60-7aa0-939e-0e36f3d839b3", "action": "token_issue", "params": [["details", {"plain": "{\"credential_ids\":[\"019d8714-3949-7f32-8804-9c593f7c7a3e\"],\"expires_in\":900,\"issued_from\":\"access_token\" | 
+ 2026-04-13 15:53:10.664+00 |        | credential_access | success | {"id": "019d878b-f908-72e3-8d4f-1e937c8b3b5c", "action": "credential_access", "params": [["credential_id", {"plain": "019d878b-f659-7bc0-8aaa-a252f8a8a02f"}], ["tenant_id", {"plain": "019d8414-bf83-7641-a3fb-ad93d58715bd | 
+ 2026-04-13 15:53:10.566+00 |        | credential_delete | success | {"id": "019d878b-f8a6-7932-8bc4-2d570ca8ae8e", "action": "credential_delete", "params": [["credential_id", {"plain": "019d878b-f659-7bc0-8aaa-a252f8a8a02f"}], ["tenant_id", {"plain": "019d8414-bf83-7641-a3fb-ad93d58715bd | 
+ 2026-04-13 15:53:10.273+00 |        | token_issue       | success | {"id": "019d878b-f781-7b51-bb3f-078aed03787e", "action": "token_issue", "params": [["details", {"plain": "{\"credential_ids\":[\"019d878b-f659-7bc0-8aaa-a252f8a8a02f\"],\"expires_in\":900,\"issued_from\":\"access_token\" | 
+ 2026-04-13 15:53:10.181+00 |        | credential_access | success | {"id": "019d878b-f725-7ed3-9db0-6b4bf34a1a6c", "action": "credential_access", "params": [["credential_id", {"plain": "019d878b-f659-7bc0-8aaa-a252f8a8a02f"}], ["tenant_id", {"plain": "019d8414-bf83-7641-a3fb-ad93d58715bd | 
+ 2026-04-13 15:53:09.978+00 |        | credential_create | success | {"id": "019d878b-f65a-7c91-af1a-f47bfbc2327d", "action": "credential_create", "params": [["credential_id", {"plain": "019d878b-f659-7bc0-8aaa-a252f8a8a02f"}], ["tenant_id", {"plain": "019d8414-bf83-7641-a3fb-ad93d58715bd | 
+ 2026-04-13 15:48:30.712+00 |        | credential_delete | success | {"id": "019d8787-b378-7301-a68f-4f25e80ed0e3", "action": "credential_delete", "params": [["credential_id", {"plain": "019d8787-9b6e-7ff2-b785-1b04f9a5132d"}], ["tenant_id", {"plain": "019d8414-bf83-7641-a3fb-ad93d58715bd | 
+ 2026-04-13 15:48:24.56+00  |        | credential_create | success | {"id": "019d8787-9b70-7fc0-b7c6-2d42242a1ff3", "action": "credential_create", "params": [["credential_id", {"plain": "019d8787-9b6e-7ff2-b785-1b04f9a5132d"}], ["tenant_id", {"plain": "019d8414-bf83-7641-a3fb-ad93d58715bd | 
+(9 rows)
+
+

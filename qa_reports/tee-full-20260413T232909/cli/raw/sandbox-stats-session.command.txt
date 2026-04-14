@@ -1,0 +1,1 @@
+node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js --base-url https://dev-credbridge.bitkinetic.com/ --token nPSWlMxCNMLKLOBkxbQkgBSJrFDQVtF1oAG152v55F4 sandbox stats

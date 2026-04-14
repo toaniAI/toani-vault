@@ -1,0 +1,516 @@
+{
+  "caseId": "case02",
+  "runId": "tee-full-20260413T212736",
+  "baseUrl": "https://dev-credbridge.bitkinetic.com",
+  "actor": {
+    "email": "test-7226@privy.io"
+  },
+  "startedAt": "2026-04-13T13:31:25.360Z",
+  "login": {
+    "before": {
+      "url": "https://dev-credbridge.bitkinetic.com/login",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/before-login.png"
+    },
+    "after": {
+      "url": "https://dev-credbridge.bitkinetic.com/credentials",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/after-login.png"
+    },
+    "landingUrl": "https://dev-credbridge.bitkinetic.com/credentials",
+    "landingTitle": "Toani Vault"
+  },
+  "session": {
+    "backendSessionToken": "DBeD-J1RSwFhqbag4idIzwituwXsz6tWfGNnFsnInLw",
+    "cookies": [
+      {
+        "name": "_cfuvid",
+        "value": "8OT_7v2y4BBWRjxrYUSmlETP175fiuxyb3ICsF6Bcec-1776087087.4664145-1.0.1.1-MF.steXDS8kfhDKszq5g20q7Phm_pD_B_PFbFPoDLvU",
+        "domain": ".privy.io",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      },
+      {
+        "name": "cf_clearance",
+        "value": "eB9EZZi9tKqKajbgWbX4wAmm91fmxDn7JVzd_c1rP.I-1776087091-1.2.1.1-d8L9FFQ9PwKeC7Imd.88tU7KxDYHVvfedSsrb70ppcLFUwq7WFnii7t1z7PO7xB7wDajEGDz_HGzsBc3yNi6DsYS6iGZQbcLsid5YG0YtdSEpnnc03BjC_ubRTMssWPXpy6dAb2kGmSIAAI12xOHwPRO9nxhq_.kaCSUNKt92LtSo76VxytoomQt3zxa.sEahe3b8zUvyBCSuD_ocHlPmxonLppadsD0XyAyry9mAc5veRGK9Ky3wjJ2vQgaw2OladComiHF64q1PwFOxpIt7gZoveUJHNS_Gemv7KQIMpxUBh4v0iBEiAnSTeM2Bbxnk_cJIYHFoS..bxgP2Ci2sg",
+        "domain": ".privy.io",
+        "path": "/",
+        "expires": 1807623091.133462,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None",
+        "partitionKey": "https://bitkinetic.com",
+        "_crHasCrossSiteAncestor": true
+      },
+      {
+        "name": "__cf_bm",
+        "value": "M3qPIghJ9YTewsCEWP54kiJohIptZxhpOyNCpqOuaek-1776087091-1.0.1.1-Zxy6gnhJLglr5Ng_xpIsIylVolXTbM3iHBnt3wRO067TTF_YVC5vYAwE_xRbPwM2xpyYhndEjG0UZiTfX5lFh7D.zbj.AI212brYBlYs5i8",
+        "domain": ".privy.io",
+        "path": "/",
+        "expires": 1776088891.133813,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      },
+      {
+        "name": "privy-session",
+        "value": "t",
+        "domain": "dev-credbridge.bitkinetic.com",
+        "path": "/",
+        "expires": 1778679107,
+        "httpOnly": false,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "privy-token",
+        "value": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54OGVtbGowMWY4MGNqc3NudjhxamVsIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwODcxMDcsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzUwN30._oXjzMYls0brrnfoP_zBUwmCmUQs7ssAdp1ZFBHQRJFjQNqeHwC2Cs-jR4W-D0pE_HSNMPUPCLP6NoCMAa6bYQ",
+        "domain": "dev-credbridge.bitkinetic.com",
+        "path": "/",
+        "expires": 1776173507,
+        "httpOnly": false,
+        "secure": true,
+        "sameSite": "Strict"
+      }
+    ],
+    "storage": {
+      "localStorage": {
+        "base-acc-sdk.store": "{\"state\":{\"chains\":[],\"keys\":{},\"account\":{},\"spendPermissions\":[],\"config\":{\"version\":\"1.1.1\",\"metadata\":{\"appName\":\"Toani Vault\",\"appLogoUrl\":\"\",\"appChainIds\":[1,1,11155111,17000,42161,421614,10,11155420,137,80002,42220,44787,314,314159,8453,84532,80085,56,43419,13371,42,59144,59140,43114,43113,1868,130,7777777,999,999999999,690,17069]},\"preference\":{\"telemetry\":false}}},\"version\":0}",
+        "privy:sent:cmniaifov006t0cl1af6l5xqs:8125845997447003": "t",
+        "privy:refresh_token": "\"o2ZaZVrX3oaeXz4LXp_NL27mSJcpH2DFQC1yzXwyLAVRqTUzQMCUK948XDsHcpHUCI2n3XCi7MzTLtPvGTWLKA\"",
+        "auth-storage": "{\"state\":{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"status\":\"active\",\"displayName\":\"rtk-bug-18218\",\"defaultTenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"onboardingCompleted\":true,\"identities\":[{\"provider\":\"privy\",\"walletAddress\":null,\"email\":null,\"isPrimary\":true,\"mfaVerified\":false}],\"primaryIdentity\":{\"provider\":\"privy\",\"walletAddress\":null,\"email\":null,\"isPrimary\":true,\"mfaVerified\":false},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}],\"activeMembership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joinedAt\":\"2026-04-12T23:44:05.552737+00:00\"}],\"currentTenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"onboardingCompleted\":true},\"version\":0}",
+        "privy:connections": "[{\"address\":\"0x4371969640Fd5Cd3d0F5eF3F2B91B513A5F84cb7\",\"connectorType\":\"embedded\",\"walletClientType\":\"privy\",\"connectedAt\":1776087107266,\"id\":\"io.privy.wallet\"}]",
+        "privy:caid": "\"c8dcb056-a5cd-4353-b968-835e11fb8bee\"",
+        "privy:cmniaifov006t0cl1af6l5xqs:recent-login-method": "\"email\"",
+        "privy:token": "\"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54OGVtbGowMWY4MGNqc3NudjhxamVsIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwODcxMDcsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzUwN30._oXjzMYls0brrnfoP_zBUwmCmUQs7ssAdp1ZFBHQRJFjQNqeHwC2Cs-jR4W-D0pE_HSNMPUPCLP6NoCMAa6bYQ\"",
+        "privy:pat": "\"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueDhlbWxqMDFmODBjanNzbnY4cWplbCIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDg3MTA3LCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE3MzUwN30.gAzck3g6iVWgOKZZuFBZ59vwULOZgz3bmzsAjbI9FDVYFTeb8VDDGgnZbNdm0kqcCmbvcZbM7EOcd8JfBjhCrg\""
+      },
+      "sessionStorage": {}
+    }
+  },
+  "pages": {
+    "credentials": {
+      "requestedRoute": "/credentials",
+      "finalUrl": "https://dev-credbridge.bitkinetic.com/credentials",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/credentials.png",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nCredentials\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nTEE PROTECTED\nCredentials\n\nSecurely store and manage your sensitive credentials and keys.\n\nFilter\nNew credential\nTEE Encryption Protection\nAll credentials are encrypted with AES-256-GCM and stored inside the trusted TEE runtime.\nSecure\n\nTotal credentials\n\n3\n\nPassword credentials\n\n3\n\nAPI keys\n\n0\n\nOAuth tokens\n\n0\n\nFilters\nFilter by service ID, credential type, and validity.\nDefault view\nShow filters\nCredential List\nShowing 3 results\n3 total\nui-tee-real-20260413-185715\nUsername / Password\nID: 019d868b...\nCreated 4/13/2026, 7:12:39 PM\nDelete\ntee-real-20260413-185715\nUsername / Password\nID: 019d8684...\nCreated 4/13/2026, 7:05:12 PM\nDelete\nlive-chain-20260413\nUsername / Password\nID: 019d8649...\nCreated 4/13/2026, 6:01:14 PM\nDelete",
+      "access": {
+        "sameRoute": true,
+        "redirectedToCredentials": false
+      }
+    },
+    "tokens": {
+      "requestedRoute": "/tokens",
+      "finalUrl": "https://dev-credbridge.bitkinetic.com/tokens",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/tokens.png",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nTokens\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nPASETO V4.LOCAL\nTokens\n\nManage API access tokens, issuance, verification, and usage guidance from one page.\n\nLEAST PRIVILEGE\nCREDENTIAL:READ\nGenerate token\nIssue a token after selecting scopes and expiry. The full token is shown only once after creation.\n0 SCOPE\nRead credentials\n\nRead credentials\n\nView credential metadata\n\ncredential:read\n允许使用的 Credentials *\n仅沙箱内可解析这些凭证\n\nui-tee-real-20260413-185715\n\nusername_password\n\n019d868b-272a-7333-92b7-b21d5a3241b5\n可选\n\ntee-real-20260413-185715\n\nusername_password\n\n019d8684-529b-7753-8e4f-34d9a99296b0\n可选\n\nlive-chain-20260413\n\nusername_password\n\n019d8649-c57c-7721-88f9-becb31a8ef0a\n可选\nToken expiry\n1 hour\n15 minutes\n1 hour\n6 hours\n1 day\n7 days\nGenerate token\nBefore issuance\nConfirm the use case, scope, and expiry before issuing a token.\nLeast privilege\n此页面只会签发 `credential:read`，并强制要求选择可用凭证白名单。\n• 只能在 Dashboard 手工获取 token。\n• token 仅用于 sandbox 占位符解析与注入。\n• 未列入白名单的凭证不会在沙箱内被解析。",
+      "access": {
+        "sameRoute": true,
+        "redirectedToCredentials": false
+      }
+    },
+    "audit": {
+      "requestedRoute": "/audit",
+      "finalUrl": "https://dev-credbridge.bitkinetic.com/credentials",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/audit.png",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nCredentials\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nTEE PROTECTED\nCredentials\n\nSecurely store and manage your sensitive credentials and keys.\n\nFilter\nNew credential\nTEE Encryption Protection\nAll credentials are encrypted with AES-256-GCM and stored inside the trusted TEE runtime.\nSecure\n\nTotal credentials\n\n3\n\nPassword credentials\n\n3\n\nAPI keys\n\n0\n\nOAuth tokens\n\n0\n\nFilters\nFilter by service ID, credential type, and validity.\nDefault view\nShow filters\nCredential List\nShowing 3 results\n3 total\nui-tee-real-20260413-185715\nUsername / Password\nID: 019d868b...\nCreated 4/13/2026, 7:12:39 PM\nDelete\ntee-real-20260413-185715\nUsername / Password\nID: 019d8684...\nCreated 4/13/2026, 7:05:12 PM\nDelete\nlive-chain-20260413\nUsername / Password\nID: 019d8649...\nCreated 4/13/2026, 6:01:14 PM\nDelete",
+      "access": {
+        "sameRoute": false,
+        "redirectedToCredentials": true
+      }
+    },
+    "profile": {
+      "requestedRoute": "/profile",
+      "finalUrl": "https://dev-credbridge.bitkinetic.com/profile",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/profile.png",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nProfile\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nACCOUNT SETTINGS\nProfile\n\nManage your account information\n\nWallet Identity\nYour primary login identity\nNo wallet identity detected. Please log in again or contact support.\nSecurity Settings\nMulti-factor authentication status\nMFA Status\nMFA Disabled\nSet up in Privy\nTenant & Membership\nCurrent tenant and role information\n\nCurrent Tenant\n\nTenant ID: 019d8414-bf83-7641-a3fb-ad93d58715bd\n\nOwner\n\n019d8414-bf83-7641-a3fb-ad93d58715bd\n\nOwner • Current • Default\n\nDefault\nDisplay Name\nSet your display name\nDisplay Name\nSave\nAccount Actions\nSign out or delete your account\nSign Out\nDelete Account",
+      "access": {
+        "sameRoute": true,
+        "redirectedToCredentials": false
+      }
+    },
+    "developer-center": {
+      "requestedRoute": "/developer",
+      "finalUrl": "https://dev-credbridge.bitkinetic.com/developer",
+      "title": "Toani Vault",
+      "screenshot": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-login/developer-center.png",
+      "bodyExcerpt": "TOANI VAULT\n\nTEE protected\nSecurity Status\nPassed\nCrypto\nAES-256\nAudit\nimmudb\nMAIN FEATURES\nCredentials\nTokens\nDeveloper Center\nADMINISTRATION\nUsers\nToani.ai runtime\n\nSGX / SEV protected execution, attestation-aware access, and immutable audit tracing.\n\nrtk-bug-18218\nlayout.role.owner\nHome\nDeveloper Center\n\nTrusted credential operations workspace\n\nEnglish\nrtk-bug-18218\nlayout.role.owner\nDeveloper Tools\nDeveloper Center\n\nSystem overview, API docs, SDK examples, and an interactive API tester\n\nOverview\nAPI Docs\nSDK Examples\nTester\nTEE Protection\nCredential storage backed by a trusted execution environment\nIntel SGX / AMD SEV support\nRemote attestation verification\nEncrypted memory isolation\nTamper-resistant audit logs\nEnd-to-end encryption\nAES-256-GCM encryption standard\nEncrypted transport from the client\nCiphertext storage on the server\nHKDF-based key derivation\nScheduled key rotation\nImmutable audit\nimmudb immutable database\nCryptographic integrity verification\nTamper-resistant log chain\nReal-time audit tracing\nCompliance report export\n🛡️\nTEE Sandbox Browser\nA securely isolated environment for web automation\nnsjail Linux Namespace isolation\nSeccomp syscall filtering\ncgroup resource limits\nAI operation review engine\nData redaction and watermarking\nTechnical architecture\nToani Vault system component overview\nBackend service (Rust + Axum)\nA high-performance async HTTP service that handles credential management, token auth, sandbox orchestration, and audit logging.\nTEE runtime\nAn isolated secure enclave for cryptographic operations and sensitive key management.\nStorage layer\nPostgreSQL stores credential metadata, immudb stores audit logs, and Redis stores cache and session data.\nVault integration\nHashiCorp Vault provides dynamic key management, secret engines, and access control.\nSupported credential types\nUsername & Password\n\nThe most common credential type for website logins and application authentication.\n\nAPI Key\n\nServer-side API authentication with optional key + ",
+      "access": {
+        "sameRoute": true,
+        "redirectedToCredentials": false
+      }
+    }
+  },
+  "network": [
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:47.317Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-86f9-7e52-b26e-5c6b7f718b8f\",\"session_token\":\"acHWicaYVlFkRkgvYW-tNIY7QsMXdh_t_odOzL9I9Ec\",\"expires_at\":\"2026-04-13T14:31:47.321869725+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:47.317Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-86f9-7e52-b26e-5c56d7e0cfd3\",\"session_token\":\"GbSQ9vrwQTBJ8ZokA0jLAw8_KngFwClgkn1e9kIyEiA\",\"expires_at\":\"2026-04-13T14:31:47.321539505+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+      "method": "GET",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:47.668Z",
+      "bodySnippet": "{\"credentials\":[{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":3}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:52.978Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-9d1b-7370-b69f-36be46f18bf2\",\"session_token\":\"Bt2VaPSWqo0v59nzW0k4UV17teE50yTmwH4-aML5ANo\",\"expires_at\":\"2026-04-13T14:31:52.987904528+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+      "method": "GET",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:53.313Z",
+      "bodySnippet": "{\"credentials\":[{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":3}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:54.617Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-a381-7e10-a318-4982af1c42a3\",\"session_token\":\"VjqAsR233VG5PU3uKfk-qC5U-BPdbTitD7HuuhmI_hk\",\"expires_at\":\"2026-04-13T14:31:54.625778388+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials?only_valid=true",
+      "method": "GET",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:55.024Z",
+      "bodySnippet": "{\"credentials\":[{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":3}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:56.196Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-a9ae-7b61-a0be-156b49dc0957\",\"session_token\":\"2RVENQdWV6pQqrQSADgAqyyVXEgOgYdlGh0DYl7Ey2U\",\"expires_at\":\"2026-04-13T14:31:56.206194981+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+      "method": "GET",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:56.533Z",
+      "bodySnippet": "{\"credentials\":[{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":3}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:57.861Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-b02c-7d90-aed0-946edbf51d2d\",\"session_token\":\"kpBHwwq9dXpxv75yvP0DJQBCF2R--QHsVRvmDnei3iA\",\"expires_at\":\"2026-04-13T14:31:57.868557611+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/me",
+      "method": "GET",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:58.193Z",
+      "bodySnippet": "{\"userId\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"tenantId\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"username\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"locale\":\"zh-CN\",\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"currentTenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"currentMembership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"mfaStatus\":\"not_required\"}"
+    },
+    {
+      "url": "https://dev-credbridge.bitkinetic.com/api/v1/auth/session",
+      "method": "POST",
+      "status": 200,
+      "statusText": "",
+      "resourceType": "xhr",
+      "capturedAt": "2026-04-13T13:31:59.478Z",
+      "bodySnippet": "{\"user\":{\"id\":\"019d7b1d-42e7-7071-bdae-63b777db2b6c\",\"display_name\":\"rtk-bug-18218\",\"status\":\"active\",\"onboarding_completed\":true,\"default_tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"identities\":[{\"provider\":\"privy\",\"subject\":\"did:privy:cmntx9sli00160clgsxmx4k34\",\"wallet_address\":null,\"email\":null,\"is_verified\":true,\"is_primary\":true}]},\"session\":{\"id\":\"019d870a-b682-7e21-bb87-7aebae048909\",\"session_token\":\"DBeD-J1RSwFhqbag4idIzwituwXsz6tWfGNnFsnInLw\",\"expires_at\":\"2026-04-13T14:31:59.490930273+00:00\",\"mfa_status\":\"not_required\"},\"memberships\":[{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}],\"current_tenant\":{\"id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"name\":null},\"current_membership\":{\"id\":\"019d8414-bfb0-7f23-a2e7-6fc1184d3d48\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"role\":\"owner\",\"status\":\"active\",\"scopes\":[\"admin\",\"tenant:read\",\"tenant:write\",\"tenant:admin\",\"tenant:delete\",\"credential:read\",\"credential:decrypt\",\"credential:write\",\"credential:delete\",\"sandbox:read\",\"sandbox:write\",\"sandbox:execute\",\"audit:read\",\"members:read\",\"members:write\",\"members:invite\",\"invitations:read\",\"invitations:write\",\"tokens:read\",\"tokens:write\",\"tokens:revoke\",\"users:manage\",\"roles:manage\"],\"joined_at\":\"2026-04-12T23:44:05.552737+00:00\"}}"
+    }
+  ],
+  "console": [
+    {
+      "type": "log",
+      "text": "%cWarning! color:#F16552; font-size:50px; font-weight: bold; -webkit-text-stroke: 1px black;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 20916
+      },
+      "capturedAt": "2026-04-13T13:31:29.391Z"
+    },
+    {
+      "type": "log",
+      "text": "%cYou are reading this message because you opened the browser console, a developer tool. Do not enter or paste code you do not understand. Never share your tokens or any other info with anyone. If someone told you to do this, it is very likely a scam. font-size: 18px;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 21026
+      },
+      "capturedAt": "2026-04-13T13:31:29.391Z"
+    },
+    {
+      "type": "debug",
+      "text": "Detected injected providers: []",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 79,
+        "columnNumber": 16775
+      },
+      "capturedAt": "2026-04-13T13:31:30.869Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: eth_accounts}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:47.266Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: wallet_switchEthereumChain, params: Array(1)}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:47.268Z"
+    },
+    {
+      "type": "log",
+      "text": "%cWarning! color:#F16552; font-size:50px; font-weight: bold; -webkit-text-stroke: 1px black;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 20916
+      },
+      "capturedAt": "2026-04-13T13:31:52.642Z"
+    },
+    {
+      "type": "log",
+      "text": "%cYou are reading this message because you opened the browser console, a developer tool. Do not enter or paste code you do not understand. Never share your tokens or any other info with anyone. If someone told you to do this, it is very likely a scam. font-size: 18px;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 21026
+      },
+      "capturedAt": "2026-04-13T13:31:52.642Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: eth_accounts}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:52.938Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: wallet_switchEthereumChain, params: Array(1)}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:52.938Z"
+    },
+    {
+      "type": "log",
+      "text": "%cWarning! color:#F16552; font-size:50px; font-weight: bold; -webkit-text-stroke: 1px black;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 20916
+      },
+      "capturedAt": "2026-04-13T13:31:54.574Z"
+    },
+    {
+      "type": "log",
+      "text": "%cYou are reading this message because you opened the browser console, a developer tool. Do not enter or paste code you do not understand. Never share your tokens or any other info with anyone. If someone told you to do this, it is very likely a scam. font-size: 18px;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 21026
+      },
+      "capturedAt": "2026-04-13T13:31:54.574Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: eth_accounts}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:54.575Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: wallet_switchEthereumChain, params: Array(1)}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:54.575Z"
+    },
+    {
+      "type": "log",
+      "text": "%cWarning! color:#F16552; font-size:50px; font-weight: bold; -webkit-text-stroke: 1px black;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 20916
+      },
+      "capturedAt": "2026-04-13T13:31:56.080Z"
+    },
+    {
+      "type": "log",
+      "text": "%cYou are reading this message because you opened the browser console, a developer tool. Do not enter or paste code you do not understand. Never share your tokens or any other info with anyone. If someone told you to do this, it is very likely a scam. font-size: 18px;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 21026
+      },
+      "capturedAt": "2026-04-13T13:31:56.080Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: eth_accounts}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:56.153Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: wallet_switchEthereumChain, params: Array(1)}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:56.153Z"
+    },
+    {
+      "type": "log",
+      "text": "%cWarning! color:#F16552; font-size:50px; font-weight: bold; -webkit-text-stroke: 1px black;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 20916
+      },
+      "capturedAt": "2026-04-13T13:31:57.741Z"
+    },
+    {
+      "type": "log",
+      "text": "%cYou are reading this message because you opened the browser console, a developer tool. Do not enter or paste code you do not understand. Never share your tokens or any other info with anyone. If someone told you to do this, it is very likely a scam. font-size: 18px;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 21026
+      },
+      "capturedAt": "2026-04-13T13:31:57.741Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: eth_accounts}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:57.818Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: wallet_switchEthereumChain, params: Array(1)}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:57.819Z"
+    },
+    {
+      "type": "log",
+      "text": "%cWarning! color:#F16552; font-size:50px; font-weight: bold; -webkit-text-stroke: 1px black;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 20916
+      },
+      "capturedAt": "2026-04-13T13:31:59.412Z"
+    },
+    {
+      "type": "log",
+      "text": "%cYou are reading this message because you opened the browser console, a developer tool. Do not enter or paste code you do not understand. Never share your tokens or any other info with anyone. If someone told you to do this, it is very likely a scam. font-size: 18px;",
+      "location": {
+        "url": "https://auth.privy.io/_next/static/chunks/pages/apps/%5Bapp_id%5D/embedded-wallets-55076f1cfbb32ce1.js?dpl=dpl_7YdDhiwf9nUUMpyiefibHyNF8BRX",
+        "lineNumber": 0,
+        "columnNumber": 21026
+      },
+      "capturedAt": "2026-04-13T13:31:59.412Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: eth_accounts}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:59.442Z"
+    },
+    {
+      "type": "debug",
+      "text": "Embedded1193Provider.request() called with args {method: wallet_switchEthereumChain, params: Array(1)}",
+      "location": {
+        "url": "https://dev-credbridge.bitkinetic.com/assets/index-D0zYBWJm.js",
+        "lineNumber": 706,
+        "columnNumber": 103599
+      },
+      "capturedAt": "2026-04-13T13:31:59.442Z"
+    }
+  ],
+  "firstFailure": null,
+  "status": "passed",
+  "finishedAt": "2026-04-13T13:32:00.342Z"
+}

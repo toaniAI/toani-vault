@@ -1,0 +1,35 @@
+{
+  "run_id": "tee-full-20260413T212736",
+  "case_id": "case07",
+  "prefix": "tee-full-case07-20260413T212736",
+  "base_url": "https://dev-credbridge.bitkinetic.com",
+  "actor": {
+    "user_id": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+    "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd"
+  },
+  "statuses": {
+    "auth_session": "200",
+    "create": "201",
+    "list": "200",
+    "get": "200",
+    "decrypt": "403",
+    "delete": "200",
+    "post_delete_list": "200"
+  },
+  "assertions": {
+    "list_metadata_only": true,
+    "list_contains_created_id": true,
+    "get_metadata_only": true,
+    "decrypt_rejected": true,
+    "delete_succeeded": true,
+    "post_delete_absent_from_filtered_list": true
+  },
+  "credential_id": "019d8713-52b0-7ae2-8785-0e48119da368",
+  "decrypt_error": "forbidden",
+  "decrypt_message": "Direct credential decryption is disabled; use sandbox execution instead",
+  "post_delete_total": 0,
+  "cleanup_status": "deleted_and_absent_from_filtered_list",
+  "first_failure": null,
+  "result_status": "passed",
+  "failure_class": null
+}

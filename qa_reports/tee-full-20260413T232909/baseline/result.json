@@ -1,0 +1,60 @@
+{
+  "claim_id": "C01",
+  "status": "failed",
+  "failure_class": "env",
+  "summary": "Homepage and attestation endpoints are reachable, and the attestation surface is internally coherent for hardware SGX. The baseline claim fails because /health, /ready, and /health/detail do not match the documented or source-defined semantics in the deployed environment: /ready serves the SPA shell, and /health plus /health/detail return a plain 'healthy' payload instead of JSON.",
+  "artifacts": [
+    "notes.md",
+    "commands.txt",
+    "raw/home.headers.txt",
+    "raw/home.body.html",
+    "raw/health.headers.txt",
+    "raw/health.body.json",
+    "raw/ready.headers.txt",
+    "raw/ready.body.json",
+    "raw/health_detail.headers.txt",
+    "raw/health_detail.body.json",
+    "raw/health.head.txt",
+    "raw/ready.head.txt",
+    "raw/health_detail.head.txt",
+    "raw/api_root.headers.txt",
+    "raw/api_root.body.json",
+    "raw/attestation_health.headers.txt",
+    "raw/attestation_health.body.json",
+    "raw/attestation_status.headers.txt",
+    "raw/attestation_status.body.json",
+    "raw/attestation_quote.headers.txt",
+    "raw/attestation_quote.body.json",
+    "raw/attestation_report.headers.txt",
+    "raw/attestation_report.body.json"
+  ],
+  "created_ids": [],
+  "runtime_log_needed": false,
+  "contract_findings": [
+    {
+      "endpoint": "/health",
+      "expected": "JSON liveness response",
+      "actual": "200 OK with body 'healthy' and content-type application/octet-stream"
+    },
+    {
+      "endpoint": "/ready",
+      "expected": "JSON readiness/detail response",
+      "actual": "200 OK with SPA HTML shell titled 'Toani Vault'"
+    },
+    {
+      "endpoint": "/health/detail",
+      "expected": "JSON detail response with component statuses",
+      "actual": "200 OK with body 'healthy' and content-type application/octet-stream"
+    },
+    {
+      "endpoint": "/api/v1/attestation/health",
+      "expected": "TEE health JSON",
+      "actual": "200 OK; ready=true, effective_mode=hardware, detected_type='Intel SGX', enclave_state='running'"
+    },
+    {
+      "endpoint": "/api/v1/attestation/status",
+      "expected": "TEE attestation status JSON",
+      "actual": "200 OK; status='authenticated', health_status='ready', remote_attestation_available=true, quote_valid=true"
+    }
+  ]
+}

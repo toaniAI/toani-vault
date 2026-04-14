@@ -1,0 +1,191 @@
+### Result
+[GET] https://explorer-api.walletconnect.com/v3/wallets?projectId=34357d3c125c2bcf2ce2bc3309d98715 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[GET] https://auth.privy.io/api/v1/apps/cmniaifov006t0cl1af6l5xqs => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueGN3ZDJkMDE1ZTBjam1xZDZ2N29iMSIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDk0NjUzLCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.OluZAaiFnANkMZWwy5mSAM7WMcArsLFr_-DnnR-rL8ZPYvyCv1_8b0HXIL6Q7MUuJdYz8pol4TvaaUoUVMEWww
+    privy-client: react-auth:3.18.0
+    referer: https://dev-credbridge.bitkinetic.com/
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    privy-app-id: cmniaifov006t0cl1af6l5xqs
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+    privy-ca-id: ce3a6a41-8d1f-45e3-80e0-881871275d14
+[GET] https://explorer-api.walletconnect.com/v3/wallets?projectId=36cd6ff72a821fdf648ac4e0fd7f97a0 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[POST] https://auth.privy.io/api/v1/sessions => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueGN3ZDJkMDE1ZTBjam1xZDZ2N29iMSIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDk0NjUzLCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.OluZAaiFnANkMZWwy5mSAM7WMcArsLFr_-DnnR-rL8ZPYvyCv1_8b0HXIL6Q7MUuJdYz8pol4TvaaUoUVMEWww
+    privy-client: react-auth:3.18.0
+    referer: https://dev-credbridge.bitkinetic.com/
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    privy-app-id: cmniaifov006t0cl1af6l5xqs
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+    privy-ca-id: ce3a6a41-8d1f-45e3-80e0-881871275d14
+  Request body: {"refresh_token":"AiJhJKv1H3f9F3TI0HFKjegbXyyBRcY4-DkTQRfj7VHb-rwiJ79s9Oss6miw5gOO73PuySgnFk6d3QM0uv2ulw"}
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[POST] https://dev-credbridge.bitkinetic.com/api/v1/auth/session => [200] 
+  Request headers:
+    x-request-id: 5e09cede-6284-43c7-a470-57713503b860
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    accept-language: zh-CN
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+    content-type: application/json
+  Request body: {"privy_access_token":"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54Y3dkMmQwMTVlMGNqbXFkNnY3b2IxIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwOTQ2NTMsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.mm1Gk8wE0J2wtaHvEl2i6PLBlB34AHgqB-e4afmyyLjwa4GfkZkUByLm6cdxDcxNsOtUwu36ILyH_3lcy8m2Ww"}
+[GET] https://dev-credbridge.bitkinetic.com/api/v1/credentials?only_valid=true => [200] 
+  Request headers:
+    x-request-id: a3e785db-0d7a-4129-9d03-c8bec5fc36cc
+    authorization: Bearer 8nJOSJSaZsGMzRSOwIgLFZCz9__7f71jTlXy8mzChCI
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    accept-language: zh-CN
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+[GET] https://explorer-api.walletconnect.com/v3/wallets?projectId=34357d3c125c2bcf2ce2bc3309d98715 => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[GET] https://auth.privy.io/api/v1/apps/cmniaifov006t0cl1af6l5xqs => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueGN3ZDJkMDE1ZTBjam1xZDZ2N29iMSIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDk0NjUzLCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.OluZAaiFnANkMZWwy5mSAM7WMcArsLFr_-DnnR-rL8ZPYvyCv1_8b0HXIL6Q7MUuJdYz8pol4TvaaUoUVMEWww
+    privy-client: react-auth:3.18.0
+    referer: https://dev-credbridge.bitkinetic.com/
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    privy-app-id: cmniaifov006t0cl1af6l5xqs
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+    privy-ca-id: ce3a6a41-8d1f-45e3-80e0-881871275d14
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[POST] https://auth.privy.io/api/v1/sessions => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJhaWQiOiJjbW5pYWlmb3YwMDZ0MGNsMWFmNmw1eHFzIiwiYXR0IjoicGF0Iiwic2lkIjoiY21ueGN3ZDJkMDE1ZTBjam1xZDZ2N29iMSIsImlzcyI6InByaXZ5LmlvIiwiaWF0IjoxNzc2MDk0NjUzLCJhdWQiOiJodHRwczovL2F1dGgucHJpdnkuaW8iLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.OluZAaiFnANkMZWwy5mSAM7WMcArsLFr_-DnnR-rL8ZPYvyCv1_8b0HXIL6Q7MUuJdYz8pol4TvaaUoUVMEWww
+    privy-client: react-auth:3.18.0
+    referer: https://dev-credbridge.bitkinetic.com/
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    privy-app-id: cmniaifov006t0cl1af6l5xqs
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json
+    content-type: application/json
+    privy-ca-id: ce3a6a41-8d1f-45e3-80e0-881871275d14
+  Request body: {"refresh_token":"AiJhJKv1H3f9F3TI0HFKjegbXyyBRcY4-DkTQRfj7VHb-rwiJ79s9Oss6miw5gOO73PuySgnFk6d3QM0uv2ulw"}
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[HEAD] https://dev-credbridge.bitkinetic.com/tokens => [200] 
+  Request headers:
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+[POST] https://dev-credbridge.bitkinetic.com/api/v1/auth/session => [200] 
+  Request headers:
+    x-request-id: 1245f687-209b-4c2b-8cb3-8478a5235866
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    accept-language: zh-CN
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+    content-type: application/json
+  Request body: {"privy_access_token":"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjRkbmpiVTJEcU1DdU1zaWxQdUM3Y3V4U3pqTU85MW5QNXl2MHRSaTQwOFEifQ.eyJzaWQiOiJjbW54Y3dkMmQwMTVlMGNqbXFkNnY3b2IxIiwiaXNzIjoicHJpdnkuaW8iLCJpYXQiOjE3NzYwOTQ2NTMsImF1ZCI6ImNtbmlhaWZvdjAwNnQwY2wxYWY2bDV4cXMiLCJzdWIiOiJkaWQ6cHJpdnk6Y21udHg5c2xpMDAxNjBjbGdzeG14NGszNCIsImV4cCI6MTc3NjE4MTA1M30.mm1Gk8wE0J2wtaHvEl2i6PLBlB34AHgqB-e4afmyyLjwa4GfkZkUByLm6cdxDcxNsOtUwu36ILyH_3lcy8m2Ww"}
+[GET] https://dev-credbridge.bitkinetic.com/api/v1/credentials?only_valid=true => [200] 
+  Request headers:
+    x-request-id: a14759d5-d074-49e8-8534-94890c753152
+    authorization: Bearer cudvIb0Qyu1KNedUao0jmqOM-Tp7yem6qPXW26TWVNE
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    accept-language: zh-CN
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+[POST] https://dev-credbridge.bitkinetic.com/api/v1/tokens => [200] 
+  Request headers:
+    x-request-id: 223e798f-196f-4daa-9ee2-1c0b2e0be475
+    authorization: Bearer cudvIb0Qyu1KNedUao0jmqOM-Tp7yem6qPXW26TWVNE
+    sec-ch-ua-platform: "macOS"
+    referer: https://dev-credbridge.bitkinetic.com/tokens
+    accept-language: zh-CN
+    sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+    sec-ch-ua-mobile: ?0
+    user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/146.0.0.0 Safari/537.36
+    accept: application/json, text/plain, */*
+    content-type: application/json
+  Request body: {"scopes":["credential:read"],"expires_in":3600,"credential_ids":["019d8714-3949-7f32-8804-9c593f7c7a3e"]}

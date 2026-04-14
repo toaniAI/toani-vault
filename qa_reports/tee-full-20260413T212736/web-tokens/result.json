@@ -1,0 +1,24 @@
+{
+  "case_id": "case04",
+  "run_id": "tee-full-20260413T212736",
+  "status": "completed",
+  "claim_result": "passed",
+  "failure_class": null,
+  "created_token_ids": [
+    "019d8711-29fe-7d61-a4e8-18e21f1b44a4"
+  ],
+  "cleanup_status": "ui_not_supported",
+  "evidence": {
+    "notes": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/notes.md",
+    "commands": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/commands.txt",
+    "screenshots_dir": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/screenshots",
+    "request_response_summaries": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/request-response-summaries.json",
+    "token_create_response": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/responses/12-POST-_api_v1_tokens.txt",
+    "observations": "/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/playwright-observations.json"
+  },
+  "summary": {
+    "scope_constraint": "UI only issues credential:read",
+    "credential_ids_constraint": "At least one credential must be selected; request includes explicit credential_ids whitelist",
+    "ui_cleanup_support": false
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "sessionId": "019d8712-f1b6-7093-9743-0a1d66d0cf44",
+  "sessionTokenPrefix": "FURaF6iB",
+  "expiresAt": "2026-04-13T14:40:58.934860073+00:00",
+  "userId": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+  "tenantId": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+  "role": "owner",
+  "scopes": [
+    "admin",
+    "tenant:read",
+    "tenant:write",
+    "tenant:admin",
+    "tenant:delete",
+    "credential:read",
+    "credential:decrypt",
+    "credential:write",
+    "credential:delete",
+    "sandbox:read",
+    "sandbox:write",
+    "sandbox:execute",
+    "audit:read",
+    "members:read",
+    "members:write",
+    "members:invite",
+    "invitations:read",
+    "invitations:write",
+    "tokens:read",
+    "tokens:write",
+    "tokens:revoke",
+    "users:manage",
+    "roles:manage"
+  ]
+}

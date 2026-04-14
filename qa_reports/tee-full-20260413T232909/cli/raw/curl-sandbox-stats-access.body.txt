@@ -1,0 +1,1 @@
+{"error":"insufficient_scope","i18n":{"key":"errors.auth.insufficient_scope","params":{"current_scopes":"credential:read","required_scope":"sandbox:read"}},"locale":"zh-CN","message":"缺少必需的 scope: sandbox:read，当前 scopes: credential:read"}

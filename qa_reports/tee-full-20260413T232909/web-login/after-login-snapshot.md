@@ -1,0 +1,85 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e7]:
+      - button "简体中文" [ref=e9] [cursor=pointer]:
+        - img
+        - generic [ref=e10]: 简体中文
+      - generic [ref=e11]:
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - img [ref=e15]
+            - text: Toani.ai secure vault
+          - heading "Zero-trust credential operations for the Toani Vault control surface." [level=1] [ref=e18]
+          - paragraph [ref=e19]: 使用邮箱验证码登录，进入安全凭证管理平台。邮箱登录由 Privy 提供验证能力。
+          - generic [ref=e20]:
+            - generic [ref=e22]:
+              - img [ref=e24]
+              - generic [ref=e35]:
+                - paragraph [ref=e36]: Secure Credential Vault
+                - paragraph [ref=e37]: TEE-protected operations
+            - generic [ref=e38]:
+              - generic [ref=e39]: SGX / SEV attested
+              - generic [ref=e41]: PASETO v4
+              - generic [ref=e43]: Immutable audit
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - generic [ref=e48]:
+              - img [ref=e50]
+              - heading "Toani Vault" [level=2] [ref=e61]
+              - paragraph [ref=e62]: 使用邮箱验证码继续访问您的安全凭证库
+            - generic [ref=e63]:
+              - generic [ref=e64]: Security
+              - generic [ref=e65]: TEE attested
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - img [ref=e68]
+              - text: SGX / SEV attested
+            - generic [ref=e71]:
+              - img [ref=e72]
+              - text: PASETO v4
+            - generic [ref=e75]:
+              - img [ref=e76]
+              - text: Immutable audit
+          - generic [ref=e79]:
+            - button "邮箱验证码登录" [ref=e80] [cursor=pointer]:
+              - img
+              - text: 邮箱验证码登录
+            - paragraph [ref=e81]: 通过 Privy 发送一次性邮箱验证码，安全完成身份验证
+          - generic [ref=e83]:
+            - img [ref=e85]
+            - generic [ref=e88]:
+              - paragraph [ref=e89]: 所有凭证加密存储于 TEE 可信执行环境
+              - paragraph [ref=e90]: Toani Vault v1.0 · Toani.ai 商用级安全标准
+    - region "Notifications (F8)":
+      - list
+  - generic:
+    - generic:
+      - generic:
+        - dialog "log in or sign up":
+          - generic [ref=e132]:
+            - generic [ref=e133]:
+              - generic [ref=e134]:
+                - button [ref=e137] [cursor=pointer]:
+                  - img [ref=e138]
+                - button "close modal" [ref=e142] [cursor=pointer]:
+                  - img [ref=e143]
+              - generic [ref=e145]:
+                - img [ref=e147]
+                - generic [ref=e149]:
+                  - heading "Enter confirmation code" [level=3] [ref=e150]
+                  - paragraph [ref=e151]:
+                    - generic [ref=e152]: Please check test-7226@privy.io for an email from privy.io and enter your code below.
+            - generic [ref=e157]:
+              - textbox [ref=e158]: "4"
+              - textbox [ref=e159]
+              - textbox [ref=e160]: "5"
+              - textbox [ref=e161]: "0"
+              - textbox [ref=e162]: "1"
+              - textbox [active] [ref=e163]: "2"
+            - generic [ref=e165]:
+              - generic [ref=e167]:
+                - generic [ref=e168]: Didn't get an email?
+                - button "Resend code" [ref=e169] [cursor=pointer]
+              - link [ref=e171] [cursor=pointer]:
+                - /url: https://privy.io/?utm_source=module&utm_medium=module&utm_campaign=registration_module
+                - img [ref=e172]

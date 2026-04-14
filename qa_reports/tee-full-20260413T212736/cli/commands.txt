@@ -1,0 +1,25 @@
+# case10 commands
+
+## create_credential
+rtk proxy curl -sS -X POST https://dev-credbridge.bitkinetic.com/api/v1/credentials -H authorization: Bearer 5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0 -H content-type: application/json --data {"service_id":"tee-full-case10-20260413T212736","credential_type":"username_password","plaintext_data":{"username":"case10-user","password":"case10-pass"}}
+
+## cli_config_init
+rtk proxy node dist/index.js config init --url https://dev-credbridge.bitkinetic.com --token 5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0
+
+## cli_auth_me
+rtk proxy node dist/index.js auth me
+
+## cli_auth_memberships
+rtk proxy node dist/index.js auth memberships
+
+## cli_sandbox_stats
+rtk proxy node dist/index.js sandbox stats
+
+## cli_sandbox_create
+rtk proxy node dist/index.js sandbox create-session --service-id tee-full-case10-20260413T212736 --original-intent tee-full case10 cli sandbox --credential-id 019d8713-e583-7531-9d46-4e0ce643873d
+
+## cli_invalid_token_stats
+env HOME=/Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/cli/home-invalid TOANI_VAULT_TOKEN=invalid-token node /Users/yvan/AIWorkspace/credbridge/cli/dist/index.js sandbox stats
+
+## delete_credential
+rtk proxy curl -sS -X DELETE https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8713-e583-7531-9d46-4e0ce643873d -H authorization: Bearer 5C6jZvISgr2RSFm4-9fw-ElaN6yLQ3iRI-L5ohmkgh0

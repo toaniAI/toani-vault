@@ -1,0 +1,219 @@
+[
+  {
+    "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "bodyText": "{\"credentials\":[{\"credential_id\":\"019d8714-3949-7f32-8804-9c593f7c7a3e\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-case10-20260413T212736\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T13:42:22Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":4}",
+    "bodyJson": {
+      "credentials": [
+        {
+          "credential_id": "019d8714-3949-7f32-8804-9c593f7c7a3e",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-full-case10-20260413T212736",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T13:42:22Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d868b-272a-7333-92b7-b21d5a3241b5",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "ui-tee-real-20260413-185715",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T11:12:39Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8684-529b-7753-8e4f-34d9a99296b0",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-real-20260413-185715",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T11:05:12Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8649-c57c-7721-88f9-becb31a8ef0a",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "live-chain-20260413",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T10:01:14Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        }
+      ],
+      "total": 4
+    }
+  },
+  {
+    "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+    "method": "POST",
+    "status": 201,
+    "ok": true,
+    "bodyText": "{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"service_id\":\"tee-full-20260413T232909-webcred-20260413154821\",\"credential_type\":\"username_password\",\"created_at\":\"1776095304\",\"expires_at\":null}",
+    "bodyJson": {
+      "credential_id": "019d8787-9b6e-7ff2-b785-1b04f9a5132d",
+      "service_id": "tee-full-20260413T232909-webcred-20260413154821",
+      "credential_type": "username_password",
+      "created_at": "1776095304",
+      "expires_at": null
+    }
+  },
+  {
+    "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "bodyText": "{\"credentials\":[{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-20260413T232909-webcred-20260413154821\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T15:48:24Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8714-3949-7f32-8804-9c593f7c7a3e\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-case10-20260413T212736\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T13:42:22Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":5}",
+    "bodyJson": {
+      "credentials": [
+        {
+          "credential_id": "019d8787-9b6e-7ff2-b785-1b04f9a5132d",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-full-20260413T232909-webcred-20260413154821",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T15:48:24Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8714-3949-7f32-8804-9c593f7c7a3e",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-full-case10-20260413T212736",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T13:42:22Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d868b-272a-7333-92b7-b21d5a3241b5",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "ui-tee-real-20260413-185715",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T11:12:39Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8684-529b-7753-8e4f-34d9a99296b0",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-real-20260413-185715",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T11:05:12Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8649-c57c-7721-88f9-becb31a8ef0a",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "live-chain-20260413",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T10:01:14Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        }
+      ],
+      "total": 5
+    }
+  },
+  {
+    "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials/019d8787-9b6e-7ff2-b785-1b04f9a5132d",
+    "method": "DELETE",
+    "status": 200,
+    "ok": true,
+    "bodyText": "{\"credential_id\":\"019d8787-9b6e-7ff2-b785-1b04f9a5132d\",\"deleted\":true}",
+    "bodyJson": {
+      "credential_id": "019d8787-9b6e-7ff2-b785-1b04f9a5132d",
+      "deleted": true
+    }
+  },
+  {
+    "url": "https://dev-credbridge.bitkinetic.com/api/v1/credentials",
+    "method": "GET",
+    "status": 200,
+    "ok": true,
+    "bodyText": "{\"credentials\":[{\"credential_id\":\"019d8714-3949-7f32-8804-9c593f7c7a3e\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-full-case10-20260413T212736\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T13:42:22Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d868b-272a-7333-92b7-b21d5a3241b5\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"ui-tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:12:39Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8684-529b-7753-8e4f-34d9a99296b0\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"tee-real-20260413-185715\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T11:05:12Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"},{\"credential_id\":\"019d8649-c57c-7721-88f9-becb31a8ef0a\",\"credential_type\":\"username_password\",\"user_id_hash\":\"nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc\",\"service_id\":\"live-chain-20260413\",\"tenant_id\":\"019d8414-bf83-7641-a3fb-ad93d58715bd\",\"created_at\":\"2026-04-13T10:01:14Z\",\"expires_at\":null,\"is_deleted\":false,\"version\":1,\"status\":\"active\"}],\"total\":4}",
+    "bodyJson": {
+      "credentials": [
+        {
+          "credential_id": "019d8714-3949-7f32-8804-9c593f7c7a3e",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-full-case10-20260413T212736",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T13:42:22Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d868b-272a-7333-92b7-b21d5a3241b5",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "ui-tee-real-20260413-185715",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T11:12:39Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8684-529b-7753-8e4f-34d9a99296b0",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "tee-real-20260413-185715",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T11:05:12Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        },
+        {
+          "credential_id": "019d8649-c57c-7721-88f9-becb31a8ef0a",
+          "credential_type": "username_password",
+          "user_id_hash": "nDuea3YI4vX7dNVawqlk520nvBniZ8H9ipKnPS68-dc",
+          "service_id": "live-chain-20260413",
+          "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+          "created_at": "2026-04-13T10:01:14Z",
+          "expires_at": null,
+          "is_deleted": false,
+          "version": 1,
+          "status": "active"
+        }
+      ],
+      "total": 4
+    }
+  }
+]
