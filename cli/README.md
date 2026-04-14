@@ -13,18 +13,20 @@ npm install -g @toani/vault-cli
 
 ## Configure
 
-Recommended CLI bootstrap:
-
-1. Sign in to the web app.
-2. Open `Profile -> Automation Access`.
-3. Create an automation token for your tenant scopes.
-4. Configure the CLI with that token:
+Current CLI only supports the `sandbox` command group plus global flags.
+Use a bearer token directly via command flags or environment variables:
 
 ```bash
-toani config init --url https://dev-credbridge.bitkinetic.com/ --token <AUTOMATION_TOKEN>
+export TOANI_BASE_URL="https://your-api.example.com"
+export TOANI_VAULT_TOKEN="<BEARER_TOKEN>"
+
+toani sandbox stats
+toani --base-url https://your-api.example.com --token <BEARER_TOKEN> sandbox list-sessions
 ```
 
-Config is stored at `~/.toani/config.json` with fields:
+When `--base-url`, `--token`, or `--output` are passed, the CLI persists those values to `~/.toani/config.json` for the active profile.
+
+Config file fields include:
 
 - `baseUrl`
 - `token`
@@ -51,38 +53,6 @@ Base URL resolution priority:
 ## Commands
 
 ```bash
-toani auth status
-toani auth use-tenant <tenant-id>
-toani auth token create --name <name> --scope <scope1,scope2> [--ttl-seconds 900] [--save]
-toani auth token list
-toani auth token get <token-id>
-toani auth token revoke <token-id>
-toani auth access-token create --scope <scope1,scope2> [--ttl-seconds 900] [--store]
-toani auth access-token revoke --token-id <id>
-toani auth me
-toani auth memberships
-toani auth logout
-
-toani credentials list [--service-id <id>] [--credential-type <type>]
-toani credentials get <credentialId>
-toani credentials create --service-id <id> --credential-type <type> --data '{"k":"v"}'
-toani credentials delete <credentialId>
-toani credentials decrypt <credentialId> [--reason <text>]
-
-toani tokens create [--expires-in 3600] [--scope credential:read]
-toani tokens list
-toani tokens get <token-id>
-toani tokens verify [--token <token>]
-toani tokens stats
-toani tokens revoke [--token-id <id>]
-
-toani service-accounts create --name <name> --scope <scope1,scope2> [--description <text>]
-toani service-accounts list
-toani service-accounts get <id>
-toani service-accounts update <id> [--name <name>] [--description <text>] [--status <active|disabled|deleted>] [--scope <scope1,scope2>]
-toani service-accounts token create <service-account-id> --scope <scope1,scope2> [--ttl-seconds 3600] [--display-name <name>]
-toani service-accounts token list <service-account-id>
-
 toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
@@ -90,22 +60,11 @@ toani sandbox terminate <sessionId>
 toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
 toani sandbox get-operation <operationId>
 toani sandbox stats
-
-toani audit logs [--from <iso>] [--to <iso>] [--action <name>] [--service <name>] [--outcome <ok|error>] [--limit 50]
-toani audit export [--format json|csv] [--from <iso>] [--to <iso>]
-toani audit verify [--payload '{"log_id":"..."}']
-
-toani config show
-toani config set <key> <value>
-toani config get <key>
-toani config profile create <name>
-toani config profile use <name>
-toani config profile show
+toani --version
 ```
 
 ## Notes
 
-- `auth logout` is local-only and clears the configured bearer token.
-- `auth token create --save` writes the created automation token into the active profile.
 - CLI integrations only use bearer tokens. Browser-side Privy/session flows are not exposed as CLI commands.
-- `automation token`, `access token`, and `service account token` all use the same `Bearer` call pattern in the CLI.
+- The published CLI does not currently expose `config`, `auth`, `credentials`, `tokens`, `service-accounts`, or `audit` command groups.
+- `sandbox terminate` maps to the backend close-session route (`DELETE /api/v1/sandbox/sessions/:id`).

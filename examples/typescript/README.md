@@ -35,22 +35,14 @@ export TOANI_VAULT_TOKEN="your-api-token"
 
 ### 手动运行
 
-1. 获取 Token：
+1. 设置环境变量：
 
 ```bash
-curl -X POST http://localhost:8082/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}'
-```
-
-2. 设置环境变量：
-
-```bash
-export TOANI_VAULT_BASE_URL="http://localhost:8082"
+export TOANI_VAULT_BASE_URL="https://your-api.example.com"
 export TOANI_VAULT_TOKEN="v4.local.xxx..."
 ```
 
-3. 运行示例：
+2. 运行示例：
 
 ```bash
 npm run basic

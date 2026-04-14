@@ -278,8 +278,8 @@ class TokenManager {
       // this.client.setToken(newToken);
     }
 
-    // 验证 Token（向服务器确认）
-    const isValid = await token.verify();
+    // 本地检查 Token 是否仍在有效期内
+    const isValid = token.isValid();
     if (!isValid) {
       throw new Error("Token has been revoked");
     }

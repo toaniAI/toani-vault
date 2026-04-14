@@ -326,8 +326,8 @@ class TokenMonitor {
         }
       }
 
-      // 验证 Token 状态
-      const isValid = await this.sdk.token.verify();
+      // 本地检查 Token 状态
+      const isValid = this.sdk.token.isValid();
       if (!isValid) {
         console.error("❌ Token is invalid or revoked");
       }

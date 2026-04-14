@@ -54,12 +54,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("   是否有 read+write: {}", sdk.token().has_all_scopes(&write_scopes));
     println!("   是否有任一 read/write: {}", sdk.token().has_any_scope(&read_scopes));
 
-    // 5. 验证 Token（向服务器确认）
-    println!("\n5. 验证 Token（向服务器确认）...");
-    match sdk.token().verify(None).await {
-        Ok(is_valid) => println!("   服务器验证结果: {}", is_valid),
-        Err(e) => println!("   验证错误: {}", e),
-    }
+    // 5. 本地检查 Token 状态
+    println!("\n5. 本地检查 Token 状态...");
+    println!("   当前是否仍在有效期内: {}", sdk.token().is_valid());
 
     // 6. 权限检查辅助函数
     println!("\n6. 权限检查辅助函数...");

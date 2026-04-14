@@ -587,7 +587,6 @@
 - `POST /api/v1/tokens`
 - `GET /api/v1/tokens`
 - `GET /api/v1/tokens/:token_id`
-- `POST /api/v1/tokens/verify`
 - `GET /api/v1/tokens/stats`
 - `POST /api/v1/tokens/:token_id/revoke`
 
@@ -641,34 +640,6 @@
 - 需要 `tokens:read`、`tenant:admin` 或 `admin`
 
 返回单个 `TokenMetadataResponse`。
-
-### `POST /api/v1/tokens/verify`
-
-**认证**:
-- 公开接口，不要求 `Authorization` 头
-
-**请求体**:
-
-```json
-{
-  "token": "v4.local.xxx"
-}
-```
-
-**响应**:
-
-```json
-{
-  "valid": true,
-  "token_id": "550e8400-e29b-41d4-a716-446655440000",
-  "user_id": "550e8400-e29b-41d4-a716-446655440001",
-  "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
-  "scopes": ["credential:read"],
-  "expires_at": 1741703700,
-  "subject_type": "user",
-  "issued_from": "access_token"
-}
-```
 
 ### `GET /api/v1/tokens/stats`
 
@@ -1350,6 +1321,10 @@
 ### `GET /api/v1/sandbox/sessions/:id`
 
 **响应**: `ApiSuccessResponse<SessionDetailResponse>`。
+
+说明：
+- 对外返回 `session_id` 与 `sandbox_id`。
+- 持久化层中的 `sandbox_sessions.tee_context_id` 对应运行时暴露的 `sandbox_id`，不是会话主键。
 
 ### `POST /api/v1/sandbox/sessions/:id/execute`
 

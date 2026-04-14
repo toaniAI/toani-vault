@@ -2,22 +2,14 @@
 # Toani Vault SDK TypeScript 示例运行脚本
 
 # 设置环境变量
-export TOANI_VAULT_BASE_URL="http://localhost:8082"
+export TOANI_VAULT_BASE_URL="${TOANI_VAULT_BASE_URL:-https://your-api.example.com}"
 
-# 获取 Token
-echo "正在获取 Token..."
-RESPONSE=$(curl -s -X POST http://localhost:8082/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}')
-
-export TOANI_VAULT_TOKEN=$(echo "$RESPONSE" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-
-if [ -z "$TOANI_VAULT_TOKEN" ]; then
-  echo "错误: 无法获取 Token，请确保后端服务运行在 http://localhost:8082"
+if [ -z "${TOANI_VAULT_TOKEN:-}" ]; then
+  echo "错误: 请先设置 TOANI_VAULT_TOKEN，再运行示例。"
   exit 1
 fi
 
-echo "Token 获取成功!"
+echo "使用现有 bearer token 运行示例..."
 echo ""
 
 # 运行示例

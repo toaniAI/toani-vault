@@ -561,12 +561,15 @@ impl NsjailConfig {
         let mut bpf = format!("POLICY {policy_name} {{\n");
 
         if !denylist.is_empty() {
-            // kafel DENY 块语法：DENY { syscall1, syscall2, ... }
-            let deny_list: Vec<&str> = denylist.iter().map(|s| s.as_str()).collect();
+            // kafel 不接受末尾逗号，这里显式 join，避免生成无法编译的策略。
+            let deny_list = denylist
+                .iter()
+                .map(|syscall| format!("    {syscall}"))
+                .collect::<Vec<_>>()
+                .join(",\n");
             bpf.push_str("  DENY {\n");
-            for syscall in &deny_list {
-                bpf.push_str(&format!("    {syscall},\n"));
-            }
+            bpf.push_str(&deny_list);
+            bpf.push('\n');
             bpf.push_str("  }\n");
         }
 
@@ -636,6 +639,16 @@ mod tests {
             serde_json::to_string(&SeccompMode::Denylist).unwrap(),
             "\"denylist\""
         );
+    }
+
+    #[test]
+    fn test_generate_seccomp_bpf_does_not_emit_trailing_comma() {
+        let config = NsjailConfig::default();
+        let policy = config.generate_seccomp_bpf();
+
+        assert!(policy.contains("DENY {\n"));
+        assert!(!policy.contains(",\n  }\n"));
+        assert!(policy.contains("USE browser DEFAULT ALLOW"));
     }
 
     #[test]

@@ -76,10 +76,10 @@ async function main() {
       client.token.hasAnyScope(readScopes),
     );
 
-    // 5. 验证 Token（向服务器确认）
-    console.log("\n5. 验证 Token（向服务器确认）...");
-    const isValid = await client.token.verify();
-    console.log("   服务器验证结果:", isValid);
+    // 5. 本地检查 Token 状态
+    console.log("\n5. 本地检查 Token 状态...");
+    const isValid = client.token.isValid();
+    console.log("   当前是否仍在有效期内:", isValid);
 
     // 6. 设置 Token 过期提醒
     console.log("\n6. 设置 Token 过期提醒...");

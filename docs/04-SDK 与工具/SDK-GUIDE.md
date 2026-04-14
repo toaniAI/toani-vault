@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | 检查即将过期 | `token.isExpiringSoon(buffer)` | `token.is_expiring_soon(buffer)` |
 | 获取剩余时间 | `token.getRemainingTime()`     | `token.get_remaining_time()`     |
 | 检查权限     | `token.hasScope(scope)`        | `token.has_scope(scope)`         |
-| 验证 Token   | `token.verify()`               | `token.verify(options)`          |
+| 本地检查 Token | `token.isValid()`              | `token.is_valid()`               |
 
 ---
 

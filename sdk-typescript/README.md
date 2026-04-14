@@ -20,9 +20,10 @@ Toani Vault SDK - TypeScript client for secure credential management.
 ## Token 与 Service Account API（新增）
 
 ```typescript
-// 1) 用当前 bearer token 换更小权限的 access token（默认 900 秒）
+// 1) 用当前 bearer token 换更小权限的 access token
 const issued = await sdk.auth.createAccessToken({
-  scopes: ["tokens:read", "tokens:write"],
+  scopes: ["credential:read"],
+  credentialIds: ["cred_123"],
   ttlSeconds: 900,
 });
 
@@ -271,8 +272,8 @@ if (sdk.token.hasAnyScope(["credential:read", "credential:write"])) {
   console.log("Can read or write credentials");
 }
 
-// 验证 Token（向服务器验证）
-const isValid = await sdk.token.verify();
+// 本地检查 Token 是否仍在有效期内
+const isValid = sdk.token.isValid();
 
 // 撤销 Token
 await sdk.token.revoke();

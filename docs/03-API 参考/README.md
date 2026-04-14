@@ -54,7 +54,6 @@
 - `POST /api/v1/tokens`
 - `GET /api/v1/tokens`
 - `GET /api/v1/tokens/:token_id`
-- `POST /api/v1/tokens/verify`
 - `GET /api/v1/tokens/stats`
 - `POST /api/v1/tokens/:token_id/revoke`
 

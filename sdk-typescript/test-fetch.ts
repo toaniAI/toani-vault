@@ -1,5 +1,5 @@
 // 测试 SDK 的 URL 构建
-const BASE_URL = "http://localhost:8082";
+const BASE_URL = "https://your-api.example.com";
 const path = "/credentials";
 const url = `${BASE_URL.replace(/\/$/, "")}/api/v1${path}`;
 console.log("URL:", url);

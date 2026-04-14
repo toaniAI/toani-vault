@@ -32,8 +32,10 @@ API base path: `/api/v1`.
 ### Tokens
 
 - `POST /tokens`
-- `POST /tokens/verify`
+- `GET /tokens`
+- `GET /tokens/:token_id`
 - `GET /tokens/stats`
+- `POST /tokens/:token_id/revoke`
 
 ### Sandbox
 
@@ -75,13 +77,13 @@ API base path: `/api/v1`.
 
 ### Command groups
 
-- `auth`, `config`, `credentials`, `tokens`, `sandbox`, `audit`
+- `sandbox`
 
 ### Known drift
 
-- Token revoke drift:
-  - Old SDK/CLI uses `POST /tokens/:id/revoke`
-  - Backend mounted routes have no revoke endpoint
+- CLI surface drift:
+  - Current npm CLI only exposes the `sandbox` group plus global flags/version
+  - Historical docs referenced unshipped `auth`, `config`, `credentials`, `tokens`, and `audit` groups
 - Sandbox terminate naming drift:
   - Real close-session route is `DELETE /sandbox/sessions/:id`
   - Some historical constants still referenced `/sandbox/sessions/:id/terminate`

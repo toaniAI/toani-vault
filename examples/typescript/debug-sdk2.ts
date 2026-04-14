@@ -1,6 +1,7 @@
 import { ToaniVaultSDK, CredentialType } from "@toani/vault-sdk";
 
-const BASE_URL = process.env.TOANI_VAULT_BASE_URL || "http://localhost:8082";
+const BASE_URL =
+  process.env.TOANI_VAULT_BASE_URL || "https://your-api.example.com";
 const TOKEN = process.env.TOANI_VAULT_TOKEN || "";
 
 async function main() {

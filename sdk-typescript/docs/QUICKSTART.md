@@ -144,8 +144,8 @@ if (client.token.isExpiringSoon()) {
 const remainingSeconds = client.token.getRemainingTime();
 console.log(`剩余时间: ${client.token.getRemainingTimeFormatted()}`);
 
-// 验证 Token（向服务器确认是否有效）
-const isValid = await client.token.verify();
+// 本地检查 Token 是否仍在有效期内
+const isValid = client.token.isValid();
 ```
 
 ## 错误处理
