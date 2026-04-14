@@ -88,7 +88,7 @@ For the latest CLI install and usage details, see:
 
 ```bash
 # Install from npm (recommended)
-npm install -g @toani/vault-cli@0.0.4
+npm install -g @toani/vault-cli@0.0.5
 
 # Install from source
 cargo install --path cli

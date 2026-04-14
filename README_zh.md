@@ -75,7 +75,7 @@ CLI 最新安装与使用说明请优先参考：
 
 ```bash
 # 从 npm 安装（推荐）
-npm install -g @toani/vault-cli@0.0.4
+npm install -g @toani/vault-cli@0.0.5
 
 # 从源码安装
 cargo install --path cli

@@ -70,7 +70,7 @@ RUN set -eu; \
     rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware
 
-ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-playwright1.58.2
+ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-playwright1.58.2-uidmap
 
 FROM ${RUNTIME_BASE_IMAGE}
 

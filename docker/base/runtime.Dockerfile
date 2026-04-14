@@ -54,6 +54,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     libc-bin \
     procps \
+    uidmap \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
@@ -100,4 +101,6 @@ RUN set -eux; \
 COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail
 
 RUN chmod +x /usr/local/bin/nsjail \
-    && ln -sf /usr/local/bin/nsjail /usr/bin/nsjail
+    && ln -sf /usr/local/bin/nsjail /usr/bin/nsjail \
+    && command -v newuidmap \
+    && command -v newgidmap
