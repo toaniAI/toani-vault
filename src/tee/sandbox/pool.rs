@@ -217,6 +217,16 @@ impl NsjailSandboxPool {
         if let Some(path) = std::env::var_os("PATH") {
             env.insert("PATH".to_string(), path.to_string_lossy().to_string());
         }
+        for key in [
+            "CREDBRIDGE_SANDBOX_NODE_BINARY",
+            "NODE_PATH",
+            "PLAYWRIGHT_BROWSERS_PATH",
+            "PLAYWRIGHT_SKIP_BROWSER_GC",
+        ] {
+            if let Some(value) = std::env::var_os(key) {
+                env.insert(key.to_string(), value.to_string_lossy().to_string());
+            }
+        }
 
         NsjailConfig {
             sandbox,

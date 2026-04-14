@@ -2,11 +2,25 @@ use crate::tee::sandbox::{error::SandboxError, nsjail::NsjailSandbox};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::env;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
+
+const SANDBOX_NODE_BINARY_ENV: &str = "CREDBRIDGE_SANDBOX_NODE_BINARY";
+const NODE_PATH_ENV: &str = "NODE_PATH";
+const PLAYWRIGHT_BROWSERS_PATH_ENV: &str = "PLAYWRIGHT_BROWSERS_PATH";
+
+const NODE_BINARY_CANDIDATES: &[&str] = &["/usr/bin/node", "/usr/local/bin/node"];
+const NODE_PATH_CANDIDATES: &[&str] = &["/opt/credbridge-browser-runtime/node_modules"];
+const PLAYWRIGHT_BROWSERS_PATH_CANDIDATES: &[&str] = &[
+    "/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers",
+    "/root/.cache/ms-playwright",
+    "/ms-playwright",
+];
 
 #[derive(Clone)]
 pub struct SandboxBrowserRuntime {
@@ -44,6 +58,9 @@ impl SandboxBrowserRuntime {
 
         let script_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("src/tee/sandbox/scripts/sandbox_executor.cjs");
+        let node_binary = resolve_node_binary()?;
+        let node_path = resolve_node_path()?;
+        let playwright_browsers_path = resolve_playwright_browsers_path()?;
         let mut env = HashMap::new();
         env.insert("HOME".to_string(), home_dir.to_string_lossy().to_string());
         env.insert("TMPDIR".to_string(), tmp_dir.to_string_lossy().to_string());
@@ -59,16 +76,22 @@ impl SandboxBrowserRuntime {
             "XDG_DATA_HOME".to_string(),
             data_dir.to_string_lossy().to_string(),
         );
-        env.insert("PLAYWRIGHT_BROWSERS_PATH".to_string(), "0".to_string());
+        env.insert(NODE_PATH_ENV.to_string(), node_path);
+        env.insert(
+            PLAYWRIGHT_BROWSERS_PATH_ENV.to_string(),
+            playwright_browsers_path,
+        );
+        if let Ok(skip_gc) = env::var("PLAYWRIGHT_SKIP_BROWSER_GC")
+            && !skip_gc.is_empty()
+        {
+            env.insert("PLAYWRIGHT_SKIP_BROWSER_GC".to_string(), skip_gc);
+        }
 
         // Browser runtime uses a dedicated relaxed seccomp profile so node/playwright/chromium
         // can start without dropping all syscall filtering for the scoped process.
         let mut child = sandbox
             .spawn_scoped_process(
-                vec![
-                    "node".to_string(),
-                    script_path.to_string_lossy().to_string(),
-                ],
+                vec![node_binary, script_path.to_string_lossy().to_string()],
                 runtime_dir,
                 env,
                 true,
@@ -319,4 +342,104 @@ impl SandboxBrowserRuntime {
 
         Ok(response)
     }
+}
+
+fn resolve_node_binary() -> Result<String, SandboxError> {
+    resolve_executable_path(SANDBOX_NODE_BINARY_ENV, "node", NODE_BINARY_CANDIDATES)
+}
+
+fn resolve_node_path() -> Result<String, SandboxError> {
+    resolve_existing_path(NODE_PATH_ENV, NODE_PATH_CANDIDATES)
+}
+
+fn resolve_playwright_browsers_path() -> Result<String, SandboxError> {
+    if let Ok(configured) = env::var(PLAYWRIGHT_BROWSERS_PATH_ENV) {
+        let trimmed = configured.trim();
+        if !trimmed.is_empty() && trimmed != "0" {
+            let configured_path = Path::new(trimmed);
+            if configured_path.exists() {
+                return Ok(trimmed.to_string());
+            }
+            return Err(SandboxError::Config(format!(
+                "{PLAYWRIGHT_BROWSERS_PATH_ENV} points to missing path: {trimmed}"
+            )));
+        }
+    }
+
+    resolve_existing_path(
+        PLAYWRIGHT_BROWSERS_PATH_ENV,
+        PLAYWRIGHT_BROWSERS_PATH_CANDIDATES,
+    )
+}
+
+fn resolve_existing_path(env_key: &str, candidates: &[&str]) -> Result<String, SandboxError> {
+    if let Ok(configured) = env::var(env_key) {
+        let trimmed = configured.trim();
+        if !trimmed.is_empty() {
+            let configured_path = Path::new(trimmed);
+            if configured_path.exists() {
+                return Ok(trimmed.to_string());
+            }
+            return Err(SandboxError::Config(format!(
+                "{env_key} points to missing path: {trimmed}"
+            )));
+        }
+    }
+
+    for candidate in candidates {
+        if Path::new(candidate).exists() {
+            return Ok((*candidate).to_string());
+        }
+    }
+
+    Err(SandboxError::Config(format!(
+        "{env_key} is not configured and none of the default paths exist: {}",
+        candidates.join(", ")
+    )))
+}
+
+fn resolve_executable_path(
+    env_key: &str,
+    command_name: &str,
+    candidates: &[&str],
+) -> Result<String, SandboxError> {
+    if let Ok(configured) = env::var(env_key) {
+        let trimmed = configured.trim();
+        if !trimmed.is_empty() {
+            let configured_path = Path::new(trimmed);
+            if is_executable_file(configured_path) {
+                return Ok(trimmed.to_string());
+            }
+            return Err(SandboxError::Config(format!(
+                "{env_key} points to a non-executable path: {trimmed}"
+            )));
+        }
+    }
+
+    if let Some(path_value) = env::var_os("PATH") {
+        for entry in env::split_paths(&path_value) {
+            let candidate = entry.join(command_name);
+            if is_executable_file(&candidate) {
+                return Ok(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    for candidate in candidates {
+        let candidate_path = Path::new(candidate);
+        if is_executable_file(candidate_path) {
+            return Ok((*candidate).to_string());
+        }
+    }
+
+    Err(SandboxError::Config(format!(
+        "{command_name} executable is not available; set {env_key} or install it in one of: {}",
+        candidates.join(", ")
+    )))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false)
 }

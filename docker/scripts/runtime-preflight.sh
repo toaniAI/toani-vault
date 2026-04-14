@@ -67,6 +67,56 @@ library_exists() {
     return 1
 }
 
+resolve_browser_runtime_path() {
+    env_name="$1"
+    shift
+
+    configured_path="$(printenv "$env_name" 2>/dev/null || true)"
+    if [ -n "$configured_path" ] && [ "$configured_path" != "0" ]; then
+        [ -e "$configured_path" ] && {
+            echo "$configured_path"
+            return 0
+        }
+        fail "configured browser runtime path $env_name=$configured_path does not exist"
+    fi
+
+    find_existing_path "$@" || return 1
+}
+
+ensure_browser_runtime_prerequisites() {
+    sandbox_node_binary="${CREDBRIDGE_SANDBOX_NODE_BINARY:-$(command -v node 2>/dev/null || true)}"
+    [ -n "$sandbox_node_binary" ] || fail "node executable not found; install nodejs or set CREDBRIDGE_SANDBOX_NODE_BINARY"
+    [ -x "$sandbox_node_binary" ] || fail "sandbox node binary is not executable: $sandbox_node_binary"
+    export CREDBRIDGE_SANDBOX_NODE_BINARY="$sandbox_node_binary"
+    log "effective sandbox node binary=$CREDBRIDGE_SANDBOX_NODE_BINARY"
+
+    if [ -z "${NODE_PATH:-}" ]; then
+        NODE_PATH="$(resolve_browser_runtime_path NODE_PATH \
+            /opt/credbridge-browser-runtime/node_modules || true)"
+        [ -n "${NODE_PATH:-}" ] || fail "NODE_PATH is not set and default browser runtime modules path is missing"
+        export NODE_PATH
+    fi
+    log "effective NODE_PATH=$NODE_PATH"
+
+    PLAYWRIGHT_BROWSERS_PATH="$(resolve_browser_runtime_path PLAYWRIGHT_BROWSERS_PATH \
+        /opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers \
+        /root/.cache/ms-playwright \
+        /ms-playwright || true)"
+    [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] || fail "PLAYWRIGHT_BROWSERS_PATH is not set and no installed Playwright browser directory was found"
+    export PLAYWRIGHT_BROWSERS_PATH
+    log "effective PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH"
+
+    playwright_entry="$("$CREDBRIDGE_SANDBOX_NODE_BINARY" -e 'process.stdout.write(require.resolve("playwright"))' 2>/dev/null || true)"
+    [ -n "$playwright_entry" ] || fail "playwright package is not resolvable with current NODE_PATH=$NODE_PATH"
+    [ -f "$playwright_entry" ] || fail "playwright resolved to a missing file: $playwright_entry"
+    log "playwright entrypoint=$playwright_entry"
+
+    chromium_executable="$("$CREDBRIDGE_SANDBOX_NODE_BINARY" -e 'const fs=require("fs"); const { chromium } = require("playwright"); const executablePath = chromium.executablePath(); if (!executablePath || !fs.existsSync(executablePath)) { process.exit(1); } process.stdout.write(executablePath);' 2>/dev/null || true)"
+    [ -n "$chromium_executable" ] || fail "Playwright Chromium executable is not available under PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH"
+    [ -f "$chromium_executable" ] || fail "Chromium executable path does not exist: $chromium_executable"
+    log "playwright chromium executable=$chromium_executable"
+}
+
 write_qcnl_config() {
     config_path="${SGX_QCNL_CONFIG_PATH:-/etc/sgx_default_qcnl.conf}"
     pccs_url="${DCAP_PCCS_URL:-}"
@@ -93,6 +143,8 @@ EOF
 
     log "wrote SGX QCNL config to $config_path"
 }
+
+ensure_browser_runtime_prerequisites
 
 TEE_MODE_VALUE="${TEE_MODE:-simulation}"
 
