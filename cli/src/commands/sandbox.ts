@@ -8,6 +8,16 @@ import {
   requireArg,
 } from "./common.js";
 
+function parseBooleanOption(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
 export async function runSandbox(
   config: CliConfig,
   argv: string[],
@@ -81,6 +91,45 @@ export async function runSandbox(
       printResult(result, config.output);
       return;
     }
+    case "export-dom": {
+      const sessionId = options._[0];
+      if (!sessionId) {
+        throw new Error("Usage: toani sandbox export-dom <sessionId> [options]");
+      }
+      const selectors = options["extra-sensitive-selectors"];
+      const extraSensitiveSelectors =
+        typeof selectors === "string"
+          ? (() => {
+              let parsed: unknown;
+              try {
+                parsed = JSON.parse(selectors);
+              } catch (error) {
+                throw new Error(
+                  `Invalid JSON for --extra-sensitive-selectors: ${(error as Error).message}`,
+                );
+              }
+              if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+                throw new Error(
+                  "--extra-sensitive-selectors must be a JSON array of strings",
+                );
+              }
+              return parsed;
+            })()
+          : undefined;
+      const result = await sdk.sandbox.exportDom(
+        sessionId,
+        {
+          format: options.format as "html" | "text" | "json" | undefined,
+          rootSelector: options["root-selector"] as string | undefined,
+          includeText: parseBooleanOption(options["include-text"]),
+          includeMetadata: parseBooleanOption(options["include-metadata"]),
+          extraSensitiveSelectors,
+          maxBytes: options["max-bytes"] as number | undefined,
+        },
+      );
+      printResult(result, config.output);
+      return;
+    }
     case "get-operation": {
       const operationId = options._[0];
       if (!operationId)
@@ -96,7 +145,7 @@ export async function runSandbox(
     }
     default:
       throw new Error(
-        "Usage: toani sandbox <create-session|list-sessions|get-session|terminate|execute|get-operation|stats> [options]",
+        "Usage: toani sandbox <create-session|list-sessions|get-session|terminate|execute|export-dom|get-operation|stats> [options]",
       );
   }
 }

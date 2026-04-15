@@ -43,8 +43,8 @@ WORKDIR /app
 ENV SEALED_STORAGE_PATH=/app/data/sealed
 ENV SGX_AESM_SOCKET_PATH=/var/run/aesmd/aesm.socket
 ENV NODE_PATH=/opt/credbridge-browser-runtime/node_modules
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
+ENV LIGHTPANDA_BINARY_PATH=/usr/local/bin/lightpanda
+ENV LIGHTPANDA_DISABLE_TELEMETRY=true
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -85,19 +85,24 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends nodejs; \
     rm -rf /var/lib/apt/lists/*
 
+ARG PUPPETEER_CORE_VERSION=24.40.0
+ARG LIGHTPANDA_NODE_PACKAGE_VERSION=1.2.0
+
 RUN set -eux; \
-    mkdir -p /opt/credbridge-browser-runtime "$PLAYWRIGHT_BROWSERS_PATH"; \
+    mkdir -p /opt/credbridge-browser-runtime; \
     cd /opt/credbridge-browser-runtime; \
     printf '%s\n' '{' \
       '  "name": "credbridge-browser-runtime",' \
       '  "private": true,' \
       '  "dependencies": {' \
-      '    "playwright": "1.58.2"' \
+      "    \"@lightpanda/browser\": \"${LIGHTPANDA_NODE_PACKAGE_VERSION}\"," \
+      "    \"puppeteer-core\": \"${PUPPETEER_CORE_VERSION}\"" \
       '  }' \
       '}' > package.json; \
     npm install --omit=dev --no-fund --no-audit; \
-    npx playwright install --with-deps chromium; \
-    chmod -R a+rX /opt/credbridge-browser-runtime "$PLAYWRIGHT_BROWSERS_PATH"; \
+    install -m 0755 /root/.cache/lightpanda-node/lightpanda "$LIGHTPANDA_BINARY_PATH"; \
+    "$LIGHTPANDA_BINARY_PATH" --version; \
+    chmod -R a+rX /opt/credbridge-browser-runtime; \
     npm cache clean --force
 
 COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail

@@ -104,8 +104,8 @@
 - `POST /api/v1/sandbox/sessions/:id/execute`
 - `POST /api/v1/sandbox/sessions/:id/pause`
 - `POST /api/v1/sandbox/sessions/:id/resume`
-- `POST /api/v1/sandbox/sessions/:id/screenshot`
 - `POST /api/v1/sandbox/sessions/:id/export`
+- `POST /api/v1/sandbox/sessions/:id/dom-export`
 - `GET /api/v1/sandbox/operations/:operation_id`
 - `GET /api/v1/sandbox/stats`
 - `GET /api/v1/sandbox/sessions/:id/ws/:credential_id`

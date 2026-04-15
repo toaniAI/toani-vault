@@ -84,15 +84,15 @@ async function automateTask() {
     );
     console.log("Balance:", balanceResult.result);
 
-    // 6. 截图保存
-    const screenshot = await sdk.sandbox.takeScreenshot(sessionId, {
-      type: "png",
-      fullPage: true,
+    // 6. 导出脱敏 DOM
+    const domExport = await sdk.sandbox.exportDom(sessionId, {
+      format: "html",
+      rootSelector: "body",
+      includeText: true,
+      includeMetadata: true,
     });
 
-    // 保存截图到文件
-    const fs = require("fs");
-    fs.writeFileSync("portfolio.png", Buffer.from(screenshot.data, "base64"));
+    console.log("DOM exported:", domExport.truncated ? "truncated" : "full");
   } finally {
     // 7. 关闭会话（确保资源释放）
     await sdk.sandbox.closeSession(sessionId);
@@ -125,7 +125,7 @@ Sandbox 是 CredBridge 提供的 TEE（可信执行环境）安全浏览器自�
 │              TEE Sandbox 层 (Intel SGX)                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐    │
 │  │ 浏览器实例   │  │ 凭证解密     │  │ 自动化执行     │    │
-│  │ (Chromium)   │  │ (AES-256)    │  │ (Playwright)    │    │
+│  │ (Lightpanda) │  │ (AES-256)    │  │ (puppeteer-core)│    │
 │  └──────────────┘  └──────────────┘  └─────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -154,9 +154,9 @@ Creating → Running → [Paused] → Closed
 | `get_text`          | 获取元素文本    | 提取页面数据               |
 | `get_attribute`     | 获取元素属性    | 获取链接 href、图片 src 等 |
 | `execute_script`    | 执行 JavaScript | 复杂页面交互               |
-| `wait_for_selector` | 等待元素出现    | 等待页面加载完成           |
-| `screenshot`        | 截图            | 保存页面状态               |
-| `export_data`       | 导出数据        | 批量提取结构化数据         |
+| `wait`              | 等待元素出现    | 等待页面加载完成           |
+| `dom_export`        | 导出脱敏 DOM    | 导出页面内容用于审计/调试  |
+| `export`            | 导出数据        | 批量提取结构化数据         |
 
 ---
 
@@ -339,36 +339,28 @@ await sdk.sandbox.executeOperation(sessionId, {
 });
 ```
 
-### 截图操作
+### DOM 导出操作
 
 ```typescript
-// 截取完整页面
-const fullPage = await sdk.sandbox.takeScreenshot(sessionId, {
-  type: "png",
-  fullPage: true,
+const domHtml = await sdk.sandbox.exportDom(sessionId, {
+  format: "html",
+  rootSelector: "body",
+  includeText: true,
+  includeMetadata: true,
 });
 
-// 截取特定元素
-const elementShot = await sdk.sandbox.takeScreenshot(sessionId, {
-  selector: "#chart-container",
-  type: "jpeg",
-  quality: 90,
+const domText = await sdk.sandbox.exportDom(sessionId, {
+  format: "text",
+  rootSelector: "main",
 });
 
-// 截取指定区域
-const clippedShot = await sdk.sandbox.takeScreenshot(sessionId, {
-  type: "png",
-  clip: {
-    x: 100,
-    y: 100,
-    width: 800,
-    height: 600,
-  },
+const domJson = await sdk.sandbox.exportDom(sessionId, {
+  format: "json",
+  rootSelector: "article",
+  extraSensitiveSelectors: ["#token", ".secret"],
+  maxBytes: 262144,
 });
-
-// 保存截图
-const fs = require("fs");
-fs.writeFileSync("screenshot.png", Buffer.from(fullPage.data, "base64"));
+console.log(domHtml.truncated, domText.success, domJson.format);
 ```
 
 ---
@@ -449,24 +441,9 @@ const clickResult = await ws.executeOperation({
 });
 ```
 
-### 实时截图
+### 实时操作返回
 
-```typescript
-// 请求截图
-const screenshot = await ws.requestScreenshot(30000);
-
-if (screenshot.success) {
-  console.log("Screenshot format:", screenshot.format);
-  console.log("Image data length:", screenshot.imageData?.length);
-
-  // 保存截图
-  const fs = require("fs");
-  fs.writeFileSync(
-    "live-screenshot.png",
-    Buffer.from(screenshot.imageData!, "base64"),
-  );
-}
-```
+WebSocket 只支持 `execute / heartbeat / close`，不再提供截图请求消息。
 
 ### 断开连接
 
@@ -520,11 +497,12 @@ async function executeWithWebSocket(sessionId: string, credentialId: string) {
       parameters: { selector: "#login-button" },
     });
 
-    // 获取截图
-    const screenshot = await ws.requestScreenshot();
-    if (screenshot.success) {
-      console.log("Screenshot captured");
-    }
+    // 通过 execute 调用 dom_export
+    await ws.executeOperation({
+      operationType: "dom_export",
+      description: "Export redacted DOM",
+      parameters: { format: "html", root_selector: "body" },
+    });
   } finally {
     ws.disconnect();
   }
@@ -876,7 +854,7 @@ await executeWithRetry(async () => {
 
 | 方法                                 | 说明     | 参数                          |
 | ------------------------------------ | -------- | ----------------------------- |
-| `takeScreenshot(sessionId, options)` | 截图     | `options?: ScreenshotOptions` |
+| `exportDom(sessionId, request)`      | 导出DOM  | `request?: DomExportRequest`  |
 | `exportData(sessionId, request)`     | 导出数据 | `request: ExportDataRequest`  |
 
 ### SandboxWebSocketClient
@@ -904,7 +882,6 @@ await executeWithRetry(async () => {
 | `isConnected()`               | 检查是否已连接 | `boolean`                         |
 | `getState()`                  | 获取连接状态   | `WebSocketState`                  |
 | `executeOperation(options)`   | 执行操作       | `Promise<ExecuteOperationResult>` |
-| `requestScreenshot(timeout?)` | 请求截图       | `Promise<ScreenshotResult>`       |
 
 #### 事件回调
 
@@ -914,7 +891,6 @@ await executeWithRetry(async () => {
 | `onDisconnected`        | `(code: number, reason: string)`         | 连接断开     |
 | `onOperationProgress`   | `(data: OperationProgressMessage)`       | 操作进度更新 |
 | `onOperationCompleted`  | `(data: OperationCompletedMessage)`      | 操作完成     |
-| `onScreenshotResult`    | `(data: ScreenshotResultMessage)`        | 截图结果     |
 | `onSessionStatusUpdate` | `(data: SessionStatusUpdateMessage)`     | 会话状态更新 |
 | `onError`               | `(error: ErrorMessage)`                  | 错误消息     |
 | `onConnectionError`     | `(error: Event)`                         | 连接错误     |
@@ -940,9 +916,9 @@ enum OperationType {
   GetText = "get_text",
   GetAttribute = "get_attribute",
   ExecuteScript = "execute_script",
-  WaitForSelector = "wait_for_selector",
-  Screenshot = "screenshot",
-  ExportData = "export_data",
+  WaitForSelector = "wait",
+  ExportData = "export",
+  DomExport = "dom_export",
 }
 
 // 操作状态
@@ -992,7 +968,7 @@ interface PortfolioData {
     price: string;
     value: string;
   }>;
-  screenshot: string;
+  domSnapshot: string;
   timestamp: string;
 }
 
@@ -1059,17 +1035,17 @@ async function queryPortfolio(
       ],
     });
 
-    // 截图
-    const screenshot = await sdk.sandbox.takeScreenshot(session.sessionId, {
-      type: "png",
-      fullPage: true,
+    // 导出脱敏 DOM
+    const domSnapshot = await sdk.sandbox.exportDom(session.sessionId, {
+      format: "html",
+      rootSelector: "body",
     });
 
     return {
       totalValue: (summaryResult.result as any).totalValue,
       dayChange: (summaryResult.result as any).dayChange,
       positions: positionsResult.data as any[],
-      screenshot: screenshot.data,
+      domSnapshot: String(domSnapshot.data ?? ""),
       timestamp: new Date().toISOString(),
     };
   } finally {

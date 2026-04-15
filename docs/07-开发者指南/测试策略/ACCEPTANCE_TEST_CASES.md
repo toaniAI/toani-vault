@@ -674,12 +674,12 @@
 
 **所属模块**: API接口
 **优先级**: P0
-**验收标准**: POST /sandbox/sessions/:id/screenshot 返回带签名的图片
+**验收标准**: POST /sandbox/sessions/:id/dom-export 返回已脱敏 DOM 内容
 
 **测试步骤**:
 
 1. 创建会话并访问页面
-2. 发送 screenshot 请求
+2. 发送 dom-export 请求
 3. 验证响应内容
 
 **预期结果**:

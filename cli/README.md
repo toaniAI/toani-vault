@@ -74,6 +74,7 @@ toani sandbox list-sessions
 toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
 toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
+toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
 toani sandbox get-operation <operationId>
 toani sandbox stats
 toani --version
@@ -102,8 +103,8 @@ Use this sequence:
 - `get_attribute`
 - `execute_script`
 - `wait`
-- `screenshot`
 - `export`
+- `dom_export`
 
 ### Examples
 
@@ -128,6 +129,14 @@ toani sandbox execute <sessionId> \
 toani sandbox execute <sessionId> \
   --operation-type fill \
   --params '{"selector":"input[name=email]","value":"user@example.com"}'
+
+# Export redacted DOM
+toani sandbox export-dom <sessionId> \
+  --format html \
+  --root-selector body \
+  --include-text true \
+  --include-metadata true \
+  --extra-sensitive-selectors '["#token",".secret"]'
 
 # Inspect operation result
 toani sandbox get-operation <operationId>

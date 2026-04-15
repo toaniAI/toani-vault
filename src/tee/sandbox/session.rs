@@ -84,11 +84,11 @@ struct SessionCredentialMaterial {
 #[derive(Debug)]
 struct SandboxExecutionOutput {
     data: Option<Value>,
-    screenshot: Option<Vec<u8>>,
 }
 
 const DEFAULT_HTTP_REQUEST_TIMEOUT_MS: u64 = 30_000;
 const MAX_HTTP_RESPONSE_BODY_BYTES: usize = 64 * 1024;
+const DEFAULT_DOM_EXPORT_MAX_BYTES: u64 = 262_144;
 
 impl ActiveNsjailSession {
     pub fn new(id: SessionId, context: SessionContext, sandbox: NsjailSandbox) -> Self {
@@ -291,6 +291,42 @@ impl ActiveNsjailSession {
         parameters.get(key).and_then(Value::as_u64)
     }
 
+    fn optional_bool(parameters: &HashMap<String, Value>, key: &str, default: bool) -> bool {
+        parameters
+            .get(key)
+            .and_then(Value::as_bool)
+            .unwrap_or(default)
+    }
+
+    fn optional_string(parameters: &HashMap<String, Value>, key: &str, default: &str) -> String {
+        parameters
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| default.to_string())
+    }
+
+    fn optional_string_array(
+        parameters: &HashMap<String, Value>,
+        key: &str,
+    ) -> Result<Vec<String>, SandboxError> {
+        let Some(value) = parameters.get(key) else {
+            return Ok(Vec::new());
+        };
+        let items = value.as_array().ok_or_else(|| {
+            SandboxError::Other(format!("invalid_request: {key} must be an array"))
+        })?;
+        items
+            .iter()
+            .map(|item| {
+                item.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                    SandboxError::Other(format!("invalid_request: {key} items must be strings"))
+                })
+            })
+            .collect()
+    }
+
     fn required_http_method(parameters: &HashMap<String, Value>) -> Result<Method, SandboxError> {
         let method = Self::required_string(parameters, "method")?;
         Method::from_bytes(method.trim().to_ascii_uppercase().as_bytes()).map_err(|_| {
@@ -406,7 +442,6 @@ impl ActiveNsjailSession {
                 "url": final_url,
                 "truncated": truncated
             })),
-            screenshot: None,
         })
     }
 
@@ -517,7 +552,6 @@ impl ActiveNsjailSession {
                     .await?;
                 Ok(SandboxExecutionOutput {
                     data: Some(json!({ "final_url": final_url })),
-                    screenshot: None,
                 })
             }
             OperationType::Click => {
@@ -526,7 +560,6 @@ impl ActiveNsjailSession {
                 browser.click(&selector).await?;
                 Ok(SandboxExecutionOutput {
                     data: Some(json!({ "clicked": true, "selector": selector })),
-                    screenshot: None,
                 })
             }
             OperationType::Fill => {
@@ -557,7 +590,6 @@ impl ActiveNsjailSession {
                         "selector": selector,
                         "sensitive": sensitive
                     })),
-                    screenshot: None,
                 })
             }
             OperationType::Wait => {
@@ -578,7 +610,6 @@ impl ActiveNsjailSession {
                         "selector": selector,
                         "timeout_ms": timeout_ms
                     })),
-                    screenshot: None,
                 })
             }
             OperationType::GetText => {
@@ -591,17 +622,6 @@ impl ActiveNsjailSession {
                         "text": text,
                         "redacted": redacted
                     })),
-                    screenshot: None,
-                })
-            }
-            OperationType::Screenshot => {
-                let browser = self.browser_runtime().await?;
-                let screenshot = browser
-                    .screenshot(&self.sensitive_selectors().await)
-                    .await?;
-                Ok(SandboxExecutionOutput {
-                    data: None,
-                    screenshot: Some(screenshot),
                 })
             }
             OperationType::Export => {
@@ -637,7 +657,41 @@ impl ActiveNsjailSession {
                         "url": browser.current_url().await?,
                         "items": items
                     })),
-                    screenshot: None,
+                })
+            }
+            OperationType::DomExport => {
+                let browser = self.browser_runtime().await?;
+                let root_selector = Self::optional_string(parameters, "root_selector", "html");
+                let format = Self::optional_string(parameters, "format", "html");
+                validate_dom_export_format(&format)?;
+                let include_text = Self::optional_bool(parameters, "include_text", true);
+                let include_metadata = Self::optional_bool(parameters, "include_metadata", false);
+                let max_bytes = Self::optional_u64(parameters, "max_bytes")
+                    .unwrap_or(DEFAULT_DOM_EXPORT_MAX_BYTES);
+                if max_bytes == 0 {
+                    return Err(SandboxError::Other(
+                        "invalid_request: max_bytes must be greater than 0".to_string(),
+                    ));
+                }
+
+                let mut sensitive_selectors = self.sensitive_selectors().await;
+                sensitive_selectors.extend(Self::optional_string_array(
+                    parameters,
+                    "extra_sensitive_selectors",
+                )?);
+
+                let data = browser
+                    .dom_export(
+                        &root_selector,
+                        &format,
+                        include_text,
+                        include_metadata,
+                        &sensitive_selectors,
+                    )
+                    .await?;
+                let data = redact_dom_export_result(data);
+                Ok(SandboxExecutionOutput {
+                    data: Some(truncate_dom_export_data(data, max_bytes)),
                 })
             }
             OperationType::ExecuteScript => {
@@ -647,7 +701,6 @@ impl ActiveNsjailSession {
                 let result = browser.execute_script(&script, &bindings).await?;
                 Ok(SandboxExecutionOutput {
                     data: Some(redact_script_result(result, &sensitive_values)),
-                    screenshot: None,
                 })
             }
             OperationType::HttpRequest => self.execute_http_request(parameters).await,
@@ -813,7 +866,6 @@ impl SandboxSession for ActiveNsjailSession {
                     data: output.data,
                     error: None,
                     execution_time_ms,
-                    screenshot: output.screenshot,
                     audit_log: vec![],
                 }
             }
@@ -830,7 +882,6 @@ impl SandboxSession for ActiveNsjailSession {
                     data: None,
                     error: Some(error.to_string()),
                     execution_time_ms,
-                    screenshot: None,
                     audit_log: vec![],
                 }
             }
@@ -1001,6 +1052,88 @@ fn redact_sensitive_text(text: &str) -> String {
     }
 }
 
+fn validate_dom_export_format(format: &str) -> Result<(), SandboxError> {
+    match format {
+        "html" | "text" | "json" => Ok(()),
+        _ => Err(SandboxError::Other(format!(
+            "invalid_request: unsupported dom export format {format}"
+        ))),
+    }
+}
+
+fn redact_dom_export_result(value: Value) -> Value {
+    match value {
+        Value::String(text) => Value::String(redact_sensitive_text(&text)),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(redact_dom_export_result).collect())
+        }
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(key, item)| (key, redact_dom_export_result(item)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn truncate_dom_export_data(mut data: Value, max_bytes: u64) -> Value {
+    let max_bytes = usize::try_from(max_bytes).unwrap_or(usize::MAX);
+    let mut truncated = false;
+
+    if serialized_len(&data) > max_bytes
+        && let Some(object) = data.as_object_mut()
+        && let Some(content) = object.get_mut("content")
+    {
+        let content_text = match &*content {
+            Value::String(text) => text.clone(),
+            other => serde_json::to_string(other).unwrap_or_default(),
+        };
+        let mut budget = max_bytes.saturating_sub(512);
+        if budget == 0 {
+            budget = max_bytes;
+        }
+        *content = Value::String(truncate_utf8(&content_text, budget));
+        truncated = true;
+
+        while serialized_len(&data) > max_bytes {
+            let Some(object) = data.as_object_mut() else {
+                break;
+            };
+            let Some(Value::String(content_text)) = object.get_mut("content") else {
+                break;
+            };
+            if content_text.is_empty() {
+                break;
+            }
+            let next_len = content_text.len() / 2;
+            *content_text = truncate_utf8(content_text, next_len);
+        }
+    }
+
+    if let Some(object) = data.as_object_mut() {
+        object.insert("truncated".to_string(), Value::Bool(truncated));
+    }
+    data
+}
+
+fn serialized_len(value: &Value) -> usize {
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_string();
+    }
+
+    let mut end = max_bytes;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_string()
+}
+
 fn extract_supported_credential_fields(
     credential_type: CredentialType,
     plaintext_data: &Value,
@@ -1135,6 +1268,41 @@ mod tests {
             "********"
         );
         assert_eq!(redact_sensitive_text("visible text"), "visible text");
+    }
+
+    #[test]
+    fn test_dom_export_format_validation() {
+        assert!(validate_dom_export_format("html").is_ok());
+        assert!(validate_dom_export_format("text").is_ok());
+        assert!(validate_dom_export_format("json").is_ok());
+        assert!(validate_dom_export_format("png").is_err());
+    }
+
+    #[test]
+    fn test_redact_dom_export_result_masks_secret_like_values() {
+        let result = redact_dom_export_result(json!({
+            "content": "Bearer secret-token",
+            "nested": ["visible", "sk_1234567890abcdefghijklmnop"]
+        }));
+
+        assert_eq!(result["content"], "********");
+        assert_eq!(result["nested"][0], "visible");
+        assert_eq!(result["nested"][1], "********");
+    }
+
+    #[test]
+    fn test_truncate_dom_export_data_sets_truncated_flag() {
+        let result = truncate_dom_export_data(
+            json!({
+                "format": "html",
+                "content": "x".repeat(1024),
+                "truncated": false
+            }),
+            128,
+        );
+
+        assert_eq!(result["truncated"], true);
+        assert!(result["content"].as_str().expect("content").len() < 1024);
     }
 
     #[test]

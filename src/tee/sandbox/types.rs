@@ -265,10 +265,10 @@ pub enum OperationType {
     Fill,
     /// 获取文本
     GetText,
-    /// 截图
-    Screenshot,
     /// 导出数据
     Export,
+    /// 导出 DOM
+    DomExport,
     /// 执行脚本
     ExecuteScript,
     /// 等待元素
@@ -292,8 +292,8 @@ impl std::fmt::Display for OperationType {
             OperationType::Click => write!(f, "click"),
             OperationType::Fill => write!(f, "fill"),
             OperationType::GetText => write!(f, "get_text"),
-            OperationType::Screenshot => write!(f, "screenshot"),
             OperationType::Export => write!(f, "export"),
+            OperationType::DomExport => write!(f, "dom_export"),
             OperationType::ExecuteScript => write!(f, "execute_script"),
             OperationType::Wait => write!(f, "wait"),
             OperationType::HttpRequest => write!(f, "http_request"),
@@ -380,8 +380,6 @@ pub struct ExecutionResult {
     pub error: Option<String>,
     /// 执行时间（毫秒）
     pub execution_time_ms: u64,
-    /// 截图数据（如果有）
-    pub screenshot: Option<Vec<u8>>,
     /// 审计日志
     pub audit_log: Vec<AuditLogEntry>,
 }
@@ -499,7 +497,7 @@ mod tests {
     #[test]
     fn test_operation_type_display() {
         assert_eq!(OperationType::Navigate.to_string(), "navigate");
-        assert_eq!(OperationType::Screenshot.to_string(), "screenshot");
+        assert_eq!(OperationType::DomExport.to_string(), "dom_export");
         assert_eq!(OperationType::HttpRequest.to_string(), "http_request");
     }
 }

@@ -11,8 +11,8 @@ import {
   type SessionInfo,
   type ExecuteOperationRequest,
   type ExecuteOperationResponse,
-  type ScreenshotOptions,
-  type ScreenshotResponse,
+  type DomExportRequest,
+  type DomExportResponse,
   type ExportDataRequest,
   type ExportDataResponse,
   type ListSessionsResponse,
@@ -257,44 +257,37 @@ export class SandboxService {
     );
   }
 
-  /**
-   * 截取页面截图
-   *
-   * @param sessionId - 会话ID
-   * @param options - 截图选项
-   * @param requestOptions - 请求选项
-   * @returns 截图结果
-   *
-   * @example
-   * ```typescript
-   * // 截取完整页面
-   * const screenshot = await sdk.sandbox.takeScreenshot('session-123', {
-   *   fullPage: true,
-   *   type: 'png',
-   * });
-   *
-   * // 截取特定元素
-   * const elementScreenshot = await sdk.sandbox.takeScreenshot('session-123', {
-   *   selector: '#chart-container',
-   * });
-   * ```
-   */
-  public async takeScreenshot(
+  public async exportDom(
     sessionId: string,
-    options?: ScreenshotOptions,
-    requestOptions?: RequestOptions,
-  ): Promise<ScreenshotResponse> {
-    return this.client.post<ScreenshotResponse>(
-      `/sandbox/sessions/${sessionId}/screenshot`,
-      {
-        selector: options?.selector,
-        full_page: options?.fullPage,
-        type: options?.type,
-        quality: options?.quality,
-        clip: options?.clip,
-      },
-      requestOptions,
-    );
+    request: DomExportRequest = {},
+    options?: RequestOptions,
+  ): Promise<DomExportResponse> {
+    const response = await this.client.post<{
+      operation_id: string;
+      success: boolean;
+      format: "html" | "text" | "json";
+      data?: unknown;
+      truncated: boolean;
+      error?: string;
+      execution_time_ms: number;
+    }>(`/sandbox/sessions/${sessionId}/dom-export`, {
+      root_selector: request.rootSelector,
+      format: request.format,
+      include_text: request.includeText,
+      include_metadata: request.includeMetadata,
+      extra_sensitive_selectors: request.extraSensitiveSelectors,
+      max_bytes: request.maxBytes,
+    }, options);
+
+    return {
+      operationId: response.operation_id,
+      success: response.success,
+      format: response.format,
+      data: response.data,
+      truncated: response.truncated,
+      error: response.error,
+      executionTimeMs: response.execution_time_ms,
+    };
   }
 
   /**

@@ -402,7 +402,7 @@ assert!(injection_detector.detect(malicious_input).is_rejected());
 | 暂停会话  | POST   | `/sandbox/sessions/:id/pause`      | 暂停会话           |
 | 恢复会话  | POST   | `/sandbox/sessions/:id/resume`     | 恢复暂停的会话     |
 | 关闭会话  | DELETE | `/sandbox/sessions/:id`            | 关闭并清理会话     |
-| 截图      | POST   | `/sandbox/sessions/:id/screenshot` | 安全截图并导出     |
+| DOM 导出  | POST   | `/sandbox/sessions/:id/dom-export` | 导出并脱敏页面 DOM |
 | 导出数据  | POST   | `/sandbox/sessions/:id/export`     | 导出结构化数据     |
 | WebSocket | WS     | `/sandbox/sessions/:id/stream`     | 实时操作流         |
 
@@ -446,7 +446,7 @@ interface ExecuteOperationRequest {
     | "navigate"
     | "click"
     | "fill"
-    | "screenshot"
+    | "dom_export"
     | "extract"
     | "execute_script";
   description: string; // 自然语言描述，用于AI审核
@@ -471,26 +471,28 @@ interface ExecuteOperationResponse {
 }
 ```
 
-**安全截图 (POST /sandbox/sessions/:id/screenshot)**
+**DOM 导出 (POST /sandbox/sessions/:id/dom-export)**
 
 ```typescript
 // Request
-interface ScreenshotRequest {
-  purpose: string; // 截图目的
-  expected_content?: string; // 预期内容描述
-  full_page?: boolean; // 是否全页截图
-  selector?: string; // 可选：特定元素截图
-  max_review_duration_ms?: number; // 审核超时，默认 5000
+interface DomExportRequest {
+  root_selector?: string; // 根选择器，默认 html
+  format?: "html" | "text" | "json";
+  include_text?: boolean;
+  include_metadata?: boolean;
+  extra_sensitive_selectors?: string[];
+  max_bytes?: number; // 默认 262144
 }
 
 // Response
-interface ScreenshotResponse {
-  image_data: string; // Base64编码图片
-  image_hash: string; // SHA256哈希
-  review_duration_ms: number;
-  signature: string; // Enclave签名
-  watermark: string; // 水印文本
-  redaction_applied: boolean; // 是否应用了脱敏
+interface DomExportResponse {
+  operation_id: string;
+  success: boolean;
+  format: "html" | "text" | "json";
+  data?: unknown;
+  truncated: boolean;
+  execution_time_ms: number;
+  error?: string;
 }
 ```
 
@@ -514,7 +516,7 @@ interface ErrorResponse {
 | -------------- | -------------------------------------------------------- | -------- | ------ |
 | 会话创建 API   | `POST /sandbox/sessions` 按契约返回正确格式              | API 测试 | P0     |
 | 操作执行 API   | `POST /sandbox/sessions/:id/execute` 按契约返回审核结果  | API 测试 | P0     |
-| 截图 API       | `POST /sandbox/sessions/:id/screenshot` 返回带签名的图片 | API 测试 | P0     |
+| DOM 导出 API   | `POST /sandbox/sessions/:id/dom-export` 返回已脱敏 DOM   | API 测试 | P0     |
 | 导出 API       | `POST /sandbox/sessions/:id/export` 正常工作             | API 测试 | P0     |
 | 会话管理 API   | 暂停、恢复、关闭、查询 API 按契约工作                    | API 测试 | P0     |
 | WebSocket 连接 | WebSocket 按契约进行实时通信                             | 集成测试 | P0     |
@@ -624,7 +626,7 @@ interface ErrorResponse {
 #### Week 7: 截图导出
 
 - [ ] Day 1-2: 实现 PageStateFreezer 页面冻结
-- [ ] Day 3-4: 实现 capture_screenshot_secure 安全截图
+- [ ] Day 3-4: 实现 dom-export 脱敏导出能力
 - [ ] Day 5: 实现截图内容审核和脱敏
 
 #### Week 8: 密钥管理与数据导出

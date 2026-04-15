@@ -836,10 +836,10 @@ export enum OperationType {
   WaitForSelector = "wait",
   /** 直接发起 HTTP 请求 */
   HttpRequest = "http_request",
-  /** 截图 */
-  Screenshot = "screenshot",
   /** 导出数据 */
   ExportData = "export",
+  /** 导出 DOM */
+  DomExport = "dom_export",
 }
 
 /** 操作状态 */
@@ -985,35 +985,27 @@ export interface ExecuteOperationResponse {
   executionTimeMs: number;
 }
 
-/** 截图选项 */
-export interface ScreenshotOptions {
-  /** 选择器（截取特定元素） */
-  selector?: string;
-  /** 完整页面截图 */
-  fullPage?: boolean;
-  /** 图片格式 */
-  type?: "png" | "jpeg";
-  /** 图片质量（仅jpeg） */
-  quality?: number;
-  /** 裁剪区域 */
-  clip?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+export type DomExportFormat = "html" | "text" | "json";
+
+/** DOM 导出请求 */
+export interface DomExportRequest {
+  rootSelector?: string;
+  format?: DomExportFormat;
+  includeText?: boolean;
+  includeMetadata?: boolean;
+  extraSensitiveSelectors?: string[];
+  maxBytes?: number;
 }
 
-/** 截图响应 */
-export interface ScreenshotResponse {
-  /** 图片数据（Base64） */
-  data: string;
-  /** 图片格式 */
-  type: "png" | "jpeg";
-  /** 宽度 */
-  width: number;
-  /** 高度 */
-  height: number;
+/** DOM 导出响应 */
+export interface DomExportResponse {
+  operationId: string;
+  success: boolean;
+  format: DomExportFormat;
+  data?: unknown;
+  truncated: boolean;
+  error?: string;
+  executionTimeMs: number;
 }
 
 /** 导出数据请求 */

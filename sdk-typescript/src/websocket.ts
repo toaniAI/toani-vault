@@ -56,7 +56,7 @@ export interface WebSocketConfig {
 
 /** 客户端消息类型 */
 export interface ClientMessage {
-  type: "execute" | "screenshot" | "heartbeat" | "close";
+  type: "execute" | "heartbeat" | "close";
 }
 
 /** 执行操作消息 */
@@ -66,12 +66,6 @@ export interface ExecuteMessage extends ClientMessage {
   operation_type: string;
   description: string;
   parameters?: Record<string, unknown>;
-}
-
-/** 截图消息 */
-export interface ScreenshotMessage extends ClientMessage {
-  type: "screenshot";
-  request_id?: string;
 }
 
 /** 心跳消息 */
@@ -91,7 +85,6 @@ export type ServerMessage =
   | ConnectedMessage
   | OperationProgressMessage
   | OperationCompletedMessage
-  | ScreenshotResultMessage
   | HeartbeatAckMessage
   | SessionStatusUpdateMessage
   | ErrorMessage;
@@ -124,17 +117,6 @@ export interface OperationCompletedMessage {
   data?: Record<string, unknown>;
   error?: string;
   execution_time_ms: number;
-  timestamp: string;
-}
-
-/** 截图结果消息 */
-export interface ScreenshotResultMessage {
-  type: "screenshot_result";
-  request_id: string;
-  success: boolean;
-  image_data?: string;
-  format?: string;
-  error?: string;
   timestamp: string;
 }
 
@@ -186,15 +168,6 @@ export interface ExecuteOperationResult {
   executionTimeMs: number;
 }
 
-/** 截图结果 */
-export interface ScreenshotResult {
-  requestId: string;
-  success: boolean;
-  imageData?: string;
-  format?: string;
-  error?: string;
-}
-
 /** WebSocket 连接状态 */
 export enum WebSocketState {
   /** 未连接 */
@@ -227,15 +200,6 @@ export class SandboxWebSocketClient {
       timeout: ReturnType<typeof setTimeout>;
     }
   >();
-  private pendingScreenshots = new Map<
-    string,
-    {
-      resolve: (value: ScreenshotResult) => void;
-      reject: (reason: CredBridgeError) => void;
-      timeout: ReturnType<typeof setTimeout>;
-    }
-  >();
-
   // 事件回调
   /** 连接成功回调 */
   onConnected?: (data: ConnectedMessage) => void;
@@ -245,8 +209,6 @@ export class SandboxWebSocketClient {
   onOperationProgress?: (data: OperationProgressMessage) => void;
   /** 操作完成回调 */
   onOperationCompleted?: (data: OperationCompletedMessage) => void;
-  /** 截图结果回调 */
-  onScreenshotResult?: (data: ScreenshotResultMessage) => void;
   /** 会话状态更新回调 */
   onSessionStatusUpdate?: (data: SessionStatusUpdateMessage) => void;
   /** 错误回调 */
@@ -416,49 +378,6 @@ export class SandboxWebSocketClient {
   }
 
   /**
-   * 请求截图
-   */
-  public async requestScreenshot(timeout?: number): Promise<ScreenshotResult> {
-    if (!this.isConnected()) {
-      throw new CredBridgeError(
-        CredBridgeErrorCode.NetworkError,
-        "WebSocket is not connected",
-      );
-    }
-
-    const requestId = this.generateId();
-    const actualTimeout = timeout || this.config.operationTimeout;
-
-    return new Promise((resolve, reject) => {
-      // 设置超时
-      const timeoutId = setTimeout(() => {
-        this.pendingScreenshots.delete(requestId);
-        reject(
-          new CredBridgeError(
-            CredBridgeErrorCode.Timeout,
-            `Screenshot request ${requestId} timed out after ${actualTimeout}ms`,
-          ),
-        );
-      }, actualTimeout);
-
-      // 保存 pending 截图请求
-      this.pendingScreenshots.set(requestId, {
-        resolve,
-        reject,
-        timeout: timeoutId,
-      });
-
-      // 发送截图消息
-      const message: ScreenshotMessage = {
-        type: "screenshot",
-        request_id: requestId,
-      };
-
-      this.sendMessage(message);
-    });
-  }
-
-  /**
    * 发送心跳
    */
   private sendHeartbeat(): void {
@@ -506,10 +425,6 @@ export class SandboxWebSocketClient {
           this.handleOperationCompleted(message);
           break;
 
-        case "screenshot_result":
-          this.handleScreenshotResult(message);
-          break;
-
         case "heartbeat_ack":
           // 心跳确认，无需处理
           break;
@@ -552,27 +467,6 @@ export class SandboxWebSocketClient {
     }
 
     this.onOperationCompleted?.(message);
-  }
-
-  /**
-   * 处理截图结果消息
-   */
-  private handleScreenshotResult(message: ScreenshotResultMessage): void {
-    const pending = this.pendingScreenshots.get(message.request_id);
-    if (pending) {
-      clearTimeout(pending.timeout);
-      this.pendingScreenshots.delete(message.request_id);
-
-      pending.resolve({
-        requestId: message.request_id,
-        success: message.success,
-        imageData: message.image_data,
-        format: message.format,
-        error: message.error,
-      });
-    }
-
-    this.onScreenshotResult?.(message);
   }
 
   /**
@@ -693,11 +587,6 @@ export class SandboxWebSocketClient {
     }
     this.pendingOperations.clear();
 
-    for (const [, pending] of this.pendingScreenshots) {
-      clearTimeout(pending.timeout);
-      pending.reject(error);
-    }
-    this.pendingScreenshots.clear();
   }
 
   /**

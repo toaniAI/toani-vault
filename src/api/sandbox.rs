@@ -8,8 +8,8 @@
 //! - POST   /api/v1/sandbox/sessions/:id/pause    - 暂停会话
 //! - POST   /api/v1/sandbox/sessions/:id/resume   - 恢复会话
 //! - DELETE /api/v1/sandbox/sessions/:id          - 关闭会话
-//! - POST   /api/v1/sandbox/sessions/:id/screenshot - 截图
 //! - POST   /api/v1/sandbox/sessions/:id/export   - 导出数据
+//! - POST   /api/v1/sandbox/sessions/:id/dom-export - 导出 DOM
 
 use crate::api::context::{ApiContext, RequestContext};
 use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
@@ -267,17 +267,81 @@ pub struct ExecuteOperationResponse {
     pub execution_time_ms: u64,
 }
 
-/// 截图响应
+/// DOM 导出请求
+#[derive(Debug, Deserialize)]
+pub struct DomExportRequest {
+    /// 根节点选择器
+    #[serde(default = "default_dom_export_root_selector")]
+    pub root_selector: String,
+    /// 导出格式
+    #[serde(default)]
+    pub format: DomExportFormat,
+    /// 是否包含文本
+    #[serde(default = "default_true")]
+    pub include_text: bool,
+    /// 是否包含元数据
+    #[serde(default = "default_true")]
+    pub include_metadata: bool,
+    /// 额外敏感选择器
+    #[serde(default)]
+    pub extra_sensitive_selectors: Vec<String>,
+    /// 最大返回字节数
+    #[serde(default = "default_dom_export_max_bytes")]
+    pub max_bytes: u64,
+}
+
+/// DOM 导出格式
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DomExportFormat {
+    /// HTML 字符串
+    #[default]
+    Html,
+    /// 纯文本
+    Text,
+    /// JSON 结构
+    Json,
+}
+
+impl DomExportFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            DomExportFormat::Html => "html",
+            DomExportFormat::Text => "text",
+            DomExportFormat::Json => "json",
+        }
+    }
+}
+
+/// DOM 导出响应
 #[derive(Debug, Serialize)]
-pub struct ScreenshotResponse {
-    /// 截图数据（Base64 编码）
-    pub screenshot_base64: String,
-    /// 格式
+pub struct DomExportResponse {
+    /// 操作 ID
+    pub operation_id: Uuid,
+    /// 是否成功
+    pub success: bool,
+    /// 导出格式
     pub format: String,
-    /// 宽度
-    pub width: u32,
-    /// 高度
-    pub height: u32,
+    /// 返回数据
+    pub data: Option<serde_json::Value>,
+    /// 是否已截断
+    pub truncated: bool,
+    /// 错误信息
+    pub error: Option<String>,
+    /// 执行时间（毫秒）
+    pub execution_time_ms: u64,
+}
+
+fn default_dom_export_root_selector() -> String {
+    "html".to_string()
+}
+
+fn default_dom_export_max_bytes() -> u64 {
+    262_144
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// 导出数据请求
@@ -842,18 +906,19 @@ pub async fn close_session(
     }
 }
 
-/// POST /api/v1/sandbox/sessions/:id/screenshot - 截图
-pub async fn take_screenshot(
+/// POST /api/v1/sandbox/sessions/:id/dom-export - 导出 DOM
+pub async fn dom_export(
     State(state): State<SandboxState>,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
+    Json(request): Json<DomExportRequest>,
 ) -> Response {
     // 验证 Scope: sandbox:execute
     if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
         return e;
     }
 
-    // BUG-18227 已修复: 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
+    // 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
     let id = Uuid::parse_str(&id_str)
         .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
     let id = match id {
@@ -869,27 +934,85 @@ pub async fn take_screenshot(
         Err(e) => return map_sandbox_error(e).into_response(),
     };
 
-    // 构建截图操作
+    let operation_type = OperationType::DomExport;
+    let mut parameters = HashMap::new();
+    parameters.insert(
+        "root_selector".to_string(),
+        serde_json::Value::String(request.root_selector),
+    );
+    parameters.insert(
+        "format".to_string(),
+        serde_json::Value::String(request.format.as_str().to_string()),
+    );
+    parameters.insert(
+        "include_text".to_string(),
+        serde_json::Value::Bool(request.include_text),
+    );
+    parameters.insert(
+        "include_metadata".to_string(),
+        serde_json::Value::Bool(request.include_metadata),
+    );
+    parameters.insert(
+        "extra_sensitive_selectors".to_string(),
+        serde_json::Value::Array(
+            request
+                .extra_sensitive_selectors
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
+    parameters.insert(
+        "max_bytes".to_string(),
+        serde_json::Value::Number(request.max_bytes.into()),
+    );
+
+    let (mut audit_parameters, resolved_parameters) =
+        match resolve_operation_parameters(&state, session.as_ref(), &operation_type, &parameters)
+            .await
+        {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    redact_persisted_parameters(
+        &operation_type,
+        &parameters,
+        &resolved_parameters,
+        &mut audit_parameters,
+    );
+
     let operation = OperationRequest {
         operation_id: Uuid::new_v4(),
-        operation_type: OperationType::Screenshot,
-        description: "Take screenshot".to_string(),
-        parameters: HashMap::new(),
-        resolved_parameters: HashMap::new(),
+        operation_type,
+        description: "DOM export".to_string(),
+        parameters: audit_parameters,
+        resolved_parameters,
         created_at: OffsetDateTime::now_utc(),
     };
 
-    match session.execute_operation(operation).await {
+    match session.execute_operation(operation.clone()).await {
         Ok(result) => {
-            // 从执行结果中提取截图数据
-            let screenshot_data = result.screenshot.unwrap_or_default();
-            let base64_data = STANDARD.encode(&screenshot_data);
-
-            let response = ScreenshotResponse {
-                screenshot_base64: base64_data,
-                format: "png".to_string(),
-                width: 1920, // 默认值，实际应该从结果获取
-                height: 1080,
+            let format = result
+                .data
+                .as_ref()
+                .and_then(|data| data.get("format"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("html")
+                .to_string();
+            let truncated = result
+                .data
+                .as_ref()
+                .and_then(|data| data.get("truncated"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            let response = DomExportResponse {
+                operation_id: operation.operation_id,
+                success: result.success,
+                format,
+                data: result.data,
+                truncated,
+                error: result.error,
+                execution_time_ms: result.execution_time_ms,
             };
 
             Json(ApiSuccessResponse::new(response)).into_response()
@@ -1766,8 +1889,8 @@ fn parse_operation_type(s: &str) -> Option<OperationType> {
         "click" => Some(OperationType::Click),
         "fill" => Some(OperationType::Fill),
         "get_text" => Some(OperationType::GetText),
-        "screenshot" => Some(OperationType::Screenshot),
         "export" => Some(OperationType::Export),
+        "domexport" | "dom-export" | "dom_export" => Some(OperationType::DomExport),
         "execute_script" => Some(OperationType::ExecuteScript),
         "wait" => Some(OperationType::Wait),
         "http_request" => Some(OperationType::HttpRequest),
@@ -1865,25 +1988,6 @@ fn map_sandbox_error(error: SandboxError) -> Response {
 
 // ==================== 兜底处理器 ====================
 
-/// 兜底处理器：POST /sandbox/sessions/screenshot 缺少会话ID时返回404
-/// BUG-18227: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn screenshot_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "success": false,
-            "error": {
-                "code": "SESSION_NOT_FOUND",
-                "message": "沙箱会话不存在"
-            },
-            "meta": {
-                "request_id": uuid::Uuid::now_v7().to_string(),
-                "timestamp": chrono::Utc::now().to_rfc3339()
-            }
-        })),
-    )
-}
-
 /// 兜底处理器：POST /sandbox/sessions/pause 缺少会话ID时返回404
 /// BUG-18223: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
 async fn pause_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
@@ -1952,6 +2056,25 @@ async fn export_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
     )
 }
 
+/// 兜底处理器：POST /sandbox/sessions/dom-export 缺少会话ID时返回404
+/// 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
+async fn dom_export_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "success": false,
+            "error": {
+                "code": "SESSION_NOT_FOUND",
+                "message": "沙箱会话不存在"
+            },
+            "meta": {
+                "request_id": uuid::Uuid::now_v7().to_string(),
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            }
+        })),
+    )
+}
+
 /// 兜底处理器：DELETE /sandbox/sessions 缺少会话ID时返回404
 /// BUG-18225: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
 async fn close_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
@@ -1975,19 +2098,19 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions", get(list_sessions))
         // BUG-18225: 缺少会话ID的DELETE路径兜底，返回404而非405
         .route("/sandbox/sessions", delete(close_missing_id_handler))
-        // BUG-18223/18224/18227: 缺少会话ID的子路径兜底路由必须在动态路由之前注册
+        // 缺少会话ID的子路径兜底路由必须在动态路由之前注册
         // 否则静态路径会被动态段 :id 优先捕获并返回405 Method Not Allowed
         .route("/sandbox/sessions/pause", post(pause_missing_id_handler))
         .route("/sandbox/sessions/resume", post(resume_missing_id_handler))
-        .route(
-            "/sandbox/sessions/screenshot",
-            post(screenshot_missing_id_handler),
-        )
         .route(
             "/sandbox/sessions/execute",
             post(execute_missing_id_handler),
         )
         .route("/sandbox/sessions/export", post(export_missing_id_handler))
+        .route(
+            "/sandbox/sessions/dom-export",
+            post(dom_export_missing_id_handler),
+        )
         // 带动态段的路由（必须在静态兜底路由之后）
         .route("/sandbox/sessions/:id", get(get_session))
         .route("/sandbox/sessions/:id/execute", post(execute_operation))
@@ -1995,8 +2118,8 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions/:id/pause", post(pause_session))
         .route("/sandbox/sessions/:id/resume", post(resume_session))
         .route("/sandbox/sessions/:id", delete(close_session))
-        .route("/sandbox/sessions/:id/screenshot", post(take_screenshot))
         .route("/sandbox/sessions/:id/export", post(export_data))
+        .route("/sandbox/sessions/:id/dom-export", post(dom_export))
         .route("/sandbox/stats", get(get_stats))
         // WebSocket 实时连接
         .route(
@@ -2067,14 +2190,27 @@ mod tests {
             Some(OperationType::Click)
         ));
         assert!(matches!(
-            parse_operation_type("screenshot"),
-            Some(OperationType::Screenshot)
+            parse_operation_type("dom_export"),
+            Some(OperationType::DomExport)
         ));
         assert!(matches!(
             parse_operation_type("http_request"),
             Some(OperationType::HttpRequest)
         ));
+        assert!(parse_operation_type("screenshot").is_none());
         assert!(parse_operation_type("invalid").is_none());
+    }
+
+    #[test]
+    fn test_dom_export_request_defaults() {
+        let request: DomExportRequest = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(request.root_selector, "html");
+        assert!(matches!(request.format, DomExportFormat::Html));
+        assert!(request.include_text);
+        assert!(request.include_metadata);
+        assert!(request.extra_sensitive_selectors.is_empty());
+        assert_eq!(request.max_bytes, 262_144);
     }
 
     #[test]
@@ -2533,11 +2669,9 @@ mod tests {
         );
     }
 
-    // ==================== BUG-18227 回归测试：缺少会话ID返回404而非405 ====================
-
     #[tokio::test]
-    async fn test_screenshot_missing_session_id_returns_not_found() {
-        // BUG-18227 回归测试：POST /sandbox/sessions/screenshot 缺少会话ID应返回404，
+    async fn test_dom_export_missing_session_id_returns_not_found() {
+        // POST /sandbox/sessions/dom-export 缺少会话ID应返回404，
         // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
         // 注意：兜底处理器不依赖状态，因此使用空状态即可测试路由匹配
         let config = SandboxConfig::default();
@@ -2555,7 +2689,7 @@ mod tests {
 
         let request = Request::builder()
             .method("POST")
-            .uri("/sandbox/sessions/screenshot")
+            .uri("/sandbox/sessions/dom-export")
             .header("content-type", "application/json")
             .body(Body::empty())
             .unwrap();
@@ -2564,7 +2698,7 @@ mod tests {
         assert_eq!(
             response.status(),
             StatusCode::NOT_FOUND,
-            "POST /sandbox/sessions/screenshot 应返回 404 Not Found"
+            "POST /sandbox/sessions/dom-export 应返回 404 Not Found"
         );
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
@@ -2825,8 +2959,8 @@ mod tests {
     }
 
     #[test]
-    fn test_screenshot_invalid_uuid_returns_invalid_request() {
-        // BUG-18227 (补充): POST /sandbox/sessions/not-a-uuid/screenshot 非UUID路径参数返回 400
+    fn test_dom_export_invalid_uuid_returns_invalid_request() {
+        // POST /sandbox/sessions/not-a-uuid/dom-export 非UUID路径参数返回 400
         let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
         assert_eq!(error.error, "invalid_request");
     }

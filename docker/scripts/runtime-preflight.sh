@@ -184,6 +184,28 @@ resolve_browser_runtime_path() {
     find_existing_path "$@" || return 1
 }
 
+resolve_browser_runtime_executable() {
+    env_name="$1"
+    shift
+
+    configured_path="$(printenv "$env_name" 2>/dev/null || true)"
+    if [ -n "$configured_path" ] && [ "$configured_path" != "0" ]; then
+        [ -x "$configured_path" ] && {
+            echo "$configured_path"
+            return 0
+        }
+        fail "configured browser runtime executable $env_name=$configured_path does not exist or is not executable"
+    fi
+
+    for candidate in "$@"; do
+        if [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 ensure_browser_runtime_prerequisites() {
     sandbox_node_binary="${CREDBRIDGE_SANDBOX_NODE_BINARY:-$(command -v node 2>/dev/null || true)}"
     [ -n "$sandbox_node_binary" ] || fail "node executable not found; install nodejs or set CREDBRIDGE_SANDBOX_NODE_BINARY"
@@ -199,23 +221,107 @@ ensure_browser_runtime_prerequisites() {
     fi
     log "effective NODE_PATH=$NODE_PATH"
 
-    PLAYWRIGHT_BROWSERS_PATH="$(resolve_browser_runtime_path PLAYWRIGHT_BROWSERS_PATH \
-        /opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers \
-        /root/.cache/ms-playwright \
-        /ms-playwright || true)"
-    [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ] || fail "PLAYWRIGHT_BROWSERS_PATH is not set and no installed Playwright browser directory was found"
-    export PLAYWRIGHT_BROWSERS_PATH
-    log "effective PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH"
+    LIGHTPANDA_BINARY_PATH="$(resolve_browser_runtime_executable LIGHTPANDA_BINARY_PATH \
+        /usr/local/bin/lightpanda || true)"
+    [ -n "${LIGHTPANDA_BINARY_PATH:-}" ] || fail "LIGHTPANDA_BINARY_PATH is not set and no executable Lightpanda binary was found"
+    export LIGHTPANDA_BINARY_PATH
+    export LIGHTPANDA_DISABLE_TELEMETRY="${LIGHTPANDA_DISABLE_TELEMETRY:-true}"
+    log "effective LIGHTPANDA_BINARY_PATH=$LIGHTPANDA_BINARY_PATH"
+    log "effective LIGHTPANDA_DISABLE_TELEMETRY=$LIGHTPANDA_DISABLE_TELEMETRY"
 
-    playwright_entry="$("$CREDBRIDGE_SANDBOX_NODE_BINARY" -e 'process.stdout.write(require.resolve("playwright"))' 2>/dev/null || true)"
-    [ -n "$playwright_entry" ] || fail "playwright package is not resolvable with current NODE_PATH=$NODE_PATH"
-    [ -f "$playwright_entry" ] || fail "playwright resolved to a missing file: $playwright_entry"
-    log "playwright entrypoint=$playwright_entry"
+    lightpanda_version="$("$LIGHTPANDA_BINARY_PATH" --version 2>&1 || true)"
+    [ -n "$lightpanda_version" ] || fail "lightpanda --version produced no output"
+    log "lightpanda version=$lightpanda_version"
 
-    chromium_executable="$("$CREDBRIDGE_SANDBOX_NODE_BINARY" -e 'const fs=require("fs"); const { chromium } = require("playwright"); const executablePath = chromium.executablePath(); if (!executablePath || !fs.existsSync(executablePath)) { process.exit(1); } process.stdout.write(executablePath);' 2>/dev/null || true)"
-    [ -n "$chromium_executable" ] || fail "Playwright Chromium executable is not available under PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH"
-    [ -f "$chromium_executable" ] || fail "Chromium executable path does not exist: $chromium_executable"
-    log "playwright chromium executable=$chromium_executable"
+    puppeteer_entry="$("$CREDBRIDGE_SANDBOX_NODE_BINARY" -e 'process.stdout.write(require.resolve("puppeteer-core"))' 2>/dev/null || true)"
+    [ -n "$puppeteer_entry" ] || fail "puppeteer-core package is not resolvable with current NODE_PATH=$NODE_PATH"
+    [ -f "$puppeteer_entry" ] || fail "puppeteer-core resolved to a missing file: $puppeteer_entry"
+    log "puppeteer-core entrypoint=$puppeteer_entry"
+
+    "$CREDBRIDGE_SANDBOX_NODE_BINARY" <<'NODE'
+const http = require('http');
+const net = require('net');
+const { spawn } = require('child_process');
+const puppeteer = require('puppeteer-core');
+
+function listen(server, host = '127.0.0.1', port = 0) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => resolve(server.address().port));
+  });
+}
+
+function waitForPort(port, host = '127.0.0.1', timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      const socket = net.createConnection({ host, port }, () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.once('error', () => {
+        socket.destroy();
+        if (Date.now() >= deadline) {
+          reject(new Error(`Lightpanda CDP server did not open port ${port}`));
+          return;
+        }
+        setTimeout(attempt, 100);
+      });
+    };
+    attempt();
+  });
+}
+
+(async () => {
+  const app = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><title>credbridge runtime smoke</title><h1 id="ready">LIGHTPANDA_OK</h1>');
+  });
+  const appPort = await listen(app);
+  const cdpProbe = net.createServer();
+  const cdpPort = await listen(cdpProbe);
+  await new Promise(resolve => cdpProbe.close(resolve));
+
+  const lightpanda = spawn(process.env.LIGHTPANDA_BINARY_PATH, [
+    'serve',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    String(cdpPort),
+  ], {
+    env: {
+      ...process.env,
+      LIGHTPANDA_DISABLE_TELEMETRY: process.env.LIGHTPANDA_DISABLE_TELEMETRY || 'true',
+    },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let stderr = '';
+  lightpanda.stderr.on('data', chunk => { stderr += chunk.toString(); });
+
+  let browser;
+  try {
+    await waitForPort(cdpPort);
+    browser = await puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${cdpPort}` });
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${appPort}/`, { waitUntil: 'domcontentloaded', timeout: 5000 });
+    const marker = await page.$eval('#ready', element => element.textContent);
+    if (marker !== 'LIGHTPANDA_OK') {
+      throw new Error(`unexpected smoke marker: ${marker}`);
+    }
+  } finally {
+    if (browser) {
+      await browser.disconnect();
+    }
+    lightpanda.kill('SIGTERM');
+    app.close();
+  }
+
+  console.error('[runtime-preflight] lightpanda puppeteer-core smoke test passed');
+})().catch(error => {
+  console.error(error && error.stack ? error.stack : String(error));
+  process.exit(1);
+});
+NODE
 }
 
 write_qcnl_config() {

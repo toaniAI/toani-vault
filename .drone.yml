@@ -159,7 +159,7 @@ steps:
         from_secret: docker-hub-password
     commands:
       - apk add --no-cache curl >/dev/null
-      - export MANIFEST_URL="https://hub.bitkinetic.com/v2/zkme/credbridge-runtime-sandbox/manifests/jammy-sgx2.28.100.1-nsjail3.6-node20-playwright1.58.2-msplaywright-uidmap"
+      - export MANIFEST_URL="https://hub.bitkinetic.com/v2/zkme/credbridge-runtime-sandbox/manifests/jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer"
       - |
         HTTP_CODE="$(curl -sS -L \
           -u "$REPO_USER:$REPO_PWD" \
@@ -201,7 +201,7 @@ steps:
         fi
       - mkdir -p /kaniko/.docker
       - printf '%s' "{\"auths\":{\"hub.bitkinetic.com\":{\"username\":\"$REPO_USER\",\"password\":\"$REPO_PWD\"}}}" > /kaniko/.docker/config.json
-      - /kaniko/executor --context /drone/src --dockerfile /drone/src/docker/base/runtime.Dockerfile --destination hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-playwright1.58.2-msplaywright-uidmap
+      - /kaniko/executor --context /drone/src --dockerfile /drone/src/docker/base/runtime.Dockerfile --destination hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer
 
   - name: docker-build
     image: gcr.io/kaniko-project/executor:debug
@@ -218,7 +218,7 @@ steps:
     commands:
       - mkdir -p /kaniko/.docker
       - printf '%s' "{\"auths\":{\"hub.bitkinetic.com\":{\"username\":\"$REPO_USER\",\"password\":\"$REPO_PWD\"}}}" > /kaniko/.docker/config.json
-      - /kaniko/executor --context /drone/src --dockerfile /drone/src/Dockerfile --build-arg RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-playwright1.58.2-msplaywright-uidmap --build-arg SGX_SIGNING_KEY="$SGX_SIGNING_KEY" --destination hub.bitkinetic.com/zkme/credbridge:alpha-${DRONE_BUILD_NUMBER}
+      - /kaniko/executor --context /drone/src --dockerfile /drone/src/Dockerfile --build-arg RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer --build-arg SGX_SIGNING_KEY="$SGX_SIGNING_KEY" --destination hub.bitkinetic.com/zkme/credbridge:alpha-${DRONE_BUILD_NUMBER}
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6

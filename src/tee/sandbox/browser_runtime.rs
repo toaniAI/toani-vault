@@ -3,7 +3,6 @@ use crate::tee::sandbox::{
     error::SandboxError,
     nsjail::NsjailSandbox,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::env;
@@ -16,15 +15,12 @@ use tokio::sync::Mutex;
 
 const SANDBOX_NODE_BINARY_ENV: &str = "CREDBRIDGE_SANDBOX_NODE_BINARY";
 const NODE_PATH_ENV: &str = "NODE_PATH";
-const PLAYWRIGHT_BROWSERS_PATH_ENV: &str = "PLAYWRIGHT_BROWSERS_PATH";
+const LIGHTPANDA_BINARY_PATH_ENV: &str = "LIGHTPANDA_BINARY_PATH";
+const LIGHTPANDA_DISABLE_TELEMETRY_ENV: &str = "LIGHTPANDA_DISABLE_TELEMETRY";
 
 const NODE_BINARY_CANDIDATES: &[&str] = &["/usr/bin/node", "/usr/local/bin/node"];
 const NODE_PATH_CANDIDATES: &[&str] = &["/opt/credbridge-browser-runtime/node_modules"];
-const PLAYWRIGHT_BROWSERS_PATH_CANDIDATES: &[&str] = &[
-    "/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers",
-    "/root/.cache/ms-playwright",
-    "/ms-playwright",
-];
+const LIGHTPANDA_BINARY_PATH_CANDIDATES: &[&str] = &["/usr/local/bin/lightpanda"];
 
 #[derive(Clone)]
 pub struct SandboxBrowserRuntime {
@@ -65,11 +61,11 @@ impl SandboxBrowserRuntime {
             .join("src/tee/sandbox/scripts/sandbox_executor.cjs");
         let node_binary = resolve_node_binary()?;
         let node_path = resolve_node_path()?;
-        let playwright_browsers_path = resolve_playwright_browsers_path()?;
+        let lightpanda_binary_path = resolve_lightpanda_binary_path()?;
         let extra_mounts = browser_runtime_mounts(
             &script_path,
             Path::new(&node_path),
-            Path::new(&playwright_browsers_path),
+            Path::new(&lightpanda_binary_path),
         );
         let mut env = HashMap::new();
         env.insert("HOME".to_string(), home_dir.to_string_lossy().to_string());
@@ -88,16 +84,15 @@ impl SandboxBrowserRuntime {
         );
         env.insert(NODE_PATH_ENV.to_string(), node_path);
         env.insert(
-            PLAYWRIGHT_BROWSERS_PATH_ENV.to_string(),
-            playwright_browsers_path,
+            LIGHTPANDA_BINARY_PATH_ENV.to_string(),
+            lightpanda_binary_path,
         );
-        if let Ok(skip_gc) = env::var("PLAYWRIGHT_SKIP_BROWSER_GC")
-            && !skip_gc.is_empty()
-        {
-            env.insert("PLAYWRIGHT_SKIP_BROWSER_GC".to_string(), skip_gc);
-        }
+        env.insert(
+            LIGHTPANDA_DISABLE_TELEMETRY_ENV.to_string(),
+            env::var(LIGHTPANDA_DISABLE_TELEMETRY_ENV).unwrap_or_else(|_| "true".to_string()),
+        );
 
-        // Browser runtime uses a dedicated relaxed seccomp profile so node/playwright/chromium
+        // Browser runtime uses a dedicated relaxed seccomp profile so node/lightpanda
         // can start without dropping all syscall filtering for the scoped process.
         let mut child = sandbox
             .spawn_scoped_process(
@@ -247,32 +242,6 @@ impl SandboxBrowserRuntime {
         .map(|response| response.get("data").cloned().unwrap_or(Value::Null))
     }
 
-    pub async fn screenshot(
-        &self,
-        sensitive_selectors: &[String],
-    ) -> Result<Vec<u8>, SandboxError> {
-        let response = self
-            .send(json!({
-                "type": "execute",
-                "operationType": "screenshot",
-                "parameters": {
-                    "maskSelectors": sensitive_selectors,
-                },
-            }))
-            .await?;
-
-        let encoded = response
-            .get("screenshot_base64")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                SandboxError::Other("screenshot_failed: missing image payload".to_string())
-            })?;
-
-        STANDARD.decode(encoded).map_err(|error| {
-            SandboxError::Serialization(format!("invalid screenshot payload: {error}"))
-        })
-    }
-
     pub async fn current_url(&self) -> Result<String, SandboxError> {
         self.send(json!({
             "type": "execute",
@@ -285,6 +254,29 @@ impl SandboxBrowserRuntime {
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .ok_or_else(|| SandboxError::Other("browser_state_failed: missing current url".to_string()))
+    }
+
+    pub async fn dom_export(
+        &self,
+        root_selector: &str,
+        format: &str,
+        include_text: bool,
+        include_metadata: bool,
+        sensitive_selectors: &[String],
+    ) -> Result<Value, SandboxError> {
+        self.send(json!({
+            "type": "execute",
+            "operationType": "dom_export",
+            "parameters": {
+                "root_selector": root_selector,
+                "format": format,
+                "include_text": include_text,
+                "include_metadata": include_metadata,
+                "maskSelectors": sensitive_selectors,
+            },
+        }))
+        .await
+        .map(|response| response.get("data").cloned().unwrap_or(Value::Null))
     }
 
     pub async fn close(&self) {
@@ -389,23 +381,24 @@ fn resolve_node_path() -> Result<String, SandboxError> {
     resolve_existing_path(NODE_PATH_ENV, NODE_PATH_CANDIDATES)
 }
 
-fn resolve_playwright_browsers_path() -> Result<String, SandboxError> {
-    if let Ok(configured) = env::var(PLAYWRIGHT_BROWSERS_PATH_ENV) {
+fn resolve_lightpanda_binary_path() -> Result<String, SandboxError> {
+    if let Ok(configured) = env::var(LIGHTPANDA_BINARY_PATH_ENV) {
         let trimmed = configured.trim();
         if !trimmed.is_empty() && trimmed != "0" {
             let configured_path = Path::new(trimmed);
-            if configured_path.exists() {
+            if is_executable_file(configured_path) {
                 return Ok(trimmed.to_string());
             }
             return Err(SandboxError::Config(format!(
-                "{PLAYWRIGHT_BROWSERS_PATH_ENV} points to missing path: {trimmed}"
+                "{LIGHTPANDA_BINARY_PATH_ENV} points to a non-executable path: {trimmed}"
             )));
         }
     }
 
-    resolve_existing_path(
-        PLAYWRIGHT_BROWSERS_PATH_ENV,
-        PLAYWRIGHT_BROWSERS_PATH_CANDIDATES,
+    resolve_executable_path(
+        LIGHTPANDA_BINARY_PATH_ENV,
+        "lightpanda",
+        LIGHTPANDA_BINARY_PATH_CANDIDATES,
     )
 }
 
@@ -484,7 +477,7 @@ fn is_executable_file(path: &Path) -> bool {
 fn browser_runtime_mounts(
     script_path: &Path,
     node_path: &Path,
-    playwright_browsers_path: &Path,
+    lightpanda_binary_path: &Path,
 ) -> Vec<MountConfig> {
     let mut mounts = Vec::new();
 
@@ -492,7 +485,7 @@ fn browser_runtime_mounts(
         push_read_only_bind_mount(&mut mounts, script_dir);
     }
     push_read_only_bind_mount(&mut mounts, node_path);
-    push_read_only_bind_mount(&mut mounts, playwright_browsers_path);
+    push_read_only_bind_mount(&mut mounts, lightpanda_binary_path);
 
     mounts
 }
@@ -522,9 +515,7 @@ mod tests {
         let mounts = browser_runtime_mounts(
             Path::new("/app/src/tee/sandbox/scripts/sandbox_executor.cjs"),
             Path::new("/opt/credbridge-browser-runtime/node_modules"),
-            Path::new(
-                "/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers",
-            ),
+            Path::new("/usr/local/bin/lightpanda"),
         );
 
         assert!(mounts.iter().any(|mount| {
@@ -538,10 +529,8 @@ mod tests {
                 && mount.read_only
         }));
         assert!(mounts.iter().any(|mount| {
-            mount.src
-                == Path::new("/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers")
-                && mount.dst
-                    == Path::new("/opt/credbridge-browser-runtime/node_modules/playwright-core/.local-browsers")
+            mount.src == Path::new("/usr/local/bin/lightpanda")
+                && mount.dst == Path::new("/usr/local/bin/lightpanda")
                 && mount.read_only
         }));
     }

@@ -4,7 +4,6 @@
 //!
 //! # 功能
 //! - 执行操作 (execute)
-//! - 请求截图 (screenshot)
 //! - 心跳保活 (heartbeat)
 //! - 操作进度通知
 //! - 操作完成通知
@@ -13,14 +12,12 @@
 //!
 //! ## 客户端消息 (ClientMessage)
 //! - `execute`: 执行沙箱操作
-//! - `screenshot`: 请求截图
 //! - `heartbeat`: 心跳保活
 //!
 //! ## 服务端消息 (ServerMessage)
 //! - `connected`: 连接成功
 //! - `operation_progress`: 操作进度更新
 //! - `operation_completed`: 操作完成
-//! - `screenshot_result`: 截图结果
 //! - `heartbeat_ack`: 心跳确认
 //! - `error`: 错误通知
 
@@ -31,7 +28,6 @@ use axum::{
     },
     response::Response,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -59,11 +55,6 @@ pub enum ClientMessage {
         /// 操作参数
         #[serde(default)]
         parameters: HashMap<String, serde_json::Value>,
-    },
-    /// 请求截图
-    Screenshot {
-        /// 请求ID（可选）
-        request_id: Option<String>,
     },
     /// 心跳消息
     Heartbeat {
@@ -121,24 +112,6 @@ pub enum ServerMessage {
         error: Option<String>,
         /// 执行时间（毫秒）
         execution_time_ms: u64,
-        /// 时间戳
-        timestamp: String,
-    },
-    /// 截图结果
-    ScreenshotResult {
-        /// 请求ID
-        request_id: String,
-        /// 是否成功
-        success: bool,
-        /// 图片数据 (base64)
-        #[serde(skip_serializing_if = "Option::is_none")]
-        image_data: Option<String>,
-        /// 图片格式
-        #[serde(skip_serializing_if = "Option::is_none")]
-        format: Option<String>,
-        /// 错误信息
-        #[serde(skip_serializing_if = "Option::is_none")]
-        error: Option<String>,
         /// 时间戳
         timestamp: String,
     },
@@ -489,33 +462,6 @@ async fn handle_message(
             };
             let _ = tx.send(completed_msg).await;
         }
-        ClientMessage::Screenshot { request_id } => {
-            let req_id = request_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-            debug!("Screenshot requested: {}", req_id);
-
-            // 模拟截图操作
-            let screenshot_result = take_screenshot(state, ctx).await;
-
-            let result_msg = match screenshot_result {
-                Ok(image_data) => ServerMessage::ScreenshotResult {
-                    request_id: req_id,
-                    success: true,
-                    image_data: Some(STANDARD.encode(&image_data)),
-                    format: Some("png".to_string()),
-                    error: None,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                },
-                Err(e) => ServerMessage::ScreenshotResult {
-                    request_id: req_id,
-                    success: false,
-                    image_data: None,
-                    format: None,
-                    error: Some(e.to_string()),
-                    timestamp: chrono::Utc::now().to_rfc3339(),
-                },
-            };
-            let _ = tx.send(result_msg).await;
-        }
         ClientMessage::Heartbeat { timestamp } => {
             debug!("Heartbeat received from client: {}", timestamp);
 
@@ -565,8 +511,8 @@ fn parse_operation_type(op_type: &str) -> OperationType {
         "click" => OperationType::Click,
         "fill" => OperationType::Fill,
         "gettext" | "get_text" => OperationType::GetText,
-        "screenshot" => OperationType::Screenshot,
         "export" => OperationType::Export,
+        "domexport" | "dom_export" => OperationType::DomExport,
         "executescript" | "execute_script" => OperationType::ExecuteScript,
         "wait" => OperationType::Wait,
         _ => OperationType::Custom,
@@ -647,57 +593,6 @@ async fn execute_operation(
     .into())
 }
 
-/// 截图操作
-///
-/// 通过 ScreenshotService 对沙箱页面进行安全截图。
-/// 当前 ScreenshotService 需要 PageStateFreezer（与具体会话绑定），
-/// 无法在 WebSocket 层直接构建。返回明确错误而非假图，
-/// 集成路径：ConnectionState 需要持有 Arc<ScreenshotService> 字段。
-async fn take_screenshot(
-    state: &ConnectionState,
-    _ctx: &ApiContext,
-) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    use crate::tee::sandbox::export::freezer::PageStateFreezer;
-    use crate::tee::sandbox::export::screenshot::{
-        PlaywrightClient, ScreenshotConfig, ScreenshotRequest, ScreenshotService,
-    };
-    use crate::tee::sandbox::export::watermark::WatermarkService;
-
-    info!("截图请求: session={}", state.session_id);
-
-    // 验证 session_id 格式，避免 PageStateFreezer::new panic
-    let _session_uuid = uuid::Uuid::parse_str(&state.session_id.0.to_string()).map_err(|e| {
-        format!(
-            "Invalid session_id format: {}. Error: {}",
-            state.session_id.0, e
-        )
-    })?;
-
-    // 构建 ScreenshotService（使用 session_id 创建对应的 Freezer）
-    let freezer = PageStateFreezer::new(state.session_id);
-    let playwright = PlaywrightClient::with_default_config();
-    let watermark = WatermarkService::default_service();
-    let config = ScreenshotConfig::default();
-
-    let service = ScreenshotService::new(freezer, playwright, config, watermark);
-    let request = ScreenshotRequest::default();
-
-    match service.capture(request).await {
-        Ok(result) => {
-            info!(
-                "截图成功: session={}, size={} bytes",
-                state.session_id,
-                result.data.len()
-            );
-            Ok(result.data)
-        }
-        Err(e) => {
-            warn!("截图失败: session={}, error={}", state.session_id, e);
-            Err(format!("截图失败: {e}").into())
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -714,8 +609,12 @@ mod tests {
         ));
         assert!(matches!(parse_operation_type("fill"), OperationType::Fill));
         assert!(matches!(
+            parse_operation_type("dom_export"),
+            OperationType::DomExport
+        ));
+        assert!(matches!(
             parse_operation_type("screenshot"),
-            OperationType::Screenshot
+            OperationType::Custom
         ));
         assert!(matches!(
             parse_operation_type("unknown"),

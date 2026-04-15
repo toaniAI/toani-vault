@@ -1280,8 +1280,8 @@
 - `POST /api/v1/sandbox/sessions/:id/pause`
 - `POST /api/v1/sandbox/sessions/:id/resume`
 - `DELETE /api/v1/sandbox/sessions/:id`
-- `POST /api/v1/sandbox/sessions/:id/screenshot`
 - `POST /api/v1/sandbox/sessions/:id/export`
+- `POST /api/v1/sandbox/sessions/:id/dom-export`
 - `GET /api/v1/sandbox/operations/:operation_id`
 - `GET /api/v1/sandbox/stats`
 - `GET /api/v1/sandbox/sessions/:id/ws/:credential_id`
@@ -1290,7 +1290,7 @@
 
 - 创建 session: 需要 `sandbox:write` 且同时需要 `credential:decrypt`
 - 读取 session/stats: `sandbox:read`
-- `execute` / `screenshot` / `export`: `sandbox:execute`
+- `execute` / `export` / `dom-export`: `sandbox:execute`
 - `pause` / `resume` / `close`: `sandbox:write`
 
 ### `POST /api/v1/sandbox/sessions`
@@ -1348,9 +1348,27 @@
 
 均返回 `ApiSuccessResponse<SessionActionResponse>`。
 
-### `POST /api/v1/sandbox/sessions/:id/screenshot`
+### `POST /api/v1/sandbox/sessions/:id/dom-export`
 
-返回 `ApiSuccessResponse<ScreenshotResponse>`。
+**请求体**:
+
+```json
+{
+  "root_selector": "body",
+  "format": "html",
+  "include_text": true,
+  "include_metadata": true,
+  "extra_sensitive_selectors": ["#token", ".secret"],
+  "max_bytes": 262144
+}
+```
+
+`format` 支持：
+- `html`
+- `text`
+- `json`
+
+返回 `ApiSuccessResponse<DomExportResponse>`。
 
 ### `POST /api/v1/sandbox/sessions/:id/export`
 
@@ -1358,7 +1376,7 @@
 
 ```json
 {
-  "format": "pdf",
+  "format": "json",
   "selectors": ["balances", "positions"]
 }
 ```

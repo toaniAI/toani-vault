@@ -220,8 +220,8 @@ impl NsjailSandboxPool {
         for key in [
             "CREDBRIDGE_SANDBOX_NODE_BINARY",
             "NODE_PATH",
-            "PLAYWRIGHT_BROWSERS_PATH",
-            "PLAYWRIGHT_SKIP_BROWSER_GC",
+            "LIGHTPANDA_BINARY_PATH",
+            "LIGHTPANDA_DISABLE_TELEMETRY",
         ] {
             if let Some(value) = std::env::var_os(key) {
                 env.insert(key.to_string(), value.to_string_lossy().to_string());
