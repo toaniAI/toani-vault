@@ -229,8 +229,10 @@ ensure_browser_runtime_prerequisites() {
     log "effective LIGHTPANDA_BINARY_PATH=$LIGHTPANDA_BINARY_PATH"
     log "effective LIGHTPANDA_DISABLE_TELEMETRY=$LIGHTPANDA_DISABLE_TELEMETRY"
 
-    lightpanda_version="$("$LIGHTPANDA_BINARY_PATH" --version 2>&1 || true)"
-    [ -n "$lightpanda_version" ] || fail "lightpanda --version produced no output"
+    if ! lightpanda_version="$("$LIGHTPANDA_BINARY_PATH" version 2>&1)"; then
+        fail "lightpanda version failed: $lightpanda_version"
+    fi
+    [ -n "$lightpanda_version" ] || fail "lightpanda version produced no output"
     log "lightpanda version=$lightpanda_version"
 
     puppeteer_entry="$("$CREDBRIDGE_SANDBOX_NODE_BINARY" -e 'process.stdout.write(require.resolve("puppeteer-core"))' 2>/dev/null || true)"

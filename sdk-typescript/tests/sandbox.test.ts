@@ -366,15 +366,18 @@ describe("SandboxService", () => {
 
     it("应该关闭会话", async () => {
       const mockResponse = {
-        sessionId: "session-123",
-        closed: true,
+        session_id: "session-123",
+        success: true,
+        status: "closed",
+        message: "Session closed successfully",
       };
 
       vi.spyOn(client, "delete").mockResolvedValue(mockResponse);
 
       const result = await service.closeSession("session-123");
 
-      expect(result.closed).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.status).toBe("closed");
       expect(client.delete).toHaveBeenCalledWith(
         "/sandbox/sessions/session-123",
         undefined,
@@ -383,96 +386,36 @@ describe("SandboxService", () => {
   });
 
   describe("截图功能", () => {
-    it("应该截取页面截图", async () => {
-      const mockResponse = {
-        data: "base64encodedimagedata",
-        type: "png" as const,
-        width: 1920,
-        height: 1080,
-      };
-
-      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
-
-      const result = await service.takeScreenshot("session-123", {
-        fullPage: true,
-        type: "png",
-      });
-
-      expect(result.data).toBe("base64encodedimagedata");
-      expect(result.type).toBe("png");
-      expect(client.post).toHaveBeenCalledWith(
-        "/sandbox/sessions/session-123/screenshot",
-        {
-          selector: undefined,
-          full_page: true,
-          type: "png",
-          quality: undefined,
-          clip: undefined,
-        },
-        undefined,
-      );
-    });
-
-    it("应该支持元素截图", async () => {
-      const mockResponse = {
-        data: "base64encodedelementdata",
-        type: "jpeg" as const,
-        width: 400,
-        height: 300,
-      };
-
-      vi.spyOn(client, "post").mockResolvedValue(mockResponse);
-
-      await service.takeScreenshot("session-123", {
-        selector: "#chart-container",
-        type: "jpeg",
-        quality: 90,
-      });
-
-      expect(client.post).toHaveBeenCalledWith(
-        "/sandbox/sessions/session-123/screenshot",
-        {
-          selector: "#chart-container",
-          full_page: undefined,
-          type: "jpeg",
-          quality: 90,
-          clip: undefined,
-        },
-        undefined,
-      );
+    it("不暴露后端未支持的截图接口", () => {
+      expect("takeScreenshot" in service).toBe(false);
     });
   });
 
   describe("导出数据", () => {
     it("应该导出JSON数据", async () => {
       const mockResponse = {
-        data: [{ symbol: "AAPL", price: 150.5 }],
+        export_id: "export-123",
+        data_base64: "e30=",
         format: "json" as const,
-        recordCount: 1,
+        filename: "export_export-123.json",
+        size_bytes: 2,
       };
 
       vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
       const result = await service.exportData("session-123", {
         format: "json",
-        selector: ".stock-data",
-        extractionRules: [
-          { name: "symbol", selector: ".symbol" },
-          { name: "price", selector: ".price" },
-        ],
+        selectors: [".symbol", ".price"],
       });
 
       expect(result.format).toBe("json");
-      expect(result.recordCount).toBe(1);
+      expect(result.exportId).toBe("export-123");
+      expect(result.sizeBytes).toBe(2);
       expect(client.post).toHaveBeenCalledWith(
         "/sandbox/sessions/session-123/export",
         {
           format: "json",
-          selector: ".stock-data",
-          extraction_rules: [
-            { name: "symbol", selector: ".symbol" },
-            { name: "price", selector: ".price" },
-          ],
+          selectors: [".symbol", ".price"],
         },
         undefined,
       );

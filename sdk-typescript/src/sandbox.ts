@@ -11,6 +11,7 @@ import {
   type SessionInfo,
   type ExecuteOperationRequest,
   type ExecuteOperationResponse,
+  type SessionActionResponse,
   type DomExportRequest,
   type DomExportResponse,
   type ExportDataRequest,
@@ -40,6 +41,39 @@ interface SandboxStatsApi {
   warm_instances: number;
   healthy: boolean;
   error?: string;
+}
+
+interface ExecuteOperationResponseApi {
+  operation_id?: string;
+  operationId?: string;
+  success?: boolean;
+  status?: OperationStatus;
+  data?: unknown;
+  result?: unknown;
+  error?: string;
+  execution_time_ms?: number;
+  executionTimeMs?: number;
+}
+
+interface SessionActionResponseApi {
+  session_id?: string;
+  sessionId?: string;
+  success?: boolean;
+  closed?: boolean;
+  status: string;
+  message?: string;
+}
+
+function mapSessionActionResponse(
+  response: SessionActionResponseApi,
+): SessionActionResponse {
+  return {
+    sessionId: response.session_id ?? response.sessionId ?? "",
+    success: response.success ?? response.closed ?? false,
+    closed: response.closed ?? response.success,
+    status: response.status,
+    message: response.message ?? "",
+  };
 }
 
 /**
@@ -160,7 +194,7 @@ export class SandboxService {
     request: ExecuteOperationRequest,
     options?: RequestOptions,
   ): Promise<ExecuteOperationResponse> {
-    const parameters: Record<string, unknown> = {};
+    const parameters: Record<string, unknown> = { ...(request.parameters ?? {}) };
     if (request.selector !== undefined) parameters.selector = request.selector;
     if (request.value !== undefined) parameters.value = request.value;
     if (request.url !== undefined) parameters.url = request.url;
@@ -175,7 +209,7 @@ export class SandboxService {
     if (request.waitCondition !== undefined)
       parameters.wait_condition = request.waitCondition;
 
-    return this.client.post<ExecuteOperationResponse>(
+    const response = await this.client.post<ExecuteOperationResponseApi>(
       `/sandbox/sessions/${sessionId}/execute`,
       {
         operation_type: request.operationType,
@@ -184,6 +218,22 @@ export class SandboxService {
       },
       options,
     );
+    const data = response.data ?? response.result;
+    const success =
+      response.success ??
+      (response.status !== undefined
+        ? response.status === OperationStatus.Success
+        : response.error === undefined);
+    return {
+      operationId: response.operation_id ?? response.operationId ?? "",
+      success,
+      status: response.status,
+      data,
+      result: data,
+      error: response.error,
+      executionTimeMs:
+        response.execution_time_ms ?? response.executionTimeMs ?? 0,
+    };
   }
 
   /**
@@ -202,12 +252,13 @@ export class SandboxService {
   public async pauseSession(
     sessionId: string,
     options?: RequestOptions,
-  ): Promise<SessionInfo> {
-    return this.client.post<SessionInfo>(
+  ): Promise<SessionActionResponse> {
+    const response = await this.client.post<SessionActionResponseApi>(
       `/sandbox/sessions/${sessionId}/pause`,
       {},
       options,
     );
+    return mapSessionActionResponse(response);
   }
 
   /**
@@ -226,12 +277,13 @@ export class SandboxService {
   public async resumeSession(
     sessionId: string,
     options?: RequestOptions,
-  ): Promise<SessionInfo> {
-    return this.client.post<SessionInfo>(
+  ): Promise<SessionActionResponse> {
+    const response = await this.client.post<SessionActionResponseApi>(
       `/sandbox/sessions/${sessionId}/resume`,
       {},
       options,
     );
+    return mapSessionActionResponse(response);
   }
 
   /**
@@ -250,11 +302,12 @@ export class SandboxService {
   public async closeSession(
     sessionId: string,
     options?: RequestOptions,
-  ): Promise<{ sessionId: string; closed: boolean }> {
-    return this.client.delete<{ sessionId: string; closed: boolean }>(
+  ): Promise<SessionActionResponse> {
+    const response = await this.client.delete<SessionActionResponseApi>(
       `/sandbox/sessions/${sessionId}`,
       options,
     );
+    return mapSessionActionResponse(response);
   }
 
   public async exportDom(
@@ -315,15 +368,32 @@ export class SandboxService {
     request: ExportDataRequest,
     options?: RequestOptions,
   ): Promise<ExportDataResponse> {
-    return this.client.post<ExportDataResponse>(
+    const selectors =
+      request.selectors ??
+      (request.selector !== undefined ? [request.selector] : undefined) ??
+      request.extractionRules?.map((rule) => rule.selector) ??
+      [];
+    const response = await this.client.post<{
+      export_id: string;
+      data_base64: string;
+      format: "json" | "csv" | "pdf";
+      filename: string;
+      size_bytes: number;
+    }>(
       `/sandbox/sessions/${sessionId}/export`,
       {
         format: request.format,
-        selector: request.selector,
-        extraction_rules: request.extractionRules,
+        selectors,
       },
       options,
     );
+    return {
+      exportId: response.export_id,
+      dataBase64: response.data_base64,
+      format: response.format,
+      filename: response.filename,
+      sizeBytes: response.size_bytes,
+    };
   }
 
   /**
@@ -459,7 +529,7 @@ export class SandboxService {
    * @example
    * ```typescript
    * const result = await sdk.sandbox.getText('session-123', '.price-display');
-   * console.log('Price:', result.result);
+   * console.log('Price:', result.data);
    * ```
    */
   public async getText(
@@ -486,7 +556,7 @@ export class SandboxService {
    * @example
    * ```typescript
    * const result = await sdk.sandbox.getAttribute('session-123', 'a.link', 'href');
-   * console.log('Link:', result.result);
+   * console.log('Link:', result.data);
    * ```
    */
   public async getAttribute(
@@ -518,7 +588,7 @@ export class SandboxService {
    * `, {
    *   apiKey: { $credential: 'api_key' },
    * });
-   * console.log('Title:', result.result);
+   * console.log('Title:', result.data);
    * ```
    */
   public async executeScript(

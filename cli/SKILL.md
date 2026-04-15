@@ -114,7 +114,11 @@ toani sandbox create-session --service-id <serviceId> --original-intent <intent>
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
+toani sandbox pause <sessionId>
+toani sandbox resume <sessionId>
 toani sandbox execute <sessionId> --operation-type <type> [--params '<json>']
+toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
+toani sandbox export-data <sessionId> --selectors '<json-array>' [--format json|csv|pdf]
 toani sandbox get-operation <operationId>
 toani sandbox stats
 ```
@@ -125,11 +129,11 @@ toani sandbox stats
 - `click`
 - `fill`
 - `get_text`
-- `get_attribute`
 - `execute_script`
 - `wait`
-- `screenshot`
 - `export`
+- `dom_export`
+- `http_request`
 
 ### `--params` 常见字段
 
@@ -140,7 +144,10 @@ toani sandbox stats
 - `value`
 - `script`
 - `bindings`
-- `attribute`
+- `selectors`
+- `duration_ms`
+- `timeout_ms`
+- `sensitive`
 
 ## Agent 必须遵守的执行流程
 
@@ -191,12 +198,12 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"h1"}'
 ```
 
-### 场景 6: 取属性
+### 场景 6: 执行脚本读取属性
 
 ```bash
 toani sandbox execute <sessionId> \
-  --operation-type get_attribute \
-  --params '{"selector":"a.download","attribute":"href"}'
+  --operation-type execute_script \
+  --params '{"script":"return document.querySelector(\"a.download\")?.getAttribute(\"href\") ?? null"}'
 ```
 
 ### 场景 7: 执行脚本
