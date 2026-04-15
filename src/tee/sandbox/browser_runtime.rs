@@ -58,6 +58,7 @@ impl SandboxBrowserRuntime {
             tokio::fs::create_dir_all(dir)
                 .await
                 .map_err(SandboxError::Io)?;
+            sandbox.assign_mapped_root_owner(dir)?;
         }
 
         let script_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

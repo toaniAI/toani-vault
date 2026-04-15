@@ -197,6 +197,19 @@ impl NsjailSandbox {
         self.config.sandbox.working_dir.join(self.id.to_string())
     }
 
+    /// Host-side uid/gid that correspond to root inside the nsjail user namespace.
+    pub fn mapped_host_ids(&self) -> (u32, u32) {
+        (
+            self.config.uid_map.outside_uid,
+            self.config.gid_map.outside_gid,
+        )
+    }
+
+    pub fn assign_mapped_root_owner(&self, path: &std::path::Path) -> Result<(), SandboxError> {
+        let (uid, gid) = self.mapped_host_ids();
+        chown_for_mapped_root(path, uid, gid)
+    }
+
     /// 设置凭证环境变量
     pub fn set_credential_env(&mut self, key: String, value: String) {
         self.credential_env.insert(key, value);
@@ -333,6 +346,7 @@ impl NsjailSandbox {
         tokio::fs::create_dir_all(&work_dir)
             .await
             .map_err(SandboxError::Io)?;
+        self.assign_mapped_root_owner(&work_dir)?;
         Ok(())
     }
 
@@ -514,6 +528,34 @@ async fn describe_child_exit(
     } else {
         format!("{context}: process exited early with status {status}: {stderr}")
     }
+}
+
+#[cfg(unix)]
+fn chown_for_mapped_root(path: &std::path::Path, uid: u32, gid: u32) -> Result<(), SandboxError> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        SandboxError::Config(format!(
+            "path contains an interior NUL byte: {}",
+            path.display()
+        ))
+    })?;
+    let result = unsafe { libc::chown(c_path.as_ptr(), uid as libc::uid_t, gid as libc::gid_t) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(SandboxError::Io(std::io::Error::last_os_error()))
+    }
+}
+
+#[cfg(not(unix))]
+fn chown_for_mapped_root(
+    _path: &std::path::Path,
+    _uid: u32,
+    _gid: u32,
+) -> Result<(), SandboxError> {
+    Ok(())
 }
 
 /// 沙箱统计信息
