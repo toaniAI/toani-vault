@@ -115,17 +115,73 @@ async function startLightpanda(profileDir) {
   lightpandaProcess.stderr.on('data', chunk => {
     stderr += chunk.toString();
   });
-  lightpandaProcess.once('exit', code => {
-    if (code !== null && code !== 0 && !browser) {
-      reply({ ok: false, error: `lightpanda exited early: ${stderr}` });
-    }
+  const startupFailure = new Promise((_, reject) => {
+    lightpandaProcess.once('error', error => {
+      reject(error);
+    });
+    lightpandaProcess.once('exit', code => {
+      if (code !== null && code !== 0 && !browser) {
+        reject(new Error(`lightpanda exited early: ${stderr}`));
+      }
+    });
   });
 
-  await waitForPort(port);
-  browser = await puppeteer.connect({
-    browserWSEndpoint: `ws://127.0.0.1:${port}`,
-    protocolTimeout: 30000,
+  try {
+    await Promise.race([waitForPort(port), startupFailure]);
+    browser = await puppeteer.connect({
+      browserWSEndpoint: `ws://127.0.0.1:${port}`,
+      protocolTimeout: 30000,
+    });
+  } catch (error) {
+    await stopLightpanda();
+    throw error;
+  }
+}
+
+async function waitForProcessExit(child, timeoutMs = 5000) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  await new Promise(resolve => {
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve();
+    }, timeoutMs);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
   });
+}
+
+async function stopLightpanda() {
+  if (!lightpandaProcess) {
+    return;
+  }
+
+  const child = lightpandaProcess;
+  lightpandaProcess = null;
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill('SIGTERM');
+  }
+  await waitForProcessExit(child);
+}
+
+async function cleanupRuntime() {
+  if (page && !page.isClosed()) {
+    await page.close().catch(() => {});
+  }
+  page = null;
+  if (browserContext) {
+    await browserContext.close().catch(() => {});
+    browserContext = null;
+  }
+  if (browser) {
+    await browser.disconnect().catch(() => {});
+    browser = null;
+  }
+  await stopLightpanda();
 }
 
 function selectorLooksSensitive(selector) {
@@ -589,25 +645,6 @@ const rl = readline.createInterface({
   input: process.stdin,
   crlfDelay: Infinity,
 });
-
-async function cleanupRuntime() {
-  if (page && !page.isClosed()) {
-    await page.close().catch(() => {});
-  }
-  page = null;
-  if (browserContext) {
-    await browserContext.close().catch(() => {});
-    browserContext = null;
-  }
-  if (browser) {
-    await browser.disconnect().catch(() => {});
-    browser = null;
-  }
-  if (lightpandaProcess) {
-    lightpandaProcess.kill('SIGTERM');
-    lightpandaProcess = null;
-  }
-}
 
 rl.on('line', async line => {
   try {

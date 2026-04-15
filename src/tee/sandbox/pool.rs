@@ -233,7 +233,10 @@ impl NsjailSandboxPool {
             command: vec!["sleep".to_string(), "3600".to_string()], // 长时间运行的占位命令
             cwd: std::path::PathBuf::from("/"),
             env,
-            disable_seccomp_for_browser_runtime: false,
+            // Session sandboxes can later host browser scoped processes. Keep the
+            // session jail on the same relaxed browser policy so Lightpanda child
+            // process creation is not killed by the base denylist.
+            disable_seccomp_for_browser_runtime: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
@@ -818,6 +821,26 @@ mod tests {
     fn test_pool_creation() {
         let pool = create_test_pool();
         assert_eq!(pool.config.max_warm_instances, 10);
+    }
+
+    #[test]
+    fn test_pool_nsjail_config_uses_browser_runtime_seccomp_policy() {
+        let pool = create_test_pool();
+        let config = pool.create_nsjail_config();
+
+        assert!(config.disable_seccomp_for_browser_runtime);
+
+        let args = config.to_args();
+        let seccomp_idx = args
+            .iter()
+            .position(|arg| arg == "--seccomp_string")
+            .expect("pool nsjail config should include seccomp policy");
+        let seccomp_policy = &args[seccomp_idx + 1];
+        assert!(!seccomp_policy.contains("    execve\n"));
+        assert!(!seccomp_policy.contains("    execveat\n"));
+        assert!(!seccomp_policy.contains("    fork\n"));
+        assert!(!seccomp_policy.contains("    vfork\n"));
+        assert!(!seccomp_policy.contains("    clone\n"));
     }
 
     #[tokio::test]

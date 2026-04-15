@@ -10,6 +10,7 @@ RUNTIME_PREFLIGHT="$ROOT_DIR/docker/scripts/runtime-preflight.sh"
 BROWSER_RUNTIME_RS="$ROOT_DIR/src/tee/sandbox/browser_runtime.rs"
 NSJAIL_RS="$ROOT_DIR/src/tee/sandbox/nsjail.rs"
 SANDBOX_CONFIG_RS="$ROOT_DIR/src/tee/sandbox/config.rs"
+SANDBOX_POOL_RS="$ROOT_DIR/src/tee/sandbox/pool.rs"
 SANDBOX_EXECUTOR="$ROOT_DIR/src/tee/sandbox/scripts/sandbox_executor.cjs"
 
 fail() {
@@ -34,6 +35,7 @@ require_file "$APP_DOCKERFILE"
 require_file "$BROWSER_RUNTIME_RS"
 require_file "$NSJAIL_RS"
 require_file "$SANDBOX_CONFIG_RS"
+require_file "$SANDBOX_POOL_RS"
 require_file "$SANDBOX_EXECUTOR"
 
 sh -n "$RUNTIME_PREFLIGHT"
@@ -88,6 +90,7 @@ require_grep "generate_browser_runtime_seccomp_bpf" "$SANDBOX_CONFIG_RS"
 require_grep "execve" "$SANDBOX_CONFIG_RS"
 require_grep "clone" "$SANDBOX_CONFIG_RS"
 
+require_grep "disable_seccomp_for_browser_runtime: true" "$SANDBOX_POOL_RS"
 require_grep "disable_seccomp_for_browser_runtime" "$NSJAIL_RS"
 require_grep "for mount in extra_mounts" "$NSJAIL_RS"
 require_grep "for (key, value) in env" "$NSJAIL_RS"
@@ -100,6 +103,8 @@ require_grep "'--port', String(port)" "$SANDBOX_EXECUTOR"
 require_grep "puppeteer.connect" "$SANDBOX_EXECUTOR"
 require_grep "browser.createBrowserContext()" "$SANDBOX_EXECUTOR"
 require_grep "currentPage.evaluate(" "$SANDBOX_EXECUTOR"
+require_grep "await stopLightpanda();" "$SANDBOX_EXECUTOR"
+require_grep "child.kill('SIGKILL')" "$SANDBOX_EXECUTOR"
 
 if grep -Fq "browser.pages()" "$SANDBOX_EXECUTOR"; then
     fail "sandbox executor must not reuse Lightpanda's startup page via browser.pages()"
