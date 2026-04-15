@@ -188,6 +188,10 @@ name = "sandbox_export_tests"
 path = "tests/tee/sandbox_export_tests.rs"
 
 [[test]]
+name = "sandbox_executor_contract_tests"
+path = "tests/tee/sandbox_executor_contract_tests.rs"
+
+[[test]]
 name = "sandbox_performance"
 path = "tests/tee/sandbox_performance.rs"
 

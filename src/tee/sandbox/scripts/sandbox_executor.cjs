@@ -250,10 +250,49 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
       await currentPage.$eval(
         selector,
         (element, nextValue) => {
-          if (!element) return;
-          element.value = nextValue;
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          element.dispatchEvent(new Event('change', { bubbles: true }));
+          function eventWithFallback(eventName, options) {
+            try {
+              return new InputEvent(eventName, options);
+            } catch (_) {
+              return new Event(eventName, { bubbles: true });
+            }
+          }
+
+          function setInputValue(element, nextValue) {
+            if (!element) return;
+
+            const tagName = element.tagName.toLowerCase();
+            if (tagName !== 'input' && tagName !== 'textarea') {
+              element.textContent = nextValue;
+              element.dispatchEvent(
+                eventWithFallback('input', { bubbles: true, inputType: 'insertText' })
+              );
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+              return;
+            }
+
+            const prototype =
+              tagName === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+            element.focus();
+            if (valueSetter) {
+              valueSetter.call(element, nextValue);
+            } else {
+              element.value = nextValue;
+            }
+            element.dispatchEvent(
+              eventWithFallback('input', {
+                bubbles: true,
+                composed: true,
+                inputType: 'insertText',
+                data: nextValue,
+              })
+            );
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          setInputValue(element, nextValue);
         },
         value
       );
@@ -542,6 +581,51 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
               });
             }
 
+            function eventWithFallbackInPage(eventName, options) {
+              try {
+                return new InputEvent(eventName, options);
+              } catch (_) {
+                return new Event(eventName, { bubbles: true });
+              }
+            }
+
+            function setInputValueInPage(element, nextValue) {
+              if (!element) return;
+
+              const tagName = element.tagName.toLowerCase();
+              if (tagName !== 'input' && tagName !== 'textarea') {
+                element.textContent = nextValue;
+                element.dispatchEvent(
+                  eventWithFallbackInPage('input', {
+                    bubbles: true,
+                    inputType: 'insertText',
+                  })
+                );
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+              }
+
+              const prototype =
+                tagName === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+              const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+
+              element.focus();
+              if (valueSetter) {
+                valueSetter.call(element, nextValue);
+              } else {
+                element.value = nextValue;
+              }
+              element.dispatchEvent(
+                eventWithFallbackInPage('input', {
+                  bubbles: true,
+                  composed: true,
+                  inputType: 'insertText',
+                  data: nextValue,
+                })
+              );
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
             const credbridge = {
               async fill(selector, field) {
                 const value = bindings[field];
@@ -549,9 +633,7 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
                   throw new Error(`unknown credential field: ${field}`);
                 }
                 const element = await waitForSelectorInPage(selector);
-                element.value = value;
-                element.dispatchEvent(new Event('input', { bubbles: true }));
-                element.dispatchEvent(new Event('change', { bubbles: true }));
+                setInputValueInPage(element, value);
                 return true;
               },
               async click(selector) {

@@ -1380,10 +1380,12 @@ mod tests {
         assert_eq!(result["nested"][1], "[REDACTED]");
     }
 
-    async fn spawn_test_http_server(body: String, content_type: &str) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind test server");
+    async fn spawn_test_http_server(body: String, content_type: &str) -> Option<String> {
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("bind test server: {error}"),
+        };
         let address = listener.local_addr().expect("local addr");
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nX-Test: sandbox\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -1401,13 +1403,17 @@ mod tests {
                 .expect("write response");
         });
 
-        format!("http://{address}/")
+        Some(format!("http://{address}/"))
     }
 
     #[tokio::test]
     async fn test_http_request_does_not_initialize_browser_runtime() {
         let session = create_test_session();
-        let url = spawn_test_http_server("{\"ok\":true}".to_string(), "application/json").await;
+        let Some(url) =
+            spawn_test_http_server("{\"ok\":true}".to_string(), "application/json").await
+        else {
+            return;
+        };
         let operation = OperationRequest {
             operation_id: Uuid::new_v4(),
             operation_type: OperationType::HttpRequest,
