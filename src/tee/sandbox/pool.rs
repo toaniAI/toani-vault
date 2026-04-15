@@ -607,25 +607,62 @@ impl SandboxPool for NsjailSandboxPool {
         let status = *self.status.read().await;
         let active_sessions = self.active_session_count().await;
         let warm_instances = self.warm_instance_count().await;
+        let mut process_health_summaries = Vec::new();
 
-        let healthy =
-            status == PoolStatus::Running && active_sessions < self.config.max_concurrent_sessions;
+        {
+            let sessions = self.active_sessions.read().await;
+            for (session_id, session) in sessions.iter() {
+                if let Some(health) = session.sandbox_process_health().await
+                    && !health.is_healthy()
+                {
+                    process_health_summaries
+                        .push(format!("active session {session_id}: {}", health.summary()));
+                }
+            }
+        }
 
-        let error = if warm_instances < self.config.min_warm_instances {
-            Some(format!(
+        {
+            let instances = self.warm_instances.lock().await;
+            for instance in instances.iter() {
+                if let Some(sandbox) = instance.sandbox.as_ref()
+                    && let Some(health) = sandbox.process_health()
+                    && !health.is_healthy()
+                {
+                    process_health_summaries.push(format!(
+                        "warm instance {}: {}",
+                        instance.info.instance_id,
+                        health.summary()
+                    ));
+                }
+            }
+        }
+
+        let process_health_issues = process_health_summaries.len();
+        let healthy = status == PoolStatus::Running
+            && active_sessions < self.config.max_concurrent_sessions
+            && process_health_issues == 0;
+
+        let mut errors = Vec::new();
+        if warm_instances < self.config.min_warm_instances {
+            errors.push(format!(
                 "Insufficient warm instances: {}/{}",
                 warm_instances, self.config.min_warm_instances
-            ))
-        } else {
-            None
-        };
+            ));
+        }
+        errors.extend(process_health_summaries.iter().cloned());
 
         SandboxHealth {
             pool_status: status,
             active_sessions,
             warm_instances,
             healthy,
-            error,
+            error: if errors.is_empty() {
+                None
+            } else {
+                Some(errors.join("; "))
+            },
+            process_health_issues,
+            process_health_summaries,
         }
     }
 

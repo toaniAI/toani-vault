@@ -410,6 +410,8 @@ pub struct SandboxStatsApiResponse {
     pub warm_instances: usize,
     pub healthy: bool,
     pub error: Option<String>,
+    pub process_health_issues: usize,
+    pub process_health_summaries: Vec<String>,
 }
 
 // ==================== Handler 实现 ====================
@@ -1171,6 +1173,8 @@ pub async fn get_stats(
         warm_instances: health.warm_instances,
         healthy: health.healthy,
         error: health.error,
+        process_health_issues: health.process_health_issues,
+        process_health_summaries: health.process_health_summaries,
     };
 
     Json(ApiSuccessResponse::new(response)).into_response()

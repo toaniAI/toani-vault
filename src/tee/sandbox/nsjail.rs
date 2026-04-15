@@ -329,7 +329,14 @@ impl NsjailSandbox {
             .and_then(|p| p.id())
             .ok_or_else(|| SandboxError::process("No process ID available"))?;
 
-        let stats = Self::read_process_stats(pid).await?;
+        let mut stats = Self::read_process_stats(pid).await?;
+        stats.process_health = Self::inspect_process_tree(pid);
+        if !stats.process_health.is_healthy() {
+            return Err(SandboxError::Process(format!(
+                "sandbox process health check failed: {}",
+                stats.process_health.summary()
+            )));
+        }
 
         Ok(stats)
     }
@@ -470,6 +477,10 @@ impl NsjailSandbox {
         unsafe { libc::kill(pid as i32, 0) == 0 }
     }
 
+    pub fn process_health(&self) -> Option<SandboxProcessHealth> {
+        self.pid().map(Self::inspect_process_tree)
+    }
+
     async fn read_process_stats(pid: u32) -> Result<SandboxStats, SandboxError> {
         let stat_path = format!("/proc/{pid}/stat");
         let stat_content = tokio::fs::read_to_string(&stat_path)
@@ -507,6 +518,7 @@ impl NsjailSandbox {
             virtual_memory_bytes: virtual_memory,
             cpu_time_ms,
             fd_count,
+            process_health: Self::inspect_process_tree(pid),
         })
     }
 
@@ -520,6 +532,10 @@ impl NsjailSandbox {
         }
 
         Ok(count)
+    }
+
+    fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
+        inspect_process_tree(root_pid)
     }
 }
 
@@ -614,6 +630,152 @@ pub(crate) fn spawn_child_reaper(mut child: Child, label: String, kill_first: bo
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxProcessHealth {
+    pub root_pid: u32,
+    pub process_count: usize,
+    pub zombie_count: usize,
+    pub zombie_pids: Vec<u32>,
+    pub checked: bool,
+}
+
+impl SandboxProcessHealth {
+    pub fn healthy(root_pid: u32, process_count: usize) -> Self {
+        Self {
+            root_pid,
+            process_count,
+            zombie_count: 0,
+            zombie_pids: Vec::new(),
+            checked: true,
+        }
+    }
+
+    pub fn unchecked(root_pid: u32) -> Self {
+        Self {
+            root_pid,
+            process_count: 0,
+            zombie_count: 0,
+            zombie_pids: Vec::new(),
+            checked: false,
+        }
+    }
+
+    pub fn is_healthy(&self) -> bool {
+        !self.checked || self.zombie_count == 0
+    }
+
+    pub fn summary(&self) -> String {
+        if !self.checked {
+            return format!("process tree check unavailable for pid {}", self.root_pid);
+        }
+        if self.zombie_count == 0 {
+            return format!(
+                "pid {} process tree healthy ({} processes)",
+                self.root_pid, self.process_count
+            );
+        }
+        format!(
+            "pid {} process tree has {} zombie processes: {:?}",
+            self.root_pid, self.zombie_count, self.zombie_pids
+        )
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
+    let processes = match read_proc_processes() {
+        Ok(processes) => processes,
+        Err(error) => {
+            warn!("Failed to inspect sandbox process tree for pid {root_pid}: {error}");
+            return SandboxProcessHealth::unchecked(root_pid);
+        }
+    };
+
+    let mut children_by_parent: HashMap<u32, Vec<&ProcProcess>> = HashMap::new();
+    for process in &processes {
+        children_by_parent
+            .entry(process.ppid)
+            .or_default()
+            .push(process);
+    }
+
+    let mut visited = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::from([root_pid]);
+    let mut zombie_pids = Vec::new();
+
+    while let Some(pid) = queue.pop_front() {
+        if !visited.insert(pid) {
+            continue;
+        }
+
+        if let Some(process) = processes.iter().find(|process| process.pid == pid)
+            && process.state == 'Z'
+        {
+            zombie_pids.push(pid);
+        }
+
+        if let Some(children) = children_by_parent.get(&pid) {
+            for child in children {
+                queue.push_back(child.pid);
+            }
+        }
+    }
+
+    SandboxProcessHealth {
+        root_pid,
+        process_count: visited.len(),
+        zombie_count: zombie_pids.len(),
+        zombie_pids,
+        checked: true,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
+    SandboxProcessHealth::unchecked(root_pid)
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct ProcProcess {
+    pid: u32,
+    ppid: u32,
+    state: char,
+}
+
+#[cfg(target_os = "linux")]
+fn read_proc_processes() -> std::io::Result<Vec<ProcProcess>> {
+    let mut processes = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        let entry = entry?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+
+        let stat_path = entry.path().join("stat");
+        let Ok(stat) = std::fs::read_to_string(stat_path) else {
+            continue;
+        };
+        if let Some((state, ppid)) = parse_proc_stat_state_ppid(&stat) {
+            processes.push(ProcProcess { pid, ppid, state });
+        }
+    }
+    Ok(processes)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_proc_stat_state_ppid(stat: &str) -> Option<(char, u32)> {
+    let close_paren = stat.rfind(')')?;
+    let mut fields = stat[close_paren + 1..].split_whitespace();
+    let state = fields.next()?.chars().next()?;
+    let ppid = fields.next()?.parse().ok()?;
+    Some((state, ppid))
+}
+
 async fn reap_child(mut child: Child, label: String, pid: Option<u32>) {
     match timeout(Duration::from_secs(CHILD_REAP_TIMEOUT_SECS), child.wait()).await {
         Ok(Ok(status)) => {
@@ -641,6 +803,8 @@ pub struct SandboxStats {
     pub cpu_time_ms: u64,
     /// 打开的文件描述符数
     pub fd_count: usize,
+    /// 沙箱进程树健康状态
+    pub process_health: SandboxProcessHealth,
 }
 
 /// 热 nsjail 实例
@@ -671,7 +835,8 @@ impl WarmNsjailInstance {
     /// 检查实例是否健康
     pub fn is_healthy(&self) -> bool {
         // 检查进程是否仍在运行
-        unsafe { libc::kill(self.info.pid as i32, 0) == 0 }
+        (unsafe { libc::kill(self.info.pid as i32, 0) == 0 })
+            && inspect_process_tree(self.info.pid).is_healthy()
     }
 
     /// 检查是否过期
@@ -721,10 +886,48 @@ mod tests {
             virtual_memory_bytes: 1024 * 1024 * 10,
             cpu_time_ms: 1000,
             fd_count: 10,
+            process_health: SandboxProcessHealth::healthy(1234, 1),
         };
 
         assert_eq!(stats.pid, 1234);
         assert_eq!(stats.memory_usage_bytes, 1048576);
+        assert!(stats.process_health.is_healthy());
+    }
+
+    #[test]
+    fn test_process_health_reports_zombies() {
+        let health = SandboxProcessHealth {
+            root_pid: 1234,
+            process_count: 3,
+            zombie_count: 1,
+            zombie_pids: vec![5678],
+            checked: true,
+        };
+
+        assert!(!health.is_healthy());
+        assert_eq!(
+            health.summary(),
+            "pid 1234 process tree has 1 zombie processes: [5678]"
+        );
+    }
+
+    #[test]
+    fn test_unchecked_process_health_does_not_fail_closed() {
+        let health = SandboxProcessHealth::unchecked(1234);
+
+        assert!(health.is_healthy());
+        assert_eq!(
+            health.summary(),
+            "process tree check unavailable for pid 1234"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_proc_stat_state_ppid() {
+        let stat = "1234 (node worker) Z 42 1 1 0 -1 4194560";
+
+        assert_eq!(parse_proc_stat_state_ppid(stat), Some(('Z', 42)));
     }
 
     #[tokio::test]

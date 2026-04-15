@@ -85,6 +85,7 @@ pub use config::{
 pub use error::{SandboxError, SecurityError, SessionError};
 
 // 公开导出 - 核心组件
+pub use nsjail::SandboxProcessHealth;
 pub use nsjail::{NsjailSandbox, WarmNsjailInstance};
 pub use pool::{NsjailSandboxPool, SandboxPool};
 pub use repository::{
@@ -135,6 +136,10 @@ pub struct SandboxHealth {
     pub healthy: bool,
     /// 错误信息
     pub error: Option<String>,
+    /// 进程树自检异常数量
+    pub process_health_issues: usize,
+    /// 进程树自检摘要
+    pub process_health_summaries: Vec<String>,
 }
 
 /// 池状态

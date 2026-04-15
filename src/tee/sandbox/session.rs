@@ -7,7 +7,7 @@ use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     browser_runtime::SandboxBrowserRuntime,
     error::{SandboxError, SessionError},
-    nsjail::NsjailSandbox,
+    nsjail::{NsjailSandbox, SandboxProcessHealth},
     repository::{
         CompleteSandboxOperationRecord, NewSandboxOperationRecord, SandboxRepository, to_chrono_utc,
     },
@@ -133,6 +133,14 @@ impl ActiveNsjailSession {
     pub async fn take_sandbox(&self) -> Option<NsjailSandbox> {
         self.shutdown_runtime().await;
         self.sandbox.write().await.take()
+    }
+
+    pub async fn sandbox_process_health(&self) -> Option<SandboxProcessHealth> {
+        self.sandbox
+            .read()
+            .await
+            .as_ref()
+            .and_then(NsjailSandbox::process_health)
     }
 
     pub fn with_reviewer(
