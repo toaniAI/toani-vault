@@ -43,6 +43,7 @@ WORKDIR /app
 ENV SEALED_STORAGE_PATH=/app/data/sealed
 ENV SGX_AESM_SOCKET_PATH=/var/run/aesmd/aesm.socket
 ENV NODE_PATH=/opt/credbridge-browser-runtime/node_modules
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV PLAYWRIGHT_SKIP_BROWSER_GC=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -85,7 +86,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    mkdir -p /opt/credbridge-browser-runtime; \
+    mkdir -p /opt/credbridge-browser-runtime "$PLAYWRIGHT_BROWSERS_PATH"; \
     cd /opt/credbridge-browser-runtime; \
     printf '%s\n' '{' \
       '  "name": "credbridge-browser-runtime",' \
@@ -96,6 +97,7 @@ RUN set -eux; \
       '}' > package.json; \
     npm install --omit=dev --no-fund --no-audit; \
     npx playwright install --with-deps chromium; \
+    chmod -R a+rX /opt/credbridge-browser-runtime "$PLAYWRIGHT_BROWSERS_PATH"; \
     npm cache clean --force
 
 COPY --from=nsjail-builder /tmp/nsjail-src/nsjail /usr/local/bin/nsjail
