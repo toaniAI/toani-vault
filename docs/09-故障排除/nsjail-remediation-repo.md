@@ -5,7 +5,7 @@
 在**不依赖直接修改宿主机**的前提下，尽量把 `nsjail` 的 UID/GID 映射前置检查、镜像依赖、部署参数和发布闸门补齐，降低以下错误进入运行时的概率：
 
 ```text
-newgidmap: gid range [0-1] -> [1000-1001] not allowed
+newgidmap: gid range [0-1] -> [100000-100001] not allowed
 [E] gidMapExternal() '/usr/bin/newgidmap' failed
 [E] initParent(): Couldn't initialize user namespace
 ```
@@ -22,7 +22,7 @@ newgidmap: gid range [0-1] -> [1000-1001] not allowed
 已确认的现状：
 
 - 运行时镜像已安装 `uidmap`，并校验 `newuidmap/newgidmap` 存在，见 [docker/base/runtime.Dockerfile](/Users/yvan/AIWorkspace/credbridge/docker/base/runtime.Dockerfile:49)。
-- 默认 `nsjail` UID/GID 映射会把容器内 `0` 映射到外部 `1000`，见 [src/tee/sandbox/config.rs](/Users/yvan/AIWorkspace/credbridge/src/tee/sandbox/config.rs:439) 和 [src/tee/sandbox/config.rs](/Users/yvan/AIWorkspace/credbridge/src/tee/sandbox/config.rs:460)。
+- 默认 `nsjail` UID/GID 映射会把容器内 `0` 映射到外部 `100000`，见 [src/tee/sandbox/config.rs](/Users/yvan/AIWorkspace/credbridge/src/tee/sandbox/config.rs:439) 和 [src/tee/sandbox/config.rs](/Users/yvan/AIWorkspace/credbridge/src/tee/sandbox/config.rs:460)。
 - `docker-compose` 开发环境已经启用了 `privileged`、`/sys/fs/cgroup` 挂载和 `seccomp:unconfined`，见 [docker/docker-compose.yml](/Users/yvan/AIWorkspace/credbridge/docker/docker-compose.yml:68) 和 [docker/docker-compose.yml](/Users/yvan/AIWorkspace/credbridge/docker/docker-compose.yml:81)。
 - 当前 [docker/scripts/runtime-preflight.sh](/Users/yvan/AIWorkspace/credbridge/docker/scripts/runtime-preflight.sh) 主要检查 SGX/DCAP 与 Playwright，**没有检查 userns / uidmap / subuid / subgid**。
 - 仓库内目前**没有**现成的 `.drone.yml`，因此 Drone 发布闸门需要新增。
@@ -38,7 +38,7 @@ newgidmap: gid range [0-1] -> [1000-1001] not allowed
 - `nsjail` smoke test 失败于：
 
 ```text
-newgidmap: gid range [0-1) -> [1000-1001) not allowed
+newgidmap: gid range [0-1) -> [100000-100001) not allowed
 ```
 
 这说明当前最直接的问题不是：
@@ -51,7 +51,7 @@ newgidmap: gid range [0-1) -> [1000-1001) not allowed
 
 - **容器实际以 `root` 运行**
 - **映射授权却只配置给了 `appuser`**
-- 同时应用默认要求把 inside gid `0` 映射到 outside gid `1000`
+- 同时应用默认要求把 inside gid `0` 映射到 outside gid `100000`
 
 因此，代码库内方案的核心目标需要从“泛化增强”收敛为：
 
@@ -183,7 +183,7 @@ appuser:100000:65536
 
 - 默认值保留，但必须允许环境覆盖
 - 启动日志打印最终生效的 inside/outside uid/gid 映射
-- preflight 对将要使用的映射值做一次 smoke test，而不是写死 `0:1000:1`
+- preflight 对将要使用的映射值做一次 smoke test，而不是写死 `0:100000:1`
 
 ---
 

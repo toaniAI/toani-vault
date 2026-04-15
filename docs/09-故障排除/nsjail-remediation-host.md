@@ -5,7 +5,7 @@
 修复 `nsjail` 在运行节点上创建 user namespace 时失败的问题，典型错误如下：
 
 ```text
-newgidmap: gid range [0-1] -> [1000-1001] not allowed
+newgidmap: gid range [0-1] -> [100000-100001] not allowed
 [E] gidMapExternal() '/usr/bin/newgidmap' failed
 [E] initParent(): Couldn't initialize user namespace
 [E] standaloneMode(): Couldn't launch the child process
@@ -40,14 +40,14 @@ newgidmap: gid range [0-1] -> [1000-1001] not allowed
 结合代码库配置，当前 `nsjail` 默认会请求如下映射模式：
 
 - inside uid/gid：`0`
-- outside uid/gid：默认 `1000`
+- outside uid/gid：默认 `100000`
 
 见 [src/tee/sandbox/config.rs](/Users/yvan/AIWorkspace/credbridge/src/tee/sandbox/config.rs:542)。
 
 因此，当节点返回：
 
 ```text
-gid range [0-1] -> [1000-1001] not allowed
+gid range [0-1] -> [100000-100001] not allowed
 ```
 
 通常说明以下几类问题之一：
@@ -295,8 +295,8 @@ ls -ld /dev/sgx /dev/sgx/enclave /dev/sgx/provision /dev/sgx_enclave /dev/sgx_pr
 echo
 echo "== nsjail smoke test =="
 nsjail --mode o \
-  --uid_mapping 0:1000:1 \
-  --gid_mapping 0:1000:1 \
+  --uid_mapping 0:100000:1 \
+  --gid_mapping 0:100000:1 \
   -- /bin/sh -lc "id && echo NSJAIL_OK"
 '
 ```
@@ -368,8 +368,8 @@ grep '^appuser:' /etc/subuid /etc/subgid
 
 ```sh
 nsjail --mode o \
-  --uid_mapping 0:1000:1 \
-  --gid_mapping 0:1000:1 \
+  --uid_mapping 0:100000:1 \
+  --gid_mapping 0:100000:1 \
   -- /bin/sh -c 'id && echo ok'
 ```
 
@@ -429,7 +429,7 @@ nsjail --mode o \
 
 检查：
 
-- `nsjail` outside uid/gid 是否仍固定为 `1000`
+- `nsjail` outside uid/gid 是否仍固定为 `100000`
 - 是否需要按环境调整映射目标
 
 ---

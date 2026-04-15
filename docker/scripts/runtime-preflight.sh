@@ -97,10 +97,10 @@ ensure_nsjail_userns_prerequisites() {
     fi
 
     inside_uid="${CREDBRIDGE_NSJAIL_INSIDE_UID:-0}"
-    outside_uid="${CREDBRIDGE_NSJAIL_OUTSIDE_UID:-1000}"
+    outside_uid="${CREDBRIDGE_NSJAIL_OUTSIDE_UID:-100000}"
     uid_count="${CREDBRIDGE_NSJAIL_UID_COUNT:-1}"
     inside_gid="${CREDBRIDGE_NSJAIL_INSIDE_GID:-0}"
-    outside_gid="${CREDBRIDGE_NSJAIL_OUTSIDE_GID:-1000}"
+    outside_gid="${CREDBRIDGE_NSJAIL_OUTSIDE_GID:-100000}"
     gid_count="${CREDBRIDGE_NSJAIL_GID_COUNT:-1}"
 
     log "running nsjail smoke test with uid_mapping=${inside_uid}:${outside_uid}:${uid_count} gid_mapping=${inside_gid}:${outside_gid}:${gid_count}"

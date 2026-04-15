@@ -436,7 +436,7 @@ pub struct UidMap {
 impl Default for UidMap {
     fn default() -> Self {
         Self {
-            outside_uid: 1000,
+            outside_uid: 100000,
             inside_uid: 0,
             count: 1,
         }
@@ -457,7 +457,7 @@ pub struct GidMap {
 impl Default for GidMap {
     fn default() -> Self {
         Self {
-            outside_gid: 1000,
+            outside_gid: 100000,
             inside_gid: 0,
             count: 1,
         }
@@ -687,6 +687,23 @@ mod tests {
         let args = config.to_args();
 
         assert!(args.contains(&"--seccomp_string".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_defaults_to_non_root_inside_uid_gid() {
+        let config = NsjailConfig::default();
+        let args = config.to_args();
+        let uid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--uid_mapping")
+            .expect("uid mapping arg should be present");
+        let gid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--gid_mapping")
+            .expect("gid mapping arg should be present");
+
+        assert_eq!(args[uid_mapping_idx + 1], "0:100000:1");
+        assert_eq!(args[gid_mapping_idx + 1], "0:100000:1");
     }
 
     #[test]
