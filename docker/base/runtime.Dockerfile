@@ -101,7 +101,7 @@ RUN set -eux; \
       '}' > package.json; \
     npm install --omit=dev --no-fund --no-audit; \
     install -m 0755 /root/.cache/lightpanda-node/lightpanda "$LIGHTPANDA_BINARY_PATH"; \
-    "$LIGHTPANDA_BINARY_PATH" --version; \
+    "$LIGHTPANDA_BINARY_PATH" version; \
     chmod -R a+rX /opt/credbridge-browser-runtime; \
     npm cache clean --force
 

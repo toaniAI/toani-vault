@@ -73,8 +73,11 @@ toani sandbox create-session --service-id <service> --original-intent <intent> [
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
+toani sandbox pause <sessionId>
+toani sandbox resume <sessionId>
 toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
 toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
+toani sandbox export-data <sessionId> --selectors '[".row"]' [--format json|csv|pdf]
 toani sandbox get-operation <operationId>
 toani sandbox stats
 toani --version
@@ -100,11 +103,11 @@ Use this sequence:
 - `click`
 - `fill`
 - `get_text`
-- `get_attribute`
 - `execute_script`
 - `wait`
 - `export`
 - `dom_export`
+- `http_request`
 
 ### Examples
 
@@ -137,6 +140,11 @@ toani sandbox export-dom <sessionId> \
   --include-text true \
   --include-metadata true \
   --extra-sensitive-selectors '["#token",".secret"]'
+
+# Export selected text data
+toani sandbox export-data <sessionId> \
+  --format json \
+  --selectors '[".balance",".status"]'
 
 # Inspect operation result
 toani sandbox get-operation <operationId>

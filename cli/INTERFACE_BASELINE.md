@@ -64,7 +64,7 @@ API base path: `/api/v1`.
 
 - Credentials: create/list/get/decrypt/delete
 - Tokens: verify/revoke
-- Sandbox: create/list/get/execute/pause/resume/close/screenshot/export
+- Sandbox: create/list/get/execute/pause/resume/close/export/dom-export
 
 ### Missing Before Migration
 
@@ -82,11 +82,12 @@ API base path: `/api/v1`.
 ### Known drift
 
 - CLI surface drift:
-  - Current npm CLI only exposes the `sandbox` group plus global flags/version
+  - Current npm CLI exposes the `sandbox` group plus global flags/version
   - Historical docs referenced unshipped `auth`, `config`, `credentials`, `tokens`, and `audit` groups
 - Sandbox terminate naming drift:
   - Real close-session route is `DELETE /sandbox/sessions/:id`
   - Some historical constants still referenced `/sandbox/sessions/:id/terminate`
+  - Screenshot is not exposed by the current backend sandbox router
 - Auth status/login behavior drift:
   - Old CLI probes credentials list instead of using auth session/me endpoints
 

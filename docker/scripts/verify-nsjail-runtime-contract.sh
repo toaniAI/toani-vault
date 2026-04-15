@@ -57,7 +57,7 @@ require_grep "ENV LIGHTPANDA_DISABLE_TELEMETRY=true" "$RUNTIME_DOCKERFILE"
 require_grep '@lightpanda/browser' "$RUNTIME_DOCKERFILE"
 require_grep 'puppeteer-core' "$RUNTIME_DOCKERFILE"
 require_grep 'install -m 0755 /root/.cache/lightpanda-node/lightpanda "$LIGHTPANDA_BINARY_PATH"' "$RUNTIME_DOCKERFILE"
-require_grep '"$LIGHTPANDA_BINARY_PATH" --version' "$RUNTIME_DOCKERFILE"
+require_grep '"$LIGHTPANDA_BINARY_PATH" version' "$RUNTIME_DOCKERFILE"
 
 require_grep "ensure_nsjail_userns_prerequisites" "$RUNTIME_PREFLIGHT"
 require_grep "require_subid_entry /etc/subuid" "$RUNTIME_PREFLIGHT"

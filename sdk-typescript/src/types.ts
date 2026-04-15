@@ -942,6 +942,8 @@ export interface ExecuteOperationRequest {
   operationType: OperationType;
   /** 操作描述 */
   description?: string;
+  /** 原始操作参数；用于后端新增的浏览器操作字段 */
+  parameters?: Record<string, unknown>;
   /** 选择器（CSS选择器或XPath） */
   selector?: string;
   /** 输入值 */
@@ -975,14 +977,32 @@ export interface ExecuteOperationRequest {
 export interface ExecuteOperationResponse {
   /** 操作ID */
   operationId: string;
-  /** 操作状态 */
-  status: OperationStatus;
+  /** 是否成功 */
+  success: boolean;
+  /** @deprecated Use success. */
+  status?: OperationStatus;
   /** 操作结果 */
+  data?: unknown;
+  /** @deprecated Use data. */
   result?: unknown;
   /** 错误信息 */
   error?: string;
   /** 执行时间（毫秒） */
   executionTimeMs: number;
+}
+
+/** Session 操作响应 */
+export interface SessionActionResponse {
+  /** Session ID */
+  sessionId: string;
+  /** 操作结果 */
+  success: boolean;
+  /** @deprecated Use success. */
+  closed?: boolean;
+  /** 当前状态 */
+  status: string;
+  /** 消息 */
+  message: string;
 }
 
 export type DomExportFormat = "html" | "text" | "json";
@@ -1011,10 +1031,12 @@ export interface DomExportResponse {
 /** 导出数据请求 */
 export interface ExportDataRequest {
   /** 导出格式 */
-  format: "json" | "csv" | "html";
-  /** 选择器 */
+  format: "json" | "csv" | "pdf";
+  /** 数据选择器 */
+  selectors?: string[];
+  /** @deprecated Use selectors. */
   selector?: string;
-  /** 数据提取规则 */
+  /** @deprecated The backend export API accepts selectors only. */
   extractionRules?: Array<{
     /** 字段名 */
     name: string;
@@ -1027,12 +1049,16 @@ export interface ExportDataRequest {
 
 /** 导出数据响应 */
 export interface ExportDataResponse {
-  /** 导出数据 */
-  data: unknown;
+  /** 导出 ID */
+  exportId: string;
+  /** Base64 编码导出数据 */
+  dataBase64: string;
   /** 数据格式 */
-  format: "json" | "csv" | "html";
-  /** 记录数 */
-  recordCount: number;
+  format: "json" | "csv" | "pdf";
+  /** 文件名 */
+  filename: string;
+  /** 大小（字节） */
+  sizeBytes: number;
 }
 
 /** Session 列表响应 */
