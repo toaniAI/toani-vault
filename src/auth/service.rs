@@ -387,8 +387,8 @@ impl Default for MfaStatusSnapshot {
     }
 }
 
-/// 默认会话 TTL（秒）
-const DEFAULT_SESSION_TTL: i64 = 3600; // 1 hour
+/// 默认 Web 登录会话 TTL（秒）
+const DEFAULT_WEB_SESSION_TTL_SECONDS: i64 = 24 * 60 * 60; // 24 hours
 
 /// 认证服务实现
 ///
@@ -2393,8 +2393,8 @@ impl AuthService for AuthServiceImpl {
         // 3. 计算过期时间
         let ttl = request
             .display_name
-            .map(|_| DEFAULT_SESSION_TTL)
-            .unwrap_or(DEFAULT_SESSION_TTL);
+            .map(|_| DEFAULT_WEB_SESSION_TTL_SECONDS)
+            .unwrap_or(DEFAULT_WEB_SESSION_TTL_SECONDS);
 
         // 4. 创建会话实体
         let mut session = AuthSession::new(user_id, session_token_hash, ttl);
@@ -3010,5 +3010,21 @@ mod tests {
             }
             other => panic!("unexpected error variant: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_default_web_session_ttl_is_24_hours() {
+        assert_eq!(DEFAULT_WEB_SESSION_TTL_SECONDS, 86_400);
+    }
+
+    #[test]
+    fn test_auth_session_uses_24h_web_session_ttl() {
+        let session = AuthSession::new(
+            Uuid::now_v7(),
+            "test_hash_value",
+            DEFAULT_WEB_SESSION_TTL_SECONDS,
+        );
+        let ttl_seconds = (session.expires_at - session.created_at).num_seconds();
+        assert_eq!(ttl_seconds, DEFAULT_WEB_SESSION_TTL_SECONDS);
     }
 }
