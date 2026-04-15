@@ -21,6 +21,7 @@ const LIGHTPANDA_DISABLE_TELEMETRY_ENV: &str = "LIGHTPANDA_DISABLE_TELEMETRY";
 const NODE_BINARY_CANDIDATES: &[&str] = &["/usr/bin/node", "/usr/local/bin/node"];
 const NODE_PATH_CANDIDATES: &[&str] = &["/opt/credbridge-browser-runtime/node_modules"];
 const LIGHTPANDA_BINARY_PATH_CANDIDATES: &[&str] = &["/usr/local/bin/lightpanda"];
+const DEV_NULL_PATH: &str = "/dev/null";
 
 #[derive(Clone)]
 pub struct SandboxBrowserRuntime {
@@ -484,6 +485,7 @@ fn browser_runtime_mounts(
     if let Some(script_dir) = script_path.parent() {
         push_read_only_bind_mount(&mut mounts, script_dir);
     }
+    push_read_only_bind_mount(&mut mounts, Path::new(DEV_NULL_PATH));
     push_read_only_bind_mount(&mut mounts, node_path);
     push_read_only_bind_mount(&mut mounts, lightpanda_binary_path);
 
@@ -521,6 +523,11 @@ mod tests {
         assert!(mounts.iter().any(|mount| {
             mount.src == Path::new("/app/src/tee/sandbox/scripts")
                 && mount.dst == Path::new("/app/src/tee/sandbox/scripts")
+                && mount.read_only
+        }));
+        assert!(mounts.iter().any(|mount| {
+            mount.src == Path::new("/dev/null")
+                && mount.dst == Path::new("/dev/null")
                 && mount.read_only
         }));
         assert!(mounts.iter().any(|mount| {
