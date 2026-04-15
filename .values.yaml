@@ -39,6 +39,10 @@ envs:
   # Prefer Drone secrets in production; these values are committed to git if filled in here.
   PRIVY_APP_ID: "cmniaifov006t0cl1af6l5xqs"
   PRIVY_APP_SECRET: "privy_app_secret_51xduL8UX9MyuZDEizgyhhh9MXsAQsZbW5n9T1xBTdrT1fgcYDqK64Yv4Cnefyhirjx94sctJPzNyAFqyVJ2GH73"
+  # nsjail smoke test 使用的 outside uid/gid，需与镜像内 /etc/subuid(gid) 的授权范围一致
+  # 镜像内配置为 root:100000:65536，故设为 100000
+  CREDBRIDGE_NSJAIL_OUTSIDE_UID: "100000"
+  CREDBRIDGE_NSJAIL_OUTSIDE_GID: "100000"
 
 o_envs: []
 
