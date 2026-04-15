@@ -1,7 +1,7 @@
 use crate::tee::sandbox::{
     config::{MountConfig, MountType},
     error::SandboxError,
-    nsjail::NsjailSandbox,
+    nsjail::{NsjailSandbox, spawn_child_reaper},
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ pub struct SandboxBrowserRuntime {
 }
 
 struct BrowserRuntimeProcess {
-    child: Child,
+    child: Option<Child>,
     stdin: ChildStdin,
     stderr: BufReader<ChildStderr>,
     stdout: BufReader<ChildStdout>,
@@ -119,7 +119,7 @@ impl SandboxBrowserRuntime {
 
         let runtime = Self {
             inner: Arc::new(Mutex::new(BrowserRuntimeProcess {
-                child,
+                child: Some(child),
                 stdin,
                 stderr: BufReader::new(stderr),
                 stdout: BufReader::new(stdout),
@@ -290,8 +290,10 @@ impl SandboxBrowserRuntime {
             .await;
 
         let mut process = self.inner.lock().await;
-        let _ = process.child.start_kill();
-        let _ = process.child.wait().await;
+        if let Some(mut child) = process.child.take() {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+        }
     }
 
     async fn send(&self, message: Value) -> Result<Value, SandboxError> {
@@ -316,7 +318,12 @@ impl SandboxBrowserRuntime {
             return Err(browser_runtime_io_error("read response", &mut process, error).await);
         }
         if line.trim().is_empty() {
-            let status = process.child.wait().await.map_err(SandboxError::Io)?;
+            let Some(mut child) = process.child.take() else {
+                return Err(SandboxError::Process(
+                    "browser runtime closed without response; child already reaped".to_string(),
+                ));
+            };
+            let status = child.wait().await.map_err(SandboxError::Io)?;
             let mut stderr = String::new();
             let _ = process.stderr.read_to_string(&mut stderr).await;
             return Err(SandboxError::Process(browser_runtime_exit_detail(
@@ -349,7 +356,9 @@ async fn browser_runtime_io_error(
     process: &mut BrowserRuntimeProcess,
     error: std::io::Error,
 ) -> SandboxError {
-    if let Ok(Some(status)) = process.child.try_wait() {
+    if let Some(child) = process.child.as_mut()
+        && let Ok(Some(status)) = child.try_wait()
+    {
         let mut stderr = String::new();
         let _ = process.stderr.read_to_string(&mut stderr).await;
         return SandboxError::Process(browser_runtime_exit_detail(
@@ -360,6 +369,14 @@ async fn browser_runtime_io_error(
     }
 
     SandboxError::Io(error)
+}
+
+impl Drop for BrowserRuntimeProcess {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.take() {
+            spawn_child_reaper(child, "browser runtime".to_string(), true);
+        }
+    }
 }
 
 fn browser_runtime_exit_detail(

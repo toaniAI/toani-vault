@@ -13,9 +13,11 @@ use time::OffsetDateTime;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
+use tokio::time::{Duration, timeout};
 use tracing::{debug, error, info, warn};
 
 static CGROUP_FALLBACK_WARNED: Once = Once::new();
+const CHILD_REAP_TIMEOUT_SECS: u64 = 30;
 
 /// nsjail 沙箱
 #[allow(dead_code)]
@@ -128,21 +130,30 @@ impl NsjailSandbox {
             match process.start_kill() {
                 Ok(_) => {
                     // 等待进程退出
-                    let timeout = tokio::time::Duration::from_secs(5);
-                    match tokio::time::timeout(timeout, process.wait()).await {
+                    let wait_timeout = Duration::from_secs(5);
+                    match timeout(wait_timeout, process.wait()).await {
                         Ok(Ok(_)) => {
                             info!("Nsjail sandbox {} stopped gracefully", self.id);
                         }
-                        _ => {
+                        Ok(Err(e)) => {
+                            warn!("Failed to wait for nsjail sandbox {}: {}", self.id, e);
+                        }
+                        Err(_) => {
                             warn!(
-                                "Nsjail sandbox {} did not stop gracefully, killing",
+                                "Nsjail sandbox {} did not stop gracefully, handing to background reaper",
                                 self.id
+                            );
+                            spawn_child_reaper(
+                                process,
+                                format!("nsjail sandbox {}", self.id),
+                                false,
                             );
                         }
                     }
                 }
                 Err(e) => {
                     warn!("Failed to kill nsjail sandbox {}: {}", self.id, e);
+                    spawn_child_reaper(process, format!("nsjail sandbox {}", self.id), true);
                 }
             }
         }
@@ -512,6 +523,14 @@ impl NsjailSandbox {
     }
 }
 
+impl Drop for NsjailSandbox {
+    fn drop(&mut self) {
+        if let Some(process) = self.process.take() {
+            spawn_child_reaper(process, format!("dropped nsjail sandbox {}", self.id), true);
+        }
+    }
+}
+
 async fn describe_child_exit(
     context: &str,
     child: &mut Child,
@@ -556,6 +575,57 @@ fn chown_for_mapped_root(
     _gid: u32,
 ) -> Result<(), SandboxError> {
     Ok(())
+}
+
+pub(crate) fn spawn_child_reaper(mut child: Child, label: String, kill_first: bool) {
+    let pid = child.id();
+    if kill_first && let Err(error) = child.start_kill() {
+        warn!("Failed to signal child reaper target {label}: {error}");
+    }
+
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            handle.spawn(reap_child(child, label, pid));
+        }
+        Err(error) => {
+            warn!(
+                "No Tokio runtime available for child reaper {label} pid={pid:?}; starting fallback runtime: {error}"
+            );
+            let thread_label = label.clone();
+            if let Err(spawn_error) = std::thread::Builder::new()
+                .name("credbridge-child-reaper".to_string())
+                .spawn(move || {
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(runtime) => runtime.block_on(reap_child(child, label, pid)),
+                        Err(runtime_error) => warn!(
+                            "Failed to build fallback runtime for child reaper {label} pid={pid:?}: {runtime_error}"
+                        ),
+                    }
+                })
+            {
+                warn!(
+                    "Failed to start fallback child reaper thread {thread_label} pid={pid:?}: {spawn_error}"
+                );
+            }
+        }
+    }
+}
+
+async fn reap_child(mut child: Child, label: String, pid: Option<u32>) {
+    match timeout(Duration::from_secs(CHILD_REAP_TIMEOUT_SECS), child.wait()).await {
+        Ok(Ok(status)) => {
+            debug!("Reaped child process {label} pid={pid:?} status={status}");
+        }
+        Ok(Err(error)) => {
+            warn!("Failed to reap child process {label} pid={pid:?}: {error}");
+        }
+        Err(_) => {
+            warn!("Timed out waiting for child process {label} pid={pid:?} to be reaped");
+        }
+    }
 }
 
 /// 沙箱统计信息

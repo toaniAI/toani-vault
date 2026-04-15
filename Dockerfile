@@ -78,6 +78,7 @@ WORKDIR /app
 
 ENV SEALED_STORAGE_PATH=/app/data/sealed
 ENV SGX_AESM_SOCKET_PATH=/var/run/aesmd/aesm.socket
+ENV NSJAIL_PATH=/usr/local/bin/nsjail-podnet
 
 COPY --from=builder /app/target/release/vault-service /app/vault-service
 COPY --from=builder /app/target/sgx-enclave/credbridge_enclave.signed.so /app/credbridge_enclave.signed.so
@@ -89,9 +90,13 @@ COPY docker/scripts/runtime-preflight.sh /app/runtime-preflight.sh
 
 RUN mkdir -p /app/data/sealed /app/config \
     && useradd -m -u 1000 appuser \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        'exec /usr/local/bin/nsjail --disable_clone_newnet "$@"' \
+        > /usr/local/bin/nsjail-podnet \
     && cp /etc/sgx_default_qcnl.conf /app/config/sgx_default_qcnl.conf \
     && ln -sf /app/config/sgx_default_qcnl.conf /etc/sgx_default_qcnl.conf \
-    && chmod +x /app/healthcheck.sh /app/runtime-preflight.sh \
+    && chmod +x /app/healthcheck.sh /app/runtime-preflight.sh /usr/local/bin/nsjail-podnet \
     && chown -R appuser:appuser /app
 
 EXPOSE 8080
