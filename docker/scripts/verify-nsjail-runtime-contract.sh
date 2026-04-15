@@ -98,5 +98,11 @@ require_grep "'serve'" "$SANDBOX_EXECUTOR"
 require_grep "'--host', '127.0.0.1'" "$SANDBOX_EXECUTOR"
 require_grep "'--port', String(port)" "$SANDBOX_EXECUTOR"
 require_grep "puppeteer.connect" "$SANDBOX_EXECUTOR"
+require_grep "browser.createBrowserContext()" "$SANDBOX_EXECUTOR"
+require_grep "currentPage.evaluate(" "$SANDBOX_EXECUTOR"
+
+if grep -Fq "browser.pages()" "$SANDBOX_EXECUTOR"; then
+    fail "sandbox executor must not reuse Lightpanda's startup page via browser.pages()"
+fi
 
 echo "[verify-nsjail-runtime-contract] ok"

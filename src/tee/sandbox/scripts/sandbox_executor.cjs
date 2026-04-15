@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const puppeteer = require('puppeteer-core');
 
 let browser = null;
+let browserContext = null;
 let page = null;
 let lightpandaProcess = null;
 
@@ -17,11 +18,37 @@ async function ensurePage() {
   }
 
   if (!page || page.isClosed()) {
-    const pages = await browser.pages();
-    page = pages[0] || (await browser.newPage());
+    await resetPageContext();
   }
 
   return page;
+}
+
+async function resetPageContext() {
+  if (page && !page.isClosed()) {
+    await page.close().catch(() => {});
+  }
+  page = null;
+
+  if (browserContext) {
+    await browserContext.close().catch(() => {});
+  }
+  browserContext = null;
+
+  if (!browser) {
+    throw new Error('browser not initialized');
+  }
+
+  browserContext = await browser.createBrowserContext();
+  page = await browserContext.newPage();
+  return page;
+}
+
+function isRecoverableFrameError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Navigating frame was detached|detached Frame|BrowserContextNotLoaded|Target closed|Session closed/i.test(
+    message
+  );
 }
 
 async function allocateFreePort() {
@@ -133,75 +160,7 @@ function redactResult(value, secrets) {
   return value;
 }
 
-function createCredbridgeHelper(currentPage, bindings) {
-  return {
-    async fill(selector, field) {
-      const value = bindings[field];
-      if (typeof value !== 'string') {
-        throw new Error(`unknown credential field: ${field}`);
-      }
-      await currentPage.$eval(
-        selector,
-        (element, nextValue) => {
-          if (!element) return;
-          element.value = nextValue;
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-        },
-        value
-      );
-      return true;
-    },
-    async click(selector) {
-      await currentPage.click(selector);
-      return true;
-    },
-    async waitFor(selector, timeoutMs = 30000) {
-      if (typeof selector === 'string' && selector) {
-        await currentPage.waitForSelector(selector, { timeout: timeoutMs });
-      } else {
-        await new Promise(resolve => setTimeout(resolve, timeoutMs));
-      }
-      return true;
-    },
-    async getText(selector) {
-      if (selectorLooksSensitive(selector)) {
-        throw new Error(`get_text blocked for sensitive selector: ${selector}`);
-      }
-      return await currentPage.$eval(selector, element => {
-        const tagName = element.tagName.toLowerCase();
-        const inputType = (element.getAttribute('type') || '').toLowerCase();
-        if ((tagName === 'input' || tagName === 'textarea') && inputType === 'password') {
-          throw new Error('get_text blocked for password input');
-        }
-        if (tagName === 'input' || tagName === 'textarea') {
-          return element.value || '';
-        }
-        return element.innerText || element.textContent || '';
-      });
-    },
-    async setCookie(valueField, nameField) {
-      const raw = bindings[valueField];
-      if (typeof raw !== 'string') {
-        throw new Error(`unknown credential field: ${valueField}`);
-      }
-      const cookieName = typeof nameField === 'string' ? bindings[nameField] || nameField : null;
-      const cookieString = cookieName ? `${cookieName}=${raw}` : raw;
-      await currentPage.evaluate(cookie => {
-        document.cookie = cookie;
-      }, cookieString);
-      return true;
-    },
-    async navigate(url) {
-      await currentPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      return currentPage.url();
-    },
-  };
-}
-
-async function executeOperation(operationType, parameters) {
-  const currentPage = await ensurePage();
-
+async function executeOperationOnPage(currentPage, operationType, parameters) {
   switch (operationType) {
     case 'navigate': {
       const url = parameters?.url;
@@ -484,12 +443,110 @@ async function executeOperation(operationType, parameters) {
         parameters?.bindings && typeof parameters.bindings === 'object' ? parameters.bindings : {};
       const secretValues = Object.values(bindings).filter(value => typeof value === 'string');
 
-      const helper = createCredbridgeHelper(currentPage, bindings);
-      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-      const fn = new AsyncFunction('credbridge', `"use strict"; ${script}`);
       let result;
       try {
-        result = await fn(helper);
+        result = await currentPage.evaluate(
+          async ({ script, bindings }) => {
+            function selectorLooksSensitiveInPage(selector) {
+              return typeof selector === 'string' && /pass(word)?|secret|token|otp/i.test(selector);
+            }
+
+            function waitForSelectorInPage(selector, timeoutMs = 30000) {
+              return new Promise((resolve, reject) => {
+                if (typeof selector !== 'string' || !selector) {
+                  resolve(null);
+                  return;
+                }
+
+                const existing = document.querySelector(selector);
+                if (existing) {
+                  resolve(existing);
+                  return;
+                }
+
+                const timeout = setTimeout(() => {
+                  observer.disconnect();
+                  reject(new Error(`selector_not_found: ${selector}`));
+                }, timeoutMs);
+
+                const observer = new MutationObserver(() => {
+                  const element = document.querySelector(selector);
+                  if (!element) {
+                    return;
+                  }
+                  clearTimeout(timeout);
+                  observer.disconnect();
+                  resolve(element);
+                });
+
+                observer.observe(document.documentElement || document, {
+                  childList: true,
+                  subtree: true,
+                });
+              });
+            }
+
+            const credbridge = {
+              async fill(selector, field) {
+                const value = bindings[field];
+                if (typeof value !== 'string') {
+                  throw new Error(`unknown credential field: ${field}`);
+                }
+                const element = await waitForSelectorInPage(selector);
+                element.value = value;
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+              },
+              async click(selector) {
+                const element = await waitForSelectorInPage(selector);
+                element.click();
+                return true;
+              },
+              async waitFor(selector, timeoutMs = 30000) {
+                if (typeof selector === 'string' && selector) {
+                  await waitForSelectorInPage(selector, timeoutMs);
+                } else {
+                  await new Promise(resolve => setTimeout(resolve, timeoutMs));
+                }
+                return true;
+              },
+              async getText(selector) {
+                if (selectorLooksSensitiveInPage(selector)) {
+                  throw new Error(`get_text blocked for sensitive selector: ${selector}`);
+                }
+                const element = await waitForSelectorInPage(selector);
+                const tagName = element.tagName.toLowerCase();
+                const inputType = (element.getAttribute('type') || '').toLowerCase();
+                if ((tagName === 'input' || tagName === 'textarea') && inputType === 'password') {
+                  throw new Error('get_text blocked for password input');
+                }
+                if (tagName === 'input' || tagName === 'textarea') {
+                  return element.value || '';
+                }
+                return element.innerText || element.textContent || '';
+              },
+              async setCookie(valueField, nameField) {
+                const raw = bindings[valueField];
+                if (typeof raw !== 'string') {
+                  throw new Error(`unknown credential field: ${valueField}`);
+                }
+                const cookieName =
+                  typeof nameField === 'string' ? bindings[nameField] || nameField : null;
+                document.cookie = cookieName ? `${cookieName}=${raw}` : raw;
+                return true;
+              },
+              async navigate(url) {
+                window.location.href = url;
+                return true;
+              },
+            };
+
+            const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+            return await new AsyncFunction('credbridge', `"use strict"; ${script}`)(credbridge);
+          },
+          { script, bindings }
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(redactSecretInString(message, secretValues));
@@ -511,17 +568,41 @@ async function executeOperation(operationType, parameters) {
   }
 }
 
+async function executeOperation(operationType, parameters) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const currentPage = await ensurePage();
+    try {
+      return await executeOperationOnPage(currentPage, operationType, parameters);
+    } catch (error) {
+      if (attempt === 0 && isRecoverableFrameError(error)) {
+        await resetPageContext();
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('operation failed after browser page reset');
+}
+
 const rl = readline.createInterface({
   input: process.stdin,
   crlfDelay: Infinity,
 });
 
 async function cleanupRuntime() {
+  if (page && !page.isClosed()) {
+    await page.close().catch(() => {});
+  }
+  page = null;
+  if (browserContext) {
+    await browserContext.close().catch(() => {});
+    browserContext = null;
+  }
   if (browser) {
     await browser.disconnect().catch(() => {});
     browser = null;
   }
-  page = null;
   if (lightpandaProcess) {
     lightpandaProcess.kill('SIGTERM');
     lightpandaProcess = null;
@@ -534,7 +615,7 @@ rl.on('line', async line => {
 
     if (message.type === 'init') {
       await startLightpanda(message.profileDir);
-      page = (await browser.pages())[0] || (await browser.newPage());
+      await ensurePage();
       reply({ ok: true, data: { ready: true } });
       return;
     }
