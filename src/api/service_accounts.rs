@@ -20,8 +20,9 @@ use crate::auth::{
     ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType, ServiceAccount, ServiceAccountStatus,
 };
 use crate::token::{
-    DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, PasetoToken,
-    TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TokenClaims,
+    DEFAULT_TOKEN_TTL_SECONDS, MAX_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS,
+    PasetoToken, TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT,
+    TokenClaims,
 };
 
 #[derive(Debug, Deserialize)]
@@ -499,7 +500,7 @@ fn resolve_service_account_token_ttl(
         ));
     }
 
-    Ok((raw_ttl as u64).clamp(MIN_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS))
+    Ok((raw_ttl as u64).clamp(MIN_TOKEN_TTL_SECONDS, MAX_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS))
 }
 
 #[allow(clippy::result_large_err)]
@@ -741,6 +742,22 @@ mod tests {
         let err = resolve_service_account_token_ttl(&request).expect_err("must reject mismatch");
         assert_eq!(err.error, "invalid_request");
         assert!(err.message.contains("must match"));
+    }
+
+    #[test]
+    fn test_resolve_service_account_token_ttl_caps_at_service_account_maximum() {
+        let request = CreateServiceAccountTokenRequest {
+            scopes: vec!["credential:read".to_string()],
+            ttl_seconds: Some((MAX_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS + 1) as i64),
+            expires_in: None,
+            display_name: None,
+        };
+
+        assert_eq!(
+            resolve_service_account_token_ttl(&request)
+                .expect("should cap service account ttl at service-account specific maximum"),
+            MAX_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS,
+        );
     }
 
     #[test]

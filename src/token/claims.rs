@@ -298,8 +298,11 @@ pub const DEFAULT_TOKEN_TTL_SECONDS: u64 = 7200;
 /// Token 最小有效期（15 分钟 = 900 秒）
 pub const MIN_TOKEN_TTL_SECONDS: u64 = 900;
 
-/// 最大 Token 有效期（24 小时）
-pub const MAX_TOKEN_TTL_SECONDS: u64 = 86400;
+/// 最大 Token 有效期（7 天）
+pub const MAX_TOKEN_TTL_SECONDS: u64 = 604800;
+
+/// 服务账号 Token 的最大有效期（24 小时）
+pub const MAX_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS: u64 = 86400;
 
 pub const TOKEN_SUBJECT_TYPE_USER: &str = "user";
 pub const TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT: &str = "service_account";
