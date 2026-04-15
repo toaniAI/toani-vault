@@ -20,7 +20,7 @@ commands unless you have verified a newer build.
 ## Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.5
+npm install -g @toani/vault-cli@0.0.7
 ```
 
 ## Configure
@@ -86,8 +86,9 @@ toani --help
 
 ## Sandbox Workflow
 
-The CLI controls remote TEE sandbox sessions. It is not a local browser runner and not an abstract
-"sandbox node" system.
+The CLI controls remote TEE sandbox sessions. Browser-backed operations run through the backend
+Lightpanda + puppeteer-core runtime; `http_request` is the direct HTTP operation and does not start
+Lightpanda. The CLI is not a local browser runner and not an abstract "sandbox node" system.
 
 Use this sequence:
 
@@ -105,9 +106,9 @@ Use this sequence:
 - `get_text`
 - `execute_script`
 - `wait`
+- `http_request`
 - `export`
 - `dom_export`
-- `http_request`
 
 ### Examples
 

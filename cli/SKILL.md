@@ -8,7 +8,7 @@
 
 - 这是一个命令行工具，入口是 `toani ...`
 - 当前公开能力只有 `config` 和 `sandbox`
-- 所谓 sandbox 是远端 TEE 浏览器会话 API，不是 agent 自己的 node、worker、tool session、对话状态
+- 所谓 sandbox 是远端 TEE + Lightpanda 浏览器会话 API，不是 agent 自己的 node、worker、tool session、对话状态
 - 要操作页面，必须走 `toani sandbox create-session` 和 `toani sandbox execute`
 
 ## 先读这一段
@@ -16,11 +16,12 @@
 如果你是另一个 agent，请先建立下面的心智模型:
 
 1. `toani` 是 CLI，不是 SDK 片段，也不是伪代码。
-2. `sandbox` 指 CredBridge 后端提供的远端 TEE 沙盒会话。
+2. `sandbox` 指 CredBridge 后端提供的远端 TEE 沙盒会话；需要页面操作时，后端在隔离运行时里启动 Lightpanda 并通过 puppeteer-core/CDP 执行。
 3. 不要把 `sandbox` 理解成 OpenClaw、自定义 agent runtime、节点树、browser tab registry、workflow node。
 4. 页面操作不是“直接调用浏览器工具”，而是调用:
    `toani sandbox execute <sessionId> --operation-type <type> --params '<json>'`
 5. 如果需要页面上下文，先 `create-session`，再 `execute`，必要时 `get-operation` 和 `get-session`，结束时 `terminate`。
+6. `http_request` 是后端直连 HTTP 操作，不会启动 Lightpanda；除 `http_request` 外，公开的 sandbox 操作都依赖远端浏览器运行时。
 
 ## 当前发布版真实能力面
 
@@ -46,7 +47,7 @@
 - Registry 安装:
 
 ```bash
-npm install -g @toani/vault-cli@0.0.5
+npm install -g @toani/vault-cli@0.0.7
 ```
 
 - 本地源码安装:
@@ -56,7 +57,7 @@ cd /Users/yvan/AIWorkspace/credbridge/cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.5.tgz
+npm install -g ./toani-vault-cli-0.0.7.tgz
 ```
 
 - 先决条件:
@@ -125,6 +126,8 @@ toani sandbox stats
 
 ### `sandbox execute` 支持的 `operation-type`
 
+浏览器操作，会按需启动远端 Lightpanda 会话:
+
 - `navigate`
 - `click`
 - `fill`
@@ -133,7 +136,15 @@ toani sandbox stats
 - `wait`
 - `export`
 - `dom_export`
+
+非浏览器操作，不启动 Lightpanda:
+
 - `http_request`
+
+不要使用这些旧操作名，当前后端不会接受:
+
+- `get_attribute`
+- `screenshot`
 
 ### `--params` 常见字段
 
@@ -144,10 +155,23 @@ toani sandbox stats
 - `value`
 - `script`
 - `bindings`
-- `selectors`
-- `duration_ms`
 - `timeout_ms`
+- `milliseconds`（仅 `wait` 的兼容字段）
+- `duration_ms`
+- `method`
+- `headers`
+- `body`
+- `selectors`
 - `sensitive`
+
+DOM 导出推荐使用专用命令 `toani sandbox export-dom`。如果通过 `execute --operation-type dom_export` 调用，参数使用后端字段名:
+
+- `root_selector`
+- `format`
+- `include_text`
+- `include_metadata`
+- `extra_sensitive_selectors`
+- `max_bytes`
 
 ## Agent 必须遵守的执行流程
 
@@ -187,7 +211,7 @@ toani sandbox execute <sessionId> \
 ```bash
 toani sandbox execute <sessionId> \
   --operation-type wait \
-  --params '{"selector":"#dashboard"}'
+  --params '{"selector":"#dashboard","timeout_ms":10000}'
 ```
 
 ### 场景 5: 读取文本
@@ -214,21 +238,55 @@ toani sandbox execute <sessionId> \
   --params '{"script":"return document.title"}'
 ```
 
-### 场景 8: 截图
+### 场景 8: 导出脱敏 DOM
+
+```bash
+toani sandbox export-dom <sessionId> \
+  --format html \
+  --root-selector body \
+  --include-text true \
+  --include-metadata true \
+  --extra-sensitive-selectors '["#token",".secret"]'
+```
+
+### 场景 9: 后端直连 HTTP 请求
 
 ```bash
 toani sandbox execute <sessionId> \
-  --operation-type screenshot \
-  --params '{}'
+  --operation-type http_request \
+  --params '{"url":"https://api.example.com/status","method":"GET","timeout_ms":10000}'
 ```
 
-### 场景 9: 查询异步操作结果
+### 场景 10: 选择器文本批量导出
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type export \
+  --params '{"selectors":["h1",".status"]}'
+```
+
+### 场景 11: 导出结构化数据
+
+```bash
+toani sandbox export-data <sessionId> \
+  --selectors '["h1",".status"]' \
+  --format json
+```
+
+### 场景 12: 暂停和恢复会话
+
+```bash
+toani sandbox pause <sessionId>
+toani sandbox resume <sessionId>
+```
+
+### 场景 13: 查询异步操作结果
 
 ```bash
 toani sandbox get-operation <operationId>
 ```
 
-### 场景 10: 结束会话
+### 场景 14: 结束会话
 
 ```bash
 toani sandbox terminate <sessionId>
@@ -256,6 +314,8 @@ toani sandbox terminate <sessionId>
 - 在没有 `sessionId` 的情况下直接执行 `sandbox execute`
 - 发明 CLI 没有实现的命令组
 - 把 `sandbox` 当成本地 Playwright、浏览器 devtools、OpenClaw 内置网页操作器
+- 把 Lightpanda 当成本地浏览器进程，或要求 CLI 直接读取本地浏览器状态
+- 使用旧操作 `get_attribute` 或 `screenshot`
 - 用自然语言描述代替具体命令和参数
 
 ## 最小可执行模板
@@ -299,6 +359,12 @@ toani sandbox terminate <sessionId>
 
 - 错误: 连到错误环境
   - 修复: 显式传 `--base-url`，再用 `toani config show` 确认
+
+- 错误: 后端返回不支持的 operation type / enum variant
+  - 修复: 对照本文件的 `operation-type` 列表；当前不要使用 `get_attribute`、`screenshot`
+
+- 错误: `browser runtime closed without response`、`lightpanda`、`puppeteer-core`、`CDP`、`nsjail` 相关报错
+  - 修复: 这是远端 Lightpanda 运行时或隔离策略问题，不是本地 CLI 浏览器问题；保留 `operationId`，执行 `toani sandbox get-operation <operationId>`，再把 session、operation、base URL 和报错交给后端/运维排查
 
 ## 安全注意事项
 
