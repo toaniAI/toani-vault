@@ -1193,6 +1193,7 @@ async fn check_scope(token: &ValidatedToken, required: TokenScope) -> Result<(),
 
 async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Response> {
     check_scope(token, TokenScope::CredentialRead).await?;
+    check_scope(token, TokenScope::CredentialDecrypt).await?;
 
     if token.issued_from() == TOKEN_ISSUED_FROM_ACCESS_TOKEN {
         return Ok(());
@@ -1731,7 +1732,15 @@ fn ensure_credential_exists(
     let user_id = UserId::new(token.user_id.clone());
 
     match vault.get_credential_metadata(&credential_id_model, &tenant_id, &user_id) {
-        Ok(Some(_)) => Ok(()),
+        Ok(Some(metadata)) => match metadata.status.as_str() {
+            "active" => Ok(()),
+            "expired" => Err(SandboxError::Other(
+                "invalid_request: Credential is expired, refresh or rebind a valid token before creating a sandbox session".to_string(),
+            )),
+            _ => Err(SandboxError::Session(
+                crate::tee::sandbox::error::SessionError::credential_not_found(credential_id),
+            )),
+        },
         Ok(None) | Err(VaultError::TenantIsolationViolation { .. }) => Err(SandboxError::Session(
             crate::tee::sandbox::error::SessionError::credential_not_found(credential_id),
         )),
@@ -2345,7 +2354,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_create_session_scopes_requires_credential_read() {
-        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+        let token = create_mock_token(
+            "tenant_123",
+            "user_456",
+            vec![TokenScope::SandboxWrite, TokenScope::CredentialDecrypt],
+        );
 
         let response = check_create_session_scopes(&token)
             .await
@@ -2373,25 +2386,59 @@ mod tests {
         let token = create_mock_token(
             "tenant_123",
             "user_456",
-            vec![TokenScope::SandboxWrite, TokenScope::CredentialRead],
+            vec![
+                TokenScope::SandboxWrite,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+            ],
         );
 
         check_create_session_scopes(&token)
             .await
-            .expect("token with sandbox:write + credential:read should pass");
+            .expect("token with required credential and sandbox scopes should pass");
     }
 
     #[tokio::test]
-    async fn test_check_create_session_scopes_accepts_dashboard_access_token_with_read_scope_only()
+    async fn test_check_create_session_scopes_rejects_dashboard_access_token_without_decrypt_scope()
     {
         let mut token =
             create_mock_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
         token.issued_from = TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string();
         token.allowed_credential_ids = Some(vec![Uuid::new_v4().to_string()]);
 
+        let response = check_create_session_scopes(&token)
+            .await
+            .expect_err("dashboard-issued access token without decrypt scope should fail");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+
+        assert_eq!(body["error"], "insufficient_scope");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("credential:decrypt"),
+            "message should mention required decrypt scope"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_create_session_scopes_accepts_dashboard_access_token_with_decrypt_scope() {
+        let mut token = create_mock_token(
+            "tenant_123",
+            "user_456",
+            vec![TokenScope::CredentialRead, TokenScope::CredentialDecrypt],
+        );
+        token.issued_from = TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string();
+        token.allowed_credential_ids = Some(vec![Uuid::new_v4().to_string()]);
+
         check_create_session_scopes(&token)
             .await
-            .expect("dashboard-issued access token with credential:read should pass");
+            .expect("dashboard-issued access token with decrypt scope should pass");
     }
 
     #[test]
@@ -2433,6 +2480,84 @@ mod tests {
 
         ensure_credential_exists(Some(&vault), &token, credential_id)
             .expect("existing credential should pass");
+    }
+
+    #[test]
+    fn test_ensure_credential_exists_rejects_expired_credential() {
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+        let vault = Arc::new(CredentialVault::new_in_memory());
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new("tenant_123"),
+                    user_id: UserId::new("user_456"),
+                    service_id: ServiceId::new("svc-1"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: Some(Utc::now().timestamp() as u64 - 3600),
+                },
+                create_test_payload(),
+            )
+            .expect("should create expired test credential");
+
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let error = ensure_credential_exists(Some(&vault), &token, credential_id)
+            .expect_err("expired credential should fail");
+
+        match error {
+            SandboxError::Other(message) => {
+                assert!(
+                    message.starts_with("invalid_request:"),
+                    "expired credential should return invalid_request error"
+                );
+                assert!(
+                    message.to_lowercase().contains("expired"),
+                    "error message should mention expired status"
+                );
+            }
+            other => panic!("expected invalid_request Other error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_create_session_credential_rejects_expired_credential_id() {
+        let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
+        let vault = Arc::new(CredentialVault::new_in_memory());
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new("tenant_123"),
+                    user_id: UserId::new("user_456"),
+                    service_id: ServiceId::new("svc-1"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: Some(Utc::now().timestamp() as u64 - 3600),
+                },
+                create_test_payload(),
+            )
+            .expect("should create expired test credential");
+
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let error =
+            resolve_create_session_credential(Some(&vault), &token, Some(credential_id), None)
+                .expect_err(
+                    "expired credential should fail when resolving create-session credential",
+                );
+
+        match error {
+            CreateSessionCredentialError::Sandbox(SandboxError::Other(message)) => {
+                assert!(
+                    message.to_lowercase().contains("invalid_request")
+                        && message.to_lowercase().contains("expired"),
+                    "error message should be invalid_request and mention expired status"
+                );
+            }
+            other => panic!("expected sandbox other error, got {other:?}"),
+        }
     }
 
     #[test]

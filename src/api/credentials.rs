@@ -1036,10 +1036,10 @@ mod tests {
 
         assert!(token.has_scope(&TokenScope::CredentialRead));
         assert!(token.has_scope(&TokenScope::CredentialWrite));
-        assert!(token.has_scope(&TokenScope::CredentialDecrypt));
-        assert!(token.has_scope(&TokenScope::SandboxRead));
-        assert!(token.has_scope(&TokenScope::SandboxWrite));
-        assert!(token.has_scope(&TokenScope::SandboxExecute));
+        assert!(!token.has_scope(&TokenScope::CredentialDecrypt));
+        assert!(!token.has_scope(&TokenScope::SandboxRead));
+        assert!(!token.has_scope(&TokenScope::SandboxWrite));
+        assert!(!token.has_scope(&TokenScope::SandboxExecute));
         assert!(!token.has_scope(&TokenScope::Admin));
     }
 
