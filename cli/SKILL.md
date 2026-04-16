@@ -51,7 +51,7 @@ Base URL 优先级：
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. `config.baseUrl`
-5. 默认 `https://dev-credbridge.bitkinetic.com/`
+5. 默认 `https://api.credbridge.example/`
 
 Token 优先级：
 
@@ -110,7 +110,7 @@ toani sandbox stats
 
 - `http_request`
 
-不要使用这些旧名字：
+不要使用这些旧操作名：
 
 - `get_attribute`
 - `screenshot`
@@ -217,7 +217,7 @@ toani sandbox execute <sessionId> \
 ### 示例 1：初始化配置
 
 ```bash
-toani config init --url https://dev-credbridge.bitkinetic.com --token <BEARER_TOKEN>
+toani config init --url https://api.example.com --token <BEARER_TOKEN>
 toani config show --output json
 ```
 

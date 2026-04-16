@@ -20,7 +20,7 @@ commands unless you have verified a newer build.
 ## Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.7
+npm install -g @toani/vault-cli@0.0.8
 ```
 
 ## Configure
@@ -29,10 +29,10 @@ Issue a restricted bearer token in the Dashboard first, then configure the CLI w
 environment variables, or local config:
 
 ```bash
-export TOANI_BASE_URL="https://dev-credbridge.bitkinetic.com"
+export TOANI_BASE_URL="https://api.example.com"
 export TOANI_VAULT_TOKEN="<BEARER_TOKEN>"
 
-toani config init --url https://dev-credbridge.bitkinetic.com --token <BEARER_TOKEN>
+toani config init --url https://api.example.com --token <BEARER_TOKEN>
 toani config show
 ```
 
@@ -62,7 +62,7 @@ Base URL resolution priority:
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. `config.baseUrl`
-5. default `https://dev-credbridge.bitkinetic.com/`
+5. default `https://api.credbridge.example/`
 
 ## Commands
 

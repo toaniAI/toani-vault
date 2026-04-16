@@ -5,9 +5,10 @@ import type { CliConfig, CliProfile, OutputFormat } from "../types/cli.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".toani");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
+const DEFAULT_BASE_URL = "https://api.credbridge.example/";
 
 const DEFAULT_CONFIG: CliConfig = {
-  baseUrl: "https://dev-credbridge.bitkinetic.com/",
+  baseUrl: DEFAULT_BASE_URL,
   output: "table",
   timeout: 30000,
   currentProfile: "default",

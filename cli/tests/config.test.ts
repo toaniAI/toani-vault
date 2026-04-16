@@ -23,6 +23,8 @@ function cleanupConfig(): void {
 }
 
 describe("runConfig", () => {
+  const configuredBaseUrl = "https://api.example.com/";
+
   beforeEach(() => {
     cleanupConfig();
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -46,14 +48,12 @@ describe("runConfig", () => {
     await runConfig(testConfig, [
       "init",
       "--url",
-      "https://dev-credbridge.bitkinetic.com/",
+      configuredBaseUrl,
     ]);
 
     const saved = readConfigFile();
-    expect(saved?.baseUrl).toBe("https://dev-credbridge.bitkinetic.com/");
-    expect(saved?.profiles?.default?.baseUrl).toBe(
-      "https://dev-credbridge.bitkinetic.com/",
-    );
+    expect(saved?.baseUrl).toBe(configuredBaseUrl);
+    expect(saved?.profiles?.default?.baseUrl).toBe(configuredBaseUrl);
   });
 
   it("config init preserves token from runtime config when only url is passed", async () => {
@@ -70,11 +70,11 @@ describe("runConfig", () => {
     await runConfig(runtimeConfig, [
       "init",
       "--url",
-      "https://dev-credbridge.bitkinetic.com/",
+      configuredBaseUrl,
     ]);
 
     const saved = readConfigFile();
-    expect(saved?.baseUrl).toBe("https://dev-credbridge.bitkinetic.com/");
+    expect(saved?.baseUrl).toBe(configuredBaseUrl);
     expect(saved?.token).toBe("test-token-abc123");
   });
 });
