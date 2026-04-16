@@ -120,10 +120,8 @@ async function startLightpanda(profileDir) {
     executablePath,
     [
       'serve',
-      '--host',
-      '127.0.0.1',
-      '--port',
-      String(port),
+      '--host', '127.0.0.1',
+      '--port', String(port),
       '--timeout',
       String(idleTimeoutSeconds),
     ],
