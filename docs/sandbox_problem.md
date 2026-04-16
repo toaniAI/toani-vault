@@ -1,5 +1,16 @@
 # Sandbox Problem Log
 
+## 2026-04-16 - remote exec remains blocked after alpha-262 rollout at 08:02 CST
+
+- Problem: Rerun needed to prove the remote CredBridge container can run `nsjail` + Lightpanda + `sandbox_executor.cjs` against `https://dashboard.zk.me/login`, especially whether login input fields are operable.
+- Prior context absorbed: Existing entries already captured the React controlled-input cause and fix, the `--disable_clone_newns` nsjail compatibility fix, skipped nsjail smoke tests, and repeated local DNS/exec blockers from this automation runner.
+- Remote evidence: Kubernetes MCP sees backend pod `credbridge-go-6f4669d489-6ntfv` in namespace `zkme-dev`, deployment revision `111`, image `hub.bitkinetic.com/zkme/credbridge:alpha-262`, ready `1/1`, restart count `0`. Events show `alpha-262` pulled and started at `2026-04-16 07:52:14 +0800`, replacing the previous `alpha-261` pod. Recent backend logs visible through MCP are still only `/health` probe traffic; no live sandbox execution attempt was observable.
+- Constraint: Helper-based `kubectl` with the MCP kubeconfig token still fails before pod selection because this runner cannot resolve `rcp.bitkinetic.com`. Local `curl -I https://dashboard.zk.me/login` also fails with `Could not resolve host`. Kubernetes MCP can inspect objects/logs/events but still does not expose arbitrary pod exec, so in-container Lightpanda/nsjail/dashboard input operation remains unproven.
+- Additional finding: Deployment still sets `CREDBRIDGE_SKIP_NSJAIL_SMOKE_TEST=true`, so startup preflight cannot substitute for the requested live nsjail browser proof.
+- Code status: No new code-level defect was identified in this run. Current source still contains the known fixes: React-compatible native setter + `InputEvent` fill semantics in `sandbox_executor.cjs`, and `NsjailConfig` emits `--disable_clone_newns`.
+- CommitId: No corrective code commit. This entry is being persisted as a diagnostic-only documentation update because the requested success condition was not proven and the observed blocker remains the local automation runner DNS/exec path rather than a newly isolated application bug.
+- Verification: `node --check src/tee/sandbox/scripts/sandbox_executor.cjs`; `cargo test --test sandbox_executor_contract_tests`; Kubernetes MCP pod/deployment/log/event inspection; helper-based `kubectl` attempt failed with DNS resolution for `rcp.bitkinetic.com`; local dashboard curl failed DNS resolution.
+
 ## 2026-04-16 - remote exec remains blocked at 06:01 CST
 
 - Problem: Rerun needed to prove the remote CredBridge container can run `nsjail` + Lightpanda + `sandbox_executor.cjs` against `https://dashboard.zk.me/login`, especially whether login input fields are operable.
