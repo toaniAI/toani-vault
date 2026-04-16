@@ -514,6 +514,7 @@ fn parse_operation_type(op_type: &str) -> OperationType {
         "export" => OperationType::Export,
         "domexport" | "dom_export" => OperationType::DomExport,
         "executescript" | "execute_script" => OperationType::ExecuteScript,
+        "bootstrappage" | "bootstrap-page" | "bootstrap_page" => OperationType::BootstrapPage,
         "wait" => OperationType::Wait,
         _ => OperationType::Custom,
     }
@@ -611,6 +612,14 @@ mod tests {
         assert!(matches!(
             parse_operation_type("dom_export"),
             OperationType::DomExport
+        ));
+        assert!(matches!(
+            parse_operation_type("bootstrap_page"),
+            OperationType::BootstrapPage
+        ));
+        assert!(matches!(
+            parse_operation_type("bootstrap-page"),
+            OperationType::BootstrapPage
         ));
         assert!(matches!(
             parse_operation_type("screenshot"),

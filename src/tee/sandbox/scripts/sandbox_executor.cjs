@@ -10,6 +10,7 @@ let lightpandaProcess = null;
 
 const LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS_ENV = 'LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS';
 const DEFAULT_LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS = 60;
+const DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS = ['script[src][type$="-text/javascript"]'];
 
 function reply(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -210,6 +211,184 @@ async function cleanupRuntime() {
 
 function selectorLooksSensitive(selector) {
   return typeof selector === 'string' && /pass(word)?|secret|token|otp/i.test(selector);
+}
+
+async function bootstrapPageOnCurrentPage(currentPage, parameters) {
+  const mode = parameters?.mode;
+  if (mode !== 'rocket_loader') {
+    throw new Error('invalid_request: bootstrap_page mode must be rocket_loader');
+  }
+
+  const rawSelectors = parameters?.script_selectors;
+  if (
+    rawSelectors !== undefined &&
+    (!Array.isArray(rawSelectors) || rawSelectors.some(selector => typeof selector !== 'string'))
+  ) {
+    throw new Error('invalid_request: script_selectors must be an array of strings');
+  }
+
+  if (parameters?.wait_selector !== undefined && typeof parameters.wait_selector !== 'string') {
+    throw new Error('invalid_request: wait_selector must be a string');
+  }
+
+  if (
+    parameters?.include_plain_scripts !== undefined &&
+    typeof parameters.include_plain_scripts !== 'boolean'
+  ) {
+    throw new Error('invalid_request: include_plain_scripts must be a boolean');
+  }
+
+  const waitTimeoutMs = Number(parameters?.wait_timeout_ms ?? 30000);
+  if (!Number.isInteger(waitTimeoutMs) || waitTimeoutMs <= 0) {
+    throw new Error('invalid_request: wait_timeout_ms must be a positive integer');
+  }
+
+  const includePlainScripts = parameters?.include_plain_scripts === true;
+  const scriptSelectors =
+    rawSelectors && rawSelectors.length > 0
+      ? rawSelectors
+      : DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS;
+
+  const scriptPlan = await currentPage.evaluate(
+    ({ scriptSelectors, includePlainScripts }) => {
+      function isRocketLoaderScript(typeValue) {
+        if (typeof typeValue !== 'string') return false;
+        const normalized = typeValue.trim().toLowerCase();
+        return normalized.endsWith('-text/javascript') && normalized !== 'text/javascript';
+      }
+
+      function isPlainExecutableType(typeValue) {
+        if (typeof typeValue !== 'string') return false;
+        return typeValue.trim().toLowerCase() === 'text/javascript';
+      }
+
+      function matchesSelector(node) {
+        for (const selector of scriptSelectors) {
+          if (typeof selector !== 'string' || !selector.trim()) {
+            continue;
+          }
+          try {
+            if (node.matches(selector.trim())) {
+              return true;
+            }
+          } catch (error) {
+            throw new Error(`invalid_request: invalid script selector ${selector}`);
+          }
+        }
+        return false;
+      }
+
+      const descriptors = [];
+      let nextIndex = 0;
+
+      for (const node of document.querySelectorAll('script')) {
+        if (!(node instanceof HTMLScriptElement) || !node.src) {
+          continue;
+        }
+        if (!matchesSelector(node)) {
+          continue;
+        }
+
+        const originalType = node.getAttribute('type') || '';
+        const rocketLoader = isRocketLoaderScript(originalType);
+        const plainExecutable = isPlainExecutableType(originalType);
+        if (!rocketLoader && !(includePlainScripts && plainExecutable)) {
+          continue;
+        }
+
+        const marker =
+          node.getAttribute('data-credbridge-bootstrap-id') || `credbridge-bootstrap-${nextIndex++}`;
+        node.setAttribute('data-credbridge-bootstrap-id', marker);
+
+        descriptors.push({
+          marker,
+          src: node.src,
+          originalType,
+          rocketLoader,
+          plainExecutable,
+        });
+      }
+
+      return {
+        selectors: scriptSelectors,
+        descriptors,
+      };
+    },
+    { scriptSelectors, includePlainScripts }
+  );
+
+  const injectedScripts = [];
+  for (const descriptor of scriptPlan.descriptors) {
+    const result = await currentPage.evaluate(async currentDescriptor => {
+      const original = document.querySelector(
+        `script[data-credbridge-bootstrap-id="${currentDescriptor.marker}"]`
+      );
+      if (!(original instanceof HTMLScriptElement)) {
+        return { skipped: true, reason: 'original_script_missing', src: currentDescriptor.src };
+      }
+
+      const parent = original.parentNode;
+      if (!parent) {
+        return { skipped: true, reason: 'original_parent_missing', src: currentDescriptor.src };
+      }
+
+      const nextSibling = original.nextSibling;
+      const injected = document.createElement('script');
+      injected.src = currentDescriptor.src;
+      injected.type = 'text/javascript';
+      injected.async = false;
+      injected.defer = false;
+      injected.setAttribute('data-credbridge-bootstrap-source', currentDescriptor.marker);
+
+      await new Promise((resolve, reject) => {
+        injected.addEventListener('load', () => resolve(), { once: true });
+        injected.addEventListener(
+          'error',
+          () =>
+            reject(new Error(`bootstrap_failed: failed_to_load_script:${currentDescriptor.src}`)),
+          { once: true }
+        );
+
+        if (nextSibling) {
+          parent.insertBefore(injected, nextSibling);
+        } else {
+          parent.appendChild(injected);
+        }
+      });
+
+      return { skipped: false, src: currentDescriptor.src };
+    }, descriptor);
+
+    if (!result.skipped) {
+      injectedScripts.push(result.src);
+    }
+  }
+
+  let waitSatisfied = true;
+  const waitSelector = parameters?.wait_selector;
+  if (typeof waitSelector === 'string' && waitSelector.trim()) {
+    try {
+      await currentPage.waitForSelector(waitSelector, { timeout: waitTimeoutMs });
+    } catch (error) {
+      throw new Error(`bootstrap_failed: selector_not_found: ${waitSelector.trim()}`);
+    }
+  }
+
+  return {
+    data: {
+      injected_scripts: injectedScripts,
+      final_url: currentPage.url(),
+      title: await currentPage.title().catch(() => ''),
+      wait_satisfied: waitSatisfied,
+      diagnostics: {
+        mode,
+        selectors: scriptPlan.selectors,
+        discovered_scripts: scriptPlan.descriptors.length,
+        reinjected_scripts: injectedScripts.length,
+        include_plain_scripts: includePlainScripts,
+      },
+    },
+  };
 }
 
 async function executeOperationOnPage(currentPage, operationType, parameters) {
@@ -639,6 +818,9 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
           used_credentials: Object.keys(bindings),
         },
       };
+    }
+    case 'bootstrap_page': {
+      return bootstrapPageOnCurrentPage(currentPage, parameters);
     }
     case 'close_runtime': {
       await cleanupRuntime();

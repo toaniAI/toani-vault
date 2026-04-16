@@ -6,6 +6,7 @@
 
 - 当前真实可用命令面
 - 标准 `sandbox` 调用链
+- `bootstrap_page` 的受控页面引导注入语义
 - `execute_script.bindings` 和 secret 消费的真实语义
 - 常见操作的最小可执行示例
 
@@ -13,10 +14,11 @@
 
 1. `toani` 是 CLI，不是 SDK 伪代码。
 2. `sandbox` 是 CredBridge 后端提供的远端 TEE 浏览器会话，不是本地浏览器，也不是 agent 自己的运行时节点。
-3. 页面操作必须通过 `toani sandbox create-session` 和 `toani sandbox execute`。
+3. 页面操作通过 `toani sandbox create-session`、`toani sandbox bootstrap-page` 和 `toani sandbox execute` 组合完成。
 4. `http_request` 是后端直连 HTTP，不会启动远端浏览器。
-5. 需要页面状态时，优先用 `get-session`、`get-operation`、`export-dom`、`execute_script`。
-6. 完成后要 `terminate`，不要留下长期活跃会话。
+5. Rocket Loader 一类页面要先显式执行 `bootstrap-page`，再 `wait` / `fill` / `click`。
+6. 需要页面状态时，优先用 `get-session`、`get-operation`、`export-dom`、`execute_script`。
+7. 完成后要 `terminate`，不要留下长期活跃会话。
 
 ## 当前真实能力面
 
@@ -86,6 +88,7 @@ toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
 toani sandbox pause <sessionId>
 toani sandbox resume <sessionId>
+toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
 toani sandbox execute <sessionId> --operation-type <type> [--params '<json>']
 toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
 toani sandbox export-data <sessionId> --selectors '<json-array>' [--format json|csv|pdf]
@@ -100,6 +103,7 @@ toani sandbox stats
 - `navigate`
 - `click`
 - `fill`
+- `bootstrap_page`（通过 `sandbox bootstrap-page` 子命令）
 - `get_text`
 - `execute_script`
 - `wait`
@@ -122,6 +126,11 @@ toani sandbox stats
 - `url`
 - `selector`
 - `value`
+- `mode`
+- `script_selectors`
+- `include_plain_scripts`
+- `wait_selector`
+- `wait_timeout_ms`
 - `script`
 - `bindings`
 - `timeout_ms`
@@ -150,10 +159,13 @@ toani sandbox stats
 2. `toani config show --output json`
 3. 如需凭证 ID，先查询并确认凭证
 4. `toani sandbox create-session ...`
-5. `toani sandbox execute ...`
-6. 如有异步返回，再 `toani sandbox get-operation <operationId>`
-7. 需要确认状态时，`toani sandbox get-session <sessionId>`
-8. 完成后 `toani sandbox terminate <sessionId>`
+5. `toani sandbox execute <sessionId> --operation-type navigate ...`
+6. 如果是 Rocket Loader / bundle 未启动页面，显式执行 `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...`
+7. `toani sandbox execute <sessionId> --operation-type wait ...`
+8. `toani sandbox execute <sessionId> --operation-type fill|click ...`
+9. 如有异步返回，再 `toani sandbox get-operation <operationId>`
+10. 需要确认状态时，`toani sandbox get-session <sessionId>`
+11. 完成后 `toani sandbox terminate <sessionId>`
 
 不要跳过 `create-session`。
 
@@ -171,6 +183,7 @@ toani sandbox stats
 
 - `credential_id` 只是凭证引用，不是明文
 - 正确路径不是“先在本地解密再传进浏览器”，而是“先绑定 session，再在 TEE 内通过受控宿主操作消费”
+- `bootstrap-page` 只做受控 bundle 重放，不消费凭证，也不把 secret 暴露给脚本
 
 ### `fill` 中引用凭证
 
@@ -180,6 +193,34 @@ toani sandbox stats
 toani sandbox execute <sessionId> \
   --operation-type fill \
   --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+```
+
+### `bootstrap-page` 的受控注入语义
+
+这个子命令专门用于 Lightpanda 打开 Rocket Loader 页面后，显式补做受控 bundle 启动：
+
+- 只允许固定 `mode=rocket_loader`
+- 只允许受控字段，不接受 `--params`
+- 不接受 raw script
+- 不接受 `bindings`
+- 不消费凭证
+- 后续 secret 仍然只能通过 `fill` 这类宿主级受控操作消费
+
+推荐登录链路：
+
+1. `navigate`
+2. `bootstrap-page`
+3. `wait`
+4. `fill`
+5. `click`
+
+示例：
+
+```bash
+toani sandbox bootstrap-page <sessionId> \
+  --mode rocket_loader \
+  --wait-selector 'input[name=email]' \
+  --wait-timeout-ms 15000
 ```
 
 ### `execute_script` 中的 `bindings`
@@ -248,7 +289,16 @@ toani sandbox execute <sessionId> \
   --params '{"url":"https://target-site.com/login"}'
 ```
 
-### 示例 5：点击按钮
+### 示例 5：显式引导 Rocket Loader 页面
+
+```bash
+toani sandbox bootstrap-page <sessionId> \
+  --mode rocket_loader \
+  --wait-selector 'input[name=email]' \
+  --wait-timeout-ms 15000
+```
+
+### 示例 6：点击按钮
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -256,7 +306,7 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"button[type=submit]"}'
 ```
 
-### 示例 6：填充普通文本
+### 示例 7：填充普通文本
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -264,7 +314,7 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"input[name=email]","value":"user@example.com"}'
 ```
 
-### 示例 7：填充凭证字段
+### 示例 8：填充凭证字段
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -272,7 +322,7 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
 ```
 
-### 示例 8：等待元素出现
+### 示例 9：等待元素出现
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -280,7 +330,7 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"#dashboard","timeout_ms":10000}'
 ```
 
-### 示例 9：读取文本
+### 示例 10：读取文本
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -288,7 +338,7 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"h1"}'
 ```
 
-### 示例 10：执行脚本读取属性或文本
+### 示例 11：执行脚本读取属性或文本
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -296,7 +346,7 @@ toani sandbox execute <sessionId> \
   --params '{"script":"return document.querySelector(bindings.selector)?.textContent?.trim() ?? null","bindings":{"selector":"h1"}}'
 ```
 
-### 示例 11：执行脚本读取页面状态
+### 示例 12：执行脚本读取页面状态
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -304,7 +354,7 @@ toani sandbox execute <sessionId> \
   --params '{"script":"return { href: location.href, title: document.title }"}'
 ```
 
-### 示例 12：导出脱敏 DOM
+### 示例 13：导出脱敏 DOM
 
 ```bash
 toani sandbox export-dom <sessionId> \
@@ -315,7 +365,7 @@ toani sandbox export-dom <sessionId> \
   --extra-sensitive-selectors '["#token",".secret"]'
 ```
 
-### 示例 13：后端直连 HTTP 请求
+### 示例 14：后端直连 HTTP 请求
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -323,7 +373,7 @@ toani sandbox execute <sessionId> \
   --params '{"url":"https://api.example.com/status","method":"GET","timeout_ms":10000}'
 ```
 
-### 示例 14：批量导出选择器文本
+### 示例 15：批量导出选择器文本
 
 ```bash
 toani sandbox execute <sessionId> \
@@ -331,7 +381,7 @@ toani sandbox execute <sessionId> \
   --params '{"selectors":["h1",".status"]}'
 ```
 
-### 示例 15：导出结构化数据
+### 示例 16：导出结构化数据
 
 ```bash
 toani sandbox export-data <sessionId> \
@@ -339,19 +389,48 @@ toani sandbox export-data <sessionId> \
   --format json
 ```
 
-### 示例 16：查询异步操作结果
+### 示例 17：查询异步操作结果
 
 ```bash
 toani sandbox get-operation <operationId>
 ```
 
-### 示例 17：查询会话状态
+### 示例 18：查询会话状态
 
 ```bash
 toani sandbox get-session <sessionId>
 ```
 
-### 示例 18：结束会话
+### 示例 19：Rocket Loader 登录链路
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type navigate \
+  --params '{"url":"https://target-site.com/login"}'
+
+toani sandbox bootstrap-page <sessionId> \
+  --mode rocket_loader \
+  --wait-selector 'input[name=email]' \
+  --wait-timeout-ms 15000
+
+toani sandbox execute <sessionId> \
+  --operation-type wait \
+  --params '{"selector":"input[name=email]","timeout_ms":15000}'
+
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'
+
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
+```
+
+### 示例 20：结束会话
 
 ```bash
 toani sandbox terminate <sessionId>
@@ -366,6 +445,7 @@ toani sandbox terminate <sessionId>
 - 发明 CLI 没有实现的命令组
 - 把 `sandbox` 当成本地 Playwright、浏览器 devtools 或 OpenClaw 内置网页操作器
 - 使用旧操作 `get_attribute` 或 `screenshot`
+- 给 `bootstrap-page` 传 raw script、`bindings` 或 `--params`
 - 让 secret 进入 `execute_script.bindings`
 - 用自然语言描述代替具体命令和参数
 
@@ -379,6 +459,9 @@ toani sandbox terminate <sessionId>
 
 - 错误：`Usage: toani sandbox execute <sessionId> --operation-type <type>`
   - 修复：`execute` 必须显式传 `sessionId` 和 `--operation-type`
+
+- 错误：`Usage: toani sandbox bootstrap-page ...` 或 `bootstrap-page currently only supports --mode rocket_loader`
+  - 修复：显式传 `sessionId` 和 `--mode rocket_loader`；首版只支持 Rocket Loader 受控引导
 
 - 错误：`Invalid JSON for --params`
   - 修复：`--params` 必须是合法 JSON 字符串，推荐单引号包裹整段 JSON
@@ -394,6 +477,9 @@ toani sandbox terminate <sessionId>
 
 - 错误：`execute_script.bindings` 中传了 `{"$credential":"..."}`
   - 修复：把 secret 消费改成顶层 `fill.value` 这类受控操作；脚本 binding 只传普通字符串
+
+- 错误：`bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported`
+  - 修复：改用 `--script-selectors`、`--include-plain-scripts`、`--wait-selector`、`--wait-timeout-ms` 这些受控字段
 
 - 错误：`browser runtime closed without response`、`lightpanda`、`puppeteer-core`、`CDP`、`nsjail` 相关报错
   - 修复：这是远端 Lightpanda 运行时或隔离策略问题，不是本地 CLI 浏览器问题；保留 `operationId`，执行 `toani sandbox get-operation <operationId>`，再把 session、operation、base URL 和报错交给后端排查

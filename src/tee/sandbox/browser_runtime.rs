@@ -233,6 +233,31 @@ impl SandboxBrowserRuntime {
             .unwrap_or(Value::Null))
     }
 
+    pub async fn bootstrap_page(
+        &self,
+        mode: &str,
+        script_selectors: &[String],
+        include_plain_scripts: bool,
+        wait_selector: Option<&str>,
+        wait_timeout_ms: u64,
+    ) -> Result<Value, SandboxError> {
+        let response = self
+            .send(json!({
+                "type": "execute",
+                "operationType": "bootstrap_page",
+                "parameters": {
+                    "mode": mode,
+                    "script_selectors": script_selectors,
+                    "include_plain_scripts": include_plain_scripts,
+                    "wait_selector": wait_selector,
+                    "wait_timeout_ms": wait_timeout_ms,
+                },
+            }))
+            .await?;
+
+        Ok(response.get("data").cloned().unwrap_or(Value::Null))
+    }
+
     pub async fn execute_export(
         &self,
         selectors: &[String],

@@ -271,6 +271,8 @@ pub enum OperationType {
     DomExport,
     /// 执行脚本
     ExecuteScript,
+    /// 受控页面启动脚本注入
+    BootstrapPage,
     /// 等待元素
     Wait,
     /// 直接发起 HTTP 请求
@@ -295,6 +297,7 @@ impl std::fmt::Display for OperationType {
             OperationType::Export => write!(f, "export"),
             OperationType::DomExport => write!(f, "dom_export"),
             OperationType::ExecuteScript => write!(f, "execute_script"),
+            OperationType::BootstrapPage => write!(f, "bootstrap_page"),
             OperationType::Wait => write!(f, "wait"),
             OperationType::HttpRequest => write!(f, "http_request"),
             OperationType::Custom => write!(f, "custom"),
@@ -498,6 +501,7 @@ mod tests {
     fn test_operation_type_display() {
         assert_eq!(OperationType::Navigate.to_string(), "navigate");
         assert_eq!(OperationType::DomExport.to_string(), "dom_export");
+        assert_eq!(OperationType::BootstrapPage.to_string(), "bootstrap_page");
         assert_eq!(OperationType::HttpRequest.to_string(), "http_request");
     }
 }

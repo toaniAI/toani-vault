@@ -738,5 +738,55 @@ describe("SandboxService", () => {
         }),
       ).rejects.toThrow("Timeout waiting for session status: running");
     });
+
+    it("应该为 bootstrap_page 发送受控请求体", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        operationId: "op-bootstrap",
+        status: OperationStatus.Success,
+        result: {
+          injected_scripts: [
+            "https://dashboard.zk.me/cdn-cgi/scripts/rocket-loader.min.js",
+            "https://dashboard.zk.me/assets/app.js",
+          ],
+          final_url: "https://dashboard.zk.me/login",
+          title: "Dashboard",
+          wait_satisfied: true,
+          diagnostics: { mode: "rocket_loader", reinjected_scripts: 2 },
+        },
+        executionTimeMs: 220,
+      });
+
+      const result = await service.bootstrapPage("session-123", {
+        mode: "rocket_loader",
+        scriptSelectors: ['script[src][type$="-text/javascript"]'],
+        includePlainScripts: false,
+        waitSelector: 'input[name="email"]',
+        waitTimeoutMs: 12000,
+      });
+
+      expect(result.operationId).toBe("op-bootstrap");
+      expect(result.data).toMatchObject({
+        injectedScripts: [
+          "https://dashboard.zk.me/cdn-cgi/scripts/rocket-loader.min.js",
+          "https://dashboard.zk.me/assets/app.js",
+        ],
+        waitSatisfied: true,
+      });
+      expect(client.post).toHaveBeenCalledWith(
+        "/sandbox/sessions/session-123/execute",
+        {
+          operation_type: OperationType.BootstrapPage,
+          description: OperationType.BootstrapPage,
+          parameters: {
+            mode: "rocket_loader",
+            script_selectors: ['script[src][type$="-text/javascript"]'],
+            include_plain_scripts: false,
+            wait_selector: 'input[name="email"]',
+            wait_timeout_ms: 12000,
+          },
+        },
+        undefined,
+      );
+    });
   });
 });

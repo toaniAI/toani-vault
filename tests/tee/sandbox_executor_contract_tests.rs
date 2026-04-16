@@ -48,6 +48,36 @@ fn execute_script_helper_does_not_expose_secret_sink_methods() {
 }
 
 #[test]
+fn bootstrap_page_contract_only_reinjects_external_scripts() {
+    let source = executor_source();
+
+    assert!(
+        source.contains("DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS"),
+        "bootstrap_page should keep a controlled default selector set"
+    );
+    assert!(
+        source.contains("script[src][type$=\"-text/javascript\"]"),
+        "bootstrap_page should target Rocket Loader style external scripts"
+    );
+    assert!(
+        source.contains("bootstrap_page mode must be rocket_loader"),
+        "bootstrap_page should hard reject unsupported modes"
+    );
+    assert!(
+        source.contains("document.createElement('script')"),
+        "bootstrap_page must recreate external script tags instead of executing raw JS"
+    );
+    assert!(
+        source.contains("bootstrap_failed: selector_not_found:"),
+        "bootstrap_page must surface selector wait failures with a clear bootstrap_failed error"
+    );
+    assert!(
+        !source.contains("injected.text"),
+        "bootstrap_page must not replay inline script text"
+    );
+}
+
+#[test]
 fn lightpanda_cdp_server_uses_explicit_idle_timeout() {
     let source = executor_source();
 

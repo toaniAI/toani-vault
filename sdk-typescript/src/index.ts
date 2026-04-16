@@ -28,6 +28,11 @@
  *   originalIntent: 'sign in to dashboard',
  * });
  * console.log(session.sessionId);
+ * await sdk.sandbox.navigate(session.sessionId, 'https://dashboard.zk.me/login');
+ * await sdk.sandbox.bootstrapPage(session.sessionId, {
+ *   mode: 'rocket_loader',
+ *   waitSelector: 'input[name=email]',
+ * });
  * ```
  */
 
@@ -133,6 +138,10 @@ export {
   type CreateSessionRequest,
   type CreateSessionResponse,
   type SessionInfo,
+  type BootstrapPageMode,
+  type BootstrapPageOptions,
+  type BootstrapPageResult,
+  type BootstrapPageResponse,
   type ExecuteOperationRequest,
   type ExecuteOperationResponse,
   type DomExportFormat,

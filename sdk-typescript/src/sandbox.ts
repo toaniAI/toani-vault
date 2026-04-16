@@ -6,6 +6,8 @@
 
 import type { CredBridgeClient } from "./client.js";
 import {
+  type BootstrapPageOptions,
+  type BootstrapPageResponse,
   type CreateSessionRequest,
   type CreateSessionResponse,
   type SessionInfo,
@@ -73,6 +75,61 @@ function mapSessionActionResponse(
     closed: response.closed ?? response.success,
     status: response.status,
     message: response.message ?? "",
+  };
+}
+
+function mapBootstrapPageResponse(
+  response: ExecuteOperationResponse,
+): BootstrapPageResponse {
+  const payload =
+    response.data && typeof response.data === "object"
+      ? (response.data as Record<string, unknown>)
+      : response.result && typeof response.result === "object"
+        ? (response.result as Record<string, unknown>)
+        : undefined;
+
+  if (!payload) {
+    return response as BootstrapPageResponse;
+  }
+
+  return {
+    ...response,
+    data: {
+      injectedScripts: Array.isArray(payload.injected_scripts)
+        ? payload.injected_scripts.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [],
+      finalUrl:
+        typeof payload.final_url === "string" ? payload.final_url : undefined,
+      title: typeof payload.title === "string" ? payload.title : undefined,
+      waitSatisfied:
+        typeof payload.wait_satisfied === "boolean"
+          ? payload.wait_satisfied
+          : undefined,
+      diagnostics:
+        payload.diagnostics && typeof payload.diagnostics === "object"
+          ? (payload.diagnostics as Record<string, unknown>)
+          : undefined,
+    },
+    result: {
+      injectedScripts: Array.isArray(payload.injected_scripts)
+        ? payload.injected_scripts.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [],
+      finalUrl:
+        typeof payload.final_url === "string" ? payload.final_url : undefined,
+      title: typeof payload.title === "string" ? payload.title : undefined,
+      waitSatisfied:
+        typeof payload.wait_satisfied === "boolean"
+          ? payload.wait_satisfied
+          : undefined,
+      diagnostics:
+        payload.diagnostics && typeof payload.diagnostics === "object"
+          ? (payload.diagnostics as Record<string, unknown>)
+          : undefined,
+    },
   };
 }
 
@@ -606,6 +663,45 @@ export class SandboxService {
       { operationType: OperationType.ExecuteScript, script, bindings },
       options,
     );
+  }
+
+  /**
+   * Bootstrap a Rocket Loader-style page without exposing raw script execution.
+   *
+   * This operation only replays approved external bundles. It does not consume
+   * credentials; keep secret usage in controlled host operations such as `fill`.
+   *
+   * @example
+   * ```typescript
+   * await sdk.sandbox.navigate('session-123', 'https://dashboard.zk.me/login');
+   * await sdk.sandbox.bootstrapPage('session-123', {
+   *   mode: 'rocket_loader',
+   *   waitSelector: 'input[name=email]',
+   *   waitTimeoutMs: 15000,
+   * });
+   * ```
+   */
+  public async bootstrapPage(
+    sessionId: string,
+    request: BootstrapPageOptions = {},
+    options?: RequestOptions,
+  ): Promise<BootstrapPageResponse> {
+    const response = await this.executeOperation(
+      sessionId,
+      {
+        operationType: OperationType.BootstrapPage,
+        parameters: {
+          mode: request.mode ?? "rocket_loader",
+          script_selectors: request.scriptSelectors,
+          include_plain_scripts: request.includePlainScripts,
+          wait_selector: request.waitSelector,
+          wait_timeout_ms: request.waitTimeoutMs,
+        },
+      },
+      options,
+    );
+
+    return mapBootstrapPageResponse(response);
   }
 
   /**

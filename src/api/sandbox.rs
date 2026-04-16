@@ -1430,6 +1430,13 @@ async fn resolve_parameter_value(
     value: &serde_json::Value,
 ) -> Result<(serde_json::Value, serde_json::Value), Response> {
     if let Some(field) = parse_credential_reference(value)? {
+        if *operation_type == OperationType::BootstrapPage {
+            return Err(ApiErrorResponse::invalid_request(
+                "bootstrap_page does not accept credential references",
+            )
+            .into_response());
+        }
+
         let material = load_session_credential_material(state, session)
             .await
             .map_err(|error| map_sandbox_error(error).into_response())?;
@@ -1905,6 +1912,7 @@ fn parse_operation_type(s: &str) -> Option<OperationType> {
         "export" => Some(OperationType::Export),
         "domexport" | "dom-export" | "dom_export" => Some(OperationType::DomExport),
         "execute_script" => Some(OperationType::ExecuteScript),
+        "bootstrappage" | "bootstrap-page" | "bootstrap_page" => Some(OperationType::BootstrapPage),
         "wait" => Some(OperationType::Wait),
         "http_request" => Some(OperationType::HttpRequest),
         "custom" => Some(OperationType::Custom),
@@ -1985,6 +1993,14 @@ fn map_sandbox_error(error: SandboxError) -> Response {
             ErrorCode::InvalidRequest,
             message
                 .trim_start_matches("selector_not_found:")
+                .trim()
+                .to_string(),
+            StatusCode::BAD_REQUEST,
+        ),
+        SandboxError::Other(message) if message.starts_with("bootstrap_failed:") => (
+            ErrorCode::InvalidRequest,
+            message
+                .trim_start_matches("bootstrap_failed:")
                 .trim()
                 .to_string(),
             StatusCode::BAD_REQUEST,
@@ -2209,6 +2225,14 @@ mod tests {
         assert!(matches!(
             parse_operation_type("http_request"),
             Some(OperationType::HttpRequest)
+        ));
+        assert!(matches!(
+            parse_operation_type("bootstrap_page"),
+            Some(OperationType::BootstrapPage)
+        ));
+        assert!(matches!(
+            parse_operation_type("bootstrap-page"),
+            Some(OperationType::BootstrapPage)
         ));
         assert!(parse_operation_type("screenshot").is_none());
         assert!(parse_operation_type("invalid").is_none());

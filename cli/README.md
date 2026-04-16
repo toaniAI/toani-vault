@@ -75,6 +75,7 @@ toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
 toani sandbox pause <sessionId>
 toani sandbox resume <sessionId>
+toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '["script[src][type$=\"-text/javascript\"]"]'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
 toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
 toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
 toani sandbox export-data <sessionId> --selectors '[".row"]' [--format json|csv|pdf]
@@ -93,10 +94,13 @@ Lightpanda. The CLI is not a local browser runner and not an abstract "sandbox n
 Use this sequence:
 
 1. `toani sandbox create-session`
-2. `toani sandbox execute`
-3. `toani sandbox get-operation` when the server returns an operation id
-4. `toani sandbox get-session` when you need current state
-5. `toani sandbox terminate`
+2. `toani sandbox execute <sessionId> --operation-type navigate ...`
+3. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...` when the page needs controlled bundle replay
+4. `toani sandbox execute <sessionId> --operation-type wait ...`
+5. `toani sandbox execute <sessionId> --operation-type fill|click ...`
+6. `toani sandbox get-operation` when the server returns an operation id
+7. `toani sandbox get-session` when you need current state
+8. `toani sandbox terminate`
 
 ### Operation types
 
@@ -104,6 +108,7 @@ Use this sequence:
 - `click`
 - `fill`
 - `get_text`
+- `bootstrap_page` via the dedicated `sandbox bootstrap-page` subcommand
 - `execute_script`
 - `wait`
 - `http_request`
@@ -112,6 +117,7 @@ Use this sequence:
 
 ### Secret handling contract
 
+- `bootstrap-page` only replays approved page bundles. It does not accept raw script text, does not accept bindings, and does not consume credentials.
 - `fill` remains the controlled secret sink. Its top-level `value` field may be either a plain
   string or a credential reference such as `{"$credential":"password"}`.
 - `execute_script` may still receive `bindings`, but every binding value must be a plain string.
@@ -133,6 +139,17 @@ toani sandbox execute <sessionId> \
   --operation-type navigate \
   --params '{"url":"https://target-site.com/login"}'
 
+# Bootstrap a Rocket Loader page before waiting/filling
+toani sandbox bootstrap-page <sessionId> \
+  --mode rocket_loader \
+  --wait-selector 'input[name=email]' \
+  --wait-timeout-ms 15000
+
+# Wait for the login form after bundle replay
+toani sandbox execute <sessionId> \
+  --operation-type wait \
+  --params '{"selector":"input[name=email]","timeout_ms":15000}'
+
 # Click
 toani sandbox execute <sessionId> \
   --operation-type click \
@@ -147,6 +164,17 @@ toani sandbox execute <sessionId> \
 toani sandbox execute <sessionId> \
   --operation-type fill \
   --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+
+# Login flow for Rocket Loader pages
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
 
 # Execute script with plain-string bindings only
 toani sandbox execute <sessionId> \

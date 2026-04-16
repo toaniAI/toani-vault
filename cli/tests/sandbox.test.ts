@@ -9,6 +9,7 @@ const sandboxMock = vi.hoisted(() => ({
   closeSession: vi.fn(),
   pauseSession: vi.fn(),
   resumeSession: vi.fn(),
+  bootstrapPage: vi.fn(),
   executeOperation: vi.fn(),
   exportDom: vi.fn(),
   exportData: vi.fn(),
@@ -169,6 +170,56 @@ describe("runSandbox", () => {
 
     expect(sandboxMock.pauseSession).toHaveBeenCalledWith("session-1");
     expect(sandboxMock.resumeSession).toHaveBeenCalledWith("session-1");
+  });
+
+  it("builds a fixed bootstrap_page request body from the dedicated subcommand", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    sandboxMock.bootstrapPage.mockResolvedValue({
+      operationId: "op-bootstrap",
+      status: "success",
+      executionTimeMs: 1,
+    });
+
+    await runSandbox(testConfig, [
+      "bootstrap-page",
+      "--session-id",
+      "session-1",
+      "--mode",
+      "rocket_loader",
+      "--script-selectors",
+      '["script[src][type$=\\"-text/javascript\\"]"]',
+      "--include-plain-scripts",
+      "false",
+      "--wait-selector",
+      'input[name="email"]',
+      "--wait-timeout-ms",
+      "15000",
+    ]);
+
+    expect(sandboxMock.bootstrapPage).toHaveBeenCalledWith("session-1", {
+      mode: "rocket_loader",
+      scriptSelectors: ['script[src][type$="-text/javascript"]'],
+      includePlainScripts: false,
+      waitSelector: 'input[name="email"]',
+      waitTimeoutMs: 15000,
+    });
+  });
+
+  it("rejects raw params and bindings for bootstrap-page", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(
+      runSandbox(testConfig, [
+        "bootstrap-page",
+        "session-1",
+        "--mode",
+        "rocket_loader",
+        "--params",
+        '{"script":"alert(1)"}',
+      ]),
+    ).rejects.toThrow(
+      "bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported",
+    );
   });
 
   it("exposes export-data using the backend selectors contract", async () => {

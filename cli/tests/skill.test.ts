@@ -10,6 +10,8 @@ describe("CLI skill contract", () => {
     expect(skillText).toContain("puppeteer-core");
     expect(skillText).toContain("http_request");
     expect(skillText).toContain("export-dom");
+    expect(skillText).toContain("bootstrap-page");
+    expect(skillText).toContain("Rocket Loader");
   });
 
   it("does not advertise removed browser operation types as supported", () => {
@@ -17,5 +19,11 @@ describe("CLI skill contract", () => {
 
     expect(supportedSection).not.toContain("- `get_attribute`");
     expect(supportedSection).not.toContain("- `screenshot`");
+  });
+
+  it("documents bootstrap as credential-safe and keeps credential use in fill", () => {
+    expect(skillText).toContain("bootstrap-page");
+    expect(skillText).toContain("不消费凭证");
+    expect(skillText).toContain("fill");
   });
 });

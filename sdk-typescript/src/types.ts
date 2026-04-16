@@ -832,6 +832,8 @@ export enum OperationType {
   GetAttribute = "get_attribute",
   /** 执行脚本 */
   ExecuteScript = "execute_script",
+  /** 受控页面引导注入 */
+  BootstrapPage = "bootstrap_page",
   /** 等待元素 */
   WaitForSelector = "wait",
   /** 直接发起 HTTP 请求 */
@@ -941,6 +943,29 @@ export interface SandboxCredentialReference {
 /** Plain string bindings passed into `execute_script` */
 export type SandboxScriptBindings = Record<string, string>;
 
+export type BootstrapPageMode = "rocket_loader";
+
+export interface BootstrapPageOptions {
+  /** Controlled bootstrap mode. Initial support is limited to Rocket Loader pages. */
+  mode?: BootstrapPageMode;
+  /** Optional selector overrides for external scripts to re-inject. */
+  scriptSelectors?: string[];
+  /** Whether to include plain text/javascript external scripts in addition to rewritten ones. */
+  includePlainScripts?: boolean;
+  /** Optional selector to wait for after injection completes. */
+  waitSelector?: string;
+  /** Wait timeout in milliseconds. Defaults to 30000 on the backend. */
+  waitTimeoutMs?: number;
+}
+
+export interface BootstrapPageResult {
+  injectedScripts: string[];
+  finalUrl?: string;
+  title?: string;
+  waitSatisfied?: boolean;
+  diagnostics?: Record<string, unknown>;
+}
+
 export interface ExecuteOperationRequest {
   /** 操作类型 */
   operationType: OperationType;
@@ -993,6 +1018,11 @@ export interface ExecuteOperationResponse {
   error?: string;
   /** 执行时间（毫秒） */
   executionTimeMs: number;
+}
+
+export interface BootstrapPageResponse extends ExecuteOperationResponse {
+  data?: BootstrapPageResult;
+  result?: BootstrapPageResult;
 }
 
 /** Session 操作响应 */

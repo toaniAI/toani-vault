@@ -50,6 +50,18 @@ function parseJsonStringArray(
   return parsed;
 }
 
+function resolveSessionId(options: Record<string, unknown>): string {
+  const positional =
+    Array.isArray(options._) && typeof options._[0] === "string"
+      ? options._[0]
+      : undefined;
+  const named =
+    typeof options["session-id"] === "string"
+      ? (options["session-id"] as string)
+      : undefined;
+  return positional ?? named ?? "";
+}
+
 export async function runSandbox(
   config: CliConfig,
   argv: string[],
@@ -104,6 +116,53 @@ export async function runSandbox(
       if (!id) throw new Error("Usage: toani sandbox resume <sessionId>");
       const resumed = await sdk.sandbox.resumeSession(id);
       printResult(resumed, config.output);
+      return;
+    }
+    case "bootstrap-page": {
+      const sessionId = resolveSessionId(options);
+      if (!sessionId) {
+        throw new Error(
+          "Usage: toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]",
+        );
+      }
+      const mode = requireArg(
+        options,
+        "mode",
+        "Usage: toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]",
+      );
+      if (mode !== "rocket_loader") {
+        throw new Error(
+          "bootstrap-page currently only supports --mode rocket_loader",
+        );
+      }
+      if (
+        options.params !== undefined ||
+        options.script !== undefined ||
+        options.bindings !== undefined
+      ) {
+        throw new Error(
+          "bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported",
+        );
+      }
+      const scriptSelectors = parseJsonStringArray(
+        options["script-selectors"],
+        "script-selectors",
+      );
+      const includePlainScripts = parseBooleanOption(
+        options["include-plain-scripts"],
+      );
+      const waitTimeoutMs = parseNumberOption(
+        options["wait-timeout-ms"],
+        "wait-timeout-ms",
+      );
+      const result = await sdk.sandbox.bootstrapPage(sessionId, {
+        mode,
+        scriptSelectors,
+        includePlainScripts,
+        waitSelector: options["wait-selector"] as string | undefined,
+        waitTimeoutMs,
+      });
+      printResult(result, config.output);
       return;
     }
     case "execute": {
@@ -204,7 +263,7 @@ export async function runSandbox(
     }
     default:
       throw new Error(
-        "Usage: toani sandbox <create-session|list-sessions|get-session|terminate|pause|resume|execute|export-dom|export-data|get-operation|stats> [options]",
+        "Usage: toani sandbox <create-session|list-sessions|get-session|terminate|pause|resume|bootstrap-page|execute|export-dom|export-data|get-operation|stats> [options]",
       );
   }
 }

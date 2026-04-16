@@ -86,9 +86,19 @@ struct SandboxExecutionOutput {
     data: Option<Value>,
 }
 
+#[derive(Debug, Clone)]
+struct BootstrapPageRequest {
+    mode: String,
+    script_selectors: Vec<String>,
+    include_plain_scripts: bool,
+    wait_selector: Option<String>,
+    wait_timeout_ms: u64,
+}
+
 const DEFAULT_HTTP_REQUEST_TIMEOUT_MS: u64 = 30_000;
 const MAX_HTTP_RESPONSE_BODY_BYTES: usize = 64 * 1024;
 const DEFAULT_DOM_EXPORT_MAX_BYTES: u64 = 262_144;
+const DEFAULT_BOOTSTRAP_PAGE_WAIT_TIMEOUT_MS: u64 = 30_000;
 const EXECUTE_SCRIPT_BINDINGS_ERROR: &str =
     "invalid_request: execute_script bindings must be plain strings";
 
@@ -337,6 +347,132 @@ impl ActiveNsjailSession {
             .collect()
     }
 
+    fn optional_non_empty_string(
+        parameters: &HashMap<String, Value>,
+        key: &str,
+    ) -> Result<Option<String>, SandboxError> {
+        let Some(value) = parameters.get(key) else {
+            return Ok(None);
+        };
+
+        let text = value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                SandboxError::Other(format!("invalid_request: {key} must be a string"))
+            })?;
+
+        Ok(Some(text.to_string()))
+    }
+
+    fn contains_credential_reference(value: &Value) -> bool {
+        if crate::tee::sandbox::types::CredentialReference::from_value(value).is_some() {
+            return true;
+        }
+
+        match value {
+            Value::Array(items) => items.iter().any(Self::contains_credential_reference),
+            Value::Object(map) => map.values().any(Self::contains_credential_reference),
+            _ => false,
+        }
+    }
+
+    fn resolve_bootstrap_page_request(
+        parameters: &HashMap<String, Value>,
+    ) -> Result<BootstrapPageRequest, SandboxError> {
+        for key in parameters.keys() {
+            if !matches!(
+                key.as_str(),
+                "mode"
+                    | "script_selectors"
+                    | "include_plain_scripts"
+                    | "wait_selector"
+                    | "wait_timeout_ms"
+            ) {
+                return Err(SandboxError::Other(format!(
+                    "invalid_request: bootstrap_page does not accept {key}"
+                )));
+            }
+        }
+
+        for forbidden in ["bindings", "credential_bindings", "script"] {
+            if parameters.contains_key(forbidden) {
+                return Err(SandboxError::Other(format!(
+                    "invalid_request: bootstrap_page does not accept {forbidden}"
+                )));
+            }
+        }
+
+        if parameters
+            .values()
+            .any(ActiveNsjailSession::contains_credential_reference)
+        {
+            return Err(SandboxError::Other(
+                "invalid_request: bootstrap_page does not accept credential references".to_string(),
+            ));
+        }
+
+        let mode = Self::required_string(parameters, "mode")?;
+        if mode != "rocket_loader" {
+            return Err(SandboxError::Other(
+                "invalid_request: bootstrap_page mode must be rocket_loader".to_string(),
+            ));
+        }
+
+        let script_selectors = Self::optional_string_array(parameters, "script_selectors")?;
+        let include_plain_scripts = Self::optional_bool(parameters, "include_plain_scripts", false);
+        let wait_selector = Self::optional_non_empty_string(parameters, "wait_selector")?;
+        let wait_timeout_ms = parameters
+            .get("wait_timeout_ms")
+            .map(|value| {
+                value.as_u64().ok_or_else(|| {
+                    SandboxError::Other(
+                        "invalid_request: wait_timeout_ms must be a positive integer".to_string(),
+                    )
+                })
+            })
+            .transpose()?
+            .unwrap_or(DEFAULT_BOOTSTRAP_PAGE_WAIT_TIMEOUT_MS);
+        if wait_timeout_ms == 0 {
+            return Err(SandboxError::Other(
+                "invalid_request: wait_timeout_ms must be a positive integer".to_string(),
+            ));
+        }
+
+        Ok(BootstrapPageRequest {
+            mode,
+            script_selectors,
+            include_plain_scripts,
+            wait_selector,
+            wait_timeout_ms,
+        })
+    }
+
+    fn sanitized_operation_output(
+        operation_type: OperationType,
+        data: Option<&Value>,
+    ) -> Option<Value> {
+        match operation_type {
+            OperationType::BootstrapPage => data.map(|value| {
+                let injected_script_count = value
+                    .get("injected_scripts")
+                    .and_then(Value::as_array)
+                    .map(|items| items.len())
+                    .unwrap_or_default();
+                let wait_satisfied = value
+                    .get("wait_satisfied")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                json!({
+                    "injected_script_count": injected_script_count,
+                    "wait_satisfied": wait_satisfied,
+                })
+            }),
+            _ => data.cloned(),
+        }
+    }
+
     fn required_http_method(parameters: &HashMap<String, Value>) -> Result<Method, SandboxError> {
         let method = Self::required_string(parameters, "method")?;
         Method::from_bytes(method.trim().to_ascii_uppercase().as_bytes()).map_err(|_| {
@@ -532,7 +668,14 @@ impl ActiveNsjailSession {
         Ok((redacted.clone(), redacted != raw))
     }
 
-    fn sanitized_operation_parameters(parameters: &HashMap<String, Value>) -> Value {
+    fn sanitized_operation_parameters(
+        operation_type: OperationType,
+        parameters: &HashMap<String, Value>,
+    ) -> Value {
+        if operation_type == OperationType::BootstrapPage {
+            return Value::Object(serde_json::Map::new());
+        }
+
         let sensitive = parameters
             .get("sensitive")
             .and_then(Value::as_bool)
@@ -711,6 +854,20 @@ impl ActiveNsjailSession {
                 let result = browser.execute_script(&script, &bindings).await?;
                 Ok(SandboxExecutionOutput { data: Some(result) })
             }
+            OperationType::BootstrapPage => {
+                let browser = self.browser_runtime().await?;
+                let request = Self::resolve_bootstrap_page_request(parameters)?;
+                let result = browser
+                    .bootstrap_page(
+                        &request.mode,
+                        &request.script_selectors,
+                        request.include_plain_scripts,
+                        request.wait_selector.as_deref(),
+                        request.wait_timeout_ms,
+                    )
+                    .await?;
+                Ok(SandboxExecutionOutput { data: Some(result) })
+            }
             OperationType::HttpRequest => self.execute_http_request(parameters).await,
             OperationType::Custom => Err(SandboxError::Other(
                 "invalid_request: custom sandbox operations are not supported".to_string(),
@@ -795,7 +952,10 @@ impl SandboxSession for ActiveNsjailSession {
                     tenant_id: self.context.tenant_id,
                     credential_id: self.context.credential_id,
                     operation_type: operation.operation_type.to_string(),
-                    input_params: Self::sanitized_operation_parameters(&operation.parameters),
+                    input_params: Self::sanitized_operation_parameters(
+                        operation.operation_type,
+                        &operation.parameters,
+                    ),
                     started_at: to_chrono_utc(start_time),
                 })
                 .await?;
@@ -893,7 +1053,10 @@ impl SandboxSession for ActiveNsjailSession {
                     } else {
                         "failed"
                     },
-                    output_result: result.data.clone(),
+                    output_result: Self::sanitized_operation_output(
+                        operation.operation_type,
+                        result.data.as_ref(),
+                    ),
                     error_message: result.error.clone(),
                     completed_at: chrono::Utc::now(),
                     execution_duration_ms: i32::try_from(result.execution_time_ms)
@@ -1382,6 +1545,167 @@ mod tests {
             SandboxError::Other(message) => assert_eq!(message, EXECUTE_SCRIPT_BINDINGS_ERROR),
             other => panic!("unexpected error variant: {other}"),
         }
+    }
+
+    #[test]
+    fn test_resolve_bootstrap_page_request_accepts_controlled_fields() {
+        let parameters = HashMap::from([
+            (
+                "mode".to_string(),
+                Value::String("rocket_loader".to_string()),
+            ),
+            (
+                "script_selectors".to_string(),
+                json!(["script[src][type$=\"-text/javascript\"]"]),
+            ),
+            ("include_plain_scripts".to_string(), Value::Bool(false)),
+            (
+                "wait_selector".to_string(),
+                Value::String("input[name=email]".to_string()),
+            ),
+            (
+                "wait_timeout_ms".to_string(),
+                Value::Number(30_000_u64.into()),
+            ),
+        ]);
+
+        let request = ActiveNsjailSession::resolve_bootstrap_page_request(&parameters)
+            .expect("controlled bootstrap page request should parse");
+
+        assert_eq!(request.mode, "rocket_loader");
+        assert_eq!(
+            request.script_selectors,
+            vec!["script[src][type$=\"-text/javascript\"]".to_string()]
+        );
+        assert_eq!(request.wait_selector.as_deref(), Some("input[name=email]"));
+        assert_eq!(request.wait_timeout_ms, 30_000);
+        assert!(!request.include_plain_scripts);
+    }
+
+    #[test]
+    fn test_resolve_bootstrap_page_request_rejects_bindings_and_credentials() {
+        let forbidden_bindings = HashMap::from([
+            (
+                "mode".to_string(),
+                Value::String("rocket_loader".to_string()),
+            ),
+            ("bindings".to_string(), json!({"selector": "#login"})),
+        ]);
+        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&forbidden_bindings)
+            .expect_err("bootstrap_page must reject bindings");
+        assert!(matches!(
+            error,
+            SandboxError::Other(message)
+            if message == "invalid_request: bootstrap_page does not accept bindings"
+        ));
+
+        let forbidden_credential = HashMap::from([
+            (
+                "mode".to_string(),
+                Value::String("rocket_loader".to_string()),
+            ),
+            (
+                "wait_selector".to_string(),
+                json!({ "$credential": "password" }),
+            ),
+        ]);
+        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&forbidden_credential)
+            .expect_err("bootstrap_page must reject credential references");
+        assert!(matches!(
+            error,
+            SandboxError::Other(message)
+            if message == "invalid_request: bootstrap_page does not accept credential references"
+        ));
+    }
+
+    #[test]
+    fn test_resolve_bootstrap_page_request_rejects_invalid_types() {
+        let invalid_mode = HashMap::from([(
+            "mode".to_string(),
+            Value::String("plain_scripts".to_string()),
+        )]);
+        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&invalid_mode)
+            .expect_err("bootstrap_page must reject unsupported mode");
+        assert!(matches!(
+            error,
+            SandboxError::Other(message)
+            if message == "invalid_request: bootstrap_page mode must be rocket_loader"
+        ));
+
+        let invalid_selectors = HashMap::from([
+            (
+                "mode".to_string(),
+                Value::String("rocket_loader".to_string()),
+            ),
+            ("script_selectors".to_string(), json!([1, 2])),
+        ]);
+        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&invalid_selectors)
+            .expect_err("bootstrap_page must reject non-string selectors");
+        assert!(matches!(
+            error,
+            SandboxError::Other(message)
+            if message == "invalid_request: script_selectors items must be strings"
+        ));
+
+        let invalid_timeout = HashMap::from([
+            (
+                "mode".to_string(),
+                Value::String("rocket_loader".to_string()),
+            ),
+            (
+                "wait_timeout_ms".to_string(),
+                Value::String("fast".to_string()),
+            ),
+        ]);
+        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&invalid_timeout)
+            .expect_err("bootstrap_page must reject non-integer timeout");
+        assert!(matches!(
+            error,
+            SandboxError::Other(message)
+            if message == "invalid_request: wait_timeout_ms must be a positive integer"
+        ));
+    }
+
+    #[test]
+    fn test_resolve_bootstrap_page_request_rejects_unknown_fields() {
+        let parameters = HashMap::from([
+            (
+                "mode".to_string(),
+                Value::String("rocket_loader".to_string()),
+            ),
+            ("script".to_string(), Value::String("alert(1)".to_string())),
+        ]);
+
+        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&parameters)
+            .expect_err("bootstrap_page must reject raw script fields");
+
+        assert!(matches!(
+            error,
+            SandboxError::Other(message)
+            if message == "invalid_request: bootstrap_page does not accept script"
+        ));
+    }
+
+    #[test]
+    fn test_sanitized_operation_output_reduces_bootstrap_page_audit_data() {
+        let output = ActiveNsjailSession::sanitized_operation_output(
+            OperationType::BootstrapPage,
+            Some(&json!({
+                "injected_scripts": ["https://cdn.example.com/app.js"],
+                "final_url": "https://example.com/login",
+                "title": "Login",
+                "wait_satisfied": true,
+                "diagnostics": {
+                    "mode": "rocket_loader"
+                }
+            })),
+        )
+        .expect("bootstrap_page output should be summarized");
+
+        assert_eq!(output["injected_script_count"], 1);
+        assert_eq!(output["wait_satisfied"], true);
+        assert!(output.get("final_url").is_none());
+        assert!(output.get("diagnostics").is_none());
     }
 
     async fn spawn_test_http_server(body: String, content_type: &str) -> Option<String> {

@@ -18,7 +18,7 @@ Usage:
 
 Groups:
   config       init/show
-  sandbox      create-session/list-sessions/get-session/terminate/pause/resume/execute/export-dom/export-data/get-operation/stats
+  sandbox      create-session/list-sessions/get-session/terminate/pause/resume/bootstrap-page/execute/export-dom/export-data/get-operation/stats
 `;
 
 export function getCliVersion(): string {
