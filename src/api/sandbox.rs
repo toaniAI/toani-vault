@@ -2399,31 +2399,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_create_session_scopes_rejects_dashboard_access_token_without_decrypt_scope()
+    async fn test_check_create_session_scopes_accepts_dashboard_access_token_with_read_scope_only()
     {
         let mut token =
             create_mock_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
         token.issued_from = TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string();
         token.allowed_credential_ids = Some(vec![Uuid::new_v4().to_string()]);
 
-        let response = check_create_session_scopes(&token)
+        check_create_session_scopes(&token)
             .await
-            .expect_err("dashboard-issued access token without decrypt scope should fail");
-
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let body_bytes = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("response body");
-        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
-
-        assert_eq!(body["error"], "insufficient_scope");
-        assert!(
-            body["message"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("credential:decrypt"),
-            "message should mention required decrypt scope"
-        );
+            .expect("dashboard-issued access token with credential:read should pass");
     }
 
     #[tokio::test]

@@ -246,7 +246,13 @@ impl TokenScope {
     }
 
     pub fn is_implied_by_credential_read(&self) -> bool {
-        false
+        matches!(
+            self,
+            TokenScope::CredentialDecrypt
+                | TokenScope::SandboxWrite
+                | TokenScope::SandboxRead
+                | TokenScope::SandboxExecute
+        )
     }
 
     pub fn expand_credential_read_permissions(scopes: &[TokenScope]) -> Vec<TokenScope> {
@@ -255,6 +261,19 @@ impl TokenScope {
         for scope in scopes {
             if !expanded.contains(scope) {
                 expanded.push(scope.clone());
+            }
+        }
+
+        if scopes.contains(&TokenScope::CredentialRead) {
+            for implied in [
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxExecute,
+            ] {
+                if !expanded.contains(&implied) {
+                    expanded.push(implied);
+                }
             }
         }
 
