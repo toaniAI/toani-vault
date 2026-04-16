@@ -1,13 +1,17 @@
 ARG UBUNTU_IMAGE=ubuntu:22.04
 ARG NSJAIL_ARCHIVE=nsjail-3.6.tar.gz
 ARG KAFEL_GIT_URL=https://github.com/google/kafel.git
+ARG APT_MIRROR_HOST=mirrors.aliyun.com
 
 FROM ${UBUNTU_IMAGE} AS nsjail-builder
 
 ARG NSJAIL_ARCHIVE
 ARG KAFEL_GIT_URL
+ARG APT_MIRROR_HOST
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    sed -i "s|http://archive.ubuntu.com/ubuntu/|https://${APT_MIRROR_HOST}/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|https://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
+    apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     bison \
@@ -40,13 +44,17 @@ FROM ${UBUNTU_IMAGE}
 
 WORKDIR /app
 
+ARG APT_MIRROR_HOST
+
 ENV SEALED_STORAGE_PATH=/app/data/sealed
 ENV SGX_AESM_SOCKET_PATH=/var/run/aesmd/aesm.socket
 ENV NODE_PATH=/opt/credbridge-browser-runtime/node_modules
 ENV LIGHTPANDA_BINARY_PATH=/usr/local/bin/lightpanda
 ENV LIGHTPANDA_DISABLE_TELEMETRY=true
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    sed -i "s|http://archive.ubuntu.com/ubuntu/|https://${APT_MIRROR_HOST}/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|https://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
+    apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
