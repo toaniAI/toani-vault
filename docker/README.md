@@ -34,10 +34,10 @@ docker/
 - `docker/base/runtime.Dockerfile`
   预装 SGX runtime 相关系统依赖，供最终业务镜像直接复用。
 
-根目录 `Dockerfile` 兼容两种模式：
+根目录 `Dockerfile` 使用可复用基础镜像构建：
 
-- 本地默认模式：不传参，继续使用内联 stage 自举构建。
-- CI 加速模式：通过 `BASE_BUILDER_IMAGE` 和 `BASE_RUNTIME_IMAGE` 指向已发布的基础镜像。
+- `BASE_BUILDER_IMAGE` 指向预装 Rust、Intel SGX SDK 和构建依赖的 builder 镜像。
+- `RUNTIME_BASE_IMAGE` 指向预装 SGX runtime、nsjail 和浏览器运行时依赖的 runtime 镜像。
 
 `.drone.yml` 已经接入这两个基础镜像的构建与引用流程。
 
