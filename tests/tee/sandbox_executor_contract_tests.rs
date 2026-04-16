@@ -46,3 +46,25 @@ fn credential_script_fill_uses_same_input_semantics() {
         "credbridge.fill must not directly assign .value with only generic events"
     );
 }
+
+#[test]
+fn lightpanda_cdp_server_uses_explicit_idle_timeout() {
+    let source = executor_source();
+
+    assert!(
+        source.contains("LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS"),
+        "executor must expose a configurable CDP idle timeout"
+    );
+    assert!(
+        source.contains("DEFAULT_LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS = 60"),
+        "executor should default above Lightpanda's 10 second idle timeout"
+    );
+    assert!(
+        source.contains("'--timeout'"),
+        "lightpanda serve must receive an explicit timeout"
+    );
+    assert!(
+        source.contains("resolveLightpandaCdpIdleTimeoutSeconds()"),
+        "lightpanda serve timeout should be resolved before spawn"
+    );
+}

@@ -8,6 +8,9 @@ let browserContext = null;
 let page = null;
 let lightpandaProcess = null;
 
+const LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS_ENV = 'LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS';
+const DEFAULT_LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS = 60;
+
 function reply(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
@@ -91,6 +94,20 @@ async function waitForPort(port, timeoutMs = 5000) {
   }
 }
 
+function resolveLightpandaCdpIdleTimeoutSeconds() {
+  const configured = process.env[LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS_ENV];
+  if (configured === undefined || configured.trim() === '') {
+    return DEFAULT_LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS;
+  }
+
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new Error(`${LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS_ENV} must be a positive number of seconds`);
+  }
+
+  return Math.ceil(parsed);
+}
+
 async function startLightpanda(profileDir) {
   const executablePath = process.env.LIGHTPANDA_BINARY_PATH;
   if (!executablePath) {
@@ -98,9 +115,18 @@ async function startLightpanda(profileDir) {
   }
 
   const port = await allocateFreePort();
+  const idleTimeoutSeconds = resolveLightpandaCdpIdleTimeoutSeconds();
   lightpandaProcess = spawn(
     executablePath,
-    ['serve', '--host', '127.0.0.1', '--port', String(port)],
+    [
+      'serve',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port),
+      '--timeout',
+      String(idleTimeoutSeconds),
+    ],
     {
       env: {
         ...process.env,

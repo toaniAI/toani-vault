@@ -22,6 +22,13 @@ const NODE_BINARY_CANDIDATES: &[&str] = &["/usr/bin/node", "/usr/local/bin/node"
 const NODE_PATH_CANDIDATES: &[&str] = &["/opt/credbridge-browser-runtime/node_modules"];
 const LIGHTPANDA_BINARY_PATH_CANDIDATES: &[&str] = &["/usr/local/bin/lightpanda"];
 const DEV_NULL_PATH: &str = "/dev/null";
+const SYSTEM_RUNTIME_MOUNT_CANDIDATES: &[&str] = &[
+    "/etc/resolv.conf",
+    "/etc/hosts",
+    "/etc/nsswitch.conf",
+    "/etc/ssl/certs",
+    "/etc/ssl/cert.pem",
+];
 
 #[derive(Clone)]
 pub struct SandboxBrowserRuntime {
@@ -505,8 +512,17 @@ fn browser_runtime_mounts(
     push_read_only_bind_mount(&mut mounts, Path::new(DEV_NULL_PATH));
     push_read_only_bind_mount(&mut mounts, node_path);
     push_read_only_bind_mount(&mut mounts, lightpanda_binary_path);
+    for candidate in SYSTEM_RUNTIME_MOUNT_CANDIDATES {
+        push_existing_read_only_bind_mount(&mut mounts, Path::new(candidate));
+    }
 
     mounts
+}
+
+fn push_existing_read_only_bind_mount(mounts: &mut Vec<MountConfig>, path: &Path) {
+    if path.exists() {
+        push_read_only_bind_mount(mounts, path);
+    }
 }
 
 fn push_read_only_bind_mount(mounts: &mut Vec<MountConfig>, path: &Path) {
@@ -557,6 +573,35 @@ mod tests {
                 && mount.dst == Path::new("/usr/local/bin/lightpanda")
                 && mount.read_only
         }));
+    }
+
+    #[test]
+    fn test_browser_runtime_mount_candidates_include_network_runtime_files() {
+        assert!(SYSTEM_RUNTIME_MOUNT_CANDIDATES.contains(&"/etc/resolv.conf"));
+        assert!(SYSTEM_RUNTIME_MOUNT_CANDIDATES.contains(&"/etc/hosts"));
+        assert!(SYSTEM_RUNTIME_MOUNT_CANDIDATES.contains(&"/etc/nsswitch.conf"));
+        assert!(SYSTEM_RUNTIME_MOUNT_CANDIDATES.contains(&"/etc/ssl/certs"));
+    }
+
+    #[test]
+    fn test_browser_runtime_mounts_include_existing_network_runtime_files() {
+        let mounts = browser_runtime_mounts(
+            Path::new("/app/src/tee/sandbox/scripts/sandbox_executor.cjs"),
+            Path::new("/opt/credbridge-browser-runtime/node_modules"),
+            Path::new("/usr/local/bin/lightpanda"),
+        );
+
+        for candidate in SYSTEM_RUNTIME_MOUNT_CANDIDATES {
+            let path = Path::new(candidate);
+            if path.exists() {
+                assert!(
+                    mounts
+                        .iter()
+                        .any(|mount| { mount.src == path && mount.dst == path && mount.read_only }),
+                    "existing browser runtime system path should be mounted read-only: {candidate}"
+                );
+            }
+        }
     }
 
     #[test]
