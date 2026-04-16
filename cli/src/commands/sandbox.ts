@@ -130,9 +130,7 @@ export async function runSandbox(
           | undefined,
         body: params.body,
         script: params.script as string | undefined,
-        bindings: params.bindings as
-          | Record<string, string | { $credential: string }>
-          | undefined,
+        bindings: params.bindings as Record<string, string> | undefined,
         attribute: params.attribute as string | undefined,
         timeout:
           typeof params.timeout_ms === "number"

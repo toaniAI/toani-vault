@@ -1211,6 +1211,8 @@ pub struct ExecuteSandboxOperationRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxCredentialReference {
+    /// Credential field references are intended for controlled host-side operations
+    /// such as `fill`. Do not pass them into `execute_script` bindings.
     #[serde(rename = "$credential")]
     pub field: String,
 }

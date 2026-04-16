@@ -273,7 +273,7 @@ describe("SandboxService", () => {
       );
     });
 
-    it("应该传递脚本绑定", async () => {
+    it("应该传递纯字符串脚本绑定", async () => {
       vi.spyOn(client, "post").mockResolvedValue({
         operationId: "op-script",
         status: OperationStatus.Success,
@@ -283,9 +283,9 @@ describe("SandboxService", () => {
 
       await service.executeScript(
         "session-123",
-        'return await credbridge.fill("#password", "password");',
+        "return bindings.expectedState === document.readyState;",
         {
-          password: { $credential: "password" },
+          expectedState: "complete",
         },
       );
 
@@ -294,14 +294,34 @@ describe("SandboxService", () => {
         expect.objectContaining({
           operation_type: OperationType.ExecuteScript,
           parameters: expect.objectContaining({
-            script: 'return await credbridge.fill("#password", "password");',
+            script: "return bindings.expectedState === document.readyState;",
             bindings: {
-              password: { $credential: "password" },
+              expectedState: "complete",
             },
           }),
         }),
         undefined,
       );
+    });
+
+    it("应该透传后端对脚本凭证绑定的拒绝", async () => {
+      const error = new CredBridgeError(
+        CredBridgeErrorCode.InvalidRequest,
+        "execute_script bindings only support plain strings",
+        400,
+      );
+
+      vi.spyOn(client, "post").mockRejectedValue(error);
+
+      await expect(
+        service.executeOperation("session-123", {
+          operationType: OperationType.ExecuteScript,
+          script: "return bindings.password;",
+          bindings: {
+            password: { $credential: "password" },
+          } as never,
+        }),
+      ).rejects.toThrow(CredBridgeError);
     });
 
     it("应该执行导航操作", async () => {

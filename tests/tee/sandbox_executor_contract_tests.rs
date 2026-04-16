@@ -34,16 +34,16 @@ fn fill_dispatches_react_compatible_input_events() {
 }
 
 #[test]
-fn credential_script_fill_uses_same_input_semantics() {
+fn execute_script_helper_does_not_expose_secret_sink_methods() {
     let source = executor_source();
 
     assert!(
-        source.contains("setInputValueInPage(element, value);"),
-        "credbridge.fill helper must share the controlled-input fill path"
+        !source.contains("async fill(selector, field)"),
+        "execute_script helper must not expose credbridge.fill"
     );
     assert!(
-        !source.contains("element.value = value;\n                element.dispatchEvent"),
-        "credbridge.fill must not directly assign .value with only generic events"
+        !source.contains("async setCookie(valueField, nameField)"),
+        "execute_script helper must not expose credential-backed cookie injection"
     );
 }
 

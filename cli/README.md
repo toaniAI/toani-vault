@@ -110,6 +110,15 @@ Use this sequence:
 - `export`
 - `dom_export`
 
+### Secret handling contract
+
+- `fill` remains the controlled secret sink. Its top-level `value` field may be either a plain
+  string or a credential reference such as `{"$credential":"password"}`.
+- `execute_script` may still receive `bindings`, but every binding value must be a plain string.
+  Do not pass credential references in `execute_script.bindings`.
+- When `execute_script.bindings` contains `{"$credential":"..."}`, the backend rejects the request
+  instead of resolving the secret into script-visible data.
+
 ### Examples
 
 ```bash
@@ -133,6 +142,22 @@ toani sandbox execute <sessionId> \
 toani sandbox execute <sessionId> \
   --operation-type fill \
   --params '{"selector":"input[name=email]","value":"user@example.com"}'
+
+# Fill from a stored credential reference
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+
+# Execute script with plain-string bindings only
+toani sandbox execute <sessionId> \
+  --operation-type execute_script \
+  --params '{"script":"return document.querySelector(bindings.selector)?.textContent?.trim() ?? null","bindings":{"selector":"h1"}}'
+
+# Invalid: execute_script bindings cannot resolve credentials
+toani sandbox execute <sessionId> \
+  --operation-type execute_script \
+  --params '{"script":"return bindings.password","bindings":{"password":{"$credential":"password"}}}'
+# Expected result: backend rejects the request because execute_script bindings only support plain strings.
 
 # Export redacted DOM
 toani sandbox export-dom <sessionId> \
@@ -159,4 +184,6 @@ toani sandbox terminate <sessionId>
 - Dashboard is the supported public token issuance surface for CLI usage.
 - CLI integrations only use bearer tokens. Browser-side Privy/session flows are not exposed as CLI
   commands.
+- Prefer top-level controlled operations such as `fill` for credential consumption; do not design
+  flows that require secrets to become script-visible values.
 - `sandbox terminate` maps to the backend close-session route (`DELETE /api/v1/sandbox/sessions/:id`).

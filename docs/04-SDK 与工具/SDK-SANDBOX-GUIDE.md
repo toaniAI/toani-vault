@@ -288,7 +288,7 @@ console.log("Download URL:", linkResult.result);
 ### 执行 JavaScript
 
 ```typescript
-// 执行自定义脚本
+// executeScript 只接受普通字符串 bindings，不支持 credential 引用
 const scriptResult = await sdk.sandbox.executeScript(
   sessionId,
   `
@@ -314,6 +314,12 @@ const scriptResult = await sdk.sandbox.executeScript(
 );
 
 console.log("Script result:", scriptResult.result);
+```
+
+涉及凭证字段时，使用顶层受控操作而不是脚本绑定：
+
+```typescript
+await sdk.sandbox.fill(sessionId, "#api-key", { $credential: "api_key" });
 ```
 
 ### 等待操作

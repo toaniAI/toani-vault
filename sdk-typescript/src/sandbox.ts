@@ -583,13 +583,17 @@ export class SandboxService {
    * @example
    * ```typescript
    * const result = await sdk.sandbox.executeScript('session-123', `
-   *   await credbridge.fill('#api-key', 'apiKey');
-   *   return await credbridge.getText('#status');
+   *   return {
+   *     title: document.title,
+   *     ready: document.readyState,
+   *   };
    * `, {
-   *   apiKey: { $credential: 'api_key' },
+   *   expectedState: 'complete',
    * });
-   * console.log('Title:', result.data);
+   * console.log('Result:', result.data);
    * ```
+   *
+   * `bindings` 仅支持普通字符串。credential 引用必须通过 `fill` 等受控宿主操作使用。
    */
   public async executeScript(
     sessionId: string,

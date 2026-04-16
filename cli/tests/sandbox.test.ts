@@ -81,6 +81,84 @@ describe("runSandbox", () => {
     });
   });
 
+  it("preserves credential references for top-level fill values", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    sandboxMock.executeOperation.mockResolvedValue({
+      operationId: "op-fill",
+      status: "success",
+      executionTimeMs: 1,
+    });
+
+    await runSandbox(testConfig, [
+      "execute",
+      "session-1",
+      "--operation-type",
+      "fill",
+      "--params",
+      '{"selector":"input[name=password]","value":{"$credential":"password"}}',
+    ]);
+
+    expect(sandboxMock.executeOperation).toHaveBeenCalledWith("session-1", {
+      operationType: "fill",
+      description: undefined,
+      parameters: {
+        selector: "input[name=password]",
+        value: { $credential: "password" },
+      },
+      selector: "input[name=password]",
+      value: { $credential: "password" },
+      url: undefined,
+      method: undefined,
+      headers: undefined,
+      body: undefined,
+      script: undefined,
+      bindings: undefined,
+      attribute: undefined,
+      timeout: undefined,
+      waitCondition: undefined,
+    });
+  });
+
+  it("preserves plain-string execute_script bindings", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    sandboxMock.executeOperation.mockResolvedValue({
+      operationId: "op-script",
+      status: "success",
+      executionTimeMs: 1,
+    });
+
+    await runSandbox(testConfig, [
+      "execute",
+      "session-1",
+      "--operation-type",
+      "execute_script",
+      "--params",
+      '{"script":"return document.querySelector(bindings.selector)?.textContent ?? null","bindings":{"selector":"h1"}}',
+    ]);
+
+    expect(sandboxMock.executeOperation).toHaveBeenCalledWith("session-1", {
+      operationType: "execute_script",
+      description: undefined,
+      parameters: {
+        script:
+          "return document.querySelector(bindings.selector)?.textContent ?? null",
+        bindings: { selector: "h1" },
+      },
+      selector: undefined,
+      value: undefined,
+      url: undefined,
+      method: undefined,
+      headers: undefined,
+      body: undefined,
+      script:
+        "return document.querySelector(bindings.selector)?.textContent ?? null",
+      bindings: { selector: "h1" },
+      attribute: undefined,
+      timeout: undefined,
+      waitCondition: undefined,
+    });
+  });
+
   it("exposes pause and resume session commands", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     sandboxMock.pauseSession.mockResolvedValue({ sessionId: "session-1" });

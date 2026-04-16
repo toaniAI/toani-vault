@@ -212,34 +212,6 @@ function selectorLooksSensitive(selector) {
   return typeof selector === 'string' && /pass(word)?|secret|token|otp/i.test(selector);
 }
 
-function redactSecretInString(value, secrets) {
-  if (typeof value !== 'string' || secrets.length === 0) {
-    return value;
-  }
-
-  let redacted = value;
-  for (const secret of secrets) {
-    if (!secret) continue;
-    redacted = redacted.split(secret).join('[REDACTED]');
-  }
-  return redacted;
-}
-
-function redactResult(value, secrets) {
-  if (typeof value === 'string') {
-    return redactSecretInString(value, secrets);
-  }
-  if (Array.isArray(value)) {
-    return value.map(item => redactResult(item, secrets));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, nested]) => [key, redactResult(nested, secrets)])
-    );
-  }
-  return value;
-}
-
 async function executeOperationOnPage(currentPage, operationType, parameters) {
   switch (operationType) {
     case 'navigate': {
@@ -558,9 +530,20 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
         throw new Error('execute_script requires script');
       }
 
-      const bindings =
-        parameters?.bindings && typeof parameters.bindings === 'object' ? parameters.bindings : {};
-      const secretValues = Object.values(bindings).filter(value => typeof value === 'string');
+      const rawBindings = parameters?.bindings;
+      if (
+        rawBindings !== undefined &&
+        (rawBindings === null || Array.isArray(rawBindings) || typeof rawBindings !== 'object')
+      ) {
+        throw new Error('invalid_request: execute_script bindings must be plain strings');
+      }
+
+      const bindings = rawBindings || {};
+      for (const value of Object.values(bindings)) {
+        if (typeof value !== 'string') {
+          throw new Error('invalid_request: execute_script bindings must be plain strings');
+        }
+      }
 
       let result;
       try {
@@ -605,61 +588,7 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
               });
             }
 
-            function eventWithFallbackInPage(eventName, options) {
-              try {
-                return new InputEvent(eventName, options);
-              } catch (_) {
-                return new Event(eventName, { bubbles: true });
-              }
-            }
-
-            function setInputValueInPage(element, nextValue) {
-              if (!element) return;
-
-              const tagName = element.tagName.toLowerCase();
-              if (tagName !== 'input' && tagName !== 'textarea') {
-                element.textContent = nextValue;
-                element.dispatchEvent(
-                  eventWithFallbackInPage('input', {
-                    bubbles: true,
-                    inputType: 'insertText',
-                  })
-                );
-                element.dispatchEvent(new Event('change', { bubbles: true }));
-                return;
-              }
-
-              const prototype =
-                tagName === 'textarea' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-              const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-
-              element.focus();
-              if (valueSetter) {
-                valueSetter.call(element, nextValue);
-              } else {
-                element.value = nextValue;
-              }
-              element.dispatchEvent(
-                eventWithFallbackInPage('input', {
-                  bubbles: true,
-                  composed: true,
-                  inputType: 'insertText',
-                  data: nextValue,
-                })
-              );
-              element.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-
             const credbridge = {
-              async fill(selector, field) {
-                const value = bindings[field];
-                if (typeof value !== 'string') {
-                  throw new Error(`unknown credential field: ${field}`);
-                }
-                const element = await waitForSelectorInPage(selector);
-                setInputValueInPage(element, value);
-                return true;
-              },
               async click(selector) {
                 const element = await waitForSelectorInPage(selector);
                 element.click();
@@ -688,16 +617,6 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
                 }
                 return element.innerText || element.textContent || '';
               },
-              async setCookie(valueField, nameField) {
-                const raw = bindings[valueField];
-                if (typeof raw !== 'string') {
-                  throw new Error(`unknown credential field: ${valueField}`);
-                }
-                const cookieName =
-                  typeof nameField === 'string' ? bindings[nameField] || nameField : null;
-                document.cookie = cookieName ? `${cookieName}=${raw}` : raw;
-                return true;
-              },
               async navigate(url) {
                 window.location.href = url;
                 return true;
@@ -711,12 +630,12 @@ async function executeOperationOnPage(currentPage, operationType, parameters) {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(redactSecretInString(message, secretValues));
+        throw new Error(message);
       }
 
       return {
         data: {
-          result: redactResult(result, secretValues),
+          result,
           used_credentials: Object.keys(bindings),
         },
       };
@@ -779,7 +698,7 @@ rl.on('line', async line => {
     reply({ ok: false, error: `unsupported message type: ${message.type}` });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    reply({ ok: false, error: redactSecretInString(message, []) });
+    reply({ ok: false, error: message });
   }
 });
 

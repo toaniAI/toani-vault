@@ -934,8 +934,12 @@ export interface SandboxStats {
 export type SandboxCredentialField = string;
 
 export interface SandboxCredentialReference {
+  /** Credential field name resolved by controlled host operations such as `fill` */
   $credential: SandboxCredentialField;
 }
+
+/** Plain string bindings passed into `execute_script` */
+export type SandboxScriptBindings = Record<string, string>;
 
 export interface ExecuteOperationRequest {
   /** 操作类型 */
@@ -946,7 +950,7 @@ export interface ExecuteOperationRequest {
   parameters?: Record<string, unknown>;
   /** 选择器（CSS选择器或XPath） */
   selector?: string;
-  /** 输入值 */
+  /** 输入值。`fill` 等受控宿主操作支持 credential 引用。 */
   value?: string | SandboxCredentialReference;
   /** URL（用于导航操作） */
   url?: string;
@@ -958,8 +962,8 @@ export interface ExecuteOperationRequest {
   body?: unknown;
   /** 脚本（用于执行脚本操作） */
   script?: string;
-  /** 脚本绑定（支持 credential 引用） */
-  bindings?: Record<string, string | SandboxCredentialReference>;
+  /** 脚本绑定。仅支持普通字符串，不支持 credential 引用。 */
+  bindings?: SandboxScriptBindings;
   /** 属性名（用于获取属性操作） */
   attribute?: string;
   /** 超时时间（毫秒） */

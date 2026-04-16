@@ -13,8 +13,8 @@ use crate::tee::sandbox::{
     },
     review::{OperationReviewer, ReviewContext, SuggestedAction},
     types::{
-        CredentialReference, ExecutionResult, OperationRequest, OperationStatus, OperationType,
-        SessionContext, SessionId, SessionStatus,
+        ExecutionResult, OperationRequest, OperationStatus, OperationType, SessionContext,
+        SessionId, SessionStatus,
     },
 };
 use crate::vault::models::{CredentialId, TenantId, UserId, VaultEntry};
@@ -89,6 +89,8 @@ struct SandboxExecutionOutput {
 const DEFAULT_HTTP_REQUEST_TIMEOUT_MS: u64 = 30_000;
 const MAX_HTTP_RESPONSE_BODY_BYTES: usize = 64 * 1024;
 const DEFAULT_DOM_EXPORT_MAX_BYTES: u64 = 262_144;
+const EXECUTE_SCRIPT_BINDINGS_ERROR: &str =
+    "invalid_request: execute_script bindings must be plain strings";
 
 impl ActiveNsjailSession {
     pub fn new(id: SessionId, context: SessionContext, sandbox: NsjailSandbox) -> Self {
@@ -705,11 +707,9 @@ impl ActiveNsjailSession {
             OperationType::ExecuteScript => {
                 let browser = self.browser_runtime().await?;
                 let script = Self::required_string(parameters, "script")?;
-                let (bindings, sensitive_values) = self.resolve_script_bindings(parameters).await?;
+                let bindings = Self::resolve_execute_script_bindings(parameters)?;
                 let result = browser.execute_script(&script, &bindings).await?;
-                Ok(SandboxExecutionOutput {
-                    data: Some(redact_script_result(result, &sensitive_values)),
-                })
+                Ok(SandboxExecutionOutput { data: Some(result) })
             }
             OperationType::HttpRequest => self.execute_http_request(parameters).await,
             OperationType::Custom => Err(SandboxError::Other(
@@ -718,45 +718,34 @@ impl ActiveNsjailSession {
         }
     }
 
-    async fn resolve_script_bindings(
-        &self,
+    fn resolve_execute_script_bindings(
         parameters: &HashMap<String, Value>,
-    ) -> Result<(HashMap<String, String>, Vec<String>), SandboxError> {
-        let Some(bindings) = parameters
+    ) -> Result<HashMap<String, String>, SandboxError> {
+        let Some(raw_bindings) = parameters
             .get("bindings")
             .or_else(|| parameters.get("credential_bindings"))
-            .and_then(Value::as_object)
         else {
-            return Ok((HashMap::new(), Vec::new()));
+            return Ok(HashMap::new());
+        };
+
+        let Some(bindings) = raw_bindings.as_object() else {
+            return Err(SandboxError::Other(
+                EXECUTE_SCRIPT_BINDINGS_ERROR.to_string(),
+            ));
         };
 
         let mut resolved = HashMap::with_capacity(bindings.len());
-        let mut sensitive_values = Vec::new();
 
         for (name, raw_value) in bindings {
-            if let Some(raw) = raw_value.as_str() {
-                resolved.insert(name.clone(), raw.to_string());
-                continue;
-            }
-
-            let reference = CredentialReference::from_value(raw_value).ok_or_else(|| {
-                SandboxError::Other(format!(
-                    "invalid_request: script binding {name} must be a string or credential reference"
-                ))
-            })?;
-            let field_name = reference.field.as_str();
-            let material = self.credential_material().await?;
-            let value = material.values.get(field_name).ok_or_else(|| {
-                SandboxError::Other(format!(
-                    "invalid_request: unsupported credential field {field_name}"
-                ))
-            })?;
-            let resolved_value = value.as_str().to_string();
-            sensitive_values.push(resolved_value.clone());
-            resolved.insert(name.clone(), resolved_value);
+            let Some(raw) = raw_value.as_str() else {
+                return Err(SandboxError::Other(
+                    EXECUTE_SCRIPT_BINDINGS_ERROR.to_string(),
+                ));
+            };
+            resolved.insert(name.clone(), raw.to_string());
         }
 
-        Ok((resolved, sensitive_values))
+        Ok(resolved)
     }
 }
 
@@ -1198,33 +1187,6 @@ fn extract_supported_credential_fields(
     Ok(values)
 }
 
-fn redact_script_result(value: Value, sensitive_values: &[String]) -> Value {
-    match value {
-        Value::String(text) => {
-            if sensitive_values
-                .iter()
-                .any(|secret| !secret.is_empty() && secret == &text)
-            {
-                Value::String("[REDACTED]".to_string())
-            } else {
-                Value::String(redact_sensitive_text(&text))
-            }
-        }
-        Value::Array(items) => Value::Array(
-            items
-                .into_iter()
-                .map(|item| redact_script_result(item, sensitive_values))
-                .collect(),
-        ),
-        Value::Object(map) => Value::Object(
-            map.into_iter()
-                .map(|(key, item)| (key, redact_script_result(item, sensitive_values)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1370,14 +1332,56 @@ mod tests {
     }
 
     #[test]
-    fn test_redact_script_result_masks_exact_secret_values() {
-        let result = redact_script_result(
-            json!({ "token": "sk_live_123", "nested": ["ok", "sk_live_123"] }),
-            &[String::from("sk_live_123")],
-        );
+    fn test_resolve_execute_script_bindings_accepts_plain_strings() {
+        let parameters = HashMap::from([(
+            "bindings".to_string(),
+            json!({
+                "username": "alice",
+                "otp": "123456"
+            }),
+        )]);
 
-        assert_eq!(result["token"], "[REDACTED]");
-        assert_eq!(result["nested"][1], "[REDACTED]");
+        let bindings = ActiveNsjailSession::resolve_execute_script_bindings(&parameters)
+            .expect("plain string bindings should be accepted");
+
+        assert_eq!(bindings.get("username").map(String::as_str), Some("alice"));
+        assert_eq!(bindings.get("otp").map(String::as_str), Some("123456"));
+    }
+
+    #[test]
+    fn test_resolve_execute_script_bindings_rejects_credential_reference_objects() {
+        let parameters = HashMap::from([(
+            "bindings".to_string(),
+            json!({
+                "password": { "$credential": "password" }
+            }),
+        )]);
+
+        let error = ActiveNsjailSession::resolve_execute_script_bindings(&parameters)
+            .expect_err("credential reference bindings must be rejected");
+
+        match error {
+            SandboxError::Other(message) => assert_eq!(message, EXECUTE_SCRIPT_BINDINGS_ERROR),
+            other => panic!("unexpected error variant: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_execute_script_bindings_rejects_non_string_objects() {
+        let parameters = HashMap::from([(
+            "bindings".to_string(),
+            json!({
+                "payload": { "nested": "value" }
+            }),
+        )]);
+
+        let error = ActiveNsjailSession::resolve_execute_script_bindings(&parameters)
+            .expect_err("non-string bindings must be rejected");
+
+        match error {
+            SandboxError::Other(message) => assert_eq!(message, EXECUTE_SCRIPT_BINDINGS_ERROR),
+            other => panic!("unexpected error variant: {other}"),
+        }
     }
 
     async fn spawn_test_http_server(body: String, content_type: &str) -> Option<String> {
