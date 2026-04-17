@@ -144,6 +144,46 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page should give reinjected bundles a short settle window before checking page mount results"
     );
     assert!(
+        source.contains("ensureAnalyticsCompatibilityShim"),
+        "bootstrap_page should install analytics compatibility shims through a dedicated helper"
+    );
+    assert!(
+        source.contains("typeof window.gtag !== 'function'"),
+        "bootstrap_page should only shim gtag when the page does not already provide it"
+    );
+    assert!(
+        source.contains("window.dataLayer = []"),
+        "bootstrap_page should create a minimal dataLayer when analytics globals are absent"
+    );
+    assert!(
+        source.contains("window.gtag = function gtag()"),
+        "bootstrap_page should provide a minimal gtag shim for analytics-safe compatibility"
+    );
+    assert!(
+        source.contains("analytics_compatibility_shim"),
+        "bootstrap_page diagnostics should report whether the analytics compatibility shim activated"
+    );
+    assert!(
+        source.contains("compatibility_injections"),
+        "bootstrap_page diagnostics should list which fixed compatibility shims were applied"
+    );
+    assert!(
+        source.contains("gtag_before_type"),
+        "bootstrap_page diagnostics should expose the pre-injection gtag type"
+    );
+    assert!(
+        source.contains("gtag_after_type"),
+        "bootstrap_page diagnostics should expose the post-injection gtag type"
+    );
+    assert!(
+        source.contains("data_layer_initialized"),
+        "bootstrap_page diagnostics should report whether dataLayer was initialized"
+    );
+    assert!(
+        source.contains("compatibility_applied"),
+        "bootstrap_page diagnostics should report whether any compatibility shim was applied"
+    );
+    assert!(
         source.contains("injected_script_statuses"),
         "bootstrap_page diagnostics should expose reinjected script statuses when mount still fails"
     );

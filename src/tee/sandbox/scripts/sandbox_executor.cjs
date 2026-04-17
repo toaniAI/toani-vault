@@ -226,6 +226,61 @@ function selectorLooksSensitive(selector) {
   return typeof selector === 'string' && /pass(word)?|secret|token|otp/i.test(selector);
 }
 
+async function ensureAnalyticsCompatibilityShim(currentPage) {
+  return currentPage.evaluate(() => {
+    const analyticsShimState = {
+      installed: false,
+      installed_gtag: false,
+      created_data_layer: false,
+      data_layer_mode: 'missing',
+      compatibility_injections: [],
+      gtag_before_type: typeof window.gtag,
+      gtag_after_type: typeof window.gtag,
+      data_layer_initialized: false,
+    };
+
+    if (typeof window.dataLayer === 'undefined') {
+      window.dataLayer = [];
+      analyticsShimState.installed = true;
+      analyticsShimState.created_data_layer = true;
+      analyticsShimState.data_layer_initialized = true;
+      analyticsShimState.compatibility_injections.push('dataLayer');
+    }
+
+    const dataLayer = window.dataLayer;
+    const hasPushCompatibleDataLayer =
+      Array.isArray(dataLayer) || (dataLayer && typeof dataLayer.push === 'function');
+
+    analyticsShimState.data_layer_mode = Array.isArray(dataLayer)
+      ? 'array'
+      : hasPushCompatibleDataLayer
+        ? 'push_compatible'
+        : typeof dataLayer;
+
+    if (typeof window.gtag !== 'function') {
+      window.gtag = function gtag() {
+        if (
+          Array.isArray(window.dataLayer) ||
+          (window.dataLayer && typeof window.dataLayer.push === 'function')
+        ) {
+          return window.dataLayer.push(Array.from(arguments));
+        }
+
+        return undefined;
+      };
+      window.gtag.__credbridgeAnalyticsShim = true;
+      analyticsShimState.installed = true;
+      analyticsShimState.installed_gtag = true;
+      analyticsShimState.compatibility_injections.push('gtag');
+    }
+
+    analyticsShimState.gtag_after_type = typeof window.gtag;
+    analyticsShimState.compatibility_applied = analyticsShimState.installed;
+
+    return analyticsShimState;
+  });
+}
+
 async function bootstrapPageOnCurrentPage(currentPage, parameters) {
   const mode = parameters?.mode;
   if (mode !== 'rocket_loader') {
@@ -276,6 +331,8 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       timeout: Math.max(1, Math.floor(bootstrapDiscoveryTimeoutMs / 2)),
     })
     .catch(() => {});
+
+  const analyticsCompatibilityShim = await ensureAnalyticsCompatibilityShim(currentPage);
 
   async function discoverScripts() {
     return currentPage.evaluate(
@@ -564,7 +621,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       const title = await currentPage.title().catch(() => '');
       throw new Error(
         `bootstrap_failed: selector_not_found: ${waitSelector.trim()} ` +
-          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state_before_scan=${readyStateBeforeScan}, ready_state_after_injection=${readyStateAfterInjection}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, matched_selectors=${JSON.stringify(scriptPlan.matchedSelectors)}, sample_script_descriptors=${JSON.stringify(scriptPlan.sampleScriptDescriptors)}, injected_script_statuses=${JSON.stringify(injectedScriptStatuses)}, selector_exists_at_failure=${pageDiagnostics.selectorExists})`
+          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state_before_scan=${readyStateBeforeScan}, ready_state_after_injection=${readyStateAfterInjection}, compatibility_injections=${JSON.stringify(analyticsCompatibilityShim.compatibility_injections)}, gtag_before_type=${JSON.stringify(analyticsCompatibilityShim.gtag_before_type)}, gtag_after_type=${JSON.stringify(analyticsCompatibilityShim.gtag_after_type)}, data_layer_initialized=${analyticsCompatibilityShim.data_layer_initialized === true}, compatibility_applied=${analyticsCompatibilityShim.compatibility_applied === true}, analytics_compatibility_shim=${JSON.stringify(analyticsCompatibilityShim)}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, matched_selectors=${JSON.stringify(scriptPlan.matchedSelectors)}, sample_script_descriptors=${JSON.stringify(scriptPlan.sampleScriptDescriptors)}, injected_script_statuses=${JSON.stringify(injectedScriptStatuses)}, selector_exists_at_failure=${pageDiagnostics.selectorExists})`
       );
     }
   }
@@ -586,6 +643,12 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
         sample_script_descriptors: scriptPlan.sampleScriptDescriptors,
         injected_script_statuses: injectedScriptStatuses,
         selector_exists_at_failure: null,
+        compatibility_injections: analyticsCompatibilityShim.compatibility_injections,
+        gtag_before_type: analyticsCompatibilityShim.gtag_before_type,
+        gtag_after_type: analyticsCompatibilityShim.gtag_after_type,
+        data_layer_initialized: analyticsCompatibilityShim.data_layer_initialized,
+        compatibility_applied: analyticsCompatibilityShim.compatibility_applied,
+        analytics_compatibility_shim: analyticsCompatibilityShim,
         include_plain_scripts: includePlainScripts,
         replay_lifecycle_events: replayLifecycleEvents,
       },

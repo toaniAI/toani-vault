@@ -283,6 +283,42 @@ impl SandboxBrowserRuntime {
             .and_then(Value::as_object)
             .cloned()
             .unwrap_or_default();
+        let compatibility_injections = diagnostics
+            .get("compatibility_injections")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let gtag_before_type = diagnostics
+            .get("gtag_before_type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let gtag_after_type = diagnostics
+            .get("gtag_after_type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let data_layer_initialized = diagnostics
+            .get("data_layer_initialized")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let compatibility_applied = diagnostics
+            .get("compatibility_applied")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        info!(
+            compatibility_injections = %compatibility_injections,
+            gtag_before_type,
+            gtag_after_type,
+            data_layer_initialized,
+            compatibility_applied,
+            "browser runtime bootstrap compatibility pass start"
+        );
+        info!(
+            compatibility_injections = %compatibility_injections,
+            gtag_before_type,
+            gtag_after_type,
+            data_layer_initialized,
+            compatibility_applied,
+            "browser runtime bootstrap compatibility pass completed"
+        );
         info!(
             elapsed_ms = started_at.elapsed().as_millis(),
             discovered_scripts = diagnostics
@@ -293,6 +329,11 @@ impl SandboxBrowserRuntime {
                 .get("reinjected_scripts")
                 .and_then(|value| value.as_u64())
                 .unwrap_or(0),
+            compatibility_injections = %compatibility_injections,
+            gtag_before_type,
+            gtag_after_type,
+            data_layer_initialized,
+            compatibility_applied,
             ready_state_before_scan = diagnostics
                 .get("ready_state_before_scan")
                 .and_then(|value| value.as_str())

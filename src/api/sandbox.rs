@@ -1430,10 +1430,19 @@ async fn resolve_parameter_value(
     value: &serde_json::Value,
 ) -> Result<(serde_json::Value, serde_json::Value), Response> {
     if let Some(field) = parse_credential_reference(value)? {
-        if *operation_type == OperationType::BootstrapPage {
-            return Err(ApiErrorResponse::invalid_request(
-                "bootstrap_page does not accept credential references",
-            )
+        if matches!(
+            operation_type,
+            OperationType::BootstrapPage | OperationType::ExecuteScript
+        ) {
+            return Err(ApiErrorResponse::invalid_request(match operation_type {
+                OperationType::BootstrapPage => {
+                    "bootstrap_page does not accept credential references"
+                }
+                OperationType::ExecuteScript => {
+                    "execute_script does not accept credential references"
+                }
+                _ => unreachable!(),
+            })
             .into_response());
         }
 
@@ -2184,9 +2193,11 @@ async fn websocket_upgrade(
 mod tests {
     use super::*;
     use crate::api::middleware::{TokenScope, tests::create_mock_token};
+    use crate::tee::sandbox::error::SessionError;
     use crate::tee::sandbox::{SessionId, repository::SandboxOperationRecord};
     use crate::vault::models::{CreateCredentialRequest, EncryptedPayload, ServiceId};
     use crate::vault::storage::CredentialVault;
+    use async_trait::async_trait;
     use axum::{
         body::{Body, to_bytes},
         http::Request,
@@ -2206,6 +2217,69 @@ mod tests {
             vec![1; 16],
             vec![2; 32],
         )
+    }
+
+    struct StubSession {
+        id: SessionId,
+        context: crate::tee::sandbox::types::SessionContext,
+    }
+
+    #[async_trait]
+    impl SandboxSession for StubSession {
+        fn id(&self) -> SessionId {
+            self.id
+        }
+
+        async fn status(&self) -> crate::tee::sandbox::types::SessionStatus {
+            crate::tee::sandbox::types::SessionStatus::Ready
+        }
+
+        fn context(&self) -> &crate::tee::sandbox::types::SessionContext {
+            &self.context
+        }
+
+        async fn execute_operation(
+            &self,
+            _operation: OperationRequest,
+        ) -> Result<crate::tee::sandbox::types::ExecutionResult, SandboxError> {
+            Err(SandboxError::Session(SessionError::OperationRejected {
+                reason: "stub session".to_string(),
+            }))
+        }
+
+        async fn pause(&self) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn resume(&self) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn close(&self) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        fn is_expired(&self) -> bool {
+            false
+        }
+    }
+
+    fn create_stub_session() -> StubSession {
+        let session_id = SessionId::new();
+        StubSession {
+            id: session_id,
+            context: crate::tee::sandbox::types::SessionContext {
+                session_id,
+                sandbox_id: crate::tee::sandbox::types::SandboxId::new(),
+                tenant_id: Uuid::new_v4(),
+                user_id: Uuid::new_v4(),
+                credential_id: Uuid::new_v4(),
+                original_intent: "test".to_string(),
+                created_at: OffsetDateTime::now_utc(),
+                expires_at: OffsetDateTime::now_utc() + time::Duration::minutes(5),
+                last_activity_at: Arc::new(RwLock::new(OffsetDateTime::now_utc())),
+            },
+        }
     }
 
     #[test]
@@ -2586,6 +2660,34 @@ mod tests {
         let response = parse_credential_reference(&serde_json::json!({ "$credential": "" }))
             .expect_err("empty field should fail");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_parameter_value_rejects_execute_script_credential_references() {
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState::new_with_pool(pool, config);
+        let session = create_stub_session();
+
+        let response = resolve_parameter_value(
+            &state,
+            &session,
+            &OperationType::ExecuteScript,
+            &serde_json::json!({ "$credential": "password" }),
+        )
+        .await
+        .expect_err("execute_script should not accept credential references");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+        assert_eq!(
+            body["message"],
+            "execute_script does not accept credential references"
+        );
     }
 
     #[tokio::test]

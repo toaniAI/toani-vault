@@ -751,7 +751,15 @@ describe("SandboxService", () => {
           final_url: "https://dashboard.zk.me/login",
           title: "Dashboard",
           wait_satisfied: true,
-          diagnostics: { mode: "rocket_loader", reinjected_scripts: 2 },
+          diagnostics: {
+            mode: "rocket_loader",
+            reinjected_scripts: 2,
+            compatibility_injections: ["dataLayer", "gtag"],
+            gtag_before_type: "undefined",
+            gtag_after_type: "function",
+            data_layer_initialized: true,
+            compatibility_applied: true,
+          },
         },
         executionTimeMs: 220,
       });
@@ -772,6 +780,13 @@ describe("SandboxService", () => {
           "https://dashboard.zk.me/assets/app.js",
         ],
         waitSatisfied: true,
+        diagnostics: {
+          compatibility_injections: ["dataLayer", "gtag"],
+          gtag_before_type: "undefined",
+          gtag_after_type: "function",
+          data_layer_initialized: true,
+          compatibility_applied: true,
+        },
       });
       expect(client.post).toHaveBeenCalledWith(
         "/sandbox/sessions/session-123/execute",

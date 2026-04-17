@@ -297,6 +297,17 @@ impl ActiveNsjailSession {
             .collect()
     }
 
+    async fn ensure_execute_script_allowed(&self) -> Result<(), SandboxError> {
+        if !self.sensitive_selectors.read().await.is_empty() {
+            return Err(SandboxError::Other(
+                "invalid_request: execute_script is disabled after credential-backed fills"
+                    .to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     fn required_string(
         parameters: &HashMap<String, Value>,
         key: &str,
@@ -853,6 +864,7 @@ impl ActiveNsjailSession {
                 })
             }
             OperationType::ExecuteScript => {
+                self.ensure_execute_script_allowed().await?;
                 let browser = self.browser_runtime().await?;
                 let script = Self::required_string(parameters, "script")?;
                 let bindings = Self::resolve_execute_script_bindings(parameters)?;
@@ -888,6 +900,26 @@ impl ActiveNsjailSession {
                     .and_then(Value::as_object)
                     .cloned()
                     .unwrap_or_default();
+                let compatibility_injections = diagnostics
+                    .get("compatibility_injections")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let gtag_before_type = diagnostics
+                    .get("gtag_before_type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let gtag_after_type = diagnostics
+                    .get("gtag_after_type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
+                let data_layer_initialized = diagnostics
+                    .get("data_layer_initialized")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false);
+                let compatibility_applied = diagnostics
+                    .get("compatibility_applied")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false);
                 info!(
                     session_id = %self.id,
                     operation_id = %operation.operation_id,
@@ -899,6 +931,11 @@ impl ActiveNsjailSession {
                         .get("reinjected_scripts")
                         .and_then(|value| value.as_u64())
                         .unwrap_or(0),
+                    compatibility_injections = %compatibility_injections,
+                    gtag_before_type,
+                    gtag_after_type,
+                    data_layer_initialized,
+                    compatibility_applied,
                     ready_state_before_scan = diagnostics
                         .get("ready_state_before_scan")
                         .and_then(|value| value.as_str())
@@ -1586,6 +1623,25 @@ mod tests {
 
         match error {
             SandboxError::Other(message) => assert_eq!(message, EXECUTE_SCRIPT_BINDINGS_ERROR),
+            other => panic!("unexpected error variant: {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_script_rejected_after_sensitive_fill() {
+        let session = create_test_session();
+        session.mark_sensitive_selector("#apikey".to_string()).await;
+
+        let error = session
+            .ensure_execute_script_allowed()
+            .await
+            .expect_err("execute_script should be blocked once a secret was filled");
+
+        match error {
+            SandboxError::Other(message) => assert_eq!(
+                message,
+                "invalid_request: execute_script is disabled after credential-backed fills"
+            ),
             other => panic!("unexpected error variant: {other}"),
         }
     }
