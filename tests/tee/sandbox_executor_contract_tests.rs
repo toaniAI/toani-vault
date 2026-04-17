@@ -137,11 +137,15 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
     );
     assert!(
         source.contains("data-credbridge-bootstrap-status"),
-        "bootstrap_page should track reinjected script load state outside the initial evaluate call"
+        "bootstrap_page should track reinjected script load state for diagnostics"
     );
     assert!(
-        source.contains("waitForFunction("),
-        "bootstrap_page should wait for reinjected script status using a bounded external poll"
+        source.contains("DEFAULT_BOOTSTRAP_POST_INJECTION_SETTLE_MS = 1500"),
+        "bootstrap_page should give reinjected bundles a short settle window before checking page mount results"
+    );
+    assert!(
+        source.contains("injected_script_statuses"),
+        "bootstrap_page diagnostics should expose reinjected script statuses when mount still fails"
     );
     assert!(
         source.contains("bootstrap_failed: selector_not_found:"),

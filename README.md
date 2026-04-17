@@ -88,14 +88,14 @@ For the latest CLI install and usage details, see:
 
 ```bash
 # Install from npm (recommended)
-npm install -g @toani/vault-cli@0.0.5
+npm install -g @toani/vault-cli@0.0.11
 
 # Install from source
 cd cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.5.tgz
+npm install -g ./toani-vault-cli-0.0.11.tgz
 
 # Verify installation
 toani --version

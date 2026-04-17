@@ -20,7 +20,7 @@ commands unless you have verified a newer build.
 ## Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.10
+npm install -g @toani/vault-cli@0.0.11
 ```
 
 ## Configure

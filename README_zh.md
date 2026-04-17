@@ -75,10 +75,14 @@ CLI 最新安装与使用说明请优先参考：
 
 ```bash
 # 从 npm 安装（推荐）
-npm install -g @toani/vault-cli@0.0.5
+npm install -g @toani/vault-cli@0.0.11
 
 # 从源码安装
-cargo install --path cli
+cd cli
+npm install
+npm run build
+npm pack
+npm install -g ./toani-vault-cli-0.0.11.tgz
 
 # 验证安装
 toani --version

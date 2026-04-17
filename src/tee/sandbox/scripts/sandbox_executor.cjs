@@ -23,7 +23,7 @@ const DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS = [
 const DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS = 5000;
 const DEFAULT_BOOTSTRAP_RESCAN_DELAY_MS = 250;
 const DEFAULT_BOOTSTRAP_SAMPLE_SCRIPT_LIMIT = 5;
-const DEFAULT_BOOTSTRAP_SCRIPT_LOAD_TIMEOUT_MS = 30000;
+const DEFAULT_BOOTSTRAP_POST_INJECTION_SETTLE_MS = 1500;
 
 function reply(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -508,53 +508,13 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       continue;
     }
 
-    await currentPage.waitForFunction(
-      currentMarker => {
-        const injected = document.querySelector(
-          `script[data-credbridge-bootstrap-source="${currentMarker}"]`
-        );
-        if (!(injected instanceof HTMLScriptElement)) {
-          return 'missing';
-        }
-
-        const status = injected.getAttribute('data-credbridge-bootstrap-status');
-        if (status === 'loaded' || status === 'error') {
-          return status;
-        }
-
-        return false;
-      },
-      {
-        timeout: Math.max(waitTimeoutMs, DEFAULT_BOOTSTRAP_SCRIPT_LOAD_TIMEOUT_MS),
-      },
-      result.marker
-    );
-
-    const injectedStatus = await currentPage.evaluate(currentMarker => {
-      const injected = document.querySelector(
-        `script[data-credbridge-bootstrap-source="${currentMarker}"]`
-      );
-      if (!(injected instanceof HTMLScriptElement)) {
-        return {
-          status: 'missing',
-          error: 'bootstrap_failed: reinjected_script_missing',
-        };
-      }
-
-      return {
-        status: injected.getAttribute('data-credbridge-bootstrap-status'),
-        error: injected.getAttribute('data-credbridge-bootstrap-error'),
-      };
-    }, result.marker);
-
-    if (injectedStatus.status !== 'loaded') {
-      throw new Error(
-        injectedStatus.error ||
-          `bootstrap_failed: reinjected_script_status:${injectedStatus.status || 'unknown'}`
-      );
-    }
-
     injectedScripts.push(result.src);
+  }
+
+  if (injectedScripts.length > 0) {
+    await new Promise(resolve =>
+      setTimeout(resolve, Math.min(waitTimeoutMs, DEFAULT_BOOTSTRAP_POST_INJECTION_SETTLE_MS))
+    );
   }
 
   if (replayLifecycleEvents) {
@@ -567,6 +527,27 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
   }
 
   const readyStateAfterInjection = await currentPage.evaluate(() => document.readyState);
+  const injectedScriptStatuses = await currentPage.evaluate(() => {
+    return Array.from(
+      document.querySelectorAll('script[data-credbridge-bootstrap-source]')
+    ).slice(0, 12).map(script => {
+      if (!(script instanceof HTMLScriptElement)) {
+        return {
+          marker: null,
+          src: null,
+          status: 'unknown_element',
+          error: null,
+        };
+      }
+
+      return {
+        marker: script.getAttribute('data-credbridge-bootstrap-source'),
+        src: script.getAttribute('src'),
+        status: script.getAttribute('data-credbridge-bootstrap-status'),
+        error: script.getAttribute('data-credbridge-bootstrap-error'),
+      };
+    });
+  });
   let waitSatisfied = true;
   const waitSelector = parameters?.wait_selector;
   if (typeof waitSelector === 'string' && waitSelector.trim()) {
@@ -583,7 +564,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       const title = await currentPage.title().catch(() => '');
       throw new Error(
         `bootstrap_failed: selector_not_found: ${waitSelector.trim()} ` +
-          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state_before_scan=${readyStateBeforeScan}, ready_state_after_injection=${readyStateAfterInjection}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, matched_selectors=${JSON.stringify(scriptPlan.matchedSelectors)}, sample_script_descriptors=${JSON.stringify(scriptPlan.sampleScriptDescriptors)}, selector_exists_at_failure=${pageDiagnostics.selectorExists})`
+          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state_before_scan=${readyStateBeforeScan}, ready_state_after_injection=${readyStateAfterInjection}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, matched_selectors=${JSON.stringify(scriptPlan.matchedSelectors)}, sample_script_descriptors=${JSON.stringify(scriptPlan.sampleScriptDescriptors)}, injected_script_statuses=${JSON.stringify(injectedScriptStatuses)}, selector_exists_at_failure=${pageDiagnostics.selectorExists})`
       );
     }
   }
@@ -603,6 +584,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
         discovered_scripts: scriptPlan.descriptors.length,
         reinjected_scripts: injectedScripts.length,
         sample_script_descriptors: scriptPlan.sampleScriptDescriptors,
+        injected_script_statuses: injectedScriptStatuses,
         selector_exists_at_failure: null,
         include_plain_scripts: includePlainScripts,
         replay_lifecycle_events: replayLifecycleEvents,

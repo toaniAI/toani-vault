@@ -862,6 +862,17 @@ impl ActiveNsjailSession {
             OperationType::BootstrapPage => {
                 let browser = self.browser_runtime().await?;
                 let request = Self::resolve_bootstrap_page_request(parameters)?;
+                info!(
+                    session_id = %self.id,
+                    operation_id = %operation.operation_id,
+                    mode = %request.mode,
+                    script_selector_count = request.script_selectors.len(),
+                    include_plain_scripts = request.include_plain_scripts,
+                    replay_lifecycle_events = request.replay_lifecycle_events,
+                    wait_selector = request.wait_selector.as_deref().unwrap_or(""),
+                    wait_timeout_ms = request.wait_timeout_ms,
+                    "session bootstrap_page request resolved"
+                );
                 let result = browser
                     .bootstrap_page(
                         &request.mode,
@@ -872,6 +883,32 @@ impl ActiveNsjailSession {
                         request.wait_timeout_ms,
                     )
                     .await?;
+                let diagnostics = result
+                    .get("diagnostics")
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                info!(
+                    session_id = %self.id,
+                    operation_id = %operation.operation_id,
+                    discovered_scripts = diagnostics
+                        .get("discovered_scripts")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                    reinjected_scripts = diagnostics
+                        .get("reinjected_scripts")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                    ready_state_before_scan = diagnostics
+                        .get("ready_state_before_scan")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                    ready_state_after_injection = diagnostics
+                        .get("ready_state_after_injection")
+                        .and_then(Value::as_str)
+                        .unwrap_or(""),
+                    "session bootstrap_page returned"
+                );
                 Ok(SandboxExecutionOutput { data: Some(result) })
             }
             OperationType::HttpRequest => self.execute_http_request(parameters).await,

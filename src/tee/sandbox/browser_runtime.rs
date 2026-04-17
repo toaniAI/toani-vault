@@ -9,9 +9,11 @@ use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
+use tracing::{debug, info, warn};
 
 const SANDBOX_NODE_BINARY_ENV: &str = "CREDBRIDGE_SANDBOX_NODE_BINARY";
 const NODE_PATH_ENV: &str = "NODE_PATH";
@@ -133,6 +135,14 @@ impl SandboxBrowserRuntime {
             })),
         };
 
+        info!(
+            sandbox_id = %sandbox.id(),
+            work_dir = %work_dir.display(),
+            runtime_dir = %runtime_dir.display(),
+            profile_dir = %profile_dir.display(),
+            "launched browser runtime directories"
+        );
+
         runtime
             .send(json!({
                 "type": "init",
@@ -242,6 +252,16 @@ impl SandboxBrowserRuntime {
         wait_selector: Option<&str>,
         wait_timeout_ms: u64,
     ) -> Result<Value, SandboxError> {
+        let started_at = Instant::now();
+        info!(
+            mode,
+            script_selector_count = script_selectors.len(),
+            include_plain_scripts,
+            replay_lifecycle_events,
+            wait_selector = wait_selector.unwrap_or(""),
+            wait_timeout_ms,
+            "browser runtime bootstrap_page start"
+        );
         let response = self
             .send(json!({
                 "type": "execute",
@@ -257,7 +277,34 @@ impl SandboxBrowserRuntime {
             }))
             .await?;
 
-        Ok(response.get("data").cloned().unwrap_or(Value::Null))
+        let payload = response.get("data").cloned().unwrap_or(Value::Null);
+        let diagnostics = payload
+            .get("diagnostics")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        info!(
+            elapsed_ms = started_at.elapsed().as_millis(),
+            discovered_scripts = diagnostics
+                .get("discovered_scripts")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            reinjected_scripts = diagnostics
+                .get("reinjected_scripts")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            ready_state_before_scan = diagnostics
+                .get("ready_state_before_scan")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+            ready_state_after_injection = diagnostics
+                .get("ready_state_after_injection")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+            "browser runtime bootstrap_page completed"
+        );
+
+        Ok(payload)
     }
 
     pub async fn execute_export(
@@ -332,6 +379,15 @@ impl SandboxBrowserRuntime {
 
     async fn send(&self, message: Value) -> Result<Value, SandboxError> {
         let mut process = self.inner.lock().await;
+        let message_type = message
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        let operation_type = message
+            .get("operationType")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let started_at = Instant::now();
         let serialized = serde_json::to_string(&message).map_err(|error| {
             SandboxError::Serialization(format!("failed to encode browser message: {error}"))
         })?;
@@ -351,6 +407,13 @@ impl SandboxBrowserRuntime {
         if let Err(error) = process.stdout.read_line(&mut line).await {
             return Err(browser_runtime_io_error("read response", &mut process, error).await);
         }
+        debug!(
+            message_type,
+            operation_type,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            response_len = line.len(),
+            "browser runtime response line read"
+        );
         if line.trim().is_empty() {
             let Some(mut child) = process.child.take() else {
                 return Err(SandboxError::Process(
@@ -372,6 +435,16 @@ impl SandboxBrowserRuntime {
         })?;
 
         if !response.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+            warn!(
+                message_type,
+                operation_type,
+                elapsed_ms = started_at.elapsed().as_millis(),
+                error = response
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("browser runtime error"),
+                "browser runtime returned error response"
+            );
             return Err(SandboxError::Other(
                 response
                     .get("error")
@@ -380,6 +453,13 @@ impl SandboxBrowserRuntime {
                     .to_string(),
             ));
         }
+
+        debug!(
+            message_type,
+            operation_type,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "browser runtime returned ok response"
+        );
 
         Ok(response)
     }
