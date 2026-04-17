@@ -65,36 +65,44 @@ export function loadConfig(): CliConfig {
 }
 
 export function saveConfig(config: CliConfig): void {
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  }
-  const currentProfile = config.currentProfile ?? "default";
-  const profiles = {
-    ...(config.profiles ?? {}),
-    [currentProfile]: {
-      ...(config.profiles?.[currentProfile] ?? {}),
-      baseUrl: config.baseUrl,
-      token: config.token,
-      currentTenantId: config.currentTenantId,
-      output: config.output,
-      timeout: config.timeout,
-    },
-  };
-  fs.writeFileSync(
-    CONFIG_PATH,
-    JSON.stringify(
-      {
+  try {
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    const currentProfile = config.currentProfile ?? "default";
+    const profiles = {
+      ...(config.profiles ?? {}),
+      [currentProfile]: {
+        ...(config.profiles?.[currentProfile] ?? {}),
         baseUrl: config.baseUrl,
         token: config.token,
         currentTenantId: config.currentTenantId,
         output: config.output,
         timeout: config.timeout,
-        profiles,
-        currentProfile,
       },
-      null,
-      2,
-    ),
-    "utf8",
-  );
+    };
+    fs.writeFileSync(
+      CONFIG_PATH,
+      JSON.stringify(
+        {
+          baseUrl: config.baseUrl,
+          token: config.token,
+          currentTenantId: config.currentTenantId,
+          output: config.output,
+          timeout: config.timeout,
+          profiles,
+          currentProfile,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown filesystem error";
+    throw new Error(
+      `Failed to write CLI config at ${CONFIG_PATH}: ${message}`,
+    );
+  }
 }

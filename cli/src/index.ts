@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig } from "./config/store.js";
 import { runConfig } from "./commands/config.js";
 import { runSandbox } from "./commands/index.js";
@@ -52,7 +52,7 @@ function resolveTokenFromEnv(): string | undefined {
   return undefined;
 }
 
-function parseGlobalArgs(argv: string[]): {
+export function parseGlobalArgs(argv: string[]): {
   rest: string[];
   output?: OutputFormat;
   baseUrl?: string;
@@ -62,22 +62,24 @@ function parseGlobalArgs(argv: string[]): {
   let output: OutputFormat | undefined;
   let baseUrl: string | undefined;
   let token: string | undefined;
+  let seenGroup = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--output") {
+    if (!seenGroup && arg === "--output") {
       output = (argv[i + 1] as OutputFormat) ?? "table";
       i += 1;
-    } else if (arg === "--base-url") {
+    } else if (!seenGroup && arg === "--base-url") {
       baseUrl = argv[i + 1];
       i += 1;
-    } else if (arg === "--token") {
+    } else if (!seenGroup && arg === "--token") {
       token = argv[i + 1];
       i += 1;
-    } else if (arg === "-h" || arg === "--help") {
+    } else if (!seenGroup && (arg === "-h" || arg === "--help")) {
       printHelp();
       process.exit(0);
     } else {
+      seenGroup = true;
       rest.push(arg);
     }
   }
@@ -126,11 +128,22 @@ async function main(): Promise<void> {
   }
 }
 
-const isDirectExecution =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+export function isDirectExecution(
+  executedPath: string | undefined,
+  moduleUrl: string,
+): boolean {
+  if (!executedPath || !existsSync(executedPath)) {
+    return false;
+  }
 
-if (isDirectExecution) {
+  try {
+    return realpathSync(executedPath) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution(process.argv[1], import.meta.url)) {
   main().catch((error) => {
     const rendered =
       error instanceof Error
