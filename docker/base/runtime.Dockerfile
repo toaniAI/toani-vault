@@ -1,6 +1,7 @@
 ARG UBUNTU_IMAGE=ubuntu:22.04
 ARG NSJAIL_ARCHIVE=nsjail-3.6.tar.gz
 ARG KAFEL_GIT_URL=https://github.com/google/kafel.git
+ARG APT_BOOTSTRAP_SCHEME=http
 ARG APT_MIRROR_SCHEME=https
 ARG APT_MIRROR_HOST=mirrors.aliyun.com
 
@@ -8,14 +9,21 @@ FROM ${UBUNTU_IMAGE} AS nsjail-builder
 
 ARG NSJAIL_ARCHIVE
 ARG KAFEL_GIT_URL
+ARG APT_BOOTSTRAP_SCHEME
 ARG APT_MIRROR_SCHEME
 ARG APT_MIRROR_HOST
 
 RUN set -eux; \
+    printf '%s\n' \
+      'Acquire::Retries "5";' \
+      'Acquire::http::Timeout "30";' \
+      'Acquire::https::Timeout "30";' \
+      > /etc/apt/apt.conf.d/80-credbridge-retries; \
+    sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://archive.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://security.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates; \
     rm -rf /var/lib/apt/lists/*; \
-    sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://archive.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://security.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
+    sed -i "s|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
     apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
@@ -48,6 +56,7 @@ FROM ${UBUNTU_IMAGE}
 
 WORKDIR /app
 
+ARG APT_BOOTSTRAP_SCHEME
 ARG APT_MIRROR_SCHEME
 ARG APT_MIRROR_HOST
 
@@ -58,10 +67,16 @@ ENV LIGHTPANDA_BINARY_PATH=/usr/local/bin/lightpanda
 ENV LIGHTPANDA_DISABLE_TELEMETRY=true
 
 RUN set -eux; \
+    printf '%s\n' \
+      'Acquire::Retries "5";' \
+      'Acquire::http::Timeout "30";' \
+      'Acquire::https::Timeout "30";' \
+      > /etc/apt/apt.conf.d/80-credbridge-retries; \
+    sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://archive.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://security.ubuntu.com/ubuntu/|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates; \
     rm -rf /var/lib/apt/lists/*; \
-    sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://archive.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g; s|https://security.ubuntu.com/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
+    sed -i "s|${APT_BOOTSTRAP_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|${APT_MIRROR_SCHEME}://${APT_MIRROR_HOST}/ubuntu/|g" /etc/apt/sources.list; \
     apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
