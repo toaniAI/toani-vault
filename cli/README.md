@@ -75,7 +75,7 @@ toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
 toani sandbox pause <sessionId>
 toani sandbox resume <sessionId>
-toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '["script[src][type$=\"-text/javascript\"]"]'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
+toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '["script[src][type$=\"-text/javascript\"]"]'] [--include-plain-scripts true|false] [--replay-lifecycle-events true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
 toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
 toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
 toani sandbox export-data <sessionId> --selectors '[".row"]' [--format json|csv|pdf]
@@ -95,7 +95,7 @@ Use this sequence:
 
 1. `toani sandbox create-session`
 2. `toani sandbox execute <sessionId> --operation-type navigate ...`
-3. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...` when the page needs controlled bundle replay
+3. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...` when the page needs controlled bundle replay; add `--replay-lifecycle-events true` for late-mounted login forms
 4. `toani sandbox execute <sessionId> --operation-type wait ...`
 5. `toani sandbox execute <sessionId> --operation-type fill|click ...`
 6. `toani sandbox get-operation` when the server returns an operation id
@@ -118,6 +118,8 @@ Use this sequence:
 ### Secret handling contract
 
 - `bootstrap-page` only replays approved page bundles. It does not accept raw script text, does not accept bindings, and does not consume credentials.
+- `bootstrap-page` optionally supports `--replay-lifecycle-events true` to replay `DOMContentLoaded` / `load` / `pageshow` after bundle reinjection for compatibility-sensitive pages.
+- When `bootstrap-page` times out on `--wait-selector`, the backend error includes URL, title, script counts, and `readyState` diagnostics to help isolate whether the bundle replay or page mount failed.
 - `fill` remains the controlled secret sink. Its top-level `value` field may be either a plain
   string or a credential reference such as `{"$credential":"password"}`.
 - `execute_script` may still receive `bindings`, but every binding value must be a plain string.
@@ -142,6 +144,7 @@ toani sandbox execute <sessionId> \
 # Bootstrap a Rocket Loader page before waiting/filling
 toani sandbox bootstrap-page <sessionId> \
   --mode rocket_loader \
+  --replay-lifecycle-events true \
   --wait-selector 'input[name=email]' \
   --wait-timeout-ms 15000
 

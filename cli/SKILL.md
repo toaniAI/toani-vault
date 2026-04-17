@@ -88,7 +88,7 @@ toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
 toani sandbox pause <sessionId>
 toani sandbox resume <sessionId>
-toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
+toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--replay-lifecycle-events true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
 toani sandbox execute <sessionId> --operation-type <type> [--params '<json>']
 toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
 toani sandbox export-data <sessionId> --selectors '<json-array>' [--format json|csv|pdf]
@@ -129,6 +129,7 @@ toani sandbox stats
 - `mode`
 - `script_selectors`
 - `include_plain_scripts`
+- `replay_lifecycle_events`
 - `wait_selector`
 - `wait_timeout_ms`
 - `script`
@@ -161,6 +162,7 @@ toani sandbox stats
 4. `toani sandbox create-session ...`
 5. `toani sandbox execute <sessionId> --operation-type navigate ...`
 6. 如果是 Rocket Loader / bundle 未启动页面，显式执行 `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...`
+   页面兼容性一般、依赖晚挂载事件时，优先加 `--replay-lifecycle-events true`
 7. `toani sandbox execute <sessionId> --operation-type wait ...`
 8. `toani sandbox execute <sessionId> --operation-type fill|click ...`
 9. 如有异步返回，再 `toani sandbox get-operation <operationId>`
@@ -203,8 +205,11 @@ toani sandbox execute <sessionId> \
 - 只允许受控字段，不接受 `--params`
 - 不接受 raw script
 - 不接受 `bindings`
+- 可选 `replay_lifecycle_events`，用于在 bundle 重放后补发 `DOMContentLoaded` / `load` / `pageshow`
 - 不消费凭证
 - 后续 secret 仍然只能通过 `fill` 这类宿主级受控操作消费
+
+如果 `wait_selector` 超时，错误里现在会带上 URL、title、脚本发现/重放数量和 `readyState` 等诊断，便于区分“脚本没命中”和“页面没挂载”。
 
 推荐登录链路：
 
@@ -219,6 +224,7 @@ toani sandbox execute <sessionId> \
 ```bash
 toani sandbox bootstrap-page <sessionId> \
   --mode rocket_loader \
+  --replay-lifecycle-events true \
   --wait-selector 'input[name=email]' \
   --wait-timeout-ms 15000
 ```
@@ -294,6 +300,7 @@ toani sandbox execute <sessionId> \
 ```bash
 toani sandbox bootstrap-page <sessionId> \
   --mode rocket_loader \
+  --replay-lifecycle-events true \
   --wait-selector 'input[name=email]' \
   --wait-timeout-ms 15000
 ```
@@ -410,6 +417,7 @@ toani sandbox execute <sessionId> \
 
 toani sandbox bootstrap-page <sessionId> \
   --mode rocket_loader \
+  --replay-lifecycle-events true \
   --wait-selector 'input[name=email]' \
   --wait-timeout-ms 15000
 
@@ -479,7 +487,10 @@ toani sandbox terminate <sessionId>
   - 修复：把 secret 消费改成顶层 `fill.value` 这类受控操作；脚本 binding 只传普通字符串
 
 - 错误：`bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported`
-  - 修复：改用 `--script-selectors`、`--include-plain-scripts`、`--wait-selector`、`--wait-timeout-ms` 这些受控字段
+  - 修复：改用 `--script-selectors`、`--include-plain-scripts`、`--replay-lifecycle-events`、`--wait-selector`、`--wait-timeout-ms` 这些受控字段
+
+- 错误：`bootstrap_failed: selector_not_found: ...`
+  - 修复：先看错误里的 `discovered_scripts`、`reinjected_scripts`、`ready_state`。兼容性一般的页面优先加 `--replay-lifecycle-events true`；如果 `discovered_scripts=0`，收紧或调整 `--script-selectors`
 
 - 错误：`browser runtime closed without response`、`lightpanda`、`puppeteer-core`、`CDP`、`nsjail` 相关报错
   - 修复：这是远端 Lightpanda 运行时或隔离策略问题，不是本地 CLI 浏览器问题；保留 `operationId`，执行 `toani sandbox get-operation <operationId>`，再把 session、operation、base URL 和报错交给后端排查
