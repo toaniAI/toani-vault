@@ -91,6 +91,7 @@ struct BootstrapPageRequest {
     mode: String,
     script_selectors: Vec<String>,
     include_plain_scripts: bool,
+    replay_lifecycle_events: bool,
     wait_selector: Option<String>,
     wait_timeout_ms: u64,
 }
@@ -387,6 +388,7 @@ impl ActiveNsjailSession {
                 "mode"
                     | "script_selectors"
                     | "include_plain_scripts"
+                    | "replay_lifecycle_events"
                     | "wait_selector"
                     | "wait_timeout_ms"
             ) {
@@ -422,6 +424,8 @@ impl ActiveNsjailSession {
 
         let script_selectors = Self::optional_string_array(parameters, "script_selectors")?;
         let include_plain_scripts = Self::optional_bool(parameters, "include_plain_scripts", false);
+        let replay_lifecycle_events =
+            Self::optional_bool(parameters, "replay_lifecycle_events", false);
         let wait_selector = Self::optional_non_empty_string(parameters, "wait_selector")?;
         let wait_timeout_ms = parameters
             .get("wait_timeout_ms")
@@ -444,6 +448,7 @@ impl ActiveNsjailSession {
             mode,
             script_selectors,
             include_plain_scripts,
+            replay_lifecycle_events,
             wait_selector,
             wait_timeout_ms,
         })
@@ -862,6 +867,7 @@ impl ActiveNsjailSession {
                         &request.mode,
                         &request.script_selectors,
                         request.include_plain_scripts,
+                        request.replay_lifecycle_events,
                         request.wait_selector.as_deref(),
                         request.wait_timeout_ms,
                     )
@@ -1559,6 +1565,7 @@ mod tests {
                 json!(["script[src][type$=\"-text/javascript\"]"]),
             ),
             ("include_plain_scripts".to_string(), Value::Bool(false)),
+            ("replay_lifecycle_events".to_string(), Value::Bool(true)),
             (
                 "wait_selector".to_string(),
                 Value::String("input[name=email]".to_string()),
@@ -1580,6 +1587,7 @@ mod tests {
         assert_eq!(request.wait_selector.as_deref(), Some("input[name=email]"));
         assert_eq!(request.wait_timeout_ms, 30_000);
         assert!(!request.include_plain_scripts);
+        assert!(request.replay_lifecycle_events);
     }
 
     #[test]

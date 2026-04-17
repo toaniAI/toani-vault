@@ -244,6 +244,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
   }
 
   const includePlainScripts = parameters?.include_plain_scripts === true;
+  const replayLifecycleEvents = parameters?.replay_lifecycle_events === true;
   const scriptSelectors =
     rawSelectors && rawSelectors.length > 0
       ? rawSelectors
@@ -364,13 +365,33 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
     }
   }
 
+  if (replayLifecycleEvents) {
+    await currentPage.evaluate(() => {
+      document.dispatchEvent(new Event('readystatechange'));
+      document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true, cancelable: true }));
+      window.dispatchEvent(new Event('load'));
+      window.dispatchEvent(new Event('pageshow'));
+    });
+  }
+
   let waitSatisfied = true;
   const waitSelector = parameters?.wait_selector;
   if (typeof waitSelector === 'string' && waitSelector.trim()) {
     try {
       await currentPage.waitForSelector(waitSelector, { timeout: waitTimeoutMs });
     } catch (error) {
-      throw new Error(`bootstrap_failed: selector_not_found: ${waitSelector.trim()}`);
+      const pageDiagnostics = await currentPage.evaluate(selector => {
+        return {
+          readyState: document.readyState,
+          bodyPresent: !!document.body,
+          selectorExists: !!document.querySelector(selector),
+        };
+      }, waitSelector.trim());
+      const title = await currentPage.title().catch(() => '');
+      throw new Error(
+        `bootstrap_failed: selector_not_found: ${waitSelector.trim()} ` +
+          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, selector_exists=${pageDiagnostics.selectorExists})`
+      );
     }
   }
 
@@ -386,6 +407,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
         discovered_scripts: scriptPlan.descriptors.length,
         reinjected_scripts: injectedScripts.length,
         include_plain_scripts: includePlainScripts,
+        replay_lifecycle_events: replayLifecycleEvents,
       },
     },
   };

@@ -190,6 +190,8 @@ describe("runSandbox", () => {
       '["script[src][type$=\\"-text/javascript\\"]"]',
       "--include-plain-scripts",
       "false",
+      "--replay-lifecycle-events",
+      "true",
       "--wait-selector",
       'input[name="email"]',
       "--wait-timeout-ms",
@@ -200,6 +202,7 @@ describe("runSandbox", () => {
       mode: "rocket_loader",
       scriptSelectors: ['script[src][type$="-text/javascript"]'],
       includePlainScripts: false,
+      replayLifecycleEvents: true,
       waitSelector: 'input[name="email"]',
       waitTimeoutMs: 15000,
     });

@@ -72,6 +72,14 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page must surface selector wait failures with a clear bootstrap_failed error"
     );
     assert!(
+        source.contains("DOMContentLoaded"),
+        "bootstrap_page should be able to replay lifecycle events for late-mounted apps"
+    );
+    assert!(
+        source.contains("window.dispatchEvent(new Event('load'))"),
+        "bootstrap_page should support replaying the load event when requested"
+    );
+    assert!(
         !source.contains("injected.text"),
         "bootstrap_page must not replay inline script text"
     );

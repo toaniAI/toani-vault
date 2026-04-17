@@ -760,6 +760,7 @@ describe("SandboxService", () => {
         mode: "rocket_loader",
         scriptSelectors: ['script[src][type$="-text/javascript"]'],
         includePlainScripts: false,
+        replayLifecycleEvents: true,
         waitSelector: 'input[name="email"]',
         waitTimeoutMs: 12000,
       });
@@ -781,6 +782,7 @@ describe("SandboxService", () => {
             mode: "rocket_loader",
             script_selectors: ['script[src][type$="-text/javascript"]'],
             include_plain_scripts: false,
+            replay_lifecycle_events: true,
             wait_selector: 'input[name="email"]',
             wait_timeout_ms: 12000,
           },

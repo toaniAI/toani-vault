@@ -952,6 +952,8 @@ export interface BootstrapPageOptions {
   scriptSelectors?: string[];
   /** Whether to include plain text/javascript external scripts in addition to rewritten ones. */
   includePlainScripts?: boolean;
+  /** Whether to replay DOM lifecycle events after bundle reinjection for late-mounted apps. */
+  replayLifecycleEvents?: boolean;
   /** Optional selector to wait for after injection completes. */
   waitSelector?: string;
   /** Wait timeout in milliseconds. Defaults to 30000 on the backend. */

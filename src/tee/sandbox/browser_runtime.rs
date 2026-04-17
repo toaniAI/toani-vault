@@ -238,6 +238,7 @@ impl SandboxBrowserRuntime {
         mode: &str,
         script_selectors: &[String],
         include_plain_scripts: bool,
+        replay_lifecycle_events: bool,
         wait_selector: Option<&str>,
         wait_timeout_ms: u64,
     ) -> Result<Value, SandboxError> {
@@ -249,6 +250,7 @@ impl SandboxBrowserRuntime {
                     "mode": mode,
                     "script_selectors": script_selectors,
                     "include_plain_scripts": include_plain_scripts,
+                    "replay_lifecycle_events": replay_lifecycle_events,
                     "wait_selector": wait_selector,
                     "wait_timeout_ms": wait_timeout_ms,
                 },

@@ -122,13 +122,13 @@ export async function runSandbox(
       const sessionId = resolveSessionId(options);
       if (!sessionId) {
         throw new Error(
-          "Usage: toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]",
+          "Usage: toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--replay-lifecycle-events true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]",
         );
       }
       const mode = requireArg(
         options,
         "mode",
-        "Usage: toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]",
+        "Usage: toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--replay-lifecycle-events true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]",
       );
       if (mode !== "rocket_loader") {
         throw new Error(
@@ -151,6 +151,9 @@ export async function runSandbox(
       const includePlainScripts = parseBooleanOption(
         options["include-plain-scripts"],
       );
+      const replayLifecycleEvents = parseBooleanOption(
+        options["replay-lifecycle-events"],
+      );
       const waitTimeoutMs = parseNumberOption(
         options["wait-timeout-ms"],
         "wait-timeout-ms",
@@ -159,6 +162,7 @@ export async function runSandbox(
         mode,
         scriptSelectors,
         includePlainScripts,
+        replayLifecycleEvents,
         waitSelector: options["wait-selector"] as string | undefined,
         waitTimeoutMs,
       });

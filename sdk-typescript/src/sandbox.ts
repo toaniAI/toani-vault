@@ -694,6 +694,7 @@ export class SandboxService {
           mode: request.mode ?? "rocket_loader",
           script_selectors: request.scriptSelectors,
           include_plain_scripts: request.includePlainScripts,
+          replay_lifecycle_events: request.replayLifecycleEvents,
           wait_selector: request.waitSelector,
           wait_timeout_ms: request.waitTimeoutMs,
         },
