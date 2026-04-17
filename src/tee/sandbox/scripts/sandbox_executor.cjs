@@ -11,6 +11,7 @@ let lightpandaProcess = null;
 const LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS_ENV = 'LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS';
 const DEFAULT_LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS = 60;
 const DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS = ['script[src][type$="-text/javascript"]'];
+const DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS = 5000;
 
 function reply(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -249,6 +250,63 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
     rawSelectors && rawSelectors.length > 0
       ? rawSelectors
       : DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS;
+  const bootstrapDiscoveryTimeoutMs = Math.min(
+    waitTimeoutMs,
+    DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS
+  );
+
+  await currentPage
+    .waitForFunction(
+      ({ scriptSelectors, includePlainScripts }) => {
+        function isRocketLoaderScript(typeValue) {
+          if (typeof typeValue !== 'string') return false;
+          const normalized = typeValue.trim().toLowerCase();
+          return normalized.endsWith('-text/javascript') && normalized !== 'text/javascript';
+        }
+
+        function isPlainExecutableType(typeValue) {
+          if (typeof typeValue !== 'string') return false;
+          return typeValue.trim().toLowerCase() === 'text/javascript';
+        }
+
+        function matchesSelector(node) {
+          for (const selector of scriptSelectors) {
+            if (typeof selector !== 'string' || !selector.trim()) {
+              continue;
+            }
+            try {
+              if (node.matches(selector.trim())) {
+                return true;
+              }
+            } catch (error) {
+              throw new Error(`invalid_request: invalid script selector ${selector}`);
+            }
+          }
+          return false;
+        }
+
+        for (const node of document.querySelectorAll('script')) {
+          if (!(node instanceof HTMLScriptElement) || !node.src) {
+            continue;
+          }
+          if (!matchesSelector(node)) {
+            continue;
+          }
+
+          const originalType = node.getAttribute('type') || '';
+          const rocketLoader = isRocketLoaderScript(originalType);
+          const plainExecutable = isPlainExecutableType(originalType);
+          if (rocketLoader || (includePlainScripts && plainExecutable)) {
+            return true;
+          }
+        }
+
+        return document.readyState !== 'loading';
+      },
+      { timeout: bootstrapDiscoveryTimeoutMs },
+      { scriptSelectors, includePlainScripts }
+    )
+    .catch(() => {});
 
   const scriptPlan = await currentPage.evaluate(
     ({ scriptSelectors, includePlainScripts }) => {

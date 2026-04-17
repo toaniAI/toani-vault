@@ -56,8 +56,20 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page should keep a controlled default selector set"
     );
     assert!(
+        source.contains("DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS = 5000"),
+        "bootstrap_page should cap pre-scan discovery waits so bootstrap does not hang indefinitely"
+    );
+    assert!(
         source.contains("script[src][type$=\"-text/javascript\"]"),
         "bootstrap_page should target Rocket Loader style external scripts"
+    );
+    assert!(
+        source.contains(".waitForFunction("),
+        "bootstrap_page should wait briefly for the document to finish loading or expose matching scripts before scanning"
+    );
+    assert!(
+        source.contains("document.readyState !== 'loading'"),
+        "bootstrap_page should not immediately scan a partially parsed document"
     );
     assert!(
         source.contains("bootstrap_page mode must be rocket_loader"),
