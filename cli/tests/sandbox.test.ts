@@ -235,6 +235,27 @@ describe("runSandbox", () => {
     });
   });
 
+  it("prints bootstrap-page failures instead of throwing when the backend returns success false", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    sandboxMock.bootstrapPage.mockResolvedValue({
+      operationId: "op-bootstrap",
+      success: false,
+      error: "bootstrap_failed: selector_not_found",
+      executionTimeMs: 1,
+    });
+
+    await expect(
+      runSandbox(testConfig, [
+        "bootstrap-page",
+        "session-1",
+        "--mode",
+        "rocket_loader",
+      ]),
+    ).resolves.toBeUndefined();
+
+    expect(logSpy).toHaveBeenCalled();
+  });
+
   it("rejects raw params and bindings for bootstrap-page", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
 

@@ -132,7 +132,11 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    const rendered =
+      error instanceof Error
+        ? error.message || error.stack || error.name || "Unknown CLI error"
+        : String(error);
+    console.error(rendered);
     process.exit(1);
   });
 }

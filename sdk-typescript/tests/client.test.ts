@@ -279,6 +279,32 @@ describe("CredBridgeClient", () => {
       });
     });
 
+    it("应该解析后端顶层 error/message 格式的错误响应", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Map([["content-type", "application/json"]]),
+        json: async () => ({
+          success: false,
+          error: "not_found",
+          message: "Session not found",
+        }),
+      } as unknown as Response);
+
+      global.fetch = mockFetch;
+
+      const client = new CredBridgeClient({
+        baseUrl: mockBaseUrl,
+        token: mockToken,
+      });
+
+      await expect(client.get("/sandbox/sessions/missing")).rejects.toMatchObject({
+        code: CredBridgeErrorCode.NotFound,
+        statusCode: 404,
+        message: "Session not found",
+      });
+    });
+
     it("应该在超时时抛出 Timeout 错误", async () => {
       const abortError = new Error("The operation was aborted");
       abortError.name = "AbortError";

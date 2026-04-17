@@ -787,7 +787,7 @@ describe("SandboxService", () => {
             wait_timeout_ms: 12000,
           },
         },
-        undefined,
+        { timeout: 45000 },
       );
     });
   });

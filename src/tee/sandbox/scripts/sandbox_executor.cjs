@@ -23,6 +23,7 @@ const DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS = [
 const DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS = 5000;
 const DEFAULT_BOOTSTRAP_RESCAN_DELAY_MS = 250;
 const DEFAULT_BOOTSTRAP_SAMPLE_SCRIPT_LIMIT = 5;
+const DEFAULT_BOOTSTRAP_SCRIPT_LOAD_TIMEOUT_MS = 30000;
 
 function reply(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -436,7 +437,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
 
   const injectedScripts = [];
   for (const descriptor of scriptPlan.descriptors) {
-    const result = await currentPage.evaluate(async currentDescriptor => {
+    const result = await currentPage.evaluate(currentDescriptor => {
       const original = document.querySelector(
         `script[data-credbridge-bootstrap-id="${currentDescriptor.marker}"]`
       );
@@ -450,6 +451,13 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       }
 
       const nextSibling = original.nextSibling;
+      const existingInjected = document.querySelector(
+        `script[data-credbridge-bootstrap-source="${currentDescriptor.marker}"]`
+      );
+      if (existingInjected instanceof HTMLScriptElement) {
+        existingInjected.remove();
+      }
+
       const injected = document.createElement('script');
       injected.src = currentDescriptor.src;
       if (typeof currentDescriptor.injectedType === 'string' && currentDescriptor.injectedType) {
@@ -471,29 +479,82 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
         injected.removeAttribute('referrerpolicy');
       }
       injected.setAttribute('data-credbridge-bootstrap-source', currentDescriptor.marker);
-
-      await new Promise((resolve, reject) => {
-        injected.addEventListener('load', () => resolve(), { once: true });
-        injected.addEventListener(
-          'error',
-          () =>
-            reject(new Error(`bootstrap_failed: failed_to_load_script:${currentDescriptor.src}`)),
-          { once: true }
+      injected.setAttribute('data-credbridge-bootstrap-status', 'pending');
+      injected.addEventListener('load', () => {
+        injected.setAttribute('data-credbridge-bootstrap-status', 'loaded');
+      });
+      injected.addEventListener('error', () => {
+        injected.setAttribute('data-credbridge-bootstrap-status', 'error');
+        injected.setAttribute(
+          'data-credbridge-bootstrap-error',
+          `bootstrap_failed: failed_to_load_script:${currentDescriptor.src}`
         );
-
-        if (nextSibling) {
-          parent.insertBefore(injected, nextSibling);
-        } else {
-          parent.appendChild(injected);
-        }
       });
 
-      return { skipped: false, src: currentDescriptor.src };
+      if (nextSibling) {
+        parent.insertBefore(injected, nextSibling);
+      } else {
+        parent.appendChild(injected);
+      }
+
+      return {
+        skipped: false,
+        src: currentDescriptor.src,
+        marker: currentDescriptor.marker,
+      };
     }, descriptor);
 
-    if (!result.skipped) {
-      injectedScripts.push(result.src);
+    if (result.skipped) {
+      continue;
     }
+
+    await currentPage.waitForFunction(
+      currentMarker => {
+        const injected = document.querySelector(
+          `script[data-credbridge-bootstrap-source="${currentMarker}"]`
+        );
+        if (!(injected instanceof HTMLScriptElement)) {
+          return 'missing';
+        }
+
+        const status = injected.getAttribute('data-credbridge-bootstrap-status');
+        if (status === 'loaded' || status === 'error') {
+          return status;
+        }
+
+        return false;
+      },
+      {
+        timeout: Math.max(waitTimeoutMs, DEFAULT_BOOTSTRAP_SCRIPT_LOAD_TIMEOUT_MS),
+      },
+      result.marker
+    );
+
+    const injectedStatus = await currentPage.evaluate(currentMarker => {
+      const injected = document.querySelector(
+        `script[data-credbridge-bootstrap-source="${currentMarker}"]`
+      );
+      if (!(injected instanceof HTMLScriptElement)) {
+        return {
+          status: 'missing',
+          error: 'bootstrap_failed: reinjected_script_missing',
+        };
+      }
+
+      return {
+        status: injected.getAttribute('data-credbridge-bootstrap-status'),
+        error: injected.getAttribute('data-credbridge-bootstrap-error'),
+      };
+    }, result.marker);
+
+    if (injectedStatus.status !== 'loaded') {
+      throw new Error(
+        injectedStatus.error ||
+          `bootstrap_failed: reinjected_script_status:${injectedStatus.status || 'unknown'}`
+      );
+    }
+
+    injectedScripts.push(result.src);
   }
 
   if (replayLifecycleEvents) {

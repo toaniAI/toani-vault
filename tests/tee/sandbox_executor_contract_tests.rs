@@ -136,6 +136,14 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page should preserve referrerpolicy during reinjection"
     );
     assert!(
+        source.contains("data-credbridge-bootstrap-status"),
+        "bootstrap_page should track reinjected script load state outside the initial evaluate call"
+    );
+    assert!(
+        source.contains("waitForFunction("),
+        "bootstrap_page should wait for reinjected script status using a bounded external poll"
+    );
+    assert!(
         source.contains("bootstrap_failed: selector_not_found:"),
         "bootstrap_page must surface selector wait failures with a clear bootstrap_failed error"
     );

@@ -85,6 +85,50 @@ function parseErrorCode(
   }
 }
 
+function extractErrorResponse(
+  responseData: unknown,
+): { code?: string; message: string; details?: Record<string, unknown> } {
+  if (typeof responseData === "string") {
+    return { code: "unknown", message: responseData };
+  }
+
+  if (typeof responseData !== "object" || responseData === null) {
+    return { code: "unknown", message: "Unknown error" };
+  }
+
+  const payload = responseData as Record<string, unknown>;
+  const nestedError =
+    typeof payload.error === "object" && payload.error !== null
+      ? (payload.error as Record<string, unknown>)
+      : undefined;
+
+  const topLevelMessage =
+    typeof payload.message === "string" && payload.message.trim()
+      ? payload.message
+      : undefined;
+  const nestedMessage =
+    typeof nestedError?.message === "string" && nestedError.message.trim()
+      ? nestedError.message
+      : undefined;
+  const stringErrorCode =
+    typeof payload.error === "string" && payload.error.trim()
+      ? payload.error
+      : undefined;
+  const nestedCode =
+    typeof nestedError?.code === "string" && nestedError.code.trim()
+      ? nestedError.code
+      : undefined;
+
+  return {
+    code: nestedCode ?? stringErrorCode ?? "unknown",
+    message: topLevelMessage ?? nestedMessage ?? "Unknown error",
+    details:
+      nestedError && typeof nestedError.details === "object"
+        ? (nestedError.details as Record<string, unknown>)
+        : undefined,
+  };
+}
+
 /**
  * CredBridge HTTP 客户端
  */
@@ -360,23 +404,7 @@ export class CredBridgeClient {
 
       // 处理错误响应
       if (!response.ok) {
-        // 尝试解析错误响应
-        const errorData =
-          typeof responseData === "object" &&
-          responseData !== null &&
-          "error" in responseData
-            ? (
-                responseData as {
-                  error: { code: string; message: string; details?: unknown };
-                }
-              ).error
-            : {
-                code: "unknown",
-                message:
-                  typeof responseData === "string"
-                    ? responseData
-                    : "Unknown error",
-              };
+        const errorData = extractErrorResponse(responseData);
 
         const errorCode = parseErrorCode(response.status, errorData.code);
 

@@ -686,6 +686,12 @@ export class SandboxService {
     request: BootstrapPageOptions = {},
     options?: RequestOptions,
   ): Promise<BootstrapPageResponse> {
+    const requestTimeout =
+      options?.timeout ??
+      Math.max(
+        request.waitTimeoutMs !== undefined ? request.waitTimeoutMs + 15000 : 0,
+        45000,
+      );
     const response = await this.executeOperation(
       sessionId,
       {
@@ -699,7 +705,7 @@ export class SandboxService {
           wait_timeout_ms: request.waitTimeoutMs,
         },
       },
-      options,
+      { ...options, timeout: requestTimeout },
     );
 
     return mapBootstrapPageResponse(response);
