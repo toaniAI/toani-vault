@@ -107,7 +107,7 @@ impl SandboxBrowserRuntime {
         let mut child = sandbox
             .spawn_scoped_process(
                 vec![node_binary, script_path.to_string_lossy().to_string()],
-                runtime_dir,
+                runtime_dir.clone(),
                 env,
                 true,
                 extra_mounts,
@@ -136,7 +136,7 @@ impl SandboxBrowserRuntime {
         };
 
         info!(
-            sandbox_id = %sandbox.id(),
+            sandbox_id = %sandbox.id,
             work_dir = %work_dir.display(),
             runtime_dir = %runtime_dir.display(),
             profile_dir = %profile_dir.display(),
@@ -287,19 +287,19 @@ impl SandboxBrowserRuntime {
             elapsed_ms = started_at.elapsed().as_millis(),
             discovered_scripts = diagnostics
                 .get("discovered_scripts")
-                .and_then(Value::as_u64)
+                .and_then(|value| value.as_u64())
                 .unwrap_or(0),
             reinjected_scripts = diagnostics
                 .get("reinjected_scripts")
-                .and_then(Value::as_u64)
+                .and_then(|value| value.as_u64())
                 .unwrap_or(0),
             ready_state_before_scan = diagnostics
                 .get("ready_state_before_scan")
-                .and_then(Value::as_str)
+                .and_then(|value| value.as_str())
                 .unwrap_or(""),
             ready_state_after_injection = diagnostics
                 .get("ready_state_after_injection")
-                .and_then(Value::as_str)
+                .and_then(|value| value.as_str())
                 .unwrap_or(""),
             "browser runtime bootstrap_page completed"
         );
@@ -441,14 +441,14 @@ impl SandboxBrowserRuntime {
                 elapsed_ms = started_at.elapsed().as_millis(),
                 error = response
                     .get("error")
-                    .and_then(Value::as_str)
+                    .and_then(|value| value.as_str())
                     .unwrap_or("browser runtime error"),
                 "browser runtime returned error response"
             );
             return Err(SandboxError::Other(
                 response
                     .get("error")
-                    .and_then(Value::as_str)
+                    .and_then(|value| value.as_str())
                     .unwrap_or("browser runtime error")
                     .to_string(),
             ));

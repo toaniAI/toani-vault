@@ -893,19 +893,19 @@ impl ActiveNsjailSession {
                     operation_id = %operation.operation_id,
                     discovered_scripts = diagnostics
                         .get("discovered_scripts")
-                        .and_then(Value::as_u64)
+                        .and_then(|value| value.as_u64())
                         .unwrap_or(0),
                     reinjected_scripts = diagnostics
                         .get("reinjected_scripts")
-                        .and_then(Value::as_u64)
+                        .and_then(|value| value.as_u64())
                         .unwrap_or(0),
                     ready_state_before_scan = diagnostics
                         .get("ready_state_before_scan")
-                        .and_then(Value::as_str)
+                        .and_then(|value| value.as_str())
                         .unwrap_or(""),
                     ready_state_after_injection = diagnostics
                         .get("ready_state_after_injection")
-                        .and_then(Value::as_str)
+                        .and_then(|value| value.as_str())
                         .unwrap_or(""),
                     "session bootstrap_page returned"
                 );
