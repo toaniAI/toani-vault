@@ -41,6 +41,12 @@ docker/
 
 `.drone.yml` 已经接入这两个基础镜像的构建与引用流程。
 
+另外，CI 中的 `kaniko` 构建已启用远端 layer cache：
+
+- 基础镜像 manifest 检查同时接受 OCI 与 Docker schema，避免镜像已存在却被误判为 `404 not found`。
+- `builder`、`runtime`、业务镜像构建均启用 `--cache=true`，后续重复构建可直接复用远端缓存层。
+- 基础镜像是否需要重建，和 `kaniko` layer cache 是否可命中，是两套独立机制。
+
 ## 快速开始
 
 ### 1. 初始化环境
