@@ -60,16 +60,48 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page should cap pre-scan discovery waits so bootstrap does not hang indefinitely"
     );
     assert!(
-        source.contains("script[src][type$=\"-text/javascript\"]"),
-        "bootstrap_page should target Rocket Loader style external scripts"
+        source.contains("script[src]"),
+        "bootstrap_page should broadly inspect external scripts before type filtering"
     );
     assert!(
-        source.contains(".waitForFunction("),
-        "bootstrap_page should wait briefly for the document to finish loading or expose matching scripts before scanning"
+        source.contains("script[src][type$=\"-text/javascript\"]"),
+        "bootstrap_page should still target Rocket Loader style external scripts"
+    );
+    assert!(
+        source.contains("script[src][type=\"text/javascript\"]"),
+        "bootstrap_page should also discover standard external scripts"
+    );
+    assert!(
+        source.contains("script[src][type=\"application/javascript\"]"),
+        "bootstrap_page should also discover application/javascript external scripts"
+    );
+    assert!(
+        source.contains("script[src][type=\"module\"]"),
+        "bootstrap_page should also discover module scripts"
+    );
+    assert!(
+        source.contains("script[src][defer]"),
+        "bootstrap_page should discover deferred external scripts"
+    );
+    assert!(
+        source.contains("script[src][nomodule]"),
+        "bootstrap_page should discover nomodule scripts"
+    );
+    assert!(
+        source.contains("script[src]:not([type])"),
+        "bootstrap_page should discover external scripts without a type attribute"
+    );
+    assert!(
+        source.contains("waitForFunction(() => !!document.body"),
+        "bootstrap_page should wait for document.body before scanning"
     );
     assert!(
         source.contains("document.readyState !== 'loading'"),
         "bootstrap_page should not immediately scan a partially parsed document"
+    );
+    assert!(
+        source.contains("DEFAULT_BOOTSTRAP_RESCAN_DELAY_MS = 250"),
+        "bootstrap_page should do a controlled delayed rescan when the first scan finds nothing"
     );
     assert!(
         source.contains("bootstrap_page mode must be rocket_loader"),
@@ -80,8 +112,48 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page must recreate external script tags instead of executing raw JS"
     );
     assert!(
+        source.contains("injected.defer = currentDescriptor.defer === true"),
+        "bootstrap_page should preserve defer during reinjection"
+    );
+    assert!(
+        source.contains("injected.noModule = currentDescriptor.noModule === true"),
+        "bootstrap_page should preserve nomodule during reinjection"
+    );
+    assert!(
+        source.contains("injected.crossOrigin = currentDescriptor.crossOrigin"),
+        "bootstrap_page should preserve crossorigin during reinjection"
+    );
+    assert!(
+        source.contains("injected.referrerPolicy = currentDescriptor.referrerPolicy"),
+        "bootstrap_page should preserve referrerpolicy during reinjection"
+    );
+    assert!(
         source.contains("bootstrap_failed: selector_not_found:"),
         "bootstrap_page must surface selector wait failures with a clear bootstrap_failed error"
+    );
+    assert!(
+        source.contains("ready_state_before_scan"),
+        "bootstrap_page diagnostics should include the ready state seen before script discovery"
+    );
+    assert!(
+        source.contains("ready_state_after_injection"),
+        "bootstrap_page diagnostics should include the ready state after reinjection"
+    );
+    assert!(
+        source.contains("selectors: scriptSelectors"),
+        "bootstrap_page diagnostics should preserve the requested selector list for compatibility"
+    );
+    assert!(
+        source.contains("matched_selectors"),
+        "bootstrap_page diagnostics should report which selectors matched"
+    );
+    assert!(
+        source.contains("sample_script_descriptors"),
+        "bootstrap_page diagnostics should expose truncated script descriptor samples"
+    );
+    assert!(
+        source.contains("selector_exists_at_failure"),
+        "bootstrap_page failures should report selector existence at the time of timeout"
     );
     assert!(
         source.contains("DOMContentLoaded"),

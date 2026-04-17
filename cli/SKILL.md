@@ -19,6 +19,7 @@
 5. Rocket Loader 一类页面要先显式执行 `bootstrap-page`，再 `wait` / `fill` / `click`。
 6. 需要页面状态时，优先用 `get-session`、`get-operation`、`export-dom`、`execute_script`。
 7. 完成后要 `terminate`，不要留下长期活跃会话。
+8. Dashboard / UI 是凭证和 token 的创建入口；CLI 只消费 `credential_id` 和 bearer token，不负责创建它们。
 
 ## 当前真实能力面
 
@@ -39,6 +40,12 @@
 - `service-accounts`
 - `audit`
 
+## Dashboard / UI 责任边界
+
+- 凭证在 Dashboard 的 Credentials 页面创建
+- bearer token 在 Dashboard 的 Tokens 页面签发
+- CLI 只读取和消费这些产物，不负责创建凭证或 token
+
 ## 全局参数与优先级
 
 全局参数：
@@ -58,9 +65,9 @@ Base URL 优先级：
 Token 优先级：
 
 1. `--token`
-2. `config.token`
-3. `TOANI_VAULT_TOKEN`
-4. `CREDBRIDGE_TOKEN`
+2. `TOANI_VAULT_TOKEN`
+3. `CREDBRIDGE_TOKEN`
+4. `config.token`
 
 注意：
 
@@ -78,6 +85,7 @@ toani sandbox execute --help
 ```
 
 如果用户只给了“凭证名”但没给 `credential_id`，先核对当前环境和 token，再请求 CredBridge API 或控制面查真实凭证 ID，不要猜。
+如果这个凭证要用于 secret-backed login，优先在 Dashboard UI 里确认它对应的 `credential_id`，再把该 ID 传给 `create-session`。
 
 ## Sandbox 命令表
 
@@ -186,6 +194,8 @@ toani sandbox stats
 - `credential_id` 只是凭证引用，不是明文
 - 正确路径不是“先在本地解密再传进浏览器”，而是“先绑定 session，再在 TEE 内通过受控宿主操作消费”
 - `bootstrap-page` 只做受控 bundle 重放，不消费凭证，也不把 secret 暴露给脚本
+- 省略 `--script-selectors` 时，后端会使用内建的通用外部脚本发现规则；`include_plain_scripts` 仍然只控制是否允许重放非 Rocket Loader 的普通可执行脚本
+- secret-backed login 的会话创建要显式绑定 `credential_id`；不要只靠 `service_id` 去猜凭证
 
 ### `fill` 中引用凭证
 
@@ -277,7 +287,7 @@ toani sandbox create-session \
   --start-url "https://target-site.com/login"
 ```
 
-### 示例 3：创建带凭证的 sandbox 会话
+### 示例 3：创建带凭证绑定的 sandbox 会话
 
 ```bash
 toani sandbox create-session \
@@ -408,12 +418,12 @@ toani sandbox get-operation <operationId>
 toani sandbox get-session <sessionId>
 ```
 
-### 示例 19：Rocket Loader 登录链路
+### 示例 19：test-web.zk.me 登录链路
 
 ```bash
 toani sandbox execute <sessionId> \
   --operation-type navigate \
-  --params '{"url":"https://target-site.com/login"}'
+  --params '{"url":"https://test-web.zk.me/login"}'
 
 toani sandbox bootstrap-page <sessionId> \
   --mode rocket_loader \
@@ -437,6 +447,22 @@ toani sandbox execute <sessionId> \
   --operation-type click \
   --params '{"selector":"button[type=submit]"}'
 ```
+
+### 推荐的 test-web.zk.me 命令链
+
+当你要验证 secret-backed login 时，优先按这个顺序跑：
+
+1. 在 Dashboard UI 里创建凭证并确认 `credential_id`
+2. 在 Dashboard UI 里生成 bearer token
+3. `toani sandbox create-session --service-id <service> --credential-id <credentialId> --original-intent "Sign in to test-web.zk.me" --start-url https://test-web.zk.me/login`
+4. `toani sandbox execute <sessionId> --operation-type navigate --params '{"url":"https://test-web.zk.me/login"}'`
+5. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader --replay-lifecycle-events true --wait-selector 'input[name=email]' --wait-timeout-ms 15000`
+6. `toani sandbox execute <sessionId> --operation-type wait --params '{"selector":"input[name=email]","timeout_ms":15000}'`
+7. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'`
+8. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'`
+9. `toani sandbox execute <sessionId> --operation-type click --params '{"selector":"button[type=submit]"}'`
+10. `toani sandbox get-session <sessionId>`
+11. `toani sandbox terminate <sessionId>`
 
 ### 示例 20：结束会话
 
@@ -462,8 +488,17 @@ toani sandbox terminate <sessionId>
 - 错误：`Unknown command group`
   - 修复：先执行 `toani --help`，不要使用旧文档里的未发布命令组
 
+- 错误：`未检测到 CLI 可用的 API Token`
+  - 修复：先在 Dashboard UI 里创建或复制 token，然后执行 `toani config init --url <api-url> --token <BEARER_TOKEN>`，或者设置 `TOANI_VAULT_TOKEN`
+
 - 错误：`Usage: toani sandbox create-session ...` 或缺少 `--service-id`、`--original-intent`
   - 修复：`create-session` 这两个参数必填
+
+- 错误：`missing required field: credential_id or service_id`
+  - 修复：如果是 secret-backed login，优先显式传 `--credential-id`；如果只是让后端按服务解析，可以传 `--service-id`
+
+- 错误：`credential_id does not match service_id '<service>'`
+  - 修复：当前绑定的 credential 不属于这个 service。回到 Dashboard UI 重新确认凭证所属服务，再重试
 
 - 错误：`Usage: toani sandbox execute <sessionId> --operation-type <type>`
   - 修复：`execute` 必须显式传 `sessionId` 和 `--operation-type`
@@ -473,9 +508,6 @@ toani sandbox terminate <sessionId>
 
 - 错误：`Invalid JSON for --params`
   - 修复：`--params` 必须是合法 JSON 字符串，推荐单引号包裹整段 JSON
-
-- 错误：401/403
-  - 修复：检查 `--token`、环境变量和 `~/.toani/config.json` 的优先级覆盖关系
 
 - 错误：连到错误环境
   - 修复：显式传 `--base-url`，再用 `toani config show` 确认
@@ -490,10 +522,16 @@ toani sandbox terminate <sessionId>
   - 修复：改用 `--script-selectors`、`--include-plain-scripts`、`--replay-lifecycle-events`、`--wait-selector`、`--wait-timeout-ms` 这些受控字段
 
 - 错误：`bootstrap_failed: selector_not_found: ...`
-  - 修复：先看错误里的 `discovered_scripts`、`reinjected_scripts`、`ready_state`。兼容性一般的页面优先加 `--replay-lifecycle-events true`；如果 `discovered_scripts=0`，收紧或调整 `--script-selectors`
+  - 修复：先看错误里的 `discovered_scripts`、`reinjected_scripts`、`ready_state_before_scan`、`ready_state_after_injection`、`ready_state`、`body_present`、`matched_selectors`、`sample_script_descriptors`、`selector_exists_at_failure`。兼容性一般的页面优先加 `--replay-lifecycle-events true`；如果 `discovered_scripts=0`，再结合 `matched_selectors` / `sample_script_descriptors` 判断是选择器没命中还是 `include_plain_scripts` 把普通脚本挡掉了
 
 - 错误：`browser runtime closed without response`、`lightpanda`、`puppeteer-core`、`CDP`、`nsjail` 相关报错
   - 修复：这是远端 Lightpanda 运行时或隔离策略问题，不是本地 CLI 浏览器问题；保留 `operationId`，执行 `toani sandbox get-operation <operationId>`，再把 session、operation、base URL 和报错交给后端排查
+
+- 错误：`execute_script.bindings` 中传了 `{"$credential":"..."}`
+  - 修复：把 secret 消费改成顶层 `fill.value` 这类受控操作；脚本 binding 只传普通字符串
+
+- 错误：401 / 403
+  - 修复：先确认 token 是否来自 Dashboard UI，再检查 `--token`、环境变量和 `~/.toani/config.json` 的覆盖顺序；如果连错环境，再核对 `--base-url`
 
 ## 安全注意事项
 

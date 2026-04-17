@@ -208,6 +208,33 @@ describe("runSandbox", () => {
     });
   });
 
+  it("leaves bootstrap script discovery defaults to the backend when selectors are omitted", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    sandboxMock.bootstrapPage.mockResolvedValue({
+      operationId: "op-bootstrap",
+      status: "success",
+      executionTimeMs: 1,
+    });
+
+    await runSandbox(testConfig, [
+      "bootstrap-page",
+      "session-1",
+      "--mode",
+      "rocket_loader",
+      "--include-plain-scripts",
+      "true",
+    ]);
+
+    expect(sandboxMock.bootstrapPage).toHaveBeenCalledWith("session-1", {
+      mode: "rocket_loader",
+      scriptSelectors: undefined,
+      includePlainScripts: true,
+      replayLifecycleEvents: undefined,
+      waitSelector: undefined,
+      waitTimeoutMs: undefined,
+    });
+  });
+
   it("rejects raw params and bindings for bootstrap-page", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
 

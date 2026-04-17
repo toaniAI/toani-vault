@@ -10,8 +10,19 @@ let lightpandaProcess = null;
 
 const LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS_ENV = 'LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS';
 const DEFAULT_LIGHTPANDA_CDP_IDLE_TIMEOUT_SECS = 60;
-const DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS = ['script[src][type$="-text/javascript"]'];
+const DEFAULT_BOOTSTRAP_SCRIPT_SELECTORS = [
+  'script[src]',
+  'script[src][type$="-text/javascript"]',
+  'script[src][type="text/javascript"]',
+  'script[src][type="application/javascript"]',
+  'script[src][type="module"]',
+  'script[src][defer]',
+  'script[src][nomodule]',
+  'script[src]:not([type])',
+];
 const DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS = 5000;
+const DEFAULT_BOOTSTRAP_RESCAN_DELAY_MS = 250;
+const DEFAULT_BOOTSTRAP_SAMPLE_SCRIPT_LIMIT = 5;
 
 function reply(payload) {
   process.stdout.write(`${JSON.stringify(payload)}\n`);
@@ -255,126 +266,149 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
     DEFAULT_BOOTSTRAP_DISCOVERY_TIMEOUT_MS
   );
 
+  await currentPage.waitForFunction(() => !!document.body, {
+    timeout: bootstrapDiscoveryTimeoutMs,
+  });
+
   await currentPage
-    .waitForFunction(
-      ({ scriptSelectors, includePlainScripts }) => {
+    .waitForFunction(() => document.readyState !== 'loading', {
+      timeout: Math.max(1, Math.floor(bootstrapDiscoveryTimeoutMs / 2)),
+    })
+    .catch(() => {});
+
+  async function discoverScripts() {
+    return currentPage.evaluate(
+      ({ scriptSelectors, includePlainScripts, sampleLimit }) => {
+        function normalizeType(typeValue) {
+          if (typeof typeValue !== 'string') {
+            return '';
+          }
+          return typeValue.trim().toLowerCase();
+        }
+
         function isRocketLoaderScript(typeValue) {
-          if (typeof typeValue !== 'string') return false;
-          const normalized = typeValue.trim().toLowerCase();
+          const normalized = normalizeType(typeValue);
           return normalized.endsWith('-text/javascript') && normalized !== 'text/javascript';
         }
 
         function isPlainExecutableType(typeValue) {
-          if (typeof typeValue !== 'string') return false;
-          return typeValue.trim().toLowerCase() === 'text/javascript';
+          const normalized = normalizeType(typeValue);
+          return (
+            normalized === '' ||
+            normalized === 'text/javascript' ||
+            normalized === 'application/javascript' ||
+            normalized === 'module'
+          );
         }
 
-        function matchesSelector(node) {
+        function resolveInjectedType(typeValue, rocketLoader) {
+          if (rocketLoader) {
+            return 'text/javascript';
+          }
+          const normalized = normalizeType(typeValue);
+          return normalized || null;
+        }
+
+        function matchSelectors(node) {
+          const matches = [];
           for (const selector of scriptSelectors) {
             if (typeof selector !== 'string' || !selector.trim()) {
               continue;
             }
             try {
               if (node.matches(selector.trim())) {
-                return true;
+                matches.push(selector.trim());
               }
             } catch (error) {
               throw new Error(`invalid_request: invalid script selector ${selector}`);
             }
           }
-          return false;
+          return matches;
         }
+
+        const descriptors = [];
+        const sampleScriptDescriptors = [];
+        const matchedSelectors = new Set();
+        let nextIndex = 0;
 
         for (const node of document.querySelectorAll('script')) {
           if (!(node instanceof HTMLScriptElement) || !node.src) {
             continue;
           }
-          if (!matchesSelector(node)) {
+
+          const nodeMatchedSelectors = matchSelectors(node);
+          if (nodeMatchedSelectors.length === 0) {
             continue;
+          }
+          for (const selector of nodeMatchedSelectors) {
+            matchedSelectors.add(selector);
           }
 
           const originalType = node.getAttribute('type') || '';
           const rocketLoader = isRocketLoaderScript(originalType);
           const plainExecutable = isPlainExecutableType(originalType);
-          if (rocketLoader || (includePlainScripts && plainExecutable)) {
-            return true;
+          const included = rocketLoader || (includePlainScripts && plainExecutable);
+
+          if (sampleScriptDescriptors.length < sampleLimit) {
+            sampleScriptDescriptors.push({
+              src: node.src,
+              originalType,
+              injectedType: resolveInjectedType(originalType, rocketLoader),
+              rocketLoader,
+              plainExecutable,
+              included,
+              matchedSelectors: nodeMatchedSelectors,
+              defer: node.defer === true,
+              noModule: node.noModule === true,
+              crossOrigin: node.getAttribute('crossorigin'),
+              referrerPolicy: node.getAttribute('referrerpolicy'),
+            });
           }
-        }
 
-        return document.readyState !== 'loading';
-      },
-      { timeout: bootstrapDiscoveryTimeoutMs },
-      { scriptSelectors, includePlainScripts }
-    )
-    .catch(() => {});
-
-  const scriptPlan = await currentPage.evaluate(
-    ({ scriptSelectors, includePlainScripts }) => {
-      function isRocketLoaderScript(typeValue) {
-        if (typeof typeValue !== 'string') return false;
-        const normalized = typeValue.trim().toLowerCase();
-        return normalized.endsWith('-text/javascript') && normalized !== 'text/javascript';
-      }
-
-      function isPlainExecutableType(typeValue) {
-        if (typeof typeValue !== 'string') return false;
-        return typeValue.trim().toLowerCase() === 'text/javascript';
-      }
-
-      function matchesSelector(node) {
-        for (const selector of scriptSelectors) {
-          if (typeof selector !== 'string' || !selector.trim()) {
+          if (!included) {
             continue;
           }
-          try {
-            if (node.matches(selector.trim())) {
-              return true;
-            }
-          } catch (error) {
-            throw new Error(`invalid_request: invalid script selector ${selector}`);
-          }
+
+          const marker =
+            node.getAttribute('data-credbridge-bootstrap-id') || `credbridge-bootstrap-${nextIndex++}`;
+          node.setAttribute('data-credbridge-bootstrap-id', marker);
+
+          descriptors.push({
+            marker,
+            src: node.src,
+            originalType,
+            injectedType: resolveInjectedType(originalType, rocketLoader),
+            rocketLoader,
+            plainExecutable,
+            matchedSelectors: nodeMatchedSelectors,
+            async: node.async === true,
+            defer: node.defer === true,
+            noModule: node.noModule === true,
+            crossOrigin: node.getAttribute('crossorigin'),
+            referrerPolicy: node.getAttribute('referrerpolicy'),
+          });
         }
-        return false;
+
+        return {
+          matchedSelectors: Array.from(matchedSelectors),
+          descriptors,
+          sampleScriptDescriptors,
+        };
+      },
+      {
+        scriptSelectors,
+        includePlainScripts,
+        sampleLimit: DEFAULT_BOOTSTRAP_SAMPLE_SCRIPT_LIMIT,
       }
+    );
+  }
 
-      const descriptors = [];
-      let nextIndex = 0;
-
-      for (const node of document.querySelectorAll('script')) {
-        if (!(node instanceof HTMLScriptElement) || !node.src) {
-          continue;
-        }
-        if (!matchesSelector(node)) {
-          continue;
-        }
-
-        const originalType = node.getAttribute('type') || '';
-        const rocketLoader = isRocketLoaderScript(originalType);
-        const plainExecutable = isPlainExecutableType(originalType);
-        if (!rocketLoader && !(includePlainScripts && plainExecutable)) {
-          continue;
-        }
-
-        const marker =
-          node.getAttribute('data-credbridge-bootstrap-id') || `credbridge-bootstrap-${nextIndex++}`;
-        node.setAttribute('data-credbridge-bootstrap-id', marker);
-
-        descriptors.push({
-          marker,
-          src: node.src,
-          originalType,
-          rocketLoader,
-          plainExecutable,
-        });
-      }
-
-      return {
-        selectors: scriptSelectors,
-        descriptors,
-      };
-    },
-    { scriptSelectors, includePlainScripts }
-  );
+  const readyStateBeforeScan = await currentPage.evaluate(() => document.readyState);
+  let scriptPlan = await discoverScripts();
+  if (scriptPlan.descriptors.length === 0) {
+    await new Promise(resolve => setTimeout(resolve, DEFAULT_BOOTSTRAP_RESCAN_DELAY_MS));
+    scriptPlan = await discoverScripts();
+  }
 
   const injectedScripts = [];
   for (const descriptor of scriptPlan.descriptors) {
@@ -394,9 +428,24 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       const nextSibling = original.nextSibling;
       const injected = document.createElement('script');
       injected.src = currentDescriptor.src;
-      injected.type = 'text/javascript';
-      injected.async = false;
-      injected.defer = false;
+      if (typeof currentDescriptor.injectedType === 'string' && currentDescriptor.injectedType) {
+        injected.type = currentDescriptor.injectedType;
+      } else {
+        injected.removeAttribute('type');
+      }
+      injected.async = currentDescriptor.async === true;
+      injected.defer = currentDescriptor.defer === true;
+      injected.noModule = currentDescriptor.noModule === true;
+      if (typeof currentDescriptor.crossOrigin === 'string') {
+        injected.crossOrigin = currentDescriptor.crossOrigin;
+      } else {
+        injected.removeAttribute('crossorigin');
+      }
+      if (typeof currentDescriptor.referrerPolicy === 'string') {
+        injected.referrerPolicy = currentDescriptor.referrerPolicy;
+      } else {
+        injected.removeAttribute('referrerpolicy');
+      }
       injected.setAttribute('data-credbridge-bootstrap-source', currentDescriptor.marker);
 
       await new Promise((resolve, reject) => {
@@ -432,6 +481,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
     });
   }
 
+  const readyStateAfterInjection = await currentPage.evaluate(() => document.readyState);
   let waitSatisfied = true;
   const waitSelector = parameters?.wait_selector;
   if (typeof waitSelector === 'string' && waitSelector.trim()) {
@@ -448,7 +498,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       const title = await currentPage.title().catch(() => '');
       throw new Error(
         `bootstrap_failed: selector_not_found: ${waitSelector.trim()} ` +
-          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, selector_exists=${pageDiagnostics.selectorExists})`
+          `(url=${currentPage.url()}, title=${JSON.stringify(title)}, discovered_scripts=${scriptPlan.descriptors.length}, reinjected_scripts=${injectedScripts.length}, replay_lifecycle_events=${replayLifecycleEvents}, ready_state_before_scan=${readyStateBeforeScan}, ready_state_after_injection=${readyStateAfterInjection}, ready_state=${pageDiagnostics.readyState}, body_present=${pageDiagnostics.bodyPresent}, matched_selectors=${JSON.stringify(scriptPlan.matchedSelectors)}, sample_script_descriptors=${JSON.stringify(scriptPlan.sampleScriptDescriptors)}, selector_exists_at_failure=${pageDiagnostics.selectorExists})`
       );
     }
   }
@@ -461,9 +511,14 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
       wait_satisfied: waitSatisfied,
       diagnostics: {
         mode,
-        selectors: scriptPlan.selectors,
+        selectors: scriptSelectors,
+        matched_selectors: scriptPlan.matchedSelectors,
+        ready_state_before_scan: readyStateBeforeScan,
+        ready_state_after_injection: readyStateAfterInjection,
         discovered_scripts: scriptPlan.descriptors.length,
         reinjected_scripts: injectedScripts.length,
+        sample_script_descriptors: scriptPlan.sampleScriptDescriptors,
+        selector_exists_at_failure: null,
         include_plain_scripts: includePlainScripts,
         replay_lifecycle_events: replayLifecycleEvents,
       },
