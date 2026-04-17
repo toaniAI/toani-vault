@@ -309,6 +309,25 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
           return normalized || null;
         }
 
+        function resolveScriptSrc(node) {
+          const attributeSrc = node.getAttribute('src');
+          const normalizedAttributeSrc =
+            typeof attributeSrc === 'string' ? attributeSrc.trim() : '';
+          if (normalizedAttributeSrc) {
+            try {
+              return new URL(normalizedAttributeSrc, document.baseURI).href;
+            } catch (error) {
+              return normalizedAttributeSrc;
+            }
+          }
+
+          if (typeof node.src === 'string' && node.src.trim()) {
+            return node.src.trim();
+          }
+
+          return '';
+        }
+
         function matchSelectors(node) {
           const matches = [];
           for (const selector of scriptSelectors) {
@@ -332,7 +351,12 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
         let nextIndex = 0;
 
         for (const node of document.querySelectorAll('script')) {
-          if (!(node instanceof HTMLScriptElement) || !node.src) {
+          if (!(node instanceof HTMLScriptElement)) {
+            continue;
+          }
+
+          const resolvedSrc = resolveScriptSrc(node);
+          if (!resolvedSrc) {
             continue;
           }
 
@@ -351,7 +375,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
 
           if (sampleScriptDescriptors.length < sampleLimit) {
             sampleScriptDescriptors.push({
-              src: node.src,
+              src: resolvedSrc,
               originalType,
               injectedType: resolveInjectedType(originalType, rocketLoader),
               rocketLoader,
@@ -375,7 +399,7 @@ async function bootstrapPageOnCurrentPage(currentPage, parameters) {
 
           descriptors.push({
             marker,
-            src: node.src,
+            src: resolvedSrc,
             originalType,
             injectedType: resolveInjectedType(originalType, rocketLoader),
             rocketLoader,

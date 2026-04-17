@@ -92,6 +92,14 @@ fn bootstrap_page_contract_only_reinjects_external_scripts() {
         "bootstrap_page should discover external scripts without a type attribute"
     );
     assert!(
+        source.contains("node.getAttribute('src')"),
+        "bootstrap_page should read the raw src attribute when Lightpanda does not populate node.src"
+    );
+    assert!(
+        source.contains("new URL(normalizedAttributeSrc, document.baseURI).href"),
+        "bootstrap_page should resolve relative script src attributes against document.baseURI"
+    );
+    assert!(
         source.contains("waitForFunction(() => !!document.body"),
         "bootstrap_page should wait for document.body before scanning"
     );
