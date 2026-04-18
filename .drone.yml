@@ -481,6 +481,25 @@ steps:
     when:
       ref:
         - refs/tags/*
+    # helm chart push prod 生产环境
+  - name: helm chart push prod
+    image: alpine/helm:latest
+    pull: if-not-exists
+    environment:
+      DOCKER_USERNAME:
+        from_secret: docker-hub-username
+      DOCKER_PASSWORD:
+        from_secret: docker-hub-password
+    commands:
+      - helm registry login hub.bitkinetic.com -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
+      - cd config/chart
+      - CHART_VERSION=$(echo "${DRONE_TAG}" | tr '@' '-')
+      - 'sed -i "s/version:.*/version: $CHART_VERSION/" Chart.yaml'
+      - helm package .
+      - helm push credbridge-$CHART_VERSION.tgz oci://hub.bitkinetic.com/zkme/charts
+    when:
+      ref:
+        - refs/tags/*
 
   - name: apply push to online
     image: hub.bitkinetic.com/public/deploy:v1
