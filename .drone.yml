@@ -462,8 +462,8 @@ steps:
         from_secret: docker-hub-username
       password:
         from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
+      SGX_SIGNING_KEY:
+        from_secret: sgx-signing-key
     when:
       ref:
         - refs/tags/*
