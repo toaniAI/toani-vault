@@ -6,12 +6,7 @@
 //! - TEE 状态
 //! - 各依赖服务状态
 
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -146,15 +141,18 @@ pub struct HealthState {
     /// 配置
     pub config: HealthConfig,
     /// 数据库连接检查函数
-    pub db_health_check: Option<Arc<dyn Fn() -> BoxFuture<'static, Result<(), String>> + Send + Sync>>,
+    pub db_health_check:
+        Option<Arc<dyn Fn() -> BoxFuture<'static, Result<(), String>> + Send + Sync>>,
     /// Redis 连接检查函数
-    pub redis_health_check: Option<Arc<dyn Fn() -> BoxFuture<'static, Result<(), String>> + Send + Sync>>,
+    pub redis_health_check:
+        Option<Arc<dyn Fn() -> BoxFuture<'static, Result<(), String>> + Send + Sync>>,
     /// TEE 状态检查函数
-    pub tee_health_check: Option<Arc<dyn Fn() -> BoxFuture<'static, Result<TeeHealthDetails, String>> + Send + Sync>>,
+    pub tee_health_check:
+        Option<Arc<dyn Fn() -> BoxFuture<'static, Result<TeeHealthDetails, String>> + Send + Sync>>,
 }
 
-use std::pin::Pin;
 use std::future::Future;
+use std::pin::Pin;
 
 /// BoxFuture 类型别名
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -296,7 +294,10 @@ async fn check_all_components(state: &HealthState) -> Vec<ComponentHealth> {
         let (status, error) = match result {
             Ok(Ok(())) => (HealthStatus::Healthy, None::<String>),
             Ok(Err(e)) => (HealthStatus::Unhealthy, Some(e)),
-            Err(_) => (HealthStatus::Unhealthy, Some("Health check timeout".to_string())),
+            Err(_) => (
+                HealthStatus::Unhealthy,
+                Some("Health check timeout".to_string()),
+            ),
         };
 
         components.push(ComponentHealth {
@@ -317,7 +318,10 @@ async fn check_all_components(state: &HealthState) -> Vec<ComponentHealth> {
         let (status, error) = match result {
             Ok(Ok(())) => (HealthStatus::Healthy, None::<String>),
             Ok(Err(e)) => (HealthStatus::Unhealthy, Some(e)),
-            Err(_) => (HealthStatus::Unhealthy, Some("Health check timeout".to_string())),
+            Err(_) => (
+                HealthStatus::Unhealthy,
+                Some("Health check timeout".to_string()),
+            ),
         };
 
         components.push(ComponentHealth {
@@ -345,7 +349,11 @@ async fn check_all_components(state: &HealthState) -> Vec<ComponentHealth> {
                 (HealthStatus::Healthy, None::<String>, Some(metadata))
             }
             Ok(Err(e)) => (HealthStatus::Unhealthy, Some(e), None),
-            Err(_) => (HealthStatus::Unhealthy, Some("Health check timeout".to_string()), None),
+            Err(_) => (
+                HealthStatus::Unhealthy,
+                Some("Health check timeout".to_string()),
+                None,
+            ),
         };
 
         components.push(ComponentHealth {
@@ -467,7 +475,10 @@ mod tests {
                 metadata: None,
             },
         ];
-        assert_eq!(determine_overall_status(&components), HealthStatus::Degraded);
+        assert_eq!(
+            determine_overall_status(&components),
+            HealthStatus::Degraded
+        );
 
         // 全部不健康
         let components = vec![
@@ -486,6 +497,9 @@ mod tests {
                 metadata: None,
             },
         ];
-        assert_eq!(determine_overall_status(&components), HealthStatus::Unhealthy);
+        assert_eq!(
+            determine_overall_status(&components),
+            HealthStatus::Unhealthy
+        );
     }
 }

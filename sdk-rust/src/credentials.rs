@@ -5,10 +5,11 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        CreateCredentialRequest, CreateCredentialResponse, CredentialFilter,
-        CredentialMetadata, CredentialType, DecryptCredentialRequest,
-        DecryptCredentialResponse, DeleteCredentialResponse, GetCredentialResponse,
-        ListCredentialsResponse, RequestOptions, Result,
+        CreateCredentialRequest, CreateCredentialResponse, CredentialFilter, CredentialMetadata,
+        CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
+        DeleteCredentialResponse, GetCredentialResponse, ListCredentialsResponse, RequestOptions,
+        Result, RollbackCredentialRequest, RollbackCredentialResponse, UpdateCredentialRequest,
+        UpdateCredentialResponse, VersionDetail, VersionHistory,
     },
 };
 use serde_json::Value;
@@ -32,7 +33,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
     /// use serde_json::json;
     /// use std::sync::Arc;
     ///
@@ -98,7 +99,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -146,7 +147,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -194,7 +195,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -240,7 +241,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialFilter};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialFilter};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -297,10 +298,8 @@ impl CredentialsService {
 
         debug!(path = %path, "Listing credentials");
 
-        let response: ListCredentialsResponse = self
-            .client
-            .get_with_options(&path, options)
-            .await?;
+        let response: ListCredentialsResponse =
+            self.client.get_with_options(&path, options).await?;
 
         Ok((response.credentials, response.total))
     }
@@ -310,7 +309,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -339,7 +338,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -392,7 +391,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -420,10 +419,8 @@ impl CredentialsService {
             "Deleting credential"
         );
 
-        let response: DeleteCredentialResponse = self
-            .client
-            .delete_with_options(&path, options)
-            .await?;
+        let response: DeleteCredentialResponse =
+            self.client.delete_with_options(&path, options).await?;
 
         if response.deleted {
             info!(
@@ -435,12 +432,72 @@ impl CredentialsService {
         Ok(response)
     }
 
+    /// 更新凭证并创建新版本
+    pub async fn update(
+        &self,
+        credential_id: impl AsRef<str>,
+        plaintext_data: Value,
+        change_reason: Option<String>,
+        expected_version: Option<u32>,
+        options: Option<RequestOptions>,
+    ) -> Result<UpdateCredentialResponse> {
+        let path = format!("/credentials/{}", credential_id.as_ref());
+        let request = UpdateCredentialRequest {
+            plaintext_data,
+            change_reason,
+            expected_version,
+        };
+
+        self.client.put_with_options(&path, request, options).await
+    }
+
+    /// 查询版本历史
+    pub async fn list_versions(
+        &self,
+        credential_id: impl AsRef<str>,
+        options: Option<RequestOptions>,
+    ) -> Result<VersionHistory> {
+        let path = format!("/credentials/{}/versions", credential_id.as_ref());
+        self.client.get_with_options(&path, options).await
+    }
+
+    /// 获取指定版本详情
+    pub async fn get_version(
+        &self,
+        credential_id: impl AsRef<str>,
+        version: u32,
+        options: Option<RequestOptions>,
+    ) -> Result<VersionDetail> {
+        let path = format!(
+            "/credentials/{}/versions/{}",
+            credential_id.as_ref(),
+            version
+        );
+        self.client.get_with_options(&path, options).await
+    }
+
+    /// 回滚到指定版本
+    pub async fn rollback(
+        &self,
+        credential_id: impl AsRef<str>,
+        target_version: u32,
+        reason: impl Into<String>,
+        options: Option<RequestOptions>,
+    ) -> Result<RollbackCredentialResponse> {
+        let path = format!("/credentials/{}/rollback", credential_id.as_ref());
+        let request = RollbackCredentialRequest {
+            target_version,
+            reason: reason.into(),
+        };
+        self.client.post_with_options(&path, request, options).await
+    }
+
     /// 获取指定服务的所有凭证
     ///
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -470,7 +527,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService, types::CredentialType};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -500,7 +557,7 @@ impl CredentialsService {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient, credentials::CredentialsService};
     /// use std::sync::Arc;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {

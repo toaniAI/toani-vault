@@ -461,6 +461,7 @@ mod tests {
             operation_type: op_type,
             description: description.to_string(),
             parameters: HashMap::new(),
+            resolved_parameters: HashMap::new(),
             created_at: OffsetDateTime::now_utc(),
         }
     }

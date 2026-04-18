@@ -398,11 +398,38 @@ server {
     listen 80;
     server_name _;
 
-    # 健康检查端点
-    location /health {
+    # 健康检查端点直接透传给后端，避免代理层改写契约
+    location = /health {
         access_log off;
-        return 200 "healthy\n";
-        add_header Content-Type text/plain;
+        proxy_pass http://vault_service;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /ready {
+        access_log off;
+        proxy_pass http://vault_service;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /health/detail {
+        access_log off;
+        proxy_pass http://vault_service;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # 主服务

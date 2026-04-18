@@ -16,6 +16,19 @@ TEE（可信执行环境）模块提供安全的代码执行环境，基于 Inte
 - **密封存储**: 安全数据密封和恢复
 - **沙箱执行**: 代码在隔离环境中运行
 
+### 运行模式选择
+
+CredBridge 通过 `TEE_MODE` 显式选择运行模式：
+
+```bash
+TEE_MODE=hardware cargo run
+TEE_MODE=simulation cargo run
+```
+
+- `TEE_MODE=simulation` 仅用于显式模拟路径；只有在该模式下，健康/状态接口里的模拟标记才会出现。
+- `TEE_MODE=hardware` 要求真实 SGX/DCAP/AESM/PCCS（或 Intel PCS）能力；如果能力未接通，初始化会 fail-closed，而不是回退到 simulation。
+- 默认 CI 只跑 simulation-safe 测试；hardware-only 验证在专用 SGX runner 或 staging 环境执行。
+
 ---
 
 ## 模块结构
@@ -62,6 +75,7 @@ pub enum EnclaveState {
 ```
 
 **主要功能**:
+
 - 初始化/终止 Enclave
 - 加密/解密凭证
 - 密钥生命周期管理
@@ -82,6 +96,7 @@ pub struct ProtectedKeyMaterial {
 ```
 
 **安全特性**:
+
 - TTL 缓存（默认 5 分钟）
 - 自动 Zeroize 清理
 - Enclave 重启后密钥恢复
@@ -103,6 +118,7 @@ pub enum KeyLifecycle {
 ```
 
 **清理策略**:
+
 - 定期自动清理
 - 手动触发清理
 - 紧急密钥吊销
@@ -125,6 +141,7 @@ pub enum SealPolicy {
 ```
 
 **使用场景**:
+
 - 凭证加密存储
 - 配置数据保护
 - 审计日志加密
@@ -148,6 +165,7 @@ pub struct Quote {
 ```
 
 **认证流程**:
+
 1. Verifier 生成随机挑战
 2. Enclave 生成 Quote (包含挑战哈希)
 3. Verifier 验证 Quote 签名
@@ -172,6 +190,7 @@ pub struct DcapAttestationReport {
 ```
 
 **支持的证书服务**:
+
 - Intel PCS (Production Cert Service)
 - Intel PCS (Testing)
 
@@ -208,29 +227,46 @@ pub enum SandboxStatus {
 ### 沙箱 API
 
 **创建会话**:
-```rust
+
+```json
 POST /api/v1/sandbox/sessions
 {
-  "runtime": "python3.11",
-  "timeout_seconds": 300,
-  "memory_limit_mb": 512
+  "credential_id": "550e8400-e29b-41d4-a716-446655440000",
+  "original_intent": "查询投资组合",
+  "metadata": {
+    "source": "mobile_app"
+  }
 }
 ```
 
-**执行代码**:
-```rust
+**请求字段说明**:
+
+| 字段              | 类型   | 必填 | 说明                                        |
+| ----------------- | ------ | ---- | ------------------------------------------- |
+| `credential_id`   | UUID   | 是   | 凭证ID，用于在沙箱中安全访问凭证            |
+| `original_intent` | string | 是   | 原始意图描述，用于审计和AI审核，最大500字符 |
+| `metadata`        | object | 否   | 可选的会话元数据                            |
+
+**执行操作**:
+
+```json
 POST /api/v1/sandbox/sessions/{id}/execute
 {
-  "operation_type": "execute_code",
-  "code": "print('Hello, TEE!')",
-  "language": "python"
+  "operation_type": "navigate",
+  "description": "导航到登录页面",
+  "parameters": {
+    "url": "https://example.com/login"
+  }
 }
 ```
 
-**终止会话**:
-```rust
-POST /api/v1/sandbox/sessions/{id}/terminate
+**关闭会话**:
+
 ```
+DELETE /api/v1/sandbox/sessions/{id}
+```
+
+> **注意**: 完整 API 规范请参考 `docs/openapi/sandbox.yaml` 和 `docs/03-API 参考/REST-API.md`
 
 ---
 
@@ -264,13 +300,13 @@ POST /api/v1/sandbox/sessions/{id}/terminate
 
 ## TEE 类型支持
 
-| TEE 类型 | 支持状态 | 远程认证 | 密封存储 |
-|----------|----------|----------|----------|
-| Intel SGX | ✅ 完整支持 | ✅ 支持 | ✅ 支持 |
-| AMD SEV-SNP | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
-| AWS Nitro | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
-| ARM TrustZone | 🔜 计划支持 | 🔜 计划 | 🔜 计划 |
-| Simulation | ✅ 开发测试 | ❌ 不支持 | ⚠️ 模拟实现 |
+| TEE 类型                           | 支持状态        | 远程认证  | 密封存储    |
+| ---------------------------------- | --------------- | --------- | ----------- |
+| Intel SGX                          | ✅ 完整支持     | ✅ 支持   | ✅ 支持     |
+| AMD SEV-SNP                        | 🔜 计划支持     | 🔜 计划   | 🔜 计划     |
+| AWS Nitro                          | 🔜 计划支持     | 🔜 计划   | 🔜 计划     |
+| ARM TrustZone                      | 🔜 计划支持     | 🔜 计划   | 🔜 计划     |
+| Simulation (`TEE_MODE=simulation`) | ✅ 显式模拟测试 | ❌ 不支持 | ⚠️ 模拟实现 |
 
 ---
 
@@ -409,9 +445,11 @@ EnclaveConfig {
 ### 环境变量
 
 ```bash
+# TEE 运行模式（必须显式设置）
+TEE_MODE=hardware   # 或 simulation
+
 # SGX 环境
 SGX_SDK=/opt/intel/sgxsdk
-SGX_MODE=HW  # 或 SIM
 
 # DCAP 配置
 DCAP_PCS_URL=https://api.trustedservices.intel.com
@@ -431,16 +469,20 @@ KEY_TTL_SECONDS=300
 ### 常见问题
 
 **Enclave 初始化失败**:
+
 - 检查 SGX 驱动是否加载: `ls /dev/sgx*`
 - 检查 Enclave 文件路径是否正确
 - 检查文件权限
+- 若只需 simulation-safe 调试，请显式设置 `TEE_MODE=simulation`
 
 **远程认证失败**:
+
 - 检查网络连接 (Intel PCS)
 - 检查 PCK 证书缓存
 - 验证 TCB 级别
 
 **密钥解密失败**:
+
 - 检查密封策略匹配
 - 验证 Enclave 测量值
 - 检查密钥版本
@@ -463,4 +505,4 @@ ls -la /var/lib/credbridge/sealed/
 
 ---
 
-*本文档由 BMAD document-project 工作流自动生成*
+_本文档由 BMAD document-project 工作流自动生成_

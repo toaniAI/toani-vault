@@ -7,6 +7,8 @@ use super::events::{AuditAction, Outcome, RiskTier};
 use super::recorder::{RecorderError, SignedAuditEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// immudb 配置
@@ -136,6 +138,15 @@ pub struct ImmuDbClient {
     state_hash: Option<String>,
     /// 条目计数（本地缓存）
     entry_count: u64,
+    /// 已持久化条目缓存
+    entries: HashMap<String, ImmuDbAuditEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct PersistedState {
+    state_hash: String,
+    entry_count: u64,
+    entries: HashMap<String, ImmuDbAuditEntry>,
 }
 
 /// immudb 状态
@@ -186,6 +197,7 @@ impl ImmuDbClient {
             connected: false,
             state_hash: None,
             entry_count: 0,
+            entries: HashMap::new(),
         }
     }
 
@@ -211,9 +223,16 @@ impl ImmuDbClient {
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
+        let persisted = self.load_persisted_state()?;
+
         self.connected = true;
-        self.state_hash = Some(Self::compute_genesis_state_hash());
-        self.entry_count = 0;
+        self.state_hash = Some(if persisted.state_hash.is_empty() {
+            Self::compute_genesis_state_hash()
+        } else {
+            persisted.state_hash
+        });
+        self.entry_count = persisted.entry_count;
+        self.entries = persisted.entries;
 
         tracing::info!(
             "Connected to immudb at {}:{}, database: {}",
@@ -229,6 +248,7 @@ impl ImmuDbClient {
     pub async fn disconnect(&mut self) -> Result<(), RecorderError> {
         self.connected = false;
         self.state_hash = None;
+        self.entries.clear();
         tracing::info!("Disconnected from immudb");
         Ok(())
     }
@@ -304,6 +324,9 @@ impl ImmuDbClient {
             state_hash: state_hash.clone(),
         };
 
+        self.entries.insert(key, immu_entry.clone());
+        self.persist_state()?;
+
         tracing::debug!(
             "Stored audit entry {} with tx_id {}, state_hash: {}",
             signed_entry.log_index,
@@ -337,7 +360,7 @@ impl ImmuDbClient {
     /// 1. 从 immudb 检索指定键的条目
     /// 2. 获取包含证明
     /// 3. 验证数据完整性
-    pub async fn get_entry(&self, _key: &str) -> Result<Option<ImmuDbAuditEntry>, RecorderError> {
+    pub async fn get_entry(&self, key: &str) -> Result<Option<ImmuDbAuditEntry>, RecorderError> {
         self.ensure_connected()?;
 
         // 模拟检索逻辑
@@ -345,8 +368,7 @@ impl ImmuDbClient {
 
         tokio::time::sleep(Duration::from_millis(5)).await;
 
-        // 此处返回模拟数据
-        Ok(None)
+        Ok(self.entries.get(key).cloned())
     }
 
     /// 获取条目并验证
@@ -393,8 +415,61 @@ impl ImmuDbClient {
         );
 
         tokio::time::sleep(Duration::from_millis(20)).await;
+        let mut entries: Vec<_> = self.entries.values().cloned().collect();
 
-        Ok(vec![])
+        entries.retain(|entry| {
+            let audit = &entry.signed_entry.entry;
+            if let Some(start_time) = options.start_time
+                && audit.timestamp < start_time
+            {
+                return false;
+            }
+            if let Some(end_time) = options.end_time
+                && audit.timestamp > end_time
+            {
+                return false;
+            }
+            if let Some(ref user_id_hash) = options.user_id_hash
+                && &audit.user_id_hash != user_id_hash
+            {
+                return false;
+            }
+            if let Some(action) = options.action
+                && audit.action != action
+            {
+                return false;
+            }
+            if let Some(risk_tier) = options.risk_tier
+                && audit.risk_tier != risk_tier
+            {
+                return false;
+            }
+            if let Some(outcome) = options.outcome
+                && audit.outcome != outcome
+            {
+                return false;
+            }
+            true
+        });
+
+        entries.sort_by(|left, right| {
+            right
+                .signed_entry
+                .entry
+                .timestamp
+                .cmp(&left.signed_entry.entry.timestamp)
+                .then_with(|| {
+                    right
+                        .signed_entry
+                        .log_index
+                        .cmp(&left.signed_entry.log_index)
+                })
+        });
+
+        let offset = options.offset.unwrap_or(0);
+        let limit = options.limit.unwrap_or(entries.len());
+
+        Ok(entries.into_iter().skip(offset).take(limit).collect())
     }
 
     /// 获取当前状态
@@ -478,6 +553,72 @@ impl ImmuDbClient {
         let combined = format!("{prev_hash}:{entry_hash}");
         let digest = digest(&SHA256, combined.as_bytes());
         hex::encode(digest.as_ref())
+    }
+
+    fn persisted_state_dir() -> PathBuf {
+        if let Ok(path) = std::env::var("IMMUDB_SIM_STATE_DIR")
+            && !path.is_empty()
+        {
+            return PathBuf::from(path);
+        }
+
+        std::env::temp_dir().join("credbridge-immudb-sim")
+    }
+
+    fn persisted_state_path(&self) -> PathBuf {
+        let safe_database = self.config.database.replace('/', "_");
+        let safe_collection = self.config.collection.replace('/', "_");
+        Self::persisted_state_dir().join(format!("{safe_database}__{safe_collection}.json"))
+    }
+
+    fn load_persisted_state(&self) -> Result<PersistedState, RecorderError> {
+        let path = self.persisted_state_path();
+        if !path.exists() {
+            return Ok(PersistedState::default());
+        }
+
+        let bytes = fs::read(&path).map_err(|error| {
+            RecorderError::StorageError(format!(
+                "读取 immudb 模拟状态失败 {}: {error}",
+                path.display()
+            ))
+        })?;
+
+        serde_json::from_slice(&bytes).map_err(|error| {
+            RecorderError::StorageError(format!(
+                "解析 immudb 模拟状态失败 {}: {error}",
+                path.display()
+            ))
+        })
+    }
+
+    fn persist_state(&self) -> Result<(), RecorderError> {
+        let path = self.persisted_state_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                RecorderError::StorageError(format!(
+                    "创建 immudb 模拟状态目录失败 {}: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+
+        let state = PersistedState {
+            state_hash: self.state_hash.clone().unwrap_or_default(),
+            entry_count: self.entry_count,
+            entries: self.entries.clone(),
+        };
+
+        let bytes = serde_json::to_vec_pretty(&state).map_err(|error| {
+            RecorderError::SerializationError(format!("序列化 immudb 模拟状态失败: {error}"))
+        })?;
+
+        fs::write(&path, bytes).map_err(|error| {
+            RecorderError::StorageError(format!(
+                "写入 immudb 模拟状态失败 {}: {error}",
+                path.display()
+            ))
+        })
     }
 }
 
@@ -591,6 +732,26 @@ fn current_timestamp_millis() -> u64 {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn reset_simulated_immudb_state(config: &ImmuDbConfig) -> Result<(), RecorderError> {
+    let safe_database = config.database.replace('/', "_");
+    let safe_collection = config.collection.replace('/', "_");
+    let path = ImmuDbClient::persisted_state_dir()
+        .join(format!("{safe_database}__{safe_collection}.json"));
+
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| {
+            RecorderError::StorageError(format!(
+                "删除 immudb 模拟状态失败 {}: {error}",
+                path.display()
+            ))
+        })?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::audit::{AuditAction, AuditEntry, Outcome};
@@ -599,7 +760,7 @@ mod tests {
         ImmuDbConfig {
             host: "localhost".to_string(),
             port: 3322,
-            database: "test_audit".to_string(),
+            database: format!("test_audit_{}", uuid::Uuid::now_v7()),
             username: "immudb".to_string(),
             password: "immudb".to_string(),
             timeout_secs: 10,
@@ -633,7 +794,7 @@ mod tests {
         let config = create_test_config();
         let client = ImmuDbClient::new(config.clone());
 
-        assert_eq!(client.config().database, "test_audit");
+        assert_eq!(client.config().database, config.database);
         assert!(!client.is_connected());
         assert_eq!(client.entry_count(), 0);
     }
@@ -703,13 +864,13 @@ mod tests {
     #[tokio::test]
     async fn test_current_state() {
         let config = create_test_config();
-        let mut client = ImmuDbClient::new(config);
+        let mut client = ImmuDbClient::new(config.clone());
 
         client.connect().await.unwrap();
         client.initialize().await.unwrap();
 
         let state = client.current_state().await.unwrap();
-        assert_eq!(state.database, "test_audit");
+        assert_eq!(state.database, config.database);
         assert_eq!(state.tree_size, 0);
         assert!(!state.state_hash.is_empty());
     }

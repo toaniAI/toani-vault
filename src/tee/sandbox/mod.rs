@@ -57,12 +57,14 @@
 //! }
 //! ```
 
+pub mod browser_runtime;
 pub mod config;
 pub mod credential_ns;
 pub mod error;
 pub mod export;
 pub mod nsjail;
 pub mod pool;
+pub mod repository;
 pub mod review;
 pub mod security;
 pub mod session;
@@ -83,8 +85,13 @@ pub use config::{
 pub use error::{SandboxError, SecurityError, SessionError};
 
 // 公开导出 - 核心组件
+pub use nsjail::SandboxProcessHealth;
 pub use nsjail::{NsjailSandbox, WarmNsjailInstance};
 pub use pool::{NsjailSandboxPool, SandboxPool};
+pub use repository::{
+    CompleteSandboxOperationRecord, NewSandboxOperationRecord, NewSandboxSessionRecord,
+    PostgresSandboxRepository, SandboxRepository, metadata_to_json, to_chrono_utc,
+};
 pub use session::{ActiveNsjailSession, SandboxSession};
 
 // 公开导出 - 安全
@@ -129,6 +136,10 @@ pub struct SandboxHealth {
     pub healthy: bool,
     /// 错误信息
     pub error: Option<String>,
+    /// 进程树自检异常数量
+    pub process_health_issues: usize,
+    /// 进程树自检摘要
+    pub process_health_summaries: Vec<String>,
 }
 
 /// 池状态

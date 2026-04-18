@@ -7,14 +7,18 @@
 //! - POST /api/v1/credentials/:id/decrypt - 解密凭证
 //! - DELETE /api/v1/credentials/:id - 删除凭证
 
-use crate::api::middleware::{TokenScope, ValidatedToken, require_any_scope, require_scope};
+use crate::api::audit::AuditStorage;
+use crate::api::i18n::I18nMetadata;
+use crate::api::middleware::{
+    AuthError, TokenScope, ValidatedToken, require_any_scope, require_scope,
+};
+use crate::crypto::CredentialCryptoContext;
 use crate::crypto::hkdf::KeyHierarchy;
-use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
 use crate::models::{CredentialMetadata, CredentialType};
-use crate::tee::Enclave;
+use crate::tee::SharedEnclave;
 use crate::vault::models::{
     CreateCredentialRequest, CredentialFilter, CredentialId, EncryptedPayload, ServiceId, TenantId,
-    UserId, VaultEntry,
+    UserId, VaultError,
 };
 use crate::vault::storage::CredentialVault;
 use axum::{
@@ -27,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tracing::warn;
 
 /// 应用状态
@@ -38,7 +42,7 @@ pub struct AppState {
     /// 密钥层次结构
     pub key_hierarchy: Arc<RwLock<KeyHierarchy>>,
     /// 共享 TEE Enclave 实例（已接入状态，待切换实际加解密路径）
-    pub enclave: Arc<Mutex<Enclave>>,
+    pub enclave: SharedEnclave,
     /// 审计日志记录器
     pub audit_logger: Arc<dyn AuditLogger>,
 }
@@ -163,16 +167,24 @@ impl AuditLogger for DefaultAuditLogger {
     }
 }
 
-use crate::audit::{AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RedactedParam};
+use crate::audit::{AuditAction, AuditEntry, Outcome, RedactedParam};
 
-/// 存储审计日志记录器 - 将日志写入 MemoryAuditStorage 并打印到控制台
+/// 存储审计日志记录器 - 将日志写入统一审计后端并打印到控制台
 pub struct StorageAuditLogger {
-    storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>,
+    storage: Arc<dyn AuditStorage>,
+}
+
+struct CredentialAuditContext<'a> {
+    tenant_id: &'a str,
+    user_id: &'a str,
+    credential_id: &'a str,
+    jti: &'a str,
+    mrenclave: &'a str,
 }
 
 impl StorageAuditLogger {
     /// 创建新的存储审计日志记录器
-    pub fn new(storage: Arc<tokio::sync::Mutex<MemoryAuditStorage>>) -> Self {
+    pub fn new(storage: Arc<dyn AuditStorage>) -> Self {
         Self { storage }
     }
 
@@ -183,43 +195,34 @@ impl StorageAuditLogger {
     fn record_to_storage(
         &self,
         action: AuditAction,
-        user_id: &str,
-        credential_id: &str,
         outcome: Outcome,
-        jti: &str,
-        mrenclave: &str,
+        context: CredentialAuditContext<'_>,
     ) {
-        // 使用 try_lock 避免阻塞，如果锁不可用则记录警告日志
-        match self.storage.try_lock() {
-            Ok(storage) => {
-                // 使用用户 ID 的哈希
-                let user_id_hash = crate::audit::events::hash_user_id(user_id);
+        let storage = Arc::clone(&self.storage);
+        let user_id_hash = crate::audit::events::hash_user_id(context.user_id);
+        let entry = AuditEntry::new(
+            user_id_hash,
+            "session",
+            "credentials",
+            action,
+            outcome,
+            context.mrenclave,
+            context.jti,
+        )
+        .with_param(
+            "credential_id",
+            RedactedParam::Plain(context.credential_id.to_string()),
+        )
+        .with_param(
+            "tenant_id",
+            RedactedParam::Plain(context.tenant_id.to_string()),
+        );
 
-                let entry = AuditEntry::new(
-                    user_id_hash,
-                    "session",     // session_id
-                    "credentials", // service
-                    action,
-                    outcome,
-                    mrenclave, // tee_mrenclave - 来自调用方（软件模式为 "software_mode"）
-                    jti,       // action_token_jti - 来自 ValidatedToken.token_id
-                )
-                .with_param(
-                    "credential_id",
-                    RedactedParam::Plain(credential_id.to_string()),
-                )
-                .with_param("tenant_id", RedactedParam::Plain(user_id.to_string()));
-
-                if let Err(e) = storage.record(entry) {
-                    tracing::warn!("[AUDIT] 存储审计日志失败：{e:?}");
-                }
+        tokio::spawn(async move {
+            if let Err(error) = storage.record(entry).await {
+                tracing::warn!("[AUDIT] 存储审计日志失败：{error}");
             }
-            Err(_) => {
-                tracing::warn!(
-                    "[AUDIT-DROP] Lock contention: credential={credential_id}, action={action:?}, user={user_id}"
-                );
-            }
-        }
+        });
     }
 }
 
@@ -240,11 +243,14 @@ impl AuditLogger for StorageAuditLogger {
         // 写入存储
         self.record_to_storage(
             AuditAction::CredentialCreate,
-            user_id,
-            credential_id,
             Outcome::Success,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 
@@ -264,11 +270,14 @@ impl AuditLogger for StorageAuditLogger {
         // 写入存储
         self.record_to_storage(
             AuditAction::CredentialAccess,
-            user_id,
-            credential_id,
             Outcome::Success,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 
@@ -288,11 +297,14 @@ impl AuditLogger for StorageAuditLogger {
         // 写入存储
         self.record_to_storage(
             AuditAction::CredentialDelete,
-            user_id,
-            credential_id,
             Outcome::Success,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 
@@ -318,20 +330,30 @@ impl AuditLogger for StorageAuditLogger {
         };
         self.record_to_storage(
             AuditAction::CredentialDecrypt,
-            user_id,
-            credential_id,
             outcome,
-            jti,
-            mrenclave,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                jti,
+                mrenclave,
+            },
         );
     }
 }
 
 /// API 错误响应
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::result_large_err)]
 pub struct ApiError {
     pub error: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub i18n: Option<I18nMetadata>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub locale: String,
 }
 
 impl ApiError {
@@ -339,6 +361,25 @@ impl ApiError {
         Self {
             error: error.into(),
             message: message.into(),
+            details: None,
+            i18n: None,
+            locale: String::new(),
+        }
+    }
+
+    pub fn with_details(mut self, details: serde_json::Value) -> Self {
+        self.details = Some(details);
+        self
+    }
+
+    /// 从 AuthError 创建 ApiError，保留 error code、message、i18n 和 locale
+    pub fn from_auth_error(auth_error: AuthError) -> Self {
+        Self {
+            error: auth_error.error,
+            message: auth_error.message,
+            details: None,
+            i18n: auth_error.i18n,
+            locale: auth_error.locale,
         }
     }
 }
@@ -350,6 +391,8 @@ impl IntoResponse for ApiError {
             "invalid_request" => StatusCode::BAD_REQUEST,
             "unauthorized" => StatusCode::UNAUTHORIZED,
             "forbidden" => StatusCode::FORBIDDEN,
+            "insufficient_scope" => StatusCode::FORBIDDEN,
+            "credential_expired" => StatusCode::UNPROCESSABLE_ENTITY,
             "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -364,14 +407,24 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// 将 VaultError 转换为 ApiError，租户隔离违规返回 403 而非 500
+fn vault_error_to_api_error(e: VaultError) -> ApiError {
+    match e {
+        VaultError::TenantIsolationViolation { .. } => ApiError::new("forbidden", "无权访问该凭证"),
+        VaultError::CredentialNotFound(_) => ApiError::new("not_found", "凭证不存在"),
+        _ => ApiError::new("internal_error", e.to_string()),
+    }
+}
+
 /// 创建凭证请求
 #[derive(Debug, Deserialize)]
 pub struct CreateCredentialApiRequest {
     /// 服务 ID
     pub service_id: String,
-    /// 凭证类型
-    pub credential_type: CredentialType,
+    /// 凭证类型（字符串形式，将在业务层验证）
+    pub credential_type: String,
     /// 明文凭证内容（将被加密）
+    #[serde(alias = "value")]
     pub plaintext_data: serde_json::Value,
     /// 过期时间（Unix 时间戳，可选）
     pub expires_at: Option<u64>,
@@ -410,6 +463,7 @@ pub struct CreateCredentialResponse {
     pub expires_at: Option<String>,
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_expires_at(expires_at: Option<u64>) -> Result<(), ApiError> {
     let Some(expires_at) = expires_at else {
         return Ok(());
@@ -434,13 +488,31 @@ fn validate_expires_at(expires_at: Option<u64>) -> Result<(), ApiError> {
 pub async fn create_credential(
     State(state): State<AppState>,
     Extension(token): Extension<ValidatedToken>,
-    Json(request): Json<CreateCredentialApiRequest>,
+    payload: Result<Json<CreateCredentialApiRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<(StatusCode, Json<CreateCredentialResponse>), ApiError> {
+    // 处理 JSON 反序列化错误（如必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) =
+        payload.map_err(|e| ApiError::new("invalid_request", format!("请求体解析失败: {e}")))?;
+
     // 验证 Scope: credential:write
-    require_scope(TokenScope::CredentialWrite)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 
     validate_expires_at(request.expires_at)?;
+
+    // 解析并验证 credential_type，无效时返回 400 invalid_request
+    let credential_type = parse_credential_type(&request.credential_type)?;
+
+    // 验证 service_id 非空（空字符串或仅空白字符应返回 400）
+    if request.service_id.trim().is_empty() {
+        return Err(
+            ApiError::new("invalid_request", "service_id cannot be empty").with_details(
+                serde_json::json!({
+                    "field": "service_id",
+                    "received": request.service_id
+                }),
+            ),
+        );
+    }
 
     // 先创建 UserId 对象，用于加密和存储
     let user_id = UserId::new(&token.user_id);
@@ -449,7 +521,7 @@ pub async fn create_credential(
     // 先生成 credential_id，确保加密时使用的 ID 与存储时一致
     let credential_id = CredentialId::new();
     let normalized_plaintext_data =
-        normalize_oauth_plaintext_data(request.credential_type, &request.plaintext_data);
+        normalize_oauth_plaintext_data(credential_type, &request.plaintext_data);
 
     // 加密凭证内容（在 TEE 内完成）
     let encrypted_payload = encrypt_credential_in_tee(
@@ -467,7 +539,7 @@ pub async fn create_credential(
         tenant_id,
         user_id,
         service_id: ServiceId::new(&request.service_id),
-        credential_type: request.credential_type,
+        credential_type,
         expires_at: request.expires_at,
     };
 
@@ -548,13 +620,26 @@ pub struct ListCredentialsResponse {
     pub total: usize,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct ListCredentialsQuery {
     pub service_id: Option<String>,
     pub credential_type: Option<String>,
     pub only_valid: Option<bool>,
+    #[serde(default = "default_page")]
+    pub page: usize,
+    #[serde(default = "default_page_size")]
+    pub page_size: usize,
 }
 
+fn default_page() -> usize {
+    1
+}
+
+fn default_page_size() -> usize {
+    20
+}
+
+#[allow(clippy::result_large_err)]
 fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
     match value {
         "username_password" => Ok(CredentialType::UsernamePassword),
@@ -562,11 +647,26 @@ fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
         "api_key" => Ok(CredentialType::ApiKey),
         "session_cookie" => Ok(CredentialType::SessionCookie),
         "kyc_document" => Ok(CredentialType::KycDocument),
+        "client_certificate" => Ok(CredentialType::ClientCertificate),
+        "ssh_key" => Ok(CredentialType::SshKey),
+        "database_connection" => Ok(CredentialType::DatabaseConnection),
         _ => Err(ApiError::new(
             "invalid_request",
             format!("不支持的凭证类型: {value}"),
-        )),
+        ).with_details(serde_json::json!({
+            "field": "credential_type",
+            "received": value,
+            "allowed": ["username_password", "oauth_refresh", "oauth_token", "o_auth_refresh", "api_key", "session_cookie", "kyc_document", "client_certificate", "ssh_key", "database_connection"]
+        }))),
     }
+}
+
+/// 获取当前 Unix 时间戳（秒）
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time before Unix epoch")
+        .as_secs()
 }
 
 /// GET /api/v1/credentials - 获取凭证列表
@@ -575,9 +675,19 @@ pub async fn list_credentials(
     Extension(token): Extension<ValidatedToken>,
     Query(query): Query<ListCredentialsQuery>,
 ) -> Result<Json<ListCredentialsResponse>, ApiError> {
+    // 验证分页参数
+    if query.page == 0 {
+        return Err(ApiError::new("invalid_request", "page must be >= 1"));
+    }
+    if query.page_size == 0 || query.page_size > 100 {
+        return Err(ApiError::new(
+            "invalid_request",
+            "page_size must be between 1 and 100",
+        ));
+    }
+
     // 验证 Scope: credential:read
-    require_scope(TokenScope::CredentialRead)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
     let tenant_id = TenantId::new(&token.tenant_id);
     let user_id = UserId::new(&token.user_id);
@@ -623,6 +733,7 @@ pub struct GetCredentialResponse {
     pub created_at: String,
     pub expires_at: Option<String>,
     pub is_deleted: bool,
+    pub status: String,
 }
 
 /// GET /api/v1/credentials/:id - 获取凭证详情
@@ -632,8 +743,7 @@ pub async fn get_credential(
     Path(id): Path<String>,
 ) -> Result<Json<GetCredentialResponse>, ApiError> {
     // 验证 Scope: credential:read
-    require_scope(TokenScope::CredentialRead)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialRead)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -644,7 +754,7 @@ pub async fn get_credential(
     let metadata = state
         .vault
         .get_credential_metadata(&credential_id, &tenant_id, &user_id)
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?
+        .map_err(vault_error_to_api_error)?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
     // 记录访问审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
@@ -656,6 +766,25 @@ pub async fn get_credential(
         "software_mode",
     );
 
+    // 计算状态 (deleted > expired > active)
+    let status = if metadata.is_deleted {
+        "deleted".to_string()
+    } else if metadata
+        .expires_at
+        .as_ref()
+        .map(|exp| {
+            chrono::DateTime::parse_from_rfc3339(exp)
+                .map(|dt| dt.timestamp() as u64)
+                .unwrap_or(0)
+                < current_timestamp()
+        })
+        .unwrap_or(false)
+    {
+        "expired".to_string()
+    } else {
+        "active".to_string()
+    };
+
     Ok(Json(GetCredentialResponse {
         credential_id: metadata.credential_id,
         service_id: metadata.service_id,
@@ -663,6 +792,7 @@ pub async fn get_credential(
         created_at: metadata.created_at,
         expires_at: metadata.expires_at,
         is_deleted: metadata.is_deleted,
+        status,
     }))
 }
 
@@ -685,120 +815,15 @@ pub struct DecryptCredentialResponse {
 
 /// POST /api/v1/credentials/:id/decrypt - 解密凭证
 pub async fn decrypt_credential_endpoint(
-    State(state): State<AppState>,
-    Extension(token): Extension<ValidatedToken>,
-    Path(id): Path<String>,
+    State(_state): State<AppState>,
+    Extension(_token): Extension<ValidatedToken>,
+    Path(_id): Path<String>,
     Json(_request): Json<DecryptCredentialRequest>,
 ) -> Result<Json<DecryptCredentialResponse>, ApiError> {
-    // 验证 Scope: credential:decrypt
-    require_scope(TokenScope::CredentialDecrypt)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
-
-    let credential_id = CredentialId::from_string(id.clone())
-        .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
-
-    let tenant_id = TenantId::new(&token.tenant_id);
-    let user_id = UserId::new(&token.user_id);
-
-    // 获取完整凭证（含加密载荷）
-    let entry = state
-        .vault
-        .get_credential(&credential_id, &tenant_id, &user_id)
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?
-        .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
-
-    let tee_snapshot = tee_runtime_snapshot(&state).await;
-    let plaintext_bytes = match decrypt_credential_in_tee(&state, &entry).await {
-        Ok(data) => {
-            state.audit_logger.log_decryption_attempt(
-                &token.tenant_id,
-                &token.user_id,
-                &id,
-                true,
-                &token.token_id,
-                &tee_snapshot.mrenclave_label,
-            );
-            data
-        }
-        Err(e) => {
-            state.audit_logger.log_decryption_attempt(
-                &token.tenant_id,
-                &token.user_id,
-                &id,
-                false,
-                &token.token_id,
-                &tee_snapshot.mrenclave_label,
-            );
-            return Err(ApiError::new("internal_error", e));
-        }
-    };
-
-    // 解析明文为 JSON
-    let plaintext_data: serde_json::Value = match serde_json::from_slice(&plaintext_bytes) {
-        Ok(v) => v,
-        Err(_) => match String::from_utf8(plaintext_bytes) {
-            Ok(s) => serde_json::Value::String(s),
-            Err(e) => {
-                return Err(ApiError::new(
-                    "invalid_request",
-                    format!("Failed to decode plaintext as UTF-8: {e}"),
-                ));
-            }
-        },
-    };
-
-    Ok(Json(DecryptCredentialResponse {
-        credential_id: entry.credential_id.as_str().to_string(),
-        service_id: entry.service_id.as_str().to_string(),
-        credential_type: entry.credential_type.as_str().to_string(),
-        plaintext_data,
-    }))
-}
-
-/// 在 TEE 内解密凭证
-async fn decrypt_credential_in_tee(
-    state: &AppState,
-    entry: &VaultEntry,
-) -> Result<Vec<u8>, String> {
-    let tee_snapshot = tee_runtime_snapshot(state).await;
-    let blob = EncryptedBlob {
-        version: entry.encrypted_payload.version,
-        algorithm: entry.encrypted_payload.algorithm.clone(),
-        kdf: entry.encrypted_payload.kdf.clone(),
-        nonce: entry.encrypted_payload.nonce.clone(),
-        auth_tag: entry.encrypted_payload.auth_tag.clone(),
-        ciphertext: entry.encrypted_payload.ciphertext.clone(),
-        aad_hash: None,
-    };
-    let context = CredentialCryptoContext::new(
-        entry.tenant_id.as_str(),
-        entry.user_id.hash(),
-        entry.credential_id.as_str(),
-    );
-
-    if tee_snapshot.enclave_initialized {
-        let mut enclave = state.enclave.lock().await;
-        enclave
-            .decrypt_credential(
-                entry.tenant_id.as_str(),
-                entry.user_id.hash(),
-                entry.credential_id.as_str(),
-                &blob,
-            )
-            .map_err(|e| format!("TEE 解密失败: {e}"))
-    } else {
-        warn!(
-            tenant_id = entry.tenant_id.as_str(),
-            credential_id = entry.credential_id.as_str(),
-            tee_runtime_mode = tee_snapshot.execution_mode,
-            "TEE 不可用，decrypt credential 回退到软件密钥路径"
-        );
-
-        let hierarchy = state.key_hierarchy.read().await;
-        context
-            .decrypt_with_hierarchy(&hierarchy, &blob)
-            .map_err(|e| format!("软件路径解密失败: {e}"))
-    }
+    Err(ApiError::new(
+        "forbidden",
+        "Direct credential decryption is disabled; use sandbox execution instead",
+    ))
 }
 
 /// 删除凭证响应
@@ -816,7 +841,7 @@ pub async fn delete_credential(
 ) -> Result<Json<DeleteCredentialResponse>, ApiError> {
     // 验证 Scope: credential:write 或 admin
     require_any_scope(vec![TokenScope::CredentialWrite, TokenScope::Admin])(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+        .map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -827,7 +852,7 @@ pub async fn delete_credential(
     let deleted = state
         .vault
         .delete_credential(&credential_id, &tenant_id, &user_id)
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
+        .map_err(vault_error_to_api_error)?;
 
     if !deleted {
         return Err(ApiError::new("not_found", "凭证不存在"));
@@ -873,11 +898,14 @@ pub async fn update_credential(
     State(state): State<AppState>,
     Extension(token): Extension<ValidatedToken>,
     Path(id): Path<String>,
-    Json(request): Json<UpdateCredentialApiRequest>,
+    payload: Result<Json<UpdateCredentialApiRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<Json<UpdateCredentialApiResponse>, ApiError> {
+    // 处理 JSON 反序列化错误（如必填字段缺失），返回 400 而不是默认的 422
+    let Json(request) =
+        payload.map_err(|e| ApiError::new("invalid_request", format!("请求体解析失败: {e}")))?;
+
     // 验证 Scope: credential:write
-    require_scope(TokenScope::CredentialWrite)(&token)
-        .map_err(|e| ApiError::new("forbidden", e.message))?;
+    require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
@@ -906,7 +934,7 @@ pub async fn update_credential(
             encrypted_payload,
             request.change_reason,
         )
-        .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
+        .map_err(vault_error_to_api_error)?;
 
     Ok(Json(UpdateCredentialApiResponse {
         credential_id: id,
@@ -1008,7 +1036,10 @@ mod tests {
 
         assert!(token.has_scope(&TokenScope::CredentialRead));
         assert!(token.has_scope(&TokenScope::CredentialWrite));
-        assert!(!token.has_scope(&TokenScope::CredentialDecrypt));
+        assert!(token.has_scope(&TokenScope::CredentialDecrypt));
+        assert!(token.has_scope(&TokenScope::SandboxRead));
+        assert!(token.has_scope(&TokenScope::SandboxWrite));
+        assert!(token.has_scope(&TokenScope::SandboxExecute));
         assert!(!token.has_scope(&TokenScope::Admin));
     }
 
@@ -1052,7 +1083,9 @@ mod tests {
 
         for payload in payloads {
             let parsed: CreateCredentialApiRequest = serde_json::from_value(payload).unwrap();
-            assert_eq!(parsed.credential_type, CredentialType::OAuthRefresh);
+            // 验证 credential_type 可以被成功解析为 OAuthRefresh
+            let credential_type = parse_credential_type(&parsed.credential_type).unwrap();
+            assert_eq!(credential_type, CredentialType::OAuthRefresh);
         }
     }
 
@@ -1096,5 +1129,20 @@ mod tests {
         assert!(validate_expires_at(Some(now)).is_err());
         assert!(validate_expires_at(Some(now + 1)).is_ok());
         assert!(validate_expires_at(None).is_ok());
+    }
+
+    #[test]
+    fn test_create_request_accepts_value_alias_for_plaintext_data() {
+        // BUG-18172: 自动化测试使用 "value" 字段代替 "plaintext_data"
+        let payload = json!({
+            "service_id": "api_tags_empty",
+            "credential_type": "api_key",
+            "value": "k1"
+        });
+
+        let parsed: CreateCredentialApiRequest = serde_json::from_value(payload).unwrap();
+        assert_eq!(parsed.service_id, "api_tags_empty");
+        assert_eq!(parsed.credential_type, "api_key");
+        assert_eq!(parsed.plaintext_data, json!("k1"));
     }
 }

@@ -78,7 +78,7 @@ impl CredBridgeClient {
     /// # 示例
     ///
     /// ```rust,no_run
-    /// use credbridge_sdk::{CredBridgeConfig, CredBridgeClient};
+    /// use toani_vault_sdk::{CredBridgeConfig, CredBridgeClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = CredBridgeConfig::new("https://api.credbridge.io")
@@ -221,10 +221,7 @@ impl CredBridgeClient {
                     last_error = Some(error.clone());
 
                     // 如果是认证错误，尝试刷新 Token 后重试
-                    if error.is_auth_error()
-                        && self.config.auto_refresh_token
-                        && attempt == 0
-                    {
+                    if error.is_auth_error() && self.config.auto_refresh_token && attempt == 0 {
                         warn!(request_id = %request_id, "Auth error, attempting token refresh");
                         // Token 刷新逻辑可以在这里实现
                         // 目前只是继续重试流程
@@ -304,8 +301,11 @@ impl CredBridgeClient {
         // 发送请求
         let response = request_builder.send().await.map_err(|e| {
             if e.is_timeout() {
-                CredBridgeError::new(CredBridgeErrorCode::Timeout, format!("Request timeout: {}", e))
-                    .with_request_id(request_id)
+                CredBridgeError::new(
+                    CredBridgeErrorCode::Timeout,
+                    format!("Request timeout: {}", e),
+                )
+                .with_request_id(request_id)
             } else if e.is_connect() {
                 CredBridgeError::new(
                     CredBridgeErrorCode::NetworkError,
@@ -313,8 +313,11 @@ impl CredBridgeClient {
                 )
                 .with_request_id(request_id)
             } else {
-                CredBridgeError::new(CredBridgeErrorCode::Unknown, format!("Request error: {}", e))
-                    .with_request_id(request_id)
+                CredBridgeError::new(
+                    CredBridgeErrorCode::Unknown,
+                    format!("Request error: {}", e),
+                )
+                .with_request_id(request_id)
             }
         })?;
 
@@ -339,7 +342,23 @@ impl CredBridgeClient {
 
         if status.is_success() {
             if is_json {
-                response.json::<T>().await.map_err(|e| {
+                let response_value: Value = response.json().await.map_err(|e| {
+                    CredBridgeError::new(
+                        CredBridgeErrorCode::InternalError,
+                        format!("Failed to parse JSON response: {}", e),
+                    )
+                    .with_request_id(request_id)
+                })?;
+
+                let payload = response_value
+                    .get("success")
+                    .and_then(|value| value.as_bool())
+                    .filter(|success| *success)
+                    .and_then(|_| response_value.get("data"))
+                    .cloned()
+                    .unwrap_or(response_value);
+
+                serde_json::from_value::<T>(payload).map_err(|e| {
                     CredBridgeError::new(
                         CredBridgeErrorCode::InternalError,
                         format!("Failed to parse JSON response: {}", e),
@@ -357,29 +376,85 @@ impl CredBridgeClient {
         } else {
             // 处理错误响应
             let error_response: ApiErrorResponse = if is_json {
-                response.json().await.map_err(|e| {
+                let error_value: Value = response.json().await.map_err(|e| {
                     CredBridgeError::new(
                         CredBridgeErrorCode::InternalError,
                         format!("Failed to parse error response: {}", e),
                     )
-                })?
+                })?;
+
+                if error_value
+                    .get("error")
+                    .is_some_and(|value| value.is_object())
+                {
+                    serde_json::from_value(error_value).map_err(|e| {
+                        CredBridgeError::new(
+                            CredBridgeErrorCode::InternalError,
+                            format!("Failed to parse error response: {}", e),
+                        )
+                    })?
+                } else {
+                    let code = error_value
+                        .get("error")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let message = error_value
+                        .get("message")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("Unknown error")
+                        .to_string();
+                    let details = error_value
+                        .get("details")
+                        .and_then(|value| value.as_object())
+                        .map(|object| {
+                            object
+                                .iter()
+                                .map(|(key, value)| (key.clone(), value.clone()))
+                                .collect()
+                        });
+                    let meta = error_value
+                        .get("meta")
+                        .cloned()
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|e| {
+                            CredBridgeError::new(
+                                CredBridgeErrorCode::InternalError,
+                                format!("Failed to parse error metadata: {}", e),
+                            )
+                        })?
+                        .unwrap_or_else(|| crate::types::ApiMeta {
+                            request_id: request_id.to_string(),
+                            timestamp: chrono::Utc::now(),
+                        });
+
+                    ApiErrorResponse {
+                        error: crate::types::ApiErrorDetails {
+                            code,
+                            message,
+                            details,
+                        },
+                        meta,
+                    }
+                }
             } else {
                 let text = response.text().await.unwrap_or_default();
-                return Err(CredBridgeError::new(
-                    parse_error_code(status.as_u16(), None),
-                    text,
-                )
-                .with_status_code(status.as_u16())
-                .with_request_id(request_id));
+                return Err(
+                    CredBridgeError::new(parse_error_code(status.as_u16(), None), text)
+                        .with_status_code(status.as_u16())
+                        .with_request_id(request_id),
+                );
             };
 
-            let error_code =
-                parse_error_code(status.as_u16(), Some(&error_response.error.code));
+            let error_code = parse_error_code(status.as_u16(), Some(&error_response.error.code));
 
-            Err(CredBridgeError::new(error_code, error_response.error.message)
-                .with_status_code(status.as_u16())
-                .with_request_id(request_id)
-                .with_details(error_response.error.details.unwrap_or_default()))
+            Err(
+                CredBridgeError::new(error_code, error_response.error.message)
+                    .with_status_code(status.as_u16())
+                    .with_request_id(request_id)
+                    .with_details(error_response.error.details.unwrap_or_default()),
+            )
         }
     }
 
@@ -423,14 +498,12 @@ impl CredBridgeClient {
         }
 
         let payload_base64 = parts[2];
-        let payload_json = URL_SAFE_NO_PAD
-            .decode(payload_base64)
-            .map_err(|e| {
-                CredBridgeError::new(
-                    CredBridgeErrorCode::InvalidToken,
-                    format!("Failed to decode token payload: {}", e),
-                )
-            })?;
+        let payload_json = URL_SAFE_NO_PAD.decode(payload_base64).map_err(|e| {
+            CredBridgeError::new(
+                CredBridgeErrorCode::InvalidToken,
+                format!("Failed to decode token payload: {}", e),
+            )
+        })?;
 
         let payload: Value = serde_json::from_slice(&payload_json).map_err(|e| {
             CredBridgeError::new(
@@ -447,7 +520,14 @@ impl CredBridgeClient {
                 "credential:read" => Some(TokenScope::CredentialRead),
                 "credential:decrypt" => Some(TokenScope::CredentialDecrypt),
                 "credential:write" => Some(TokenScope::CredentialWrite),
+                "credential:delete" => Some(TokenScope::CredentialDelete),
+                "tokens:read" => Some(TokenScope::TokensRead),
+                "tokens:write" => Some(TokenScope::TokensWrite),
+                "tokens:revoke" => Some(TokenScope::TokensRevoke),
                 "audit:read" => Some(TokenScope::AuditRead),
+                "sandbox:read" => Some(TokenScope::SandboxRead),
+                "sandbox:write" => Some(TokenScope::SandboxWrite),
+                "sandbox:execute" => Some(TokenScope::SandboxExecute),
                 "admin" => Some(TokenScope::Admin),
                 _ => None,
             })
@@ -549,6 +629,22 @@ impl CredBridgeClient {
         self.request(Method::PUT, path, Some(body), None).await
     }
 
+    /// PUT 请求（带选项）
+    pub async fn put_with_options<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: impl serde::Serialize,
+        options: Option<RequestOptions>,
+    ) -> Result<T> {
+        let body = serde_json::to_value(body).map_err(|e| {
+            CredBridgeError::new(
+                CredBridgeErrorCode::InvalidRequest,
+                format!("Failed to serialize request body: {}", e),
+            )
+        })?;
+        self.request(Method::PUT, path, Some(body), options).await
+    }
+
     /// DELETE 请求
     pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.request(Method::DELETE, path, None, None).await
@@ -576,6 +672,22 @@ impl CredBridgeClient {
             )
         })?;
         self.request(Method::PATCH, path, Some(body), None).await
+    }
+
+    /// PATCH 请求（带选项）
+    pub async fn patch_with_options<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: impl serde::Serialize,
+        options: Option<RequestOptions>,
+    ) -> Result<T> {
+        let body = serde_json::to_value(body).map_err(|e| {
+            CredBridgeError::new(
+                CredBridgeErrorCode::InvalidRequest,
+                format!("Failed to serialize request body: {}", e),
+            )
+        })?;
+        self.request(Method::PATCH, path, Some(body), options).await
     }
 }
 

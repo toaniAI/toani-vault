@@ -36,6 +36,7 @@ benches/
 
 # Build artifacts
 *.tar.gz
+!nsjail-3.6.tar.gz
 *.zip
 *.deb
 *.rpm
@@ -47,14 +48,21 @@ benches/
 .envrc
 .sealed/
 .claude/
+.agents/
+.codex/
+.omx/
 
 # Docker files (not needed in build context)
 docker/
+!docker/base/
+!docker/base/**
 !docker/scripts/
+!docker/scripts/**
 docker-compose*.yml
 Dockerfile*
 
 # Node.js (if any)
+frontend/
 node_modules/
 npm-debug.log
 yarn-error.log
@@ -107,9 +115,8 @@ SECURITY.md
 _bmad/
 _bmad-output/
 
-# SDKs (separate packages) - 注意：Dockerfile 需要这些目录
-# sdk-rust/  # 暂时注释掉，Dockerfile 构建需要
-sdk-typescript/
+# SDKs / workspace crates
+# Dockerfile 需要这些目录参与后端镜像构建，因此不要在 build context 中排除。
 
 # Target directory (Rust build output)
 target/

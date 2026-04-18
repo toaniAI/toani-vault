@@ -3,7 +3,6 @@
 //! 提供 locale 解析、消息目录与请求级 locale 中间件。
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use axum::{
     extract::{FromRequestParts, Request, State},
@@ -18,10 +17,10 @@ use axum::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::api::auth::MemoryUserStore;
 use crate::api::context::RequestContext;
 use crate::api::middleware::ValidatedToken;
-use crate::tenant::{MemoryTenantConfigStore, TenantConfigStore, TenantId};
+use crate::auth::AuthService;
+use crate::tenant::{TenantConfigStore, TenantId};
 
 pub const DEFAULT_LOCALE: &str = "zh-CN";
 pub const EN_US_LOCALE: &str = "en-US";
@@ -87,14 +86,17 @@ where
 
 #[derive(Clone)]
 pub struct LocaleResolverState {
-    pub user_store: Arc<MemoryUserStore>,
-    pub tenant_store: MemoryTenantConfigStore,
+    pub auth_service: std::sync::Arc<dyn AuthService>,
+    pub tenant_store: std::sync::Arc<dyn TenantConfigStore>,
 }
 
 impl LocaleResolverState {
-    pub fn new(user_store: Arc<MemoryUserStore>, tenant_store: MemoryTenantConfigStore) -> Self {
+    pub fn new(
+        auth_service: std::sync::Arc<dyn AuthService>,
+        tenant_store: std::sync::Arc<dyn TenantConfigStore>,
+    ) -> Self {
         Self {
-            user_store,
+            auth_service,
             tenant_store,
         }
     }
@@ -109,11 +111,17 @@ pub async fn locale_middleware(
     let token = request.extensions().get::<ValidatedToken>().cloned();
 
     let user_locale = if let Some(ref token) = token {
-        state
-            .user_store
-            .get_user(&token.user_id)
-            .await
-            .and_then(|user| user.locale)
+        // Parse user_id from token
+        if let Ok(user_id) = uuid::Uuid::parse_str(&token.user_id) {
+            state
+                .auth_service
+                .get_user(user_id)
+                .await
+                .ok()
+                .and_then(|user| user.display_name) // Use display_name as locale hint for now
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -253,6 +261,8 @@ pub fn translate(locale: &str, key: &str, params: &I18nParams) -> String {
         ("en-US", "errors.api.forbidden") => "Forbidden",
         ("zh-CN", "errors.api.not_found") => "资源不存在",
         ("en-US", "errors.api.not_found") => "Resource not found",
+        ("zh-CN", "errors.api.credential_not_found") => "凭证不存在",
+        ("en-US", "errors.api.credential_not_found") => "Credential not found",
         ("zh-CN", "errors.api.conflict") => "资源冲突",
         ("en-US", "errors.api.conflict") => "Resource conflict",
         ("zh-CN", "errors.api.rate_limited") => "请求过于频繁，请稍后重试",
@@ -294,6 +304,7 @@ pub fn default_error_key(error: &str) -> String {
         "unauthorized" => "errors.api.unauthorized".to_string(),
         "forbidden" => "errors.api.forbidden".to_string(),
         "not_found" => "errors.api.not_found".to_string(),
+        "credential_not_found" => "errors.api.credential_not_found".to_string(),
         "conflict" => "errors.api.conflict".to_string(),
         "rate_limited" => "errors.api.rate_limited".to_string(),
         "internal_error" => "errors.api.internal_error".to_string(),

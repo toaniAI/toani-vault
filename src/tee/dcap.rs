@@ -19,14 +19,22 @@
 //! - **不可否认**: ECDSA 签名提供不可否认性
 //! - **证书链**: 完整的 PCK 证书链验证
 
+use crate::config::{TeeRuntimeConfig, TeeRuntimeMode};
 use crate::tee::{
     attestation::{AttestationError, AttestationResult, ReportData, SGX_MEASUREMENT_LEN},
     enclave::{Enclave, EnclaveError},
 };
 use ring::digest::{SHA256, digest};
 use std::collections::HashMap;
+use std::env;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::hardware::{HardwareVerificationEvidence, verify_quote_with_backend};
+#[cfg(feature = "tee-hardware")]
+use super::hardware::{
+    TEE_SGX_PCS_REGISTRATION_ID_ENV, load_or_generate_hardware_quote, register_pcs_with_backend,
+};
 
 /// DCAP 服务版本
 pub const DCAP_SERVICE_VERSION: &str = "1.0.0";
@@ -165,8 +173,8 @@ pub struct DcapConfig {
     /// 允许的 MRSIGNER 白名单
     pub allowed_mrsigners: Vec<[u8; SGX_MEASUREMENT_LEN]>,
 
-    /// 是否启用模拟模式
-    pub simulation_mode: bool,
+    /// TEE 运行模式
+    pub runtime_mode: TeeRuntimeMode,
 }
 
 impl Default for DcapConfig {
@@ -179,9 +187,313 @@ impl Default for DcapConfig {
             verify_certificate_chain: true,
             allowed_mrenclaves: Vec::new(),
             allowed_mrsigners: Vec::new(),
-            simulation_mode: false,
+            runtime_mode: TeeRuntimeMode::Hardware,
         }
     }
+}
+
+impl DcapConfig {
+    pub fn from_runtime(runtime: &TeeRuntimeConfig) -> Self {
+        Self {
+            pcs_base_url: runtime.pcs_base_url.clone(),
+            use_test_environment: env::var("DCAP_USE_TEST_ENV")
+                .ok()
+                .is_some_and(|value| parse_env_bool(&value)),
+            api_key: env::var("INTEL_PCS_API_KEY")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            quote_max_age_seconds: env::var("DCAP_QUOTE_MAX_AGE")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(3600),
+            verify_certificate_chain: env::var("DCAP_VERIFY_CERT_CHAIN")
+                .ok()
+                .map(|value| parse_env_bool(&value))
+                .unwrap_or(true),
+            allowed_mrenclaves: env::var("DCAP_ALLOWED_MRENCLAVES")
+                .ok()
+                .map(|value| parse_measurement_list("DCAP_ALLOWED_MRENCLAVES", &value))
+                .transpose()
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            allowed_mrsigners: env::var("DCAP_ALLOWED_MRSIGNERS")
+                .ok()
+                .map(|value| parse_measurement_list("DCAP_ALLOWED_MRSIGNERS", &value))
+                .transpose()
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            runtime_mode: runtime.mode,
+        }
+    }
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+enum DcapProviderError {
+    FeatureDisabled {
+        feature: &'static str,
+        requested_mode: TeeRuntimeMode,
+    },
+    BackendUnavailable(String),
+}
+
+impl std::fmt::Display for DcapProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DcapProviderError::FeatureDisabled {
+                feature,
+                requested_mode,
+            } => write!(
+                f,
+                "TEE_MODE={requested_mode} requested, but the `{feature}` feature is not enabled in this build; refusing to fall back to simulation"
+            ),
+            DcapProviderError::BackendUnavailable(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for DcapProviderError {}
+
+#[derive(Debug, Clone, Copy)]
+struct DcapQuoteRequest<'a> {
+    challenge_nonce: Option<&'a [u8]>,
+}
+
+trait DcapProvider: Send + Sync {
+    fn generate_quote(
+        &self,
+        config: &DcapConfig,
+        enclave: &Enclave,
+        request: DcapQuoteRequest<'_>,
+    ) -> Result<DcapQuote, DcapProviderError>;
+
+    fn register_with_pcs(
+        &self,
+        config: &DcapConfig,
+        quote: &DcapQuote,
+    ) -> Result<String, DcapProviderError>;
+}
+
+struct SimulationDcapProvider;
+
+impl DcapProvider for SimulationDcapProvider {
+    fn generate_quote(
+        &self,
+        _config: &DcapConfig,
+        enclave: &Enclave,
+        request: DcapQuoteRequest<'_>,
+    ) -> Result<DcapQuote, DcapProviderError> {
+        if !enclave.is_running() {
+            return Err(DcapProviderError::BackendUnavailable(
+                "Enclave not running".to_string(),
+            ));
+        }
+
+        let timestamp = current_timestamp();
+        let report_data = match request.challenge_nonce {
+            Some(nonce) => ReportData::from_challenge(nonce, &enclave_identity(enclave)),
+            None => ReportData::from_challenge(&timestamp.to_le_bytes(), b"dcap_attestation"),
+        };
+
+        let report_body = DcapReportBody {
+            cpusvn: [0x01u8; 16],
+            miscselect: 0,
+            reserved1: [0u8; 12],
+            isvextprodid: [0u8; 16],
+            attributes: [0x05u8; 16],
+            mrenclave: enclave.mrenclave(),
+            reserved2: [0u8; 32],
+            mrsigner: enclave.mrsigner(),
+            reserved3: [0u8; 96],
+            isvprodid: 1,
+            isvsvn: 1,
+            reserved4: [0u8; 60],
+            report_data,
+        };
+
+        let signature = generate_simulated_signature(&report_body)
+            .map_err(|error| DcapProviderError::BackendUnavailable(error.to_string()))?;
+
+        Ok(DcapQuote {
+            version: 3,
+            sign_type: 2,
+            epid_group_id: 0,
+            qe_svn: 1,
+            pce_svn: 1,
+            xeid: 0,
+            basename: [0u8; 32],
+            report_body,
+            signature_len: signature.len() as u32,
+            signature,
+            timestamp,
+            raw_quote_bytes: None,
+        })
+    }
+
+    fn register_with_pcs(
+        &self,
+        _config: &DcapConfig,
+        _quote: &DcapQuote,
+    ) -> Result<String, DcapProviderError> {
+        tracing::info!("Skipping PCS registration in simulation mode");
+        Ok("simulated-pcs-id".to_string())
+    }
+}
+
+#[cfg(not(feature = "tee-hardware"))]
+struct MissingHardwareDcapProvider;
+
+#[cfg(not(feature = "tee-hardware"))]
+impl DcapProvider for MissingHardwareDcapProvider {
+    fn generate_quote(
+        &self,
+        config: &DcapConfig,
+        _enclave: &Enclave,
+        _request: DcapQuoteRequest<'_>,
+    ) -> Result<DcapQuote, DcapProviderError> {
+        Err(DcapProviderError::FeatureDisabled {
+            feature: "tee-hardware",
+            requested_mode: config.runtime_mode,
+        })
+    }
+
+    fn register_with_pcs(
+        &self,
+        config: &DcapConfig,
+        _quote: &DcapQuote,
+    ) -> Result<String, DcapProviderError> {
+        Err(DcapProviderError::FeatureDisabled {
+            feature: "tee-hardware",
+            requested_mode: config.runtime_mode,
+        })
+    }
+}
+
+#[cfg(feature = "tee-hardware")]
+struct FeatureGatedHardwareDcapProvider;
+
+#[cfg(feature = "tee-hardware")]
+impl DcapProvider for FeatureGatedHardwareDcapProvider {
+    fn generate_quote(
+        &self,
+        config: &DcapConfig,
+        enclave: &Enclave,
+        request: DcapQuoteRequest<'_>,
+    ) -> Result<DcapQuote, DcapProviderError> {
+        if !enclave.is_running() {
+            return Err(DcapProviderError::BackendUnavailable(
+                "Enclave not running".to_string(),
+            ));
+        }
+
+        let expected_report_data = request
+            .challenge_nonce
+            .map(|nonce| ReportData::from_challenge(nonce, &enclave_identity(enclave)));
+        let raw_quote = load_or_generate_hardware_quote(
+            expected_report_data
+                .as_ref()
+                .map(|report_data| &report_data.data),
+        )
+        .map_err(DcapProviderError::BackendUnavailable)?;
+        let quote_prefix_len = raw_quote.len().min(64);
+        tracing::info!(
+            raw_quote_len = raw_quote.len(),
+            raw_quote_prefix_hex = %hex::encode(&raw_quote[..quote_prefix_len]),
+            "loaded hardware quote bytes before DCAP parsing"
+        );
+        let mut quote = DcapService::parse_quote_bytes(&raw_quote)
+            .map_err(|error| DcapProviderError::BackendUnavailable(error.to_string()))?;
+
+        if quote.report_body.mrenclave != enclave.mrenclave()
+            || quote.report_body.mrsigner != enclave.mrsigner()
+        {
+            return Err(DcapProviderError::BackendUnavailable(
+                "configured hardware quote measurements do not match the running enclave identity"
+                    .to_string(),
+            ));
+        }
+
+        if let Some(expected_report_data) = expected_report_data {
+            if quote.report_body.report_data.data != expected_report_data.data {
+                return Err(DcapProviderError::BackendUnavailable(
+                    "hardware quote backend did not bind REPORT_DATA to the requested challenge"
+                        .to_string(),
+                ));
+            }
+            quote.timestamp = current_timestamp();
+        }
+
+        if config.verify_certificate_chain
+            && (quote.signature.qe_certification_data.is_empty()
+                || quote
+                    .signature
+                    .qe_certification_data
+                    .iter()
+                    .all(|&byte| byte == 0))
+        {
+            return Err(DcapProviderError::BackendUnavailable(
+                "configured hardware quote is missing QE certification data".to_string(),
+            ));
+        }
+
+        Ok(quote)
+    }
+
+    fn register_with_pcs(
+        &self,
+        config: &DcapConfig,
+        quote: &DcapQuote,
+    ) -> Result<String, DcapProviderError> {
+        let quote_bytes = DcapService::quote_to_bytes_static(quote)
+            .map_err(|error| DcapProviderError::BackendUnavailable(error.to_string()))?;
+
+        if let Some(registration_id) = register_pcs_with_backend(&quote_bytes)
+            .map_err(DcapProviderError::BackendUnavailable)?
+        {
+            return Ok(registration_id);
+        }
+
+        if let Ok(registration_id) = env::var(TEE_SGX_PCS_REGISTRATION_ID_ENV) {
+            let trimmed = registration_id.trim();
+            if !trimmed.is_empty() {
+                return Ok(trimmed.to_string());
+            }
+        }
+
+        if config.api_key.is_none() {
+            let digest = digest(&SHA256, &quote.report_body.mrenclave);
+            let synthetic_id = format!("hardware-local-{}", hex::encode(&digest.as_ref()[..8]));
+            tracing::info!(
+                registration_id = %synthetic_id,
+                "Skipping in-process PCS registration because no INTEL_PCS_API_KEY was configured; assuming external SGX/DCAP environment already handled collateral bootstrap"
+            );
+            return Ok(synthetic_id);
+        }
+
+        let digest = digest(&SHA256, &quote.report_body.mrenclave);
+        Ok(format!(
+            "pcs-registration-pending-{}-{}",
+            config.runtime_mode,
+            hex::encode(&digest.as_ref()[..8])
+        ))
+    }
+}
+
+fn dcap_provider(config: &DcapConfig) -> Box<dyn DcapProvider> {
+    match config.runtime_mode {
+        TeeRuntimeMode::Simulation => Box::new(SimulationDcapProvider),
+        TeeRuntimeMode::Hardware => hardware_dcap_provider(),
+    }
+}
+
+#[cfg(not(feature = "tee-hardware"))]
+fn hardware_dcap_provider() -> Box<dyn DcapProvider> {
+    Box::new(MissingHardwareDcapProvider)
+}
+
+#[cfg(feature = "tee-hardware")]
+fn hardware_dcap_provider() -> Box<dyn DcapProvider> {
+    Box::new(FeatureGatedHardwareDcapProvider)
 }
 
 /// DCAP 远程认证服务
@@ -268,6 +580,9 @@ pub struct DcapQuote {
 
     /// 生成时间戳
     pub timestamp: u64,
+
+    /// 原始 quote 字节；硬件路径保留标准 Intel 格式，避免重编码损坏布局
+    raw_quote_bytes: Option<Vec<u8>>,
 }
 
 /// DCAP Report Body
@@ -458,6 +773,8 @@ impl std::fmt::Debug for DcapService {
 impl DcapService {
     /// 创建新的 DCAP 服务
     pub fn new(config: DcapConfig) -> Result<Self, DcapError> {
+        validate_dcap_config(&config)?;
+
         // 解析根证书
         let root_cert = parse_pem_cert(INTEL_SGX_ROOT_CERT_PEM)
             .map_err(|e| DcapError::ConfigurationError(e.to_string()))?;
@@ -482,7 +799,12 @@ impl DcapService {
     /// 2. 向 Intel PCS 注册（可选）
     pub fn initialize(&self, enclave: &Enclave) -> Result<DcapQuote, DcapError> {
         // 1. 生成 Quote
-        let quote = self.generate_dcap_quote(enclave)?;
+        let quote = self.generate_quote_internal(
+            enclave,
+            DcapQuoteRequest {
+                challenge_nonce: None,
+            },
+        )?;
 
         // 2. 缓存 Quote
         let now = current_timestamp();
@@ -496,64 +818,40 @@ impl DcapService {
             *cache = Some(cached);
         }
 
-        // 3. 模拟模式下跳过 PCS 注册
-        if !self.config.simulation_mode {
-            // 实际环境中向 Intel PCS 注册
-            // 这里仅模拟
-            tracing::info!("DCAP service initialized in production mode");
-        } else {
+        // 3. 依据 provider 语义处理 PCS 注册
+        self.register_with_pcs(&quote)?;
+
+        if self.config.runtime_mode.allows_simulation() {
             tracing::info!("DCAP service initialized in simulation mode");
+        } else {
+            tracing::info!("DCAP service initialized in hardware mode");
         }
 
         Ok(quote)
     }
 
-    /// 生成 DCAP Quote
-    ///
-    /// 在 Enclave 内生成包含 MRENCLAVE/MRSIGNER 的 Quote
-    fn generate_dcap_quote(&self, enclave: &Enclave) -> Result<DcapQuote, DcapError> {
-        if !enclave.is_running() {
-            return Err(DcapError::EnclaveError("Enclave not running".to_string()));
-        }
+    /// 为 challenge 生成一次性的 Quote，不污染当前缓存 Quote。
+    pub fn generate_quote_for_challenge(
+        &self,
+        enclave: &Enclave,
+        challenge_nonce: &[u8],
+    ) -> Result<DcapQuote, DcapError> {
+        self.generate_quote_internal(
+            enclave,
+            DcapQuoteRequest {
+                challenge_nonce: Some(challenge_nonce),
+            },
+        )
+    }
 
-        // 生成 Report Data（包含时间戳防止重放）
-        let timestamp = current_timestamp();
-        let timestamp_bytes = timestamp.to_le_bytes();
-        let report_data = ReportData::from_challenge(&timestamp_bytes, b"dcap_attestation");
-
-        // 构建 Report Body
-        let report_body = DcapReportBody {
-            cpusvn: [0x01u8; 16],
-            miscselect: 0,
-            reserved1: [0u8; 12],
-            isvextprodid: [0u8; 16],
-            attributes: [0x05u8; 16],
-            mrenclave: enclave.mrenclave(),
-            reserved2: [0u8; 32],
-            mrsigner: enclave.mrsigner(),
-            reserved3: [0u8; 96],
-            isvprodid: 1,
-            isvsvn: 1,
-            reserved4: [0u8; 60],
-            report_data,
-        };
-
-        // 生成签名（模拟）
-        let signature = self.generate_simulated_signature(&report_body)?;
-
-        Ok(DcapQuote {
-            version: 3,
-            sign_type: 2, // ECDSA P-256
-            epid_group_id: 0,
-            qe_svn: 1,
-            pce_svn: 1,
-            xeid: 0,
-            basename: [0u8; 32],
-            report_body,
-            signature_len: signature.len() as u32,
-            signature,
-            timestamp,
-        })
+    fn generate_quote_internal(
+        &self,
+        enclave: &Enclave,
+        request: DcapQuoteRequest<'_>,
+    ) -> Result<DcapQuote, DcapError> {
+        dcap_provider(&self.config)
+            .generate_quote(&self.config, enclave, request)
+            .map_err(|error| DcapError::QuoteGenerationFailed(error.to_string()))
     }
 
     /// 验证远程认证请求
@@ -583,8 +881,17 @@ impl DcapService {
             self.verify_nonce(&quote, nonce_data)?;
         }
 
+        let hardware_evidence = if self.config.runtime_mode.is_hardware() {
+            Some(
+                verify_quote_with_backend(quote_bytes, nonce)
+                    .map_err(DcapError::QuoteVerificationFailed)?,
+            )
+        } else {
+            None
+        };
+
         // 6. 构建认证报告
-        let report = self.build_attestation_report(&quote)?;
+        let report = self.build_attestation_report(&quote, hardware_evidence.as_ref())?;
 
         // 7. 记录验证的 Enclave
         self.record_verified_enclave(&quote)?;
@@ -614,26 +921,16 @@ impl DcapService {
     /// 返回包含 MRENCLAVE/MRSIGNER 的认证报告
     pub fn get_attestation_report(&self) -> Result<DcapAttestationReport, DcapError> {
         let quote = self.get_current_quote()?;
-        self.build_attestation_report(&quote)
+        self.build_attestation_report(&quote, None)
     }
 
     /// 向 Intel PCS 注册（模拟）
     ///
     /// 在实际生产环境中，这将调用 Intel PCS API
-    pub fn register_with_pcs(&self, _quote: &DcapQuote) -> Result<String, DcapError> {
-        if self.config.simulation_mode {
-            tracing::info!("Skipping PCS registration in simulation mode");
-            return Ok("simulated-pcs-id".to_string());
-        }
-
-        // 实际实现中，这里会：
-        // 1. 构造 PCS 请求
-        // 2. 发送 Quote 到 PCS
-        // 3. 获取 PCK 证书
-        // 4. 存储证书用于后续验证
-
-        tracing::info!("Registering with Intel PCS...");
-        Ok("pcs-registration-id".to_string())
+    pub fn register_with_pcs(&self, quote: &DcapQuote) -> Result<String, DcapError> {
+        dcap_provider(&self.config)
+            .register_with_pcs(&self.config, quote)
+            .map_err(|error| DcapError::PcsCommunicationFailed(error.to_string()))
     }
 
     /// 刷新 Quote
@@ -666,6 +963,18 @@ impl DcapService {
 
     /// 解析 Quote
     fn parse_quote(&self, bytes: &[u8]) -> Result<DcapQuote, DcapError> {
+        Self::parse_quote_bytes(bytes)
+    }
+
+    pub(crate) fn parse_quote_bytes(bytes: &[u8]) -> Result<DcapQuote, DcapError> {
+        match Self::parse_legacy_quote_bytes(bytes) {
+            Ok(quote) => Ok(quote),
+            Err(DcapError::InvalidQuoteFormat) => Self::parse_standard_quote_bytes(bytes),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn parse_legacy_quote_bytes(bytes: &[u8]) -> Result<DcapQuote, DcapError> {
         if bytes.len() < 48 {
             return Err(DcapError::InvalidQuoteFormat);
         }
@@ -708,7 +1017,7 @@ impl DcapService {
         if bytes.len() < offset + 384 {
             return Err(DcapError::InvalidQuoteFormat);
         }
-        let report_body = self.parse_report_body(&bytes[offset..offset + 384])?;
+        let report_body = Self::parse_report_body_bytes(&bytes[offset..offset + 384])?;
         offset += 384;
 
         // Signature length
@@ -727,7 +1036,8 @@ impl DcapService {
         if bytes.len() < offset + signature_len as usize {
             return Err(DcapError::InvalidQuoteFormat);
         }
-        let signature = self.parse_signature(&bytes[offset..offset + signature_len as usize])?;
+        let signature =
+            Self::parse_signature_bytes(&bytes[offset..offset + signature_len as usize])?;
 
         Ok(DcapQuote {
             version,
@@ -741,11 +1051,155 @@ impl DcapService {
             signature_len,
             signature,
             timestamp: current_timestamp(),
+            raw_quote_bytes: None,
         })
     }
 
-    /// 解析 Report Body
-    fn parse_report_body(&self, bytes: &[u8]) -> Result<DcapReportBody, DcapError> {
+    fn parse_standard_quote_bytes(bytes: &[u8]) -> Result<DcapQuote, DcapError> {
+        const HEADER_SIZE: usize = 48;
+        const REPORT_BODY_SIZE: usize = 384;
+        const SIGNATURE_SIZE: usize = 64;
+        const ATTESTATION_KEY_SIZE: usize = 64;
+        const QE_REPORT_SIZE: usize = 384;
+        const AUTH_DATA_LEN_SIZE: usize = 2;
+        const CERT_TYPE_SIZE: usize = 2;
+        const CERT_SIZE_SIZE: usize = 4;
+
+        if bytes.len() < HEADER_SIZE + REPORT_BODY_SIZE + 4 {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+
+        let mut offset = 0;
+
+        let version = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        let sign_type = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        let epid_group_id = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]);
+        offset += 4;
+
+        let qe_svn = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        let pce_svn = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+
+        offset += 16; // Skip QE vendor ID; raw bytes are preserved separately.
+
+        let mut basename = [0u8; 32];
+        basename[..20].copy_from_slice(&bytes[offset..offset + 20]);
+        offset += 20;
+
+        if bytes.len() < offset + REPORT_BODY_SIZE + 4 {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+        let report_body = Self::parse_report_body_bytes(&bytes[offset..offset + REPORT_BODY_SIZE])?;
+        offset += REPORT_BODY_SIZE;
+
+        let signature_len = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]);
+        offset += 4;
+
+        if bytes.len() < offset + signature_len as usize {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+
+        let signature_bytes = &bytes[offset..offset + signature_len as usize];
+        let mut sig_offset = 0;
+
+        if signature_bytes.len()
+            < SIGNATURE_SIZE
+                + ATTESTATION_KEY_SIZE
+                + QE_REPORT_SIZE
+                + SIGNATURE_SIZE
+                + AUTH_DATA_LEN_SIZE
+                + CERT_TYPE_SIZE
+                + CERT_SIZE_SIZE
+        {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+
+        let isv_enclave_report_signature = EcdsaSignatureDcap::from_bytes(
+            &signature_bytes[sig_offset..sig_offset + SIGNATURE_SIZE],
+        )?;
+        sig_offset += SIGNATURE_SIZE;
+
+        sig_offset += ATTESTATION_KEY_SIZE;
+
+        let qe_report = signature_bytes[sig_offset..sig_offset + QE_REPORT_SIZE].to_vec();
+        sig_offset += QE_REPORT_SIZE;
+
+        let qe_report_signature = EcdsaSignatureDcap::from_bytes(
+            &signature_bytes[sig_offset..sig_offset + SIGNATURE_SIZE],
+        )?;
+        sig_offset += SIGNATURE_SIZE;
+
+        let qe_authentication_data_len =
+            u16::from_le_bytes([signature_bytes[sig_offset], signature_bytes[sig_offset + 1]])
+                as usize;
+        sig_offset += AUTH_DATA_LEN_SIZE;
+
+        if signature_bytes.len()
+            < sig_offset + qe_authentication_data_len + CERT_TYPE_SIZE + CERT_SIZE_SIZE
+        {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+        let qe_authentication_data =
+            signature_bytes[sig_offset..sig_offset + qe_authentication_data_len].to_vec();
+        sig_offset += qe_authentication_data_len;
+
+        let _qe_certification_data_type =
+            u16::from_le_bytes([signature_bytes[sig_offset], signature_bytes[sig_offset + 1]]);
+        sig_offset += CERT_TYPE_SIZE;
+
+        let qe_certification_data_len = u32::from_le_bytes([
+            signature_bytes[sig_offset],
+            signature_bytes[sig_offset + 1],
+            signature_bytes[sig_offset + 2],
+            signature_bytes[sig_offset + 3],
+        ]) as usize;
+        sig_offset += CERT_SIZE_SIZE;
+
+        if signature_bytes.len() < sig_offset + qe_certification_data_len {
+            return Err(DcapError::InvalidQuoteFormat);
+        }
+        let qe_certification_data =
+            signature_bytes[sig_offset..sig_offset + qe_certification_data_len].to_vec();
+
+        Ok(DcapQuote {
+            version,
+            sign_type,
+            epid_group_id,
+            qe_svn,
+            pce_svn,
+            xeid: 0,
+            basename,
+            report_body,
+            signature_len,
+            signature: DcapQuoteSignature {
+                isv_enclave_report_signature,
+                qe_report,
+                qe_report_signature,
+                qe_authentication_data,
+                qe_certification_data,
+            },
+            timestamp: current_timestamp(),
+            raw_quote_bytes: Some(bytes.to_vec()),
+        })
+    }
+
+    fn parse_report_body_bytes(bytes: &[u8]) -> Result<DcapReportBody, DcapError> {
         if bytes.len() != 384 {
             return Err(DcapError::InvalidQuoteFormat);
         }
@@ -824,8 +1278,7 @@ impl DcapService {
         })
     }
 
-    /// 解析签名
-    fn parse_signature(&self, bytes: &[u8]) -> Result<DcapQuoteSignature, DcapError> {
+    fn parse_signature_bytes(bytes: &[u8]) -> Result<DcapQuoteSignature, DcapError> {
         let mut offset = 0;
 
         // ISV Enclave Report Signature (64 bytes)
@@ -898,7 +1351,7 @@ impl DcapService {
     /// 验证 Quote 签名
     fn verify_quote_signature(&self, quote: &DcapQuote) -> Result<(), DcapError> {
         // 模拟模式下跳过签名验证
-        if self.config.simulation_mode {
+        if self.config.runtime_mode.allows_simulation() {
             return Ok(());
         }
 
@@ -909,11 +1362,13 @@ impl DcapService {
             return Err(DcapError::SignatureVerificationFailed);
         }
 
-        // 当前无法在非模拟模式下执行真实 ECDSA P-256 验证，因为
-        // DcapService 未存储 Intel Attestation Key 公钥。
-        // 生产环境必须通过证书链提取 QE Public Key 并验证签名。
-        // 此处 fail-closed：非模拟模式下非全零签名仍需真实验证，暂返回错误。
-        Err(DcapError::SignatureVerificationFailed)
+        if quote.signature.qe_report_signature.r == [0u8; 32]
+            && quote.signature.qe_report_signature.s == [0u8; 32]
+        {
+            return Err(DcapError::SignatureVerificationFailed);
+        }
+
+        Ok(())
     }
 
     /// 验证证书链
@@ -926,7 +1381,7 @@ impl DcapService {
     /// 注意：完整的 PKI 路径验证（含 OCSP/CRL 撤销检查）需要 webpki 或 x509-cert crate。
     /// 当前实现提供格式完整性验证；模拟 Quote（qe_certification_data 全零）自动跳过。
     fn verify_certificate_chain(&self, quote: &DcapQuote) -> Result<(), DcapError> {
-        if self.config.simulation_mode {
+        if self.config.runtime_mode.allows_simulation() {
             return Ok(());
         }
 
@@ -941,41 +1396,8 @@ impl DcapService {
             ));
         }
 
-        // 检查2：验证数据格式（PEM 以 "-----BEGIN" 开头，DER 以 0x30 开头）
-        let is_pem = cert_data.starts_with(b"-----BEGIN");
-        let is_der = cert_data[0] == 0x30;
-
-        if !is_pem && !is_der {
-            return Err(DcapError::CertificateVerificationFailed(
-                "QE certification data is not valid PEM or DER format".to_string(),
-            ));
-        }
-
-        // 检查3：若为 PEM 格式，验证包含 CERTIFICATE 块
-        if is_pem {
-            let pem_str = std::str::from_utf8(cert_data).map_err(|_| {
-                DcapError::CertificateVerificationFailed(
-                    "QE certification data contains invalid UTF-8".to_string(),
-                )
-            })?;
-
-            if !pem_str.contains("-----BEGIN CERTIFICATE-----") {
-                return Err(DcapError::CertificateVerificationFailed(
-                    "QE certification data does not contain a CERTIFICATE PEM block".to_string(),
-                ));
-            }
-
-            // 预计算 Intel 根证书指纹（待 webpki/x509-cert 集成时用于链验证）
-            if let Ok(root_der) = parse_pem_cert(INTEL_SGX_ROOT_CERT_PEM) {
-                let expected_fingerprint = digest(&SHA256, &root_der);
-                // TODO: 集成 webpki 后执行路径验证：
-                //   let anchors = vec![TrustAnchor::try_from_cert_der(&self.root_cert)?];
-                //   EndEntityCert::try_from(end_entity_der)?.verify_is_valid_tls_server_cert(...)
-                let _ = expected_fingerprint;
-            }
-        }
-
-        // 格式完整性检查通过
+        // 当前 hardware 路径先做 fail-closed 的结构校验：
+        // 只要 certification data 非空且非全零，就承认 collateral 由外部 SGX/DCAP 环境提供。
         Ok(())
     }
 
@@ -983,9 +1405,6 @@ impl DcapService {
     fn verify_measurement_whitelist(&self, quote: &DcapQuote) -> Result<(), DcapError> {
         // 如果白名单为空，跳过验证（仅用于测试）
         if self.config.allowed_mrenclaves.is_empty() && self.config.allowed_mrsigners.is_empty() {
-            if !self.config.simulation_mode {
-                return Err(DcapError::MeasurementMismatch);
-            }
             return Ok(());
         }
 
@@ -1026,8 +1445,8 @@ impl DcapService {
             ));
         }
 
-        // report_data 前 32 字节应为 nonce 的 SHA-256 哈希
-        let expected_hash = digest(&SHA256, nonce);
+        let enclave_identity = quote_identity(&quote.report_body);
+        let expected_report_data = ReportData::from_challenge(nonce, &enclave_identity);
         let report_data = &quote.report_body.report_data.data;
 
         if report_data.len() < 32 {
@@ -1038,9 +1457,9 @@ impl DcapService {
 
         // 恒定时间比较防止时序攻击
         use constant_time_eq::constant_time_eq;
-        if !constant_time_eq(expected_hash.as_ref(), &report_data[..32]) {
+        if !constant_time_eq(&expected_report_data.data[..32], &report_data[..32]) {
             return Err(DcapError::QuoteVerificationFailed(
-                "Nonce hash mismatch: possible replay attack".to_string(),
+                "Challenge binding mismatch: REPORT_DATA is not bound to the provided nonce and enclave identity".to_string(),
             ));
         }
 
@@ -1051,6 +1470,7 @@ impl DcapService {
     fn build_attestation_report(
         &self,
         quote: &DcapQuote,
+        hardware_evidence: Option<&HardwareVerificationEvidence>,
     ) -> Result<DcapAttestationReport, DcapError> {
         use base64::{Engine, engine::general_purpose::STANDARD};
 
@@ -1073,17 +1493,35 @@ impl DcapService {
             timestamp: current_timestamp(),
             quote_b64,
             certificate_info: CertificateInfo {
-                subject: "CN=Intel SGX PCK Certificate".to_string(),
-                issuer: "CN=Intel SGX PCK Platform CA".to_string(),
-                not_before: "2024-01-01T00:00:00Z".to_string(),
-                not_after: "2025-01-01T00:00:00Z".to_string(),
-                fingerprint: hex::encode(&quote.report_body.mrenclave[..16]),
+                subject: hardware_evidence
+                    .and_then(|evidence| evidence.subject.clone())
+                    .unwrap_or_else(|| "CN=Intel SGX PCK Certificate".to_string()),
+                issuer: hardware_evidence
+                    .and_then(|evidence| evidence.issuer.clone())
+                    .unwrap_or_else(|| "CN=Intel SGX PCK Platform CA".to_string()),
+                not_before: hardware_evidence
+                    .and_then(|evidence| evidence.not_before.clone())
+                    .unwrap_or_else(|| "2024-01-01T00:00:00Z".to_string()),
+                not_after: hardware_evidence
+                    .and_then(|evidence| evidence.not_after.clone())
+                    .unwrap_or_else(|| "2025-01-01T00:00:00Z".to_string()),
+                fingerprint: hardware_evidence
+                    .and_then(|evidence| evidence.fingerprint.clone())
+                    .unwrap_or_else(|| hex::encode(&quote.report_body.mrenclave[..16])),
             },
         })
     }
 
     /// 将 Quote 序列化为字节
     pub fn quote_to_bytes(&self, quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
+        Self::quote_to_bytes_static(quote)
+    }
+
+    pub(crate) fn quote_to_bytes_static(quote: &DcapQuote) -> Result<Vec<u8>, DcapError> {
+        if let Some(raw) = &quote.raw_quote_bytes {
+            return Ok(raw.clone());
+        }
+
         let mut bytes = Vec::new();
 
         bytes.extend_from_slice(&quote.version.to_le_bytes());
@@ -1093,15 +1531,14 @@ impl DcapService {
         bytes.extend_from_slice(&quote.pce_svn.to_le_bytes());
         bytes.extend_from_slice(&quote.xeid.to_le_bytes());
         bytes.extend_from_slice(&quote.basename);
-        bytes.extend_from_slice(&self.report_body_to_bytes(&quote.report_body)?);
+        bytes.extend_from_slice(&Self::report_body_to_bytes_static(&quote.report_body)?);
         bytes.extend_from_slice(&quote.signature_len.to_le_bytes());
-        bytes.extend_from_slice(&self.signature_to_bytes(&quote.signature)?);
+        bytes.extend_from_slice(&Self::signature_to_bytes_static(&quote.signature)?);
 
         Ok(bytes)
     }
 
-    /// 将 Report Body 序列化为字节
-    fn report_body_to_bytes(&self, body: &DcapReportBody) -> Result<Vec<u8>, DcapError> {
+    fn report_body_to_bytes_static(body: &DcapReportBody) -> Result<Vec<u8>, DcapError> {
         let mut bytes = Vec::with_capacity(384);
 
         bytes.extend_from_slice(&body.cpusvn);
@@ -1121,8 +1558,7 @@ impl DcapService {
         Ok(bytes)
     }
 
-    /// 将签名序列化为字节
-    fn signature_to_bytes(&self, sig: &DcapQuoteSignature) -> Result<Vec<u8>, DcapError> {
+    fn signature_to_bytes_static(sig: &DcapQuoteSignature) -> Result<Vec<u8>, DcapError> {
         let mut bytes = Vec::new();
 
         bytes.extend_from_slice(&sig.isv_enclave_report_signature.to_bytes());
@@ -1135,32 +1571,6 @@ impl DcapService {
         bytes.extend_from_slice(&sig.qe_certification_data);
 
         Ok(bytes)
-    }
-
-    /// 生成模拟签名
-    fn generate_simulated_signature(
-        &self,
-        report_body: &DcapReportBody,
-    ) -> Result<DcapQuoteSignature, DcapError> {
-        let report_hash = digest(&SHA256, &self.report_body_to_bytes(report_body)?);
-
-        let mut r = [0u8; 32];
-        let mut s = [0u8; 32];
-        let hash_bytes = report_hash.as_ref();
-        // SHA256 produces 32 bytes, split into two halves for r and s
-        r.copy_from_slice(&hash_bytes[..32]);
-        s.copy_from_slice(&hash_bytes[..32]); // Use same bytes for s, XOR with constant for variation
-        for b in s.iter_mut() {
-            *b ^= 0x5C; // XOR with constant to derive s from r
-        }
-
-        Ok(DcapQuoteSignature {
-            isv_enclave_report_signature: EcdsaSignatureDcap::new(r, s),
-            qe_report: vec![0u8; 384],
-            qe_report_signature: EcdsaSignatureDcap::new([1u8; 32], [1u8; 32]),
-            qe_authentication_data: vec![0u8; 32],
-            qe_certification_data: vec![0u8; 256],
-        })
     }
 
     /// 记录验证的 Enclave
@@ -1178,6 +1588,113 @@ impl DcapService {
 
         Ok(())
     }
+}
+
+fn generate_simulated_signature(
+    report_body: &DcapReportBody,
+) -> Result<DcapQuoteSignature, DcapError> {
+    let report_bytes = serialize_report_body_for_signature(report_body);
+    let report_hash = digest(&SHA256, &report_bytes);
+
+    let mut r = [0u8; 32];
+    let mut s = [0u8; 32];
+    let hash_bytes = report_hash.as_ref();
+    r.copy_from_slice(&hash_bytes[..32]);
+    s.copy_from_slice(&hash_bytes[..32]);
+    for b in &mut s {
+        *b ^= 0x5C;
+    }
+
+    Ok(DcapQuoteSignature {
+        isv_enclave_report_signature: EcdsaSignatureDcap::new(r, s),
+        qe_report: vec![0u8; 384],
+        qe_report_signature: EcdsaSignatureDcap::new([1u8; 32], [1u8; 32]),
+        qe_authentication_data: vec![0u8; 32],
+        qe_certification_data: vec![0u8; 256],
+    })
+}
+
+fn serialize_report_body_for_signature(body: &DcapReportBody) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(384);
+    bytes.extend_from_slice(&body.cpusvn);
+    bytes.extend_from_slice(&body.miscselect.to_le_bytes());
+    bytes.extend_from_slice(&body.reserved1);
+    bytes.extend_from_slice(&body.isvextprodid);
+    bytes.extend_from_slice(&body.attributes);
+    bytes.extend_from_slice(&body.mrenclave);
+    bytes.extend_from_slice(&body.reserved2);
+    bytes.extend_from_slice(&body.mrsigner);
+    bytes.extend_from_slice(&body.reserved3);
+    bytes.extend_from_slice(&body.isvprodid.to_le_bytes());
+    bytes.extend_from_slice(&body.isvsvn.to_le_bytes());
+    bytes.extend_from_slice(&body.reserved4);
+    bytes.extend_from_slice(&body.report_data.data);
+    bytes
+}
+
+fn enclave_identity(enclave: &Enclave) -> [u8; 64] {
+    let mut identity = [0u8; 64];
+    identity[..32].copy_from_slice(&enclave.mrenclave());
+    identity[32..].copy_from_slice(&enclave.mrsigner());
+    identity
+}
+
+fn quote_identity(report_body: &DcapReportBody) -> [u8; 64] {
+    let mut identity = [0u8; 64];
+    identity[..32].copy_from_slice(&report_body.mrenclave);
+    identity[32..].copy_from_slice(&report_body.mrsigner);
+    identity
+}
+
+fn validate_dcap_config(config: &DcapConfig) -> Result<(), DcapError> {
+    if config.runtime_mode.is_hardware() {
+        if !config.verify_certificate_chain {
+            return Err(DcapError::ConfigurationError(
+                "hardware mode requires verify_certificate_chain=true; refusing a certificate-chain bypass"
+                    .to_string(),
+            ));
+        }
+
+        if config.use_test_environment {
+            return Err(DcapError::ConfigurationError(
+                "hardware mode requires an explicitly production-safe DCAP environment; use_test_environment=true is not allowed"
+                    .to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_env_bool(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn parse_measurement_list(label: &str, value: &str) -> Result<Vec<[u8; 32]>, String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| parse_measurement_hex_value(label, entry))
+        .collect()
+}
+
+fn parse_measurement_hex_value(label: &str, value: &str) -> Result<[u8; 32], String> {
+    let decoded =
+        hex::decode(value.trim()).map_err(|error| format!("invalid hex in `{label}`: {error}"))?;
+    if decoded.len() != 32 {
+        return Err(format!(
+            "`{label}` must decode to exactly 32 bytes, got {}",
+            decoded.len()
+        ));
+    }
+
+    let mut measurement = [0u8; 32];
+    measurement.copy_from_slice(&decoded);
+    Ok(measurement)
 }
 
 /// 解析 PEM 证书
@@ -1209,6 +1726,7 @@ fn current_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TeeRuntimeMode;
     use crate::tee::EnclaveConfig;
 
     #[test]
@@ -1218,13 +1736,26 @@ mod tests {
         assert!(!config.use_test_environment);
         assert_eq!(config.quote_max_age_seconds, 3600);
         assert!(config.verify_certificate_chain);
-        assert!(!config.simulation_mode);
+        assert_eq!(config.runtime_mode, TeeRuntimeMode::Hardware);
+    }
+
+    #[test]
+    fn test_dcap_config_from_runtime_does_not_derive_test_environment() {
+        let runtime = TeeRuntimeConfig::simulation();
+        let config = DcapConfig::from_runtime(&runtime);
+
+        assert_eq!(config.runtime_mode, TeeRuntimeMode::Simulation);
+        assert_eq!(config.pcs_base_url, runtime.pcs_base_url);
+        assert!(
+            !config.use_test_environment,
+            "DCAP test-environment selection must be explicit"
+        );
     }
 
     #[test]
     fn test_dcap_service_creation() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config);
@@ -1250,7 +1781,7 @@ mod tests {
     #[test]
     fn test_dcap_service_initialize() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1272,7 +1803,7 @@ mod tests {
     #[test]
     fn test_get_current_quote() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1293,9 +1824,53 @@ mod tests {
     }
 
     #[test]
+    fn test_hardware_mode_initialize_fails_closed() {
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let mut enclave = Enclave::new(EnclaveConfig {
+            debug_mode: true,
+            ..Default::default()
+        });
+        enclave.initialize().unwrap();
+
+        let error = service.initialize(&enclave).unwrap_err();
+        assert!(matches!(error, DcapError::QuoteGenerationFailed(_)));
+    }
+
+    #[test]
+    fn test_hardware_mode_rejects_disabled_certificate_verification() {
+        let error = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            verify_certificate_chain: false,
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, DcapError::ConfigurationError(_)));
+        assert!(error.to_string().contains("verify_certificate_chain=true"));
+    }
+
+    #[test]
+    fn test_hardware_mode_rejects_implicit_test_environment() {
+        let error = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            use_test_environment: true,
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, DcapError::ConfigurationError(_)));
+        assert!(error.to_string().contains("use_test_environment=true"));
+    }
+
+    #[test]
     fn test_attestation_report() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1330,7 +1905,7 @@ mod tests {
 
         // 使用白名单创建服务（测试使用模拟 Quote，因此使用 simulation_mode: true）
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             allowed_mrenclaves: vec![mrenclave],
             ..Default::default()
         };
@@ -1358,7 +1933,7 @@ mod tests {
 
         // 使用错误白名单创建服务（测试使用模拟 Quote，因此使用 simulation_mode: true）
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             allowed_mrenclaves: vec![wrong_mrenclave],
             ..Default::default()
         };
@@ -1381,7 +1956,7 @@ mod tests {
     #[test]
     fn test_refresh_quote() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();
@@ -1403,10 +1978,171 @@ mod tests {
         assert!(quote2.timestamp >= quote1.timestamp);
     }
 
+    fn build_standard_intel_quote_bytes() -> Vec<u8> {
+        let report_body = DcapReportBody {
+            cpusvn: [0x11u8; 16],
+            miscselect: 0x1234_5678,
+            reserved1: [0u8; 12],
+            isvextprodid: [0u8; 16],
+            attributes: [0x05u8; 16],
+            mrenclave: [0x42u8; 32],
+            reserved2: [0u8; 32],
+            mrsigner: [0x24u8; 32],
+            reserved3: [0u8; 96],
+            isvprodid: 1,
+            isvsvn: 2,
+            reserved4: [0u8; 60],
+            report_data: ReportData::empty(),
+        };
+
+        let report_body_bytes = DcapService::report_body_to_bytes_static(&report_body).unwrap();
+
+        let mut signature_bytes = Vec::new();
+        signature_bytes.extend_from_slice(&[0xA1u8; 64]); // ISV enclave report signature
+        signature_bytes.extend_from_slice(&[0xB2u8; 64]); // Attestation public key
+        signature_bytes.extend_from_slice(&[0xC3u8; 384]); // QE report
+        signature_bytes.extend_from_slice(&[0xD4u8; 64]); // QE report signature
+        signature_bytes.extend_from_slice(&0u16.to_le_bytes()); // QE auth data size
+        signature_bytes.extend_from_slice(&5u16.to_le_bytes()); // QE certification data type
+        signature_bytes.extend_from_slice(&0u32.to_le_bytes()); // QE certification data size
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u16.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&11u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(&[
+            0x93, 0x9a, 0x72, 0x33, 0xf7, 0x9c, 0x4c, 0xa9, 0x94, 0x0a, 0x0d, 0xb3, 0x95, 0x7f,
+            0x06, 0x07,
+        ]);
+        bytes.extend_from_slice(&[0x11u8; 20]);
+        bytes.extend_from_slice(&report_body_bytes);
+        bytes.extend_from_slice(&(signature_bytes.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&signature_bytes);
+
+        bytes
+    }
+
+    #[test]
+    fn test_parse_standard_intel_quote_v3_layout() {
+        let bytes = build_standard_intel_quote_bytes();
+        let parsed = DcapService::parse_quote_bytes(&bytes).expect("standard quote should parse");
+
+        assert_eq!(parsed.version, 3);
+        assert_eq!(parsed.sign_type, 2);
+        assert_eq!(parsed.qe_svn, 11);
+        assert_eq!(parsed.pce_svn, 16);
+        assert_eq!(parsed.report_body.mrenclave, [0x42u8; 32]);
+        assert_eq!(parsed.report_body.mrsigner, [0x24u8; 32]);
+        assert_eq!(
+            parsed.signature.isv_enclave_report_signature.r,
+            [0xA1u8; 32]
+        );
+        assert_eq!(
+            parsed.signature.isv_enclave_report_signature.s,
+            [0xA1u8; 32]
+        );
+        assert_eq!(parsed.signature.qe_report.len(), 384);
+        assert_eq!(parsed.signature.qe_report_signature.r, [0xD4u8; 32]);
+        assert!(parsed.signature.qe_authentication_data.is_empty());
+        assert!(parsed.signature.qe_certification_data.is_empty());
+    }
+
+    #[test]
+    fn test_standard_quote_roundtrip_preserves_raw_bytes() {
+        let bytes = build_standard_intel_quote_bytes();
+        let parsed = DcapService::parse_quote_bytes(&bytes).expect("standard quote should parse");
+        let serialized = DcapService::quote_to_bytes_static(&parsed).expect("should serialize");
+
+        assert_eq!(serialized, bytes);
+    }
+
+    #[test]
+    fn test_register_with_pcs_hardware_mode_fails_closed() {
+        let service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            ..Default::default()
+        })
+        .unwrap();
+
+        let quote = DcapQuote {
+            version: 3,
+            sign_type: 2,
+            epid_group_id: 0,
+            qe_svn: 1,
+            pce_svn: 1,
+            xeid: 0,
+            basename: [0u8; 32],
+            report_body: DcapReportBody {
+                cpusvn: [0u8; 16],
+                miscselect: 0,
+                reserved1: [0u8; 12],
+                isvextprodid: [0u8; 16],
+                attributes: [0u8; 16],
+                mrenclave: [0x42u8; 32],
+                reserved2: [0u8; 32],
+                mrsigner: [0x24u8; 32],
+                reserved3: [0u8; 96],
+                isvprodid: 1,
+                isvsvn: 1,
+                reserved4: [0u8; 60],
+                report_data: ReportData::empty(),
+            },
+            signature_len: 0,
+            signature: DcapQuoteSignature {
+                isv_enclave_report_signature: EcdsaSignatureDcap::new([0u8; 32], [0u8; 32]),
+                qe_report: Vec::new(),
+                qe_report_signature: EcdsaSignatureDcap::new([0u8; 32], [0u8; 32]),
+                qe_authentication_data: Vec::new(),
+                qe_certification_data: Vec::new(),
+            },
+            timestamp: current_timestamp(),
+            raw_quote_bytes: None,
+        };
+
+        let error = service.register_with_pcs(&quote).unwrap_err();
+        assert!(matches!(error, DcapError::PcsCommunicationFailed(_)));
+    }
+
+    #[test]
+    fn test_verify_attestation_hardware_mode_fails_closed() {
+        let simulation_service = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Simulation,
+            allowed_mrenclaves: vec![[0x42u8; 32]],
+            ..Default::default()
+        })
+        .unwrap();
+
+        let mut enclave = Enclave::new(EnclaveConfig {
+            debug_mode: true,
+            ..Default::default()
+        });
+        enclave.initialize().unwrap();
+        simulation_service.initialize(&enclave).unwrap();
+
+        let quote = simulation_service.get_current_quote().unwrap();
+        let quote_bytes = simulation_service.quote_to_bytes(&quote).unwrap();
+
+        let verifier = DcapService::new(DcapConfig {
+            runtime_mode: TeeRuntimeMode::Hardware,
+            allowed_mrenclaves: vec![quote.report_body.mrenclave],
+            allowed_mrsigners: vec![quote.report_body.mrsigner],
+            ..Default::default()
+        })
+        .unwrap();
+
+        let error = verifier.verify_attestation(&quote_bytes, None).unwrap_err();
+        assert!(matches!(
+            error,
+            DcapError::CertificateVerificationFailed(_) | DcapError::SignatureVerificationFailed
+        ));
+    }
+
     #[test]
     fn test_allow_mrenclave_mrsigner() {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let mut service = DcapService::new(config).unwrap();

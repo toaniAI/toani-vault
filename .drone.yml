@@ -1,15 +1,20 @@
 kind: pipeline
 type: docker
 name: backend-testing
+environment:
+  CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK: "true"
 
 trigger:
   ref:
     include:
       - refs/heads/branch_dev
       - refs/heads/branch_test
+      - refs/pull/**
   event:
-    # 临时禁用：使用 cron 事件触发，避免正常 push/PR 自动运行
-    # 需要恢复时把 event 改回 push/pull_request
+    # PR 常规门禁：所有日常开发至少执行 fmt/clippy/test
+    - pull_request
+    - push
+    # 保留 cron，便于定时回归
     - cron
   paths:
     exclude:
@@ -37,7 +42,7 @@ steps:
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
       - rustup component add rustfmt
-      - cargo fmt --all -- --check
+      - cargo fmt --check
 
   - name: rust-clippy
     image: rust:1.88.0-slim-bookworm
@@ -49,17 +54,67 @@ steps:
       - rustup component add clippy
       - cargo clippy --tests -- -D warnings
 
-  - name: unit-tests
+---
+kind: pipeline
+type: docker
+name: backend-hardware-attestation
+environment:
+  CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK: "true"
+
+trigger:
+  event:
+    - cron
+  cron:
+    - hardware-attestation
+  paths:
+    include:
+      - src/**
+      - tests/**
+      - .drone.yml
+
+node:
+  tee_runner: sgx
+
+steps:
+  - name: sgx-enclave-build
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
+    environment:
+      TEE_MODE: hardware
+      DCAP_PCCS_URL: https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/
+      SGX_SIGNING_KEY:
+        from_secret: sgx-signing-key
+    commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
+      - bash scripts/check_sgx_environment.sh
+      - bash scripts/build-sgx-enclave.sh
+      - bash scripts/sign-sgx-enclave.sh
+
+  - name: hardware-compile-check
     image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     depends_on:
-      - rust-fmt
-      - rust-clippy
+      - sgx-enclave-build
     environment:
-      REDIS_URL: redis://redis:6379
+      TEE_MODE: hardware
+      DCAP_PCCS_URL: https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/
+      TEE_ENCLAVE_PATH: /drone/src/target/sgx-enclave/credbridge_enclave.signed.so
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
-      - cargo test
+      - cargo test --features tee-hardware --lib --tests --no-run
+
+  - name: hardware-only-tests
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
+    depends_on:
+      - hardware-compile-check
+    environment:
+      TEE_MODE: hardware
+      DCAP_PCCS_URL: https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/
+      TEE_ENCLAVE_PATH: /drone/src/target/sgx-enclave/credbridge_enclave.signed.so
+    commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
+      - cargo test --features tee-hardware --test sgx_hardware_tests -- --ignored --test-threads=1
 
 ---
 kind: pipeline
@@ -69,27 +124,209 @@ trigger:
   ref:
     - refs/heads/branch_dev
     - refs/heads/branch_test
+    - refs/tags/*
   event:
     - push
+    - tag
   paths:
     exclude:
       - frontend/**
 
 steps:
-  - name: docker-build
-    image: plugins/docker
+  - name: verify-nsjail-archive
+    image: alpine:3.21
     pull: if-not-exists
-    settings:
-      registry: hub.bitkinetic.com
-      repo: hub.bitkinetic.com/zkme/credbridge
-      tags: alpha-${DRONE_BUILD_NUMBER}
-      purge: true
-      username:
+    commands:
+      - test -f nsjail-3.6.tar.gz
+
+  - name: verify-nsjail-runtime-contract
+    image: alpine:3.21
+    pull: if-not-exists
+    depends_on:
+      - verify-nsjail-archive
+    commands:
+      - sh docker/scripts/verify-nsjail-runtime-contract.sh
+
+  - name: check-builder-base-image
+    image: alpine:3.21
+    pull: if-not-exists
+    depends_on:
+      - verify-nsjail-runtime-contract
+    environment:
+      REPO_USER:
         from_secret: docker-hub-username
-      password:
+      REPO_PWD:
         from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
+    commands:
+      - apk add --no-cache curl >/dev/null
+      - export MANIFEST_URL="https://hub.bitkinetic.com/v2/zkme/credbridge-builder/manifests/rust1.88.0-sgx2.28.100.1-bookworm"
+      - |
+        HTTP_CODE="$(curl -sS -L \
+          -u "$REPO_USER:$REPO_PWD" \
+          -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+          -o /dev/null \
+          -w '%{http_code}' \
+          "$MANIFEST_URL")"
+        case "$HTTP_CODE" in
+          200)
+            echo present > .builder-base-image.status
+            echo "builder base image already exists"
+            ;;
+          404)
+            echo missing > .builder-base-image.status
+            echo "builder base image not found"
+            ;;
+          *)
+            echo "builder base image check failed with HTTP $HTTP_CODE" >&2
+            exit 1
+            ;;
+        esac
+
+  - name: build-builder-base-image
+    image: gcr.io/kaniko-project/executor:debug
+    pull: if-not-exists
+    depends_on:
+      - check-builder-base-image
+    environment:
+      BUILDER_BASE_STATUS_FILE: /drone/src/.builder-base-image.status
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+    commands:
+      - |
+        if [ -f "$BUILDER_BASE_STATUS_FILE" ] && [ "$(cat "$BUILDER_BASE_STATUS_FILE")" = "present" ]; then
+          echo "builder base image already exists, skipping build"
+          exit 0
+        fi
+      - mkdir -p /kaniko/.docker
+      - printf '%s' "{\"auths\":{\"hub.bitkinetic.com\":{\"username\":\"$REPO_USER\",\"password\":\"$REPO_PWD\"}}}" > /kaniko/.docker/config.json
+      - |
+        for attempt in 1 2 3; do
+          if /kaniko/executor \
+            --context /drone/src \
+            --dockerfile /drone/src/docker/base/builder.Dockerfile \
+            --cache=true \
+            --cache-ttl=336h \
+            --cleanup \
+            --build-arg APT_MIRROR_SCHEME=https \
+            --build-arg APT_MIRROR_HOST=mirrors.aliyun.com \
+            --destination hub.bitkinetic.com/zkme/credbridge-builder:rust1.88.0-sgx2.28.100.1-bookworm; then
+            exit 0
+          fi
+          echo "builder base image build failed on attempt ${attempt}" >&2
+          sleep $((attempt * 10))
+        done
+        exit 1
+
+  - name: check-runtime-base-image
+    image: alpine:3.21
+    pull: if-not-exists
+    depends_on:
+      - verify-nsjail-runtime-contract
+    environment:
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+    commands:
+      - apk add --no-cache curl >/dev/null
+      - export MANIFEST_URL="https://hub.bitkinetic.com/v2/zkme/credbridge-runtime-sandbox/manifests/jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer"
+      - |
+        HTTP_CODE="$(curl -sS -L \
+          -u "$REPO_USER:$REPO_PWD" \
+          -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+          -o /dev/null \
+          -w '%{http_code}' \
+          "$MANIFEST_URL")"
+        case "$HTTP_CODE" in
+          200)
+            echo present > .runtime-base-image.status
+            echo "runtime base image already exists"
+            ;;
+          404)
+            echo missing > .runtime-base-image.status
+            echo "runtime base image not found"
+            ;;
+          *)
+            echo "runtime base image check failed with HTTP $HTTP_CODE" >&2
+            exit 1
+            ;;
+        esac
+
+  - name: build-runtime-base-image
+    image: gcr.io/kaniko-project/executor:debug
+    pull: if-not-exists
+    depends_on:
+      - check-runtime-base-image
+    environment:
+      RUNTIME_BASE_STATUS_FILE: /drone/src/.runtime-base-image.status
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+    commands:
+      - |
+        if [ -f "$RUNTIME_BASE_STATUS_FILE" ] && [ "$(cat "$RUNTIME_BASE_STATUS_FILE")" = "present" ]; then
+          echo "runtime base image already exists, skipping build"
+          exit 0
+        fi
+      - mkdir -p /kaniko/.docker
+      - printf '%s' "{\"auths\":{\"hub.bitkinetic.com\":{\"username\":\"$REPO_USER\",\"password\":\"$REPO_PWD\"}}}" > /kaniko/.docker/config.json
+      - |
+        for attempt in 1 2 3; do
+          if /kaniko/executor \
+            --context /drone/src \
+            --dockerfile /drone/src/docker/base/runtime.Dockerfile \
+            --cache=true \
+            --cache-ttl=336h \
+            --cleanup \
+            --build-arg APT_MIRROR_SCHEME=https \
+            --build-arg APT_MIRROR_HOST=mirrors.aliyun.com \
+            --destination hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer; then
+            exit 0
+          fi
+          echo "runtime base image build failed on attempt ${attempt}" >&2
+          sleep $((attempt * 10))
+        done
+        exit 1
+
+  - name: docker-build
+    image: gcr.io/kaniko-project/executor:debug
+    pull: if-not-exists
+    depends_on:
+      - build-builder-base-image
+      - build-runtime-base-image
+    environment:
+      REPO_USER:
+        from_secret: docker-hub-username
+      REPO_PWD:
+        from_secret: docker-hub-password
+      SGX_SIGNING_KEY:
+        from_secret: sgx-signing-key
+    commands:
+      - mkdir -p /kaniko/.docker
+      - printf '%s' "{\"auths\":{\"hub.bitkinetic.com\":{\"username\":\"$REPO_USER\",\"password\":\"$REPO_PWD\"}}}" > /kaniko/.docker/config.json
+      - |
+        for attempt in 1 2 3; do
+          if /kaniko/executor \
+            --context /drone/src \
+            --dockerfile /drone/src/Dockerfile \
+            --cache=true \
+            --cache-ttl=336h \
+            --cleanup \
+            --build-arg APT_MIRROR_SCHEME=https \
+            --build-arg APT_MIRROR_HOST=mirrors.aliyun.com \
+            --build-arg BASE_BUILDER_IMAGE=hub.bitkinetic.com/zkme/credbridge-builder:rust1.88.0-sgx2.28.100.1-bookworm \
+            --build-arg RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer \
+            --build-arg SGX_SIGNING_KEY="$SGX_SIGNING_KEY" \
+            --destination hub.bitkinetic.com/zkme/credbridge:alpha-${DRONE_BUILD_NUMBER}; then
+            exit 0
+          fi
+          echo "credbridge image build failed on attempt ${attempt}" >&2
+          sleep $((attempt * 10))
+        done
+        exit 1
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6
@@ -103,12 +340,67 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
+      PRIVY_APP_SECRET_RAW:
+        from_secret: privy-app-secret
+      PRIVY_APP_SECRET_ALT:
+        from_secret: PRIVY_APP_SECRET
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-go -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-go dn/go -f .values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl create --save-config configmap credbridge -n zkme-dev --from-file config/dev/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - |
+        sh -eu -c '
+          PRIVY_APP_ID="cmniaifov006t0cl1af6l5xqs"
+          PRIVY_APP_SECRET="$${PRIVY_APP_SECRET_RAW:-$${PRIVY_APP_SECRET_ALT:-}}"
+
+          {
+            printf "%s\n" "envs:"
+            printf "%s\n" "  PRIVY_JWKS_URL: \"https://auth.privy.io/api/v1/apps/$${PRIVY_APP_ID}/jwks.json\""
+            printf "%s\n" "  PRIVY_API_URL: \"https://auth.privy.io/api/v1\""
+
+            if [ -n "$$PRIVY_APP_ID" ]; then
+              printf "  PRIVY_APP_ID: \"%s\"\n" "$$PRIVY_APP_ID"
+            fi
+
+            if [ -n "$$PRIVY_APP_SECRET" ]; then
+              printf "  PRIVY_APP_SECRET: \"%s\"\n" "$$PRIVY_APP_SECRET"
+            fi
+          } > .drone-runtime.values.yaml
+        '
+      - helm upgrade --install credbridge dn/go -f .values.yaml -f .drone-runtime.values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
+    when:
+      ref:
+        - refs/heads/branch_dev
+
+  - name: notify-lark-deploy-dev
+    image: alpine:3.21
+    pull: if-not-exists
+    depends_on:
+      - deploy-dev
+    commands:
+      - |
+        apk add --no-cache curl jq
+        commit_message=$(printf "%s" "${DRONE_COMMIT_MESSAGE:-}" | tr "\r\n" "  ")
+
+        text=$(cat <<EOF
+        部署
+        CredBridge dev 部署成功
+        仓库: ${DRONE_REPO}
+        分支: ${DRONE_BRANCH}
+        构建号: ${DRONE_BUILD_NUMBER}
+        提交: ${DRONE_COMMIT_SHA}
+        提交说明: ${commit_message}
+        链接: ${DRONE_BUILD_LINK}
+        EOF
+        )
+
+        jq -Rn \
+          --arg text "$text" \
+          '{msg_type:"text",content:{text:$text}}' \
+          | curl -fsSL -X POST -H "Content-Type: application/json" \
+              --data-binary @- \
+              https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
     when:
       ref:
         - refs/heads/branch_dev
@@ -125,15 +417,80 @@ steps:
         from_secret: docker-hub-username
       REPO_PWD:
         from_secret: docker-hub-password
+      PRIVY_APP_SECRET_RAW:
+        from_secret: privy-app-secret
+      PRIVY_APP_SECRET_ALT:
+        from_secret: PRIVY_APP_SECRET
     commands:
       - /run.sh
       - helm repo add --username=$REPO_USER --password=$REPO_PWD dn https://charts.bitkinetic.com/
-      - kubectl create --save-config configmap credbridge-go -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
-      - helm upgrade --install credbridge-go dn/go -f .test.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - kubectl create --save-config configmap credbridge -n zkme-test --from-file config/test/config.yaml -o yaml --dry-run=client | kubectl apply -f -
+      - |
+        sh -eu -c '
+          PRIVY_APP_ID="cmniaifov006t0cl1af6l5xqs"
+          PRIVY_APP_SECRET="$${PRIVY_APP_SECRET_RAW:-$${PRIVY_APP_SECRET_ALT:-}}"
+
+          {
+            printf "%s\n" "envs:"
+            printf "%s\n" "  PRIVY_JWKS_URL: \"https://auth.privy.io/api/v1/apps/$${PRIVY_APP_ID}/jwks.json\""
+            printf "%s\n" "  PRIVY_API_URL: \"https://auth.privy.io/api/v1\""
+
+            if [ -n "$$PRIVY_APP_ID" ]; then
+              printf "  PRIVY_APP_ID: \"%s\"\n" "$$PRIVY_APP_ID"
+            fi
+
+            if [ -n "$$PRIVY_APP_SECRET" ]; then
+              printf "  PRIVY_APP_SECRET: \"%s\"\n" "$$PRIVY_APP_SECRET"
+            fi
+          } > .drone-runtime.values.yaml
+        '
+      - helm upgrade --install credbridge dn/go -f .test.values.yaml -f .drone-runtime.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
       - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
         - refs/heads/branch_test
+
+  - name: docker-build-pd
+    image: plugins/docker
+    pull: if-not-exists
+    settings:
+      registry: hub.bitkinetic.com
+      repo: hub.bitkinetic.com/zkme/credbridge
+      tags: ${DRONE_TAG}
+      purge: true
+      username:
+        from_secret: docker-hub-username
+      password:
+        from_secret: docker-hub-password
+      context: ./
+      dockerfile: Dockerfile
+    when:
+      ref:
+        - refs/tags/*
+
+  - name: apply push to online
+    image: hub.bitkinetic.com/public/deploy:v1
+    pull: if-not-exists
+    depends_on:
+      - docker-build-pd
+    environment:
+      DEPLOY_AUTH_KEY:
+        from_secret: deploy-auth-key
+      DEPLOY_SERVER:
+        from_secret: deploy-base-url
+      OBJECT: zkme
+    commands:
+      - app call -d
+    when:
+      ref:
+        - refs/tags/*
+
+---
+kind: secret
+name: sgx-signing-key
+get:
+  path: sgx-signing-key
+  name: key
 
 ---
 kind: secret
@@ -155,3 +512,45 @@ name: kube-config
 get:
   path: drone-helm-secret
   name: config
+
+---
+kind: secret
+name: privy-app-id
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_ID
+
+---
+kind: secret
+name: privy-app-secret
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_SECRET
+
+---
+kind: secret
+name: PRIVY_APP_ID
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_ID
+
+---
+kind: secret
+name: PRIVY_APP_SECRET
+get:
+  path: credbridge-privy
+  name: PRIVY_APP_SECRET
+
+---
+kind: secret
+name: deploy-auth-key
+get:
+  path: drone-deploy-auth-key
+  name: auth-key
+
+---
+kind: secret
+name: deploy-base-url
+get:
+  path: drone-deploy-auth-key
+  name: deploy-base-url

@@ -6,14 +6,8 @@
 //!
 //! 支持 SGX、TDX 等 TEE 类型的远程认证
 
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use crate::config::TeeRuntimeConfig;
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -21,8 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Attestation API 配置
 #[derive(Debug, Clone)]
 pub struct AttestationApiConfig {
-    /// 是否为模拟模式（开发环境）
-    pub simulation_mode: bool,
+    /// TEE 运行时配置
+    pub tee_runtime: TeeRuntimeConfig,
     /// 是否需要 API Key 认证
     pub require_api_key: bool,
     /// Quote 最大有效期（秒）
@@ -32,7 +26,8 @@ pub struct AttestationApiConfig {
 impl Default for AttestationApiConfig {
     fn default() -> Self {
         Self {
-            simulation_mode: false,
+            tee_runtime: TeeRuntimeConfig::from_env()
+                .unwrap_or_else(|_| TeeRuntimeConfig::hardware()),
             require_api_key: false,
             quote_max_age: 3600, // 1 小时
         }
@@ -54,6 +49,10 @@ pub struct AttestationState {
     pub mrenclave: Option<String>,
     /// MRSIGNER 值（SGX）
     pub mrsigner: Option<String>,
+    /// 当前实现是否对请求的硬件模式执行显式 fail-closed
+    pub fail_closed: bool,
+    /// fail-closed 的显式原因
+    pub fail_closed_reason: Option<String>,
 }
 
 /// TEE 类型枚举
@@ -87,10 +86,17 @@ impl std::fmt::Display for TeeType {
 impl AttestationState {
     /// 创建新的 Attestation 状态
     pub fn new(config: AttestationApiConfig) -> Self {
-        let tee_type = if config.simulation_mode {
-            TeeType::Simulation
+        let (tee_type, fail_closed, fail_closed_reason) = if config.tee_runtime.is_simulation() {
+            (TeeType::Simulation, false, None)
         } else {
-            TeeType::Unknown
+            (
+                TeeType::Unknown,
+                true,
+                Some(
+                    "real hardware attestation initialization is not implemented in vault-service yet; refusing simulated fallback"
+                        .to_string(),
+                ),
+            )
         };
 
         Self {
@@ -100,6 +106,8 @@ impl AttestationState {
             last_attestation_time: None,
             mrenclave: None,
             mrsigner: None,
+            fail_closed,
+            fail_closed_reason,
         }
     }
 
@@ -177,10 +185,17 @@ pub struct AttestationStatusResponse {
     /// MRSIGNER（如果是 SGX）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mrsigner: Option<String>,
-    /// 是否为模拟模式
-    pub simulation_mode: bool,
+    /// 请求的运行模式
+    pub requested_mode: String,
+    /// 实际生效的运行模式
+    pub effective_mode: String,
     /// 服务版本
     pub version: String,
+    /// 当前实现是否显式 fail-closed
+    pub fail_closed: bool,
+    /// fail-closed 的原因
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fail_closed_reason: Option<String>,
 }
 
 /// 认证状态枚举
@@ -201,6 +216,12 @@ pub enum AttestationStatus {
 
 /// 初始化 Attestation API
 pub fn init_attestation_api(config: AttestationApiConfig) -> Result<Arc<AttestationState>, String> {
+    if config.tee_runtime.is_hardware() {
+        return Err(
+            "TEE_MODE=hardware requested, but real hardware attestation initialization is not implemented in vault-service yet; refusing simulated fallback".to_string(),
+        );
+    }
+
     let state = AttestationState::new(config);
 
     // 在实际实现中，这里应该初始化 TEE 相关资源
@@ -217,9 +238,7 @@ pub fn attestation_routes() -> Router<Arc<AttestationState>> {
 }
 
 /// GET /api/v1/attestation/quote - 获取 TEE Quote
-pub async fn get_quote(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
+pub async fn get_quote(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -227,8 +246,8 @@ pub async fn get_quote(
 
     let expires_at = timestamp + state.config.quote_max_age;
 
-    // 模拟模式：返回模拟 Quote
-    if state.config.simulation_mode {
+    // simulation 模式：返回模拟 Quote
+    if state.config.tee_runtime.is_simulation() {
         let response = QuoteResponse {
             quote: base64_encode_simulated_quote(),
             version: 1,
@@ -269,10 +288,8 @@ pub async fn get_quote(
 }
 
 /// GET /api/v1/attestation/status - 获取认证状态
-pub async fn get_status(
-    State(state): State<Arc<AttestationState>>,
-) -> impl IntoResponse {
-    let attestation_status = if state.config.simulation_mode {
+pub async fn get_status(State(state): State<Arc<AttestationState>>) -> impl IntoResponse {
+    let attestation_status = if state.config.tee_runtime.is_simulation() {
         AttestationStatus::Simulated
     } else if !state.initialized {
         AttestationStatus::NotAttested
@@ -289,8 +306,11 @@ pub async fn get_status(
         last_attestation_time: state.last_attestation_time,
         mrenclave: state.mrenclave.clone(),
         mrsigner: state.mrsigner.clone(),
-        simulation_mode: state.config.simulation_mode,
+        requested_mode: state.config.tee_runtime.mode.to_string(),
+        effective_mode: state.config.tee_runtime.mode.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
+        fail_closed: state.fail_closed,
+        fail_closed_reason: state.fail_closed_reason.clone(),
     };
 
     (StatusCode::OK, Json(response))
@@ -322,7 +342,7 @@ fn base64_encode_simulated_quote() -> String {
 /// - `tdx`: 需要 Intel TDX attestation 库（`tdx-attest`）
 /// - `sev-snp`: 需要 AMD SEV-SNP 固件接口（`/dev/sev-guest`）
 ///
-/// 在无硬件 TEE 的开发环境中，请将 `simulation_mode` 设为 `true`
+/// 在无硬件 TEE 的开发环境中，请将 `TEE_MODE=simulation`
 /// 以获取格式正确的模拟 Quote（用于集成测试）。
 fn generate_real_quote(state: &AttestationState) -> Result<String, String> {
     if !state.initialized {
@@ -345,7 +365,7 @@ fn generate_real_quote(state: &AttestationState) -> Result<String, String> {
             Err(
                 "SGX quote generation requires Intel SGX DCAP hardware and the sgx_urts/sgx_dcap_ql \
                  libraries. Run on SGX-capable hardware with the 'sgx' feature enabled, \
-                 or set simulation_mode=true for development."
+                 or set TEE_MODE=simulation for development."
                     .to_string(),
             )
         }
@@ -356,7 +376,7 @@ fn generate_real_quote(state: &AttestationState) -> Result<String, String> {
             Err(
                 "TDX quote generation requires Intel TDX-capable hardware (4th Gen Xeon+) and \
                  the tdx-attest library. Run on TDX-enabled platform with the 'tdx' feature \
-                 enabled, or set simulation_mode=true for development."
+                 enabled, or set TEE_MODE=simulation for development."
                     .to_string(),
             )
         }
@@ -366,13 +386,13 @@ fn generate_real_quote(state: &AttestationState) -> Result<String, String> {
             Err(
                 "SEV-SNP attestation requires AMD EPYC 7003+ (Milan/Genoa) with SEV-SNP enabled \
                  in BIOS and kernel support (/dev/sev-guest). Run on SEV-SNP-capable hardware, \
-                 or set simulation_mode=true for development."
+                 or set TEE_MODE=simulation for development."
                     .to_string(),
             )
         }
         TeeType::Simulation => {
-            // 不应到达此处（simulation_mode 已在调用方处理）
-            Err("Use simulation_mode=true to generate simulated quotes.".to_string())
+            // 不应到达此处（simulation 模式已在调用方处理）
+            Err("Use TEE_MODE=simulation to generate simulated quotes.".to_string())
         }
         TeeType::Unknown => Err(format!(
             "Unknown TEE type. Set the tee_type field to sgx, tdx, or sev-snp before \
@@ -396,7 +416,10 @@ mod tests {
 
     #[test]
     fn test_attestation_state_new() {
-        let config = AttestationApiConfig::default();
+        let config = AttestationApiConfig {
+            tee_runtime: TeeRuntimeConfig::hardware(),
+            ..Default::default()
+        };
         let state = AttestationState::new(config.clone());
 
         assert_eq!(state.tee_type, TeeType::Unknown);
@@ -407,7 +430,7 @@ mod tests {
     #[test]
     fn test_attestation_state_simulation_mode() {
         let config = AttestationApiConfig {
-            simulation_mode: true,
+            tee_runtime: TeeRuntimeConfig::simulation(),
             ..Default::default()
         };
         let state = AttestationState::new(config);
@@ -417,11 +440,14 @@ mod tests {
 
     #[test]
     fn test_attestation_state_builder() {
-        let state = AttestationState::new(AttestationApiConfig::default())
-            .with_tee_type(TeeType::Sgx)
-            .with_initialized(true)
-            .with_mrenclave("abc123".to_string())
-            .with_mrsigner("def456".to_string());
+        let state = AttestationState::new(AttestationApiConfig {
+            tee_runtime: TeeRuntimeConfig::hardware(),
+            ..Default::default()
+        })
+        .with_tee_type(TeeType::Sgx)
+        .with_initialized(true)
+        .with_mrenclave("abc123".to_string())
+        .with_mrsigner("def456".to_string());
 
         assert_eq!(state.tee_type, TeeType::Sgx);
         assert!(state.initialized);
@@ -463,7 +489,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_quote_simulation_mode() {
         let config = AttestationApiConfig {
-            simulation_mode: true,
+            tee_runtime: TeeRuntimeConfig::simulation(),
             ..Default::default()
         };
         let state = Arc::new(AttestationState::new(config));
@@ -486,7 +512,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_status_simulation_mode() {
         let config = AttestationApiConfig {
-            simulation_mode: true,
+            tee_runtime: TeeRuntimeConfig::simulation(),
             ..Default::default()
         };
         let state = Arc::new(AttestationState::new(config));
@@ -502,7 +528,20 @@ mod tests {
             .unwrap();
         let json: AttestationStatusResponse = serde_json::from_slice(&body).unwrap();
 
-        assert!(json.simulation_mode);
+        assert_eq!(json.requested_mode, "simulation");
+        assert_eq!(json.effective_mode, "simulation");
         assert_eq!(json.attestation_status, AttestationStatus::Simulated);
+    }
+
+    #[test]
+    fn test_init_attestation_api_hardware_mode_fails_closed() {
+        let error = init_attestation_api(AttestationApiConfig {
+            tee_runtime: TeeRuntimeConfig::hardware(),
+            ..Default::default()
+        })
+        .unwrap_err();
+
+        assert!(error.contains("TEE_MODE=hardware"));
+        assert!(error.contains("refusing simulated fallback"));
     }
 }

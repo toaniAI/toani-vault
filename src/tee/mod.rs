@@ -9,6 +9,8 @@
 //! tee/
 //! ├── mod.rs           - 模块导出
 //! ├── enclave.rs       - Enclave 核心实现
+//! ├── host_runtime.rs  - Host 侧 SGX enclave runtime bridge
+//! ├── ffi_types.rs     - Host/Enclave FFI 类型与缓冲区定义
 //! ├── keys.rs          - 密钥管理（TTL 缓存、Zeroize 安全清理）
 //! ├── cleanup.rs       - 密钥清理策略与调度器
 //! ├── sealing.rs       - SGX Sealing 密钥和密封存储
@@ -64,6 +66,12 @@
 //! assert_eq!(decrypted, plaintext);
 //! ```
 
+use crate::config::{TeeRuntimeConfig, TeeRuntimeMode};
+use serde::Serialize;
+use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
 // 子模块定义
 pub mod attestation;
 pub mod challenge;
@@ -71,7 +79,11 @@ pub mod cleanup;
 pub mod dcap;
 pub mod driver_verify;
 pub mod enclave;
+pub mod ffi_types;
+pub(crate) mod hardware;
+pub mod host_runtime;
 pub mod keys;
+pub mod provider;
 pub mod quote;
 pub mod sandbox;
 pub mod sealing;
@@ -79,6 +91,14 @@ pub mod upgrade;
 
 // 公开导出 - Enclave
 pub use enclave::{CacheStats, Enclave, EnclaveConfig, EnclaveError, EnclaveState, EnclaveStats};
+pub use ffi_types::{
+    EcallStatus, EnclaveIdentity, EnclaveReport, EnclaveSealingKey, SGX_REPORT_LEN,
+    SGX_SEALING_KEY_LEN,
+};
+pub use host_runtime::{HostRuntimeError, SgxHostRuntime};
+
+/// 共享的 Enclave 句柄，供主启动链和 API 复用同一个实例。
+pub type SharedEnclave = Arc<Mutex<Enclave>>;
 
 // 公开导出 - Sealing
 pub use sealing::{SealPolicy, SealedData, SealedStorage, SealingKey, SealingService};
@@ -118,6 +138,11 @@ pub use keys::{
     MASTER_KEY_STORAGE_ID, MasterKeyMetadata, ProtectedKeyMaterial, UserKeyCache,
 };
 
+pub use provider::{
+    ProviderBootstrap, ProviderIdentity, ProviderRequest, TeeProviderError, bootstrap_enclave,
+    root_key_source,
+};
+
 // 公开导出 - Cleanup (密钥清理策略)
 pub use cleanup::{
     CleanupConfig, CleanupScheduler, CleanupStats, KeyCleaner, KeyLifecycle, ProtectedMemory,
@@ -126,21 +151,274 @@ pub use cleanup::{
 
 /// TEE 模块版本
 pub const TEE_VERSION: &str = "0.1.0";
+pub const TEE_HARDWARE_BUILD_ENABLED: bool = cfg!(feature = "tee-hardware");
 
 /// 默认用户密钥缓存 TTL（秒）
 pub const DEFAULT_USER_KEY_TTL: u64 = 300; // 5 分钟
+
+/// 自检项状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SelfCheckStatus {
+    Ready,
+    Degraded,
+    Failed,
+}
+
+impl SelfCheckStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SelfCheckStatus::Ready => "ready",
+            SelfCheckStatus::Degraded => "degraded",
+            SelfCheckStatus::Failed => "failed",
+        }
+    }
+
+    pub fn is_ready(self) -> bool {
+        matches!(self, SelfCheckStatus::Ready)
+    }
+
+    fn merge(self, other: SelfCheckStatus) -> SelfCheckStatus {
+        match (self, other) {
+            (SelfCheckStatus::Failed, _) | (_, SelfCheckStatus::Failed) => SelfCheckStatus::Failed,
+            (SelfCheckStatus::Degraded, _) | (_, SelfCheckStatus::Degraded) => {
+                SelfCheckStatus::Degraded
+            }
+            _ => SelfCheckStatus::Ready,
+        }
+    }
+}
+
+/// 单个启动自检项。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SelfCheckItem {
+    pub component: String,
+    pub status: SelfCheckStatus,
+    pub detail: Option<String>,
+}
+
+impl SelfCheckItem {
+    pub fn ready(component: impl Into<String>) -> Self {
+        Self {
+            component: component.into(),
+            status: SelfCheckStatus::Ready,
+            detail: None,
+        }
+    }
+
+    pub fn degraded(component: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            component: component.into(),
+            status: SelfCheckStatus::Degraded,
+            detail: Some(detail.into()),
+        }
+    }
+
+    pub fn failed(component: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            component: component.into(),
+            status: SelfCheckStatus::Failed,
+            detail: Some(detail.into()),
+        }
+    }
+}
+
+/// 启动链/就绪态汇总。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StartupReadiness {
+    pub live: bool,
+    pub ready: bool,
+    pub status: SelfCheckStatus,
+    pub checks: Vec<SelfCheckItem>,
+}
+
+impl StartupReadiness {
+    pub fn from_checks(checks: Vec<SelfCheckItem>) -> Self {
+        let status = checks
+            .iter()
+            .map(|check| check.status)
+            .fold(SelfCheckStatus::Ready, SelfCheckStatus::merge);
+
+        Self {
+            live: true,
+            ready: status.is_ready(),
+            status,
+            checks,
+        }
+    }
+}
 
 /// 检查 TEE 环境可用性
 ///
 /// 返回当前平台支持的 TEE 类型
 pub fn detect_tee() -> TeeType {
-    // 在实际 SGX 环境中，检查 CPU 特性
-    // 这里简化处理，返回模拟模式
-    TeeType::Simulation
+    detect_tee_capabilities(TeeRuntimeMode::Hardware).detected_type
 }
 
+const SGX_DEVICE_PATHS: [&str; 4] = [
+    "/dev/sgx_enclave",
+    "/dev/sgx/enclave",
+    "/dev/sgx",
+    "/dev/isgx",
+];
+
+const SGX_ATTESTATION_PATHS: [&str; 3] = [
+    "/dev/sgx_provision",
+    "/dev/sgx/provision",
+    "/var/run/aesmd/aesm.socket",
+];
+
+fn path_exists(path: &str) -> bool {
+    Path::new(path).exists()
+}
+
+fn detect_tee_type_with<F>(exists: F) -> TeeType
+where
+    F: Fn(&str) -> bool,
+{
+    if SGX_DEVICE_PATHS.iter().any(|path| exists(path)) {
+        TeeType::IntelSgx
+    } else {
+        TeeType::None
+    }
+}
+
+fn remote_attestation_available_with<F>(exists: F) -> bool
+where
+    F: Fn(&str) -> bool,
+{
+    SGX_ATTESTATION_PATHS.iter().any(|path| exists(path))
+}
+
+fn detect_tee_capabilities_with<F>(requested_mode: TeeRuntimeMode, exists: F) -> TeeCapabilities
+where
+    F: Fn(&str) -> bool + Copy,
+{
+    let detected_type = detect_tee_type_with(exists);
+    let hardware_available = detected_type.is_hardware();
+    let remote_attestation_available =
+        hardware_available && remote_attestation_available_with(exists);
+
+    TeeCapabilities {
+        requested_mode,
+        detected_type,
+        hardware_available,
+        seal_policies: vec![SealPolicy::Mrenclave, SealPolicy::Mrsigner],
+        remote_attestation_available,
+        enclave_memory_mb: None,
+    }
+}
+
+pub fn detect_tee_capabilities(requested_mode: TeeRuntimeMode) -> TeeCapabilities {
+    detect_tee_capabilities_with(requested_mode, path_exists)
+}
+
+fn validate_runtime_requirements_with<F>(
+    requested_mode: TeeRuntimeMode,
+    exists: F,
+) -> Result<TeeCapabilities, TeeRuntimeError>
+where
+    F: Fn(&str) -> bool + Copy,
+{
+    if requested_mode.is_hardware() && !TEE_HARDWARE_BUILD_ENABLED {
+        return Err(TeeRuntimeError::HardwareFeatureDisabled { requested_mode });
+    }
+
+    let capabilities = detect_tee_capabilities_with(requested_mode, exists);
+
+    if requested_mode.is_hardware() && !capabilities.hardware_available {
+        return Err(TeeRuntimeError::HardwareUnavailable {
+            requested_mode,
+            detected_type: capabilities.detected_type,
+        });
+    }
+
+    if requested_mode.is_hardware() && !capabilities.remote_attestation_available {
+        return Err(TeeRuntimeError::RemoteAttestationUnavailable {
+            requested_mode,
+            detected_type: capabilities.detected_type,
+        });
+    }
+
+    Ok(capabilities)
+}
+
+pub fn validate_runtime_requirements(
+    runtime: &TeeRuntimeConfig,
+) -> Result<TeeCapabilities, TeeRuntimeError> {
+    if runtime.mode.is_hardware() && !TEE_HARDWARE_BUILD_ENABLED {
+        return Err(TeeRuntimeError::HardwareFeatureDisabled {
+            requested_mode: runtime.mode,
+        });
+    }
+
+    if runtime.mode.is_hardware() && runtime.enclave_path.as_deref().is_none() {
+        return Err(TeeRuntimeError::MissingEnclaveArtifact {
+            requested_mode: runtime.mode,
+        });
+    }
+
+    validate_runtime_requirements_with(runtime.mode, path_exists)
+}
+
+/// TEE 运行时校验错误
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeeRuntimeError {
+    HardwareFeatureDisabled {
+        requested_mode: TeeRuntimeMode,
+    },
+    MissingEnclaveArtifact {
+        requested_mode: TeeRuntimeMode,
+    },
+    /// 请求硬件模式，但没有检测到受支持硬件
+    HardwareUnavailable {
+        requested_mode: TeeRuntimeMode,
+        detected_type: TeeType,
+    },
+    /// 请求硬件模式，但缺少远程认证前置条件
+    RemoteAttestationUnavailable {
+        requested_mode: TeeRuntimeMode,
+        detected_type: TeeType,
+    },
+}
+
+impl std::fmt::Display for TeeRuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TeeRuntimeError::HardwareFeatureDisabled { requested_mode } => write!(
+                f,
+                "TEE_MODE={requested_mode} requested, but this build was compiled without the `tee-hardware` feature"
+            ),
+            TeeRuntimeError::MissingEnclaveArtifact { requested_mode } => write!(
+                f,
+                "TEE_MODE={requested_mode} requested, but no SGX enclave artifact was configured; set `TEE_ENCLAVE_PATH`"
+            ),
+            TeeRuntimeError::HardwareUnavailable {
+                requested_mode,
+                detected_type,
+            } => write!(
+                f,
+                "TEE_MODE={} requested, but no supported hardware TEE was detected ({})",
+                requested_mode,
+                detected_type.description()
+            ),
+            TeeRuntimeError::RemoteAttestationUnavailable {
+                requested_mode,
+                detected_type,
+            } => write!(
+                f,
+                "TEE_MODE={} requested, but remote attestation prerequisites are missing for detected TEE ({})",
+                requested_mode,
+                detected_type.description()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TeeRuntimeError {}
+
 /// TEE 类型枚举
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TeeType {
     /// Intel SGX
     IntelSgx,
@@ -179,28 +457,25 @@ impl TeeType {
 }
 
 /// TEE 能力信息
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TeeCapabilities {
-    /// TEE 类型
-    pub tee_type: TeeType,
+    /// 调用方请求的运行模式
+    pub requested_mode: TeeRuntimeMode,
+    /// 底层探测到的 TEE 类型
+    pub detected_type: TeeType,
+    /// 是否检测到硬件 TEE
+    pub hardware_available: bool,
     /// 支持的密封策略
     pub seal_policies: Vec<SealPolicy>,
     /// 远程认证支持
-    pub remote_attestation: bool,
+    pub remote_attestation_available: bool,
     /// 安全飞地内存大小（MB）
     pub enclave_memory_mb: Option<u32>,
 }
 
 /// 获取 TEE 能力信息
 pub fn get_capabilities() -> TeeCapabilities {
-    let tee_type = detect_tee();
-
-    TeeCapabilities {
-        tee_type,
-        seal_policies: vec![SealPolicy::Mrenclave, SealPolicy::Mrsigner],
-        remote_attestation: tee_type.is_hardware(),
-        enclave_memory_mb: None, // 实际实现中从硬件获取
-    }
+    detect_tee_capabilities(TeeRuntimeMode::Hardware)
 }
 
 /// TEE 健康状态
@@ -241,12 +516,12 @@ pub fn secure_random_bytes(len: usize) -> Result<Vec<u8>, crate::crypto::CryptoE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TeeRuntimeMode;
 
     #[test]
     fn test_detect_tee() {
-        let tee = detect_tee();
-        // 在模拟环境中返回 Simulation
-        assert_eq!(tee, TeeType::Simulation);
+        let tee = detect_tee_type_with(|_| false);
+        assert_eq!(tee, TeeType::None);
     }
 
     #[test]
@@ -265,10 +540,127 @@ mod tests {
 
     #[test]
     fn test_get_capabilities() {
-        let caps = get_capabilities();
-        assert_eq!(caps.tee_type, TeeType::Simulation);
+        let caps = detect_tee_capabilities(TeeRuntimeMode::Simulation);
+        assert_eq!(caps.requested_mode, TeeRuntimeMode::Simulation);
+        assert_eq!(caps.detected_type, TeeType::None);
+        assert!(!caps.hardware_available);
         assert_eq!(caps.seal_policies.len(), 2);
-        assert!(!caps.remote_attestation); // 模拟模式不支持远程认证
+        assert!(!caps.remote_attestation_available);
+    }
+
+    #[test]
+    fn detects_sgx_when_device_path_exists() {
+        let tee = detect_tee_type_with(|path| path == "/dev/sgx_enclave");
+        assert_eq!(tee, TeeType::IntelSgx);
+    }
+
+    #[test]
+    fn detects_remote_attestation_when_aesm_socket_exists() {
+        assert!(remote_attestation_available_with(
+            |path| path == "/var/run/aesmd/aesm.socket"
+        ));
+    }
+
+    #[test]
+    fn keeps_requested_mode_distinct_from_detected_type() {
+        let caps = detect_tee_capabilities_with(TeeRuntimeMode::Simulation, |path| {
+            path == "/dev/sgx_enclave" || path == "/var/run/aesmd/aesm.socket"
+        });
+
+        assert_eq!(caps.requested_mode, TeeRuntimeMode::Simulation);
+        assert_eq!(caps.detected_type, TeeType::IntelSgx);
+        assert!(caps.hardware_available);
+        assert!(caps.remote_attestation_available);
+    }
+
+    #[test]
+    #[cfg(not(feature = "tee-hardware"))]
+    fn rejects_hardware_mode_when_build_lacks_hardware_feature() {
+        let error = validate_runtime_requirements_with(TeeRuntimeMode::Hardware, |path| {
+            path == "/dev/sgx_enclave" || path == "/var/run/aesmd/aesm.socket"
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::HardwareFeatureDisabled {
+                requested_mode: TeeRuntimeMode::Hardware,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(not(feature = "tee-hardware"))]
+    fn rejects_hardware_mode_without_enclave_artifact() {
+        let runtime = TeeRuntimeConfig {
+            mode: TeeRuntimeMode::Hardware,
+            debug_mode: false,
+            pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
+            enclave_path: None,
+            sealed_storage_path: crate::config::DEFAULT_SEALED_STORAGE_PATH.to_string(),
+        };
+
+        let error = validate_runtime_requirements(&runtime).unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::HardwareFeatureDisabled {
+                requested_mode: TeeRuntimeMode::Hardware,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "tee-hardware")]
+    fn rejects_hardware_mode_without_enclave_artifact() {
+        let runtime = TeeRuntimeConfig {
+            mode: TeeRuntimeMode::Hardware,
+            debug_mode: false,
+            pcs_base_url: TeeRuntimeMode::Hardware.default_pcs_base_url().to_string(),
+            enclave_path: None,
+            sealed_storage_path: crate::config::DEFAULT_SEALED_STORAGE_PATH.to_string(),
+        };
+
+        let error = validate_runtime_requirements(&runtime).unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::MissingEnclaveArtifact {
+                requested_mode: TeeRuntimeMode::Hardware,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "tee-hardware")]
+    fn rejects_hardware_mode_without_detected_hardware() {
+        let error =
+            validate_runtime_requirements_with(TeeRuntimeMode::Hardware, |_| false).unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::HardwareUnavailable {
+                requested_mode: TeeRuntimeMode::Hardware,
+                detected_type: TeeType::None,
+            }
+        ));
+    }
+
+    #[test]
+    #[cfg(feature = "tee-hardware")]
+    fn rejects_hardware_mode_without_remote_attestation_prerequisites() {
+        let error = validate_runtime_requirements_with(TeeRuntimeMode::Hardware, |path| {
+            path == "/dev/sgx_enclave"
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TeeRuntimeError::RemoteAttestationUnavailable {
+                requested_mode: TeeRuntimeMode::Hardware,
+                detected_type: TeeType::IntelSgx,
+            }
+        ));
     }
 
     #[test]
@@ -296,5 +688,30 @@ mod tests {
     #[test]
     fn test_default_user_key_ttl() {
         assert_eq!(DEFAULT_USER_KEY_TTL, 300);
+    }
+
+    #[test]
+    fn self_check_status_merge_prefers_failed() {
+        let report = StartupReadiness::from_checks(vec![
+            SelfCheckItem::ready("vault"),
+            SelfCheckItem::degraded("attestation", "quote expired"),
+            SelfCheckItem::failed("enclave", "not running"),
+        ]);
+
+        assert!(report.live);
+        assert!(!report.ready);
+        assert_eq!(report.status, SelfCheckStatus::Failed);
+    }
+
+    #[test]
+    fn readiness_report_is_ready_only_when_all_checks_are_ready() {
+        let report = StartupReadiness::from_checks(vec![
+            SelfCheckItem::ready("vault"),
+            SelfCheckItem::ready("audit"),
+        ]);
+
+        assert!(report.live);
+        assert!(report.ready);
+        assert_eq!(report.status, SelfCheckStatus::Ready);
     }
 }

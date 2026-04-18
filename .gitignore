@@ -1,5 +1,9 @@
+# Internal documentation (not for public release)
+docs/internal/
+
 # Hidden directories
 .claude/
+.omc/
 .idea/
 .local/
 .playwright-mcp/
@@ -7,6 +11,7 @@
 .qwen/
 .sealed/
 .cursor/
+.playwright-cli/
 
 # Build artifacts
 /target
@@ -18,10 +23,16 @@
 **/dist/
 **/.DS_Store
 .env
+.env.*
+!.env.example
 .env.local
+*.bak
+*.key
+*.pem
 *.log
 npm-debug.log*
 coverage/
 *.swp
 *.swo
 *~
+.omx/

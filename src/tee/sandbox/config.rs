@@ -2,7 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::env;
+use std::path::{Path, PathBuf};
 
 /// 沙箱配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,10 +32,73 @@ impl Default for SandboxConfig {
             security: SecurityConfig::default(),
             timeout_secs: 300,
             working_dir: PathBuf::from("/tmp/sandbox"),
-            nsjail_path: PathBuf::from("/usr/bin/nsjail"),
+            nsjail_path: resolve_nsjail_path(),
             env_vars: HashMap::new(),
         }
     }
+}
+
+impl SandboxConfig {
+    /// 从环境变量加载沙箱配置。
+    ///
+    /// 当前仅覆盖开发环境里最容易漂移的 nsjail 路径，其余字段保持默认值。
+    pub fn from_env() -> Self {
+        let mut config = Self {
+            nsjail_path: resolve_nsjail_path(),
+            ..Self::default()
+        };
+
+        if let Some(enabled) = env_bool("CREDBRIDGE_SANDBOX_CGROUP_ENABLED") {
+            config.security.cgroup.enabled = enabled;
+        }
+
+        if let Some(required) = env_bool("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED") {
+            config.security.cgroup.required = required;
+        }
+
+        if let Ok(root) = env::var("CREDBRIDGE_SANDBOX_CGROUP_ROOT") {
+            let trimmed = root.trim();
+            if !trimmed.is_empty() {
+                config.security.cgroup.cgroup_root = PathBuf::from(trimmed);
+            }
+        }
+
+        config
+    }
+}
+
+fn resolve_nsjail_path() -> PathBuf {
+    for env_name in ["CREDBRIDGE_SANDBOX_NSJAIL_PATH", "NSJAIL_PATH"] {
+        if let Ok(path) = env::var(env_name) {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() {
+                return PathBuf::from(trimmed);
+            }
+        }
+    }
+
+    for candidate in [
+        Path::new("/usr/bin/nsjail"),
+        Path::new("/usr/local/bin/nsjail"),
+    ] {
+        if candidate.exists() {
+            return candidate.to_path_buf();
+        }
+    }
+
+    PathBuf::from("/usr/bin/nsjail")
+}
+
+fn env_bool(name: &str) -> Option<bool> {
+    env::var(name).ok().and_then(|value| match value.trim() {
+        "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON" => Some(true),
+        "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF" => Some(false),
+        _ => None,
+    })
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// 沙箱池配置
@@ -223,6 +287,12 @@ pub enum MountType {
 /// cgroup 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CgroupConfig {
+    /// 是否启用 cgroup 资源限制
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// cgroup 初始化失败时是否阻止沙箱启动
+    #[serde(default)]
+    pub required: bool,
     /// cgroup 版本
     pub version: CgroupVersion,
     /// cgroup 根路径
@@ -234,6 +304,8 @@ pub struct CgroupConfig {
 impl Default for CgroupConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
+            required: false,
             version: CgroupVersion::V2,
             cgroup_root: PathBuf::from("/sys/fs/cgroup"),
             controllers: vec![
@@ -328,6 +400,8 @@ pub struct NsjailConfig {
     pub cwd: PathBuf,
     /// 环境变量
     pub env: HashMap<String, String>,
+    /// 为 browser runtime 使用单独的放宽 seccomp 策略，允许 node/playwright/chromium 启动。
+    pub disable_seccomp_for_browser_runtime: bool,
     /// UID 映射
     pub uid_map: UidMap,
     /// GID 映射
@@ -341,6 +415,7 @@ impl Default for NsjailConfig {
             command: vec!["sh".to_string()],
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
+            disable_seccomp_for_browser_runtime: false,
             uid_map: UidMap::default(),
             gid_map: GidMap::default(),
         }
@@ -361,7 +436,7 @@ pub struct UidMap {
 impl Default for UidMap {
     fn default() -> Self {
         Self {
-            outside_uid: 1000,
+            outside_uid: 100000,
             inside_uid: 0,
             count: 1,
         }
@@ -382,7 +457,7 @@ pub struct GidMap {
 impl Default for GidMap {
     fn default() -> Self {
         Self {
-            outside_gid: 1000,
+            outside_gid: 100000,
             inside_gid: 0,
             count: 1,
         }
@@ -390,35 +465,33 @@ impl Default for GidMap {
 }
 
 impl NsjailConfig {
+    const BROWSER_RUNTIME_RELAXED_SYSCALLS: [&'static str; 5] =
+        ["execve", "execveat", "fork", "vfork", "clone"];
+
     /// 生成 nsjail 命令行参数
     pub fn to_args(&self) -> Vec<String> {
         let mut args = vec!["--mode".to_string(), "o".to_string()]; // One-shot mode
 
         // Namespace
         let ns = &self.sandbox.security.namespace;
-        if ns.pid {
+        if !ns.pid {
             args.push("--disable_clone_newpid".to_string());
-            args.push("false".to_string());
         }
-        if ns.network {
+        if !ns.network {
             args.push("--disable_clone_newnet".to_string());
-            args.push("false".to_string());
         }
-        if ns.mount {
-            args.push("--disable_clone_newmnt".to_string());
-            args.push("false".to_string());
+        if !ns.mount {
+            // nsjail uses NEWNS (not NEWMNT) flag naming.
+            args.push("--disable_clone_newns".to_string());
         }
-        if ns.ipc {
+        if !ns.ipc {
             args.push("--disable_clone_newipc".to_string());
-            args.push("false".to_string());
         }
-        if ns.uts {
+        if !ns.uts {
             args.push("--disable_clone_newuts".to_string());
-            args.push("false".to_string());
         }
-        if ns.user {
+        if !ns.user {
             args.push("--disable_clone_newuser".to_string());
-            args.push("false".to_string());
         }
 
         // Resource limits
@@ -437,14 +510,22 @@ impl NsjailConfig {
 
         // Mount points
         for mount in &ns.mount_points {
-            args.push("--bindmount_ro".to_string());
+            match (mount.mount_type, mount.read_only) {
+                (MountType::Bind, true) => args.push("--bindmount_ro".to_string()),
+                (MountType::Bind, false) => args.push("--bindmount".to_string()),
+                _ => args.push("--bindmount_ro".to_string()),
+            }
             args.push(format!("{}:{}", mount.src.display(), mount.dst.display()));
         }
 
         // Seccomp
         if !self.sandbox.security.privileged {
             args.push("--seccomp_string".to_string());
-            args.push(self.generate_seccomp_bpf());
+            args.push(if self.disable_seccomp_for_browser_runtime {
+                self.generate_browser_runtime_seccomp_bpf()
+            } else {
+                self.generate_seccomp_bpf()
+            });
         }
 
         // Working directory
@@ -461,13 +542,13 @@ impl NsjailConfig {
         args.push("--uid_mapping".to_string());
         args.push(format!(
             "{}:{}:{}",
-            self.uid_map.outside_uid, self.uid_map.inside_uid, self.uid_map.count
+            self.uid_map.inside_uid, self.uid_map.outside_uid, self.uid_map.count
         ));
 
         args.push("--gid_mapping".to_string());
         args.push(format!(
             "{}:{}:{}",
-            self.gid_map.outside_gid, self.gid_map.inside_gid, self.gid_map.count
+            self.gid_map.inside_gid, self.gid_map.outside_gid, self.gid_map.count
         ));
 
         // Command
@@ -479,7 +560,24 @@ impl NsjailConfig {
 
     /// 生成 seccomp kafel 策略字符串（供 nsjail --seccomp_string 使用）
     fn generate_seccomp_bpf(&self) -> String {
-        let denylist = &self.sandbox.security.seccomp.denylist;
+        self.generate_seccomp_bpf_with_denylist(&self.sandbox.security.seccomp.denylist)
+    }
+
+    fn generate_browser_runtime_seccomp_bpf(&self) -> String {
+        let denylist = self
+            .sandbox
+            .security
+            .seccomp
+            .denylist
+            .iter()
+            .filter(|syscall| !Self::BROWSER_RUNTIME_RELAXED_SYSCALLS.contains(&syscall.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        self.generate_seccomp_bpf_with_denylist(&denylist)
+    }
+
+    fn generate_seccomp_bpf_with_denylist(&self, denylist: &[String]) -> String {
         let policy_name = match self.sandbox.security.seccomp.default_policy {
             SeccompPolicy::Browser => "browser",
             SeccompPolicy::Minimal => "minimal",
@@ -490,12 +588,15 @@ impl NsjailConfig {
         let mut bpf = format!("POLICY {policy_name} {{\n");
 
         if !denylist.is_empty() {
-            // kafel DENY 块语法：DENY { syscall1, syscall2, ... }
-            let deny_list: Vec<&str> = denylist.iter().map(|s| s.as_str()).collect();
+            // kafel 不接受末尾逗号，这里显式 join，避免生成无法编译的策略。
+            let deny_list = denylist
+                .iter()
+                .map(|syscall| format!("    {syscall}"))
+                .collect::<Vec<_>>()
+                .join(",\n");
             bpf.push_str("  DENY {\n");
-            for syscall in &deny_list {
-                bpf.push_str(&format!("    {syscall},\n"));
-            }
+            bpf.push_str(&deny_list);
+            bpf.push('\n');
             bpf.push_str("  }\n");
         }
 
@@ -516,6 +617,7 @@ mod tests {
         assert_eq!(config.timeout_secs, 300);
         assert_eq!(config.pool.max_warm_instances, 10);
         assert_eq!(config.resource_limits.memory_limit_mb, 512);
+        assert!(!config.nsjail_path.as_os_str().is_empty());
     }
 
     #[test]
@@ -524,6 +626,114 @@ mod tests {
         let args = config.to_args();
         assert!(args.contains(&"--mode".to_string()));
         assert!(args.contains(&"o".to_string()));
+        assert!(!args.contains(&"--disable_clone_newmnt".to_string()));
+        assert!(!args.contains(&"false".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_uses_writable_bindmount_when_requested() {
+        let mut config = NsjailConfig::default();
+        config.sandbox.security.namespace.mount_points = vec![MountConfig {
+            src: PathBuf::from("/tmp/source"),
+            dst: PathBuf::from("/tmp/destination"),
+            mount_type: MountType::Bind,
+            read_only: false,
+        }];
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--bindmount".to_string()));
+        assert!(!args.contains(&"--bindmount_ro".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_disables_mount_namespace_with_newns_flag() {
+        let mut config = NsjailConfig::default();
+        config.sandbox.security.namespace.mount = false;
+        let args = config.to_args();
+
+        assert!(args.contains(&"--disable_clone_newns".to_string()));
+        assert!(!args.contains(&"--disable_clone_newmnt".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_skips_seccomp_for_browser_runtime() {
+        let config = NsjailConfig {
+            disable_seccomp_for_browser_runtime: true,
+            ..NsjailConfig::default()
+        };
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--seccomp_string".to_string()));
+        let seccomp_idx = args
+            .iter()
+            .position(|arg| arg == "--seccomp_string")
+            .expect("seccomp string should be present");
+        let seccomp_policy = &args[seccomp_idx + 1];
+        assert!(!seccomp_policy.contains("    execve\n"));
+        assert!(!seccomp_policy.contains("    execveat\n"));
+        assert!(!seccomp_policy.contains("    fork\n"));
+        assert!(!seccomp_policy.contains("    vfork\n"));
+        assert!(!seccomp_policy.contains("    clone\n"));
+        assert!(seccomp_policy.contains("ptrace"));
+        assert!(seccomp_policy.contains("process_vm_writev"));
+    }
+
+    #[test]
+    fn test_nsjail_config_keeps_seccomp_enabled_by_default() {
+        let config = NsjailConfig::default();
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--seccomp_string".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_defaults_to_non_root_inside_uid_gid() {
+        let config = NsjailConfig::default();
+        let args = config.to_args();
+        let uid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--uid_mapping")
+            .expect("uid mapping arg should be present");
+        let gid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--gid_mapping")
+            .expect("gid mapping arg should be present");
+
+        assert_eq!(args[uid_mapping_idx + 1], "0:100000:1");
+        assert_eq!(args[gid_mapping_idx + 1], "0:100000:1");
+    }
+
+    #[test]
+    fn test_nsjail_config_uid_gid_mappings_use_inside_outside_count_order() {
+        let config = NsjailConfig {
+            uid_map: UidMap {
+                inside_uid: 2000,
+                outside_uid: 3000,
+                count: 2,
+            },
+            gid_map: GidMap {
+                inside_gid: 4000,
+                outside_gid: 5000,
+                count: 3,
+            },
+            ..NsjailConfig::default()
+        };
+
+        let args = config.to_args();
+        let uid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--uid_mapping")
+            .expect("uid mapping arg should be present");
+        let gid_mapping_idx = args
+            .iter()
+            .position(|arg| arg == "--gid_mapping")
+            .expect("gid mapping arg should be present");
+
+        assert_eq!(args[uid_mapping_idx + 1], "2000:3000:2");
+        assert_eq!(args[gid_mapping_idx + 1], "4000:5000:3");
     }
 
     #[test]
@@ -536,5 +746,52 @@ mod tests {
             serde_json::to_string(&SeccompMode::Denylist).unwrap(),
             "\"denylist\""
         );
+    }
+
+    #[test]
+    fn test_generate_seccomp_bpf_does_not_emit_trailing_comma() {
+        let config = NsjailConfig::default();
+        let policy = config.generate_seccomp_bpf();
+
+        assert!(policy.contains("DENY {\n"));
+        assert!(!policy.contains(",\n  }\n"));
+        assert!(policy.contains("USE browser DEFAULT ALLOW"));
+    }
+
+    #[test]
+    fn test_from_env_prefers_nsjail_path_override() {
+        unsafe {
+            std::env::set_var("NSJAIL_PATH", "/custom/nsjail");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert_eq!(config.nsjail_path, PathBuf::from("/custom/nsjail"));
+
+        unsafe {
+            std::env::remove_var("NSJAIL_PATH");
+        }
+    }
+
+    #[test]
+    fn test_from_env_reads_cgroup_overrides() {
+        unsafe {
+            std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED", "false");
+            std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED", "true");
+            std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_ROOT", "/tmp/cgroup-test");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert!(!config.security.cgroup.enabled);
+        assert!(config.security.cgroup.required);
+        assert_eq!(
+            config.security.cgroup.cgroup_root,
+            PathBuf::from("/tmp/cgroup-test")
+        );
+
+        unsafe {
+            std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED");
+            std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED");
+            std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ROOT");
+        }
     }
 }

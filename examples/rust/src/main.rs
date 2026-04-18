@@ -1,4 +1,4 @@
-//! CredBridge Rust SDK - 示例程序
+//! Toani Vault Rust SDK - 示例程序
 //!
 //! 运行示例:
 //! ```bash
@@ -26,7 +26,7 @@ pub fn get_config() -> (String, String) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!("CredBridge Rust SDK 示例");
+    println!("Toani Vault Rust SDK 示例");
     println!("========================\n");
 
     // 运行基础示例

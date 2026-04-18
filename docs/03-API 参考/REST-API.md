@@ -1,285 +1,1027 @@
-# CredBridge API 文档
+# CredBridge REST API
 
-本文档详细描述了 CredBridge 保险库服务的所有 RESTful API 端点。
+本文档记录当前 `src/main.rs` 与 `src/api/*.rs` 中实际已注册的 REST 端点。
+
+## 阅读说明
+
+- 基础业务路径为 `/api/v1`
+- 不同模块的响应包装并不统一
+- 认证中的部分接口、Service Account、部分用户管理与部分 Sandbox 接口使用 `ApiSuccessResponse<T>`
+- 凭证、版本、部分 auth 接口返回直接业务对象
+- 审计、租户、attestation 使用各自的自定义响应结构
+- 如果文档与代码冲突，以源码结构体和测试为准
 
 ## 目录
 
-- [健康检查 API](#健康检查-api)
-- [认证](#认证)
-- [凭证管理 API](#凭证管理-api)
-- [审计日志 API](#审计日志-api)
-- [错误处理](#错误处理)
+- [API 根](#api-根)
+- [健康检查](#健康检查)
+- [认证与用户](#认证与用户)
+- [Token 管理](#token-管理)
+- [Profile Automation Token](#profile-automation-token)
+- [通知](#通知)
+- [Service Account](#service-account)
+- [凭证管理](#凭证管理)
+- [凭证版本](#凭证版本)
+- [审计日志](#审计日志)
+- [Sandbox](#sandbox)
+- [专项文档](#专项文档)
 
----
+## API 根
 
-## 健康检查 API
+### `GET /api/v1/`
 
-### 简单健康检查
+返回 API 根说明与可发现性信息。
 
-检查服务基本运行状态。
+## 健康检查
 
-**Endpoint**: `GET /health`
+### `GET /health`
 
-**认证**: 不需要
+返回简单存活状态。
 
 **响应 (200 OK)**:
 
 ```json
 {
-  "status": "healthy",
+  "status": "alive",
+  "ready": true,
   "version": "1.0.0",
   "timestamp": 1741702800
 }
 ```
 
-**响应字段说明**:
+### `GET /ready`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `status` | string | 服务状态：`healthy` 或 `degraded` |
-| `version` | string | 服务版本号 |
-| `timestamp` | u64 | Unix 时间戳（秒） |
+与 `GET /health/detail` 使用同一实现，返回详细就绪状态。
 
----
+### `GET /health/detail`
 
-### 详细健康检查
+返回详细健康状态。
 
-检查服务及各组件详细状态。
-
-**Endpoint**: `GET /health/detail`
-
-**认证**: 不需要
-
-**响应 (200 OK)**:
+**响应 (200 OK 或 503 Service Unavailable)**:
 
 ```json
 {
-  "status": "healthy",
+  "status": "ready",
+  "live": true,
+  "ready": true,
   "version": "1.0.0",
   "timestamp": 1741702800,
   "components": {
     "vault": "healthy",
     "enclave": "healthy",
-    "audit_log": "healthy"
+    "audit_log": "healthy",
+    "attestation": "ready"
   }
 }
 ```
 
-**响应 (503 Service Unavailable)**:
+### `GET /metrics`
 
-当服务状态为 `degraded` 时返回：
+返回 Prometheus 文本格式指标。
+
+## 认证与用户
+
+### 概览
+
+已实现端点：
+
+- `POST /api/v1/auth/session`
+- `POST /api/v1/auth/access-token`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/auth/memberships`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/mfa-status`
+- `POST /api/v1/auth/mfa-status/sync`
+- `POST /api/v1/auth/invitations/consume`
+- `POST /api/v1/invitations/consume`
+- `GET /api/v1/users/me`
+- `PATCH /api/v1/users/me`
+- `DELETE /api/v1/users/me`
+- `POST /api/v1/users/me/onboarding`
+- `GET /api/v1/members`
+- `PATCH /api/v1/members/:membership_id/role`
+- `DELETE /api/v1/members/:membership_id`
+- `GET /api/v1/invitations`
+- `POST /api/v1/invitations`
+- `POST /api/v1/invitations/:invitation_id/revoke`
+
+### `POST /api/v1/auth/session`
+
+使用 Privy access token 创建会话。
+
+`privy_access_token` 为推荐字段名，接口同时兼容历史别名 `privy_token`。服务端会将 token 长度限制为不超过 `2048` 个字符；超长请求会在进入认证逻辑前直接返回 `400 Bad Request`。
+
+**请求体**:
 
 ```json
 {
-  "status": "degraded",
-  "version": "1.0.0",
-  "timestamp": 1741702800,
-  "components": {
-    "vault": "healthy",
-    "enclave": "simulation_mode",
-    "audit_log": "healthy"
+  "privy_access_token": "privy_access_token",
+  "invitation_token": "optional_invitation_token"
+}
+```
+
+兼容旧调用方时，也可以发送：
+
+```json
+{
+  "privy_token": "privy_access_token"
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "display_name": "Alice",
+    "status": "active",
+    "onboarding_completed": false,
+    "default_tenant_id": null,
+    "identities": []
+  },
+  "session": {
+    "id": "550e8400-e29b-41d4-a716-446655440001",
+    "session_token": "v4.local.xxx",
+    "expires_at": "2026-04-11T12:00:00Z",
+    "mfa_status": "not_required"
+  },
+  "memberships": [],
+  "current_tenant": null,
+  "current_membership": null
+}
+```
+
+**错误响应 (400 Bad Request, token 过长)**:
+
+```json
+{
+  "error": "invalid_request",
+  "message": "服务器内部错误",
+  "error_description": "服务器内部错误",
+  "i18n": {
+    "key": "errors.auth.token_too_long"
+  },
+  "locale": "zh-CN"
+}
+```
+
+**错误响应说明**:
+
+- 缺少 `privy_access_token` / `privy_token`、请求体 JSON 非法、未知字段：返回 `400 Bad Request`，`error=invalid_request`
+- `privy_access_token` 或 `privy_token` 长度大于 `2048`：返回 `400 Bad Request`，`error=invalid_request`，`i18n.key=errors.auth.token_too_long`
+- token 格式无效或认证失败：返回 `401 Unauthorized`
+
+### `POST /api/v1/auth/access-token`
+
+从当前用户 token 签发 API access token。
+
+**认证**:
+- 需要用户 token
+- 需要 active membership
+- 需要 `tokens:write` 或 `admin`
+- 请求 `scopes` 必须是当前 token scopes 的子集
+
+**请求体**:
+
+```json
+{
+  "scopes": ["credential:read", "credential:write"],
+  "ttl_seconds": 900
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "v4.local.xxx",
+    "token_id": "550e8400-e29b-41d4-a716-446655440000",
+    "token_type": "Bearer",
+    "subject_type": "user",
+    "issued_from": "access_token",
+    "display_name": null,
+    "expires_at": 1741703700,
+    "expires_in": 900,
+    "granted_scopes": ["credential:read", "credential:write"],
+    "revoked_at": null
   }
 }
 ```
 
-**响应字段说明**:
+### `GET /api/v1/auth/me`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `status` | string | 整体状态：`healthy` 或 `degraded` |
-| `version` | string | 服务版本号 |
-| `timestamp` | u64 | Unix 时间戳（秒） |
-| `components` | object | 各组件状态详情 |
-| `components.vault` | string | 凭证保险库状态：`healthy` |
-| `components.enclave` | string | Enclave 状态：`healthy` 或 `simulation_mode` |
-| `components.audit_log` | string | 审计日志状态：`healthy` |
+获取当前 web session 用户信息。
 
----
+**认证**:
+- 只接受 web session token
 
-## 认证
+**响应 (200 OK)**:
 
-所有 API 请求必须在 `Authorization` 头中包含 Bearer Token：
-
-```http
-Authorization: Bearer <paseto_v4_local_token>
+```json
+{
+  "userId": "550e8400-e29b-41d4-a716-446655440000",
+  "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+  "username": "alice@example.com",
+  "scopes": ["admin"],
+  "locale": "zh-CN",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "display_name": "Alice",
+    "status": "active",
+    "onboarding_completed": true,
+    "default_tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+    "identities": []
+  },
+  "current_tenant": {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "name": "Acme"
+  },
+  "current_membership": {
+    "id": "550e8400-e29b-41d4-a716-446655440020",
+    "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+    "role": "owner",
+    "status": "active",
+    "scopes": ["admin"],
+    "joined_at": "2026-04-11T10:00:00Z"
+  },
+  "memberships": [],
+  "mfa_status": "not_required"
+}
 ```
 
-### Token Scope 权限
+### `GET /api/v1/auth/memberships`
 
-| Scope | 权限说明 |
-|-------|----------|
-| `credential:read` | 读取凭证元数据 |
-| `credential:decrypt` | 解密凭证获取明文 |
-| `credential:write` | 创建/更新凭证 |
-| `audit:read` | 读取审计日志 |
-| `admin` | 所有管理权限 |
+返回当前用户的活跃成员资格列表。
 
----
+**响应 (200 OK)**:
 
-## 凭证管理 API
+```json
+{
+  "memberships": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440020",
+      "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+      "role": "owner",
+      "status": "active",
+      "scopes": ["admin"],
+      "joined_at": "2026-04-11T10:00:00Z"
+    }
+  ]
+}
+```
 
-### 创建凭证
+### `POST /api/v1/auth/logout`
 
-创建新的加密凭证。
+撤销当前 web session。
 
-**Endpoint**: `POST /api/v1/credentials`
+**认证**:
+- 只接受 web session token
 
-**Scope**: `credential:write`
+**响应 (200 OK)**:
+
+```json
+{
+  "success": true
+}
+```
+
+### `GET /api/v1/auth/mfa-status`
+
+**响应 (200 OK)**:
+
+```json
+{
+  "enabled": true,
+  "verified": true,
+  "requires_step_up": false,
+  "last_verified_at": "2026-04-11T10:00:00Z",
+  "synced_at": "2026-04-11T10:00:00Z"
+}
+```
+
+### `POST /api/v1/auth/mfa-status/sync`
+
+从 Privy 同步 MFA 状态。
 
 **请求体**:
+
+```json
+{
+  "privy_access_token": "privy_access_token"
+}
+```
+
+**响应**: 与 `GET /api/v1/auth/mfa-status` 相同。
+
+### `POST /api/v1/auth/invitations/consume`
+### `POST /api/v1/invitations/consume`
+
+两个入口调用同一 handler。
+
+**认证**:
+- 只接受 web session token
+
+**请求体**:
+
+```json
+{
+  "invitation_token": "invite_token"
+}
+```
+
+兼容旧调用方时，也可以发送：
+
+```json
+{
+  "code": "invite_token"
+}
+```
+
+**响应 (200 OK)**:
+
+```json
+{
+  "membership": {
+    "id": "550e8400-e29b-41d4-a716-446655440020",
+    "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+    "role": "member",
+    "status": "active",
+    "scopes": ["credential:read"],
+    "joined_at": "2026-04-11T10:00:00Z"
+  },
+  "tenant": {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "name": null
+  }
+}
+```
+
+### `GET /api/v1/users/me`
+
+返回 `ApiSuccessResponse<FrontendUserProfile>`。
+
+### `PATCH /api/v1/users/me`
+
+**请求体**:
+
+```json
+{
+  "displayName": "Alice",
+  "defaultTenantId": "550e8400-e29b-41d4-a716-446655440010"
+}
+```
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "displayName": "Alice",
+      "status": "active",
+      "onboardingCompleted": true,
+      "defaultTenantId": "550e8400-e29b-41d4-a716-446655440010",
+      "identities": []
+    }
+  }
+}
+```
+
+### `DELETE /api/v1/users/me`
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "userId": "550e8400-e29b-41d4-a716-446655440000",
+    "deletedAt": "2026-04-11T10:00:00Z",
+    "message": "User account deleted"
+  }
+}
+```
+
+### `POST /api/v1/users/me/onboarding`
+
+**请求体**:
+
+```json
+{
+  "displayName": "Alice"
+}
+```
+
+**响应**: `ApiSuccessResponse<FrontendUserProfile>`。
+
+### 成员与邀请管理
+
+#### `GET /api/v1/members`
+
+**认证**:
+- 需要 `members:read`、`members:write` 或 `admin`
+
+**Query**:
+- `tenant_id` (UUID, 必填)
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "members": [
+      {
+        "membership": {
+          "id": "550e8400-e29b-41d4-a716-446655440020",
+          "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+          "userId": "550e8400-e29b-41d4-a716-446655440000",
+          "role": "owner",
+          "status": "active",
+          "invitedBy": null,
+          "joinedAt": "2026-04-11T10:00:00Z",
+          "source": "manual",
+          "scopes": ["admin"],
+          "createdAt": "2026-04-11T10:00:00Z",
+          "updatedAt": "2026-04-11T10:00:00Z"
+        },
+        "user": {
+          "id": "550e8400-e29b-41d4-a716-446655440000",
+          "displayName": "Alice",
+          "status": "active",
+          "onboardingCompleted": true,
+          "defaultTenantId": null,
+          "identities": []
+        }
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+#### `PATCH /api/v1/members/:membership_id/role`
+
+**请求体**:
+
+```json
+{
+  "role": "member"
+}
+```
+
+**响应**: `ApiSuccessResponse<FrontendMembershipInfo>`。
+
+#### `DELETE /api/v1/members/:membership_id`
+
+**响应**:
+- `204 No Content`
+
+#### `GET /api/v1/invitations`
+
+**认证**:
+- 需要 `invitations:read`、`members:invite` 或 `admin`
+
+**Query**:
+- `tenant_id` (UUID, 必填)
+- `limit` (可选，正整数；当前仅做参数校验，不实际分页)
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "invitation": {
+        "id": "550e8400-e29b-41d4-a716-446655440030",
+        "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+        "role": "member",
+        "inviteeType": "email",
+        "inviteeEmail": "user@example.com",
+        "inviteeWallet": null,
+        "createdBy": "550e8400-e29b-41d4-a716-446655440000",
+        "expiresAt": "2026-04-12T10:00:00Z",
+        "consumedAt": null,
+        "consumedBy": null,
+        "status": "pending",
+        "maxUses": 1,
+        "useCount": 0,
+        "createdAt": "2026-04-11T10:00:00Z"
+      },
+      "inviteToken": "",
+      "inviteUrl": ""
+    }
+  ]
+}
+```
+
+#### `POST /api/v1/invitations`
+
+**请求体**:
+
+```json
+{
+  "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+  "role": "member",
+  "inviteeType": "email",
+  "inviteeEmail": "user@example.com",
+  "inviteeWallet": null,
+  "expiresInHours": 24
+}
+```
+
+`expiresInHours` 默认为 `24`，最小值为 `1`。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "invitation": {
+      "id": "550e8400-e29b-41d4-a716-446655440030",
+      "tenantId": "550e8400-e29b-41d4-a716-446655440010",
+      "role": "member",
+      "inviteeType": "email",
+      "inviteeEmail": "user@example.com",
+      "inviteeWallet": null,
+      "createdBy": "550e8400-e29b-41d4-a716-446655440000",
+      "expiresAt": "2026-04-12T10:00:00Z",
+      "consumedAt": null,
+      "consumedBy": null,
+      "status": "pending",
+      "maxUses": 1,
+      "useCount": 0,
+      "createdAt": "2026-04-11T10:00:00Z"
+    },
+    "inviteToken": "invite_token_value",
+    "inviteUrl": "/invitation/accept?token=invite_token_value"
+  }
+}
+```
+
+#### `POST /api/v1/invitations/:invitation_id/revoke`
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "invitationId": "550e8400-e29b-41d4-a716-446655440030",
+    "status": "revoked"
+  }
+}
+```
+
+## Token 管理
+
+### 端点
+
+- `POST /api/v1/tokens`
+- `GET /api/v1/tokens`
+- `GET /api/v1/tokens/:token_id`
+- `GET /api/v1/tokens/stats`
+- `POST /api/v1/tokens/:token_id/revoke`
+
+### `POST /api/v1/tokens`
+
+**认证**:
+- 需要用户 token
+- 需要 active membership
+- 需要 `tokens:write` 或 `admin`
+- 请求 `scopes` 必须是当前 token scopes 的子集
+
+**请求体**:
+
+```json
+{
+  "scopes": ["credential:read"],
+  "expires_in": 900
+}
+```
+
+**响应**:
+
+```json
+{
+  "access_token": "v4.local.xxx",
+  "token": "v4.local.xxx",
+  "token_id": "550e8400-e29b-41d4-a716-446655440000",
+  "token_type": "Bearer",
+  "subject_type": "user",
+  "issued_from": "access_token",
+  "display_name": null,
+  "expires_in": 900,
+  "scope": "credential:read",
+  "granted_scopes": ["credential:read"],
+  "issued_at": 1741702800,
+  "expires_at": 1741703700,
+  "revoked_at": null
+}
+```
+
+### `GET /api/v1/tokens`
+
+**认证**:
+- 需要 `tokens:read`、`tenant:admin` 或 `admin`
+
+返回当前可见 token 元数据数组 `Vec<TokenMetadataResponse>`。
+
+### `GET /api/v1/tokens/:token_id`
+
+**认证**:
+- 需要 `tokens:read`、`tenant:admin` 或 `admin`
+
+返回单个 `TokenMetadataResponse`。
+
+### `GET /api/v1/tokens/stats`
+
+**认证**:
+- 允许 `tokens:read`、`tenant:admin`、`admin`
+
+**响应**:
+
+```json
+{
+  "total_tokens": 10,
+  "active_tokens": 8,
+  "revoked_tokens": 2
+}
+```
+
+### `POST /api/v1/tokens/:token_id/revoke`
+
+**认证**:
+- 撤销自己的 token：不要求额外 `tokens:*` 权限
+- 撤销他人的 token：需要 `tokens:revoke`、`tenant:admin` 或 `admin`
+- session token 需要通过 `/api/v1/auth/logout` 撤销
+
+**响应**:
+
+```json
+{
+  "revoked": true,
+  "token_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+## Profile Automation Token
+
+### 端点
+
+- `POST /api/v1/profile/automation-tokens`
+- `GET /api/v1/profile/automation-tokens` 当前未实现业务列表，固定返回 `404 Not Found`
+- `GET /api/v1/profile/automation-tokens/:token_id`
+- `POST /api/v1/profile/automation-tokens/:token_id/revoke`
+
+### `POST /api/v1/profile/automation-tokens`
+
+**认证**:
+- 需要用户 token
+- 需要 active membership
+- 需要 `tokens:write` 或 `admin`
+- 请求 `scopes` 必须同时是当前 membership scopes 和当前 token scopes 的子集
+
+**请求体**:
+
+```json
+{
+  "name": "Nightly Sync",
+  "description": "Sync automation token",
+  "scopes": ["credential:read"],
+  "ttl_seconds": 86400,
+  "created_via": "sdk"
+}
+```
+
+**响应**:
+
+```json
+{
+  "token_value": "v4.local.xxx",
+  "token_preview": "v4.local.xxx123456...",
+  "token_id": "550e8400-e29b-41d4-a716-446655440000",
+  "token_kind": "user_automation",
+  "token_name": "Nightly Sync",
+  "token_prefix": "v4.local.xxx123456",
+  "token_type": "user_access_token",
+  "subject_type": "user",
+  "subject_id": "550e8400-e29b-41d4-a716-446655440001",
+  "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+  "issued_from": "automation",
+  "session_id": "550e8400-e29b-41d4-a716-446655440050",
+  "membership_id": "550e8400-e29b-41d4-a716-446655440020",
+  "display_name": "Nightly Sync",
+  "description": "Sync automation token",
+  "granted_scopes": ["credential:read"],
+  "issued_membership_role_snapshot": "owner",
+  "permission_source": "membership_subset",
+  "created_via": "sdk",
+  "revoked_reason": null,
+  "expires_at": "2026-04-12T10:00:00Z",
+  "revoked_at": null,
+  "created_at": "2026-04-11T10:00:00Z",
+  "last_used_at": null
+}
+```
+
+详情、撤销接口分别返回：
+- `TokenMetadataResponse`
+- `TokenMetadataResponse`
+
+## 通知
+
+### `GET /api/v1/notifications`
+
+返回 dashboard 顶部通知列表。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "welcome-user-id",
+        "title": "TEE Runtime Ready",
+        "message": "可信执行环境与凭证保护链路当前运行正常。",
+        "level": "info",
+        "is_read": false,
+        "created_at": "2026-04-11T10:00:00Z"
+      },
+      {
+        "id": "audit-tenant-id",
+        "title": "Audit Stream Active",
+        "message": "审计日志链路已同步，最近操作可在审计页面查看。",
+        "level": "success",
+        "is_read": true,
+        "created_at": "2026-04-11T09:50:00Z"
+      }
+    ],
+    "total": 2
+  }
+}
+```
+
+## Service Account
+
+### 端点
+
+- `POST /api/v1/service-accounts`
+- `GET /api/v1/service-accounts`
+- `GET /api/v1/service-accounts/:service_account_id`
+- `PATCH /api/v1/service-accounts/:service_account_id`
+- `POST /api/v1/service-accounts/:service_account_id/tokens`
+- `GET /api/v1/service-accounts/:service_account_id/tokens`
+
+### 权限
+
+需要 `tenant:admin` 或 `admin`。Service account subject 自身不能管理 service account。
+
+### `POST /api/v1/service-accounts`
+
+**请求体**:
+
+```json
+{
+  "name": "CI Bot",
+  "description": "automation bot",
+  "scope_ceiling": ["credential:read", "tokens:read"]
+}
+```
+
+**响应**: `ApiSuccessResponse<ServiceAccountResponse>`。
+
+### `GET /api/v1/service-accounts`
+
+返回当前 tenant 下的 Service Account 列表。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440100",
+      "tenant_id": "550e8400-e29b-41d4-a716-446655440010",
+      "name": "CI Bot",
+      "description": "automation bot",
+      "role": "service_account",
+      "scope_ceiling": ["credential:read", "tokens:read"],
+      "status": "active",
+      "created_by": "550e8400-e29b-41d4-a716-446655440000",
+      "created_at": "2026-04-11T10:00:00Z",
+      "updated_at": "2026-04-11T10:00:00Z",
+      "deleted_at": null
+    }
+  ]
+}
+```
+
+### `GET /api/v1/service-accounts/:service_account_id`
+
+返回单个 Service Account。
+
+**响应**: `ApiSuccessResponse<ServiceAccountResponse>`。
+
+### `PATCH /api/v1/service-accounts/:service_account_id`
+
+**请求体**:
+
+```json
+{
+  "name": "CI Bot",
+  "description": "updated description",
+  "status": "active",
+  "scope_ceiling": ["credential:read"]
+}
+```
+
+**响应**: `ApiSuccessResponse<ServiceAccountResponse>`。
+
+### `POST /api/v1/service-accounts/:service_account_id/tokens`
+
+**请求体**:
+
+```json
+{
+  "scopes": ["credential:read"],
+  "ttl_seconds": 3600,
+  "display_name": "CI job token"
+}
+```
+
+`ttl_seconds` 与 `expires_in` 都可用；如果两者同时提供，值必须相同。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "v4.local.xxx",
+    "token": "v4.local.xxx",
+    "token_id": "550e8400-e29b-41d4-a716-446655440200",
+    "token_type": "Bearer",
+    "subject_type": "service_account",
+    "issued_from": "service_account",
+    "display_name": "CI job token",
+    "expires_in": 3600,
+    "scope": "credential:read",
+    "granted_scopes": ["credential:read"],
+    "issued_at": 1741702800,
+    "expires_at": 1741706400,
+    "revoked_at": null
+  }
+}
+```
+
+### `GET /api/v1/service-accounts/:service_account_id/tokens`
+
+**响应**: `ApiSuccessResponse<Vec<TokenMetadataResponse>>`。
+
+## 凭证管理
+
+### 端点
+
+- `POST /api/v1/credentials`
+- `GET /api/v1/credentials`
+- `GET /api/v1/credentials/:id`
+- `PUT /api/v1/credentials/:id`
+- `DELETE /api/v1/credentials/:id`
+- `POST /api/v1/credentials/:id/decrypt`
+
+### `POST /api/v1/credentials`
+
+**认证**:
+- 需要 `credential:write`
+
+**请求体**:
+
 ```json
 {
   "service_id": "schwab",
   "credential_type": "username_password",
   "plaintext_data": {
-    "username": "user@example.com",
-    "password": "secret_password"
+    "username": "alice",
+    "password": "secret"
   },
-  "expires_at": 1893456000
+  "expires_at": 1741706400
 }
 ```
+
+`plaintext_data` 兼容别名 `value`。
+
+**支持的 `credential_type`**:
+- `username_password`
+- `oauth_refresh`
+- `oauth_token`
+- `o_auth_refresh`
+- `api_key`
+- `session_cookie`
+- `kyc_document`
+- `client_certificate`
+- `ssh_key`
+- `database_connection`
 
 **响应 (201 Created)**:
+
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
   "service_id": "schwab",
   "credential_type": "username_password",
-  "created_at": "1709990400",
-  "expires_at": "1893456000"
+  "created_at": "2026-04-11 10:00:00 UTC",
+  "expires_at": "2026-04-11 12:00:00 UTC"
 }
 ```
 
----
+### `GET /api/v1/credentials`
 
-### 获取凭证列表
+**认证**:
+- 需要 `credential:read`
 
-获取当前用户的所有凭证元数据列表。
+**Query**:
+- `service_id` 可选
+- `credential_type` 可选
+- `only_valid` 可选
+- `page` 默认 `1`
+- `page_size` 默认 `20`，允许 `1..=100`
 
-**Endpoint**: `GET /api/v1/credentials`
+**响应**:
 
-**Scope**: `credential:read`
-
-**查询参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `service_id` | string | 按服务 ID 过滤 |
-| `credential_type` | string | 按凭证类型过滤 |
-| `include_deleted` | bool | 包含已删除的凭证 |
-| `only_valid` | bool | 仅返回未过期的凭证 |
-
-**响应 (200 OK)**:
 ```json
 {
-  "credentials": [
-    {
-      "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-      "credential_type": "username_password",
-      "user_id_hash": "aBcDeFg...",
-      "service_id": "schwab",
-      "tenant_id": "tenant_123",
-      "created_at": "1709990400Z",
-      "expires_at": "1893456000Z",
-      "is_deleted": false
-    }
-  ],
-  "total": 1
+  "credentials": [],
+  "total": 0
 }
 ```
 
----
+### `GET /api/v1/credentials/:id`
 
-### 获取凭证详情
+**认证**:
+- 需要 `credential:read`
 
-获取指定凭证的完整信息（不含明文）。
+**响应**:
 
-**Endpoint**: `GET /api/v1/credentials/:id`
-
-**Scope**: `credential:read`
-
-**路径参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 凭证 ID (UUID v7) |
-
-**响应 (200 OK)**:
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "credential_type": "username_password",
-  "user_id_hash": "aBcDeFg...",
   "service_id": "schwab",
-  "tenant_id": "tenant_123",
-  "created_at": "1709990400Z",
-  "updated_at": "1709990400Z",
-  "expires_at": "1893456000Z",
+  "credential_type": "username_password",
+  "created_at": "2026-04-11T10:00:00Z",
+  "expires_at": null,
   "is_deleted": false,
-  "encrypted_payload": {
-    "version": 2,
-    "algorithm": "AES-256-GCM",
-    "kdf": "HKDF-SHA-256",
-    "nonce": "base64_encoded_nonce",
-    "auth_tag": "base64_encoded_auth_tag",
-    "ciphertext": "base64_encoded_ciphertext"
-  }
+  "status": "active"
 }
 ```
 
----
+### `PUT /api/v1/credentials/:id`
 
-### 解密凭证
-
-解密指定凭证并返回明文数据。
-
-**Endpoint**: `POST /api/v1/credentials/:id/decrypt`
-
-**Scope**: `credential:decrypt`
-
-**路径参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 凭证 ID (UUID v7) |
+**认证**:
+- 需要 `credential:write`
 
 **请求体**:
+
 ```json
 {
-  "reason": "用户登录操作"
+  "plaintext_data": {
+    "username": "alice",
+    "password": "new-secret"
+  },
+  "change_reason": "password rotation"
 }
 ```
 
-**响应 (200 OK)**:
+**响应**:
+
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "version": 2,
   "service_id": "schwab",
   "credential_type": "username_password",
-  "plaintext_data": {
-    "username": "user@example.com",
-    "password": "secret_password"
-  }
+  "updated_at": "2026-04-11T10:00:00Z",
+  "previous_version": 1
 }
 ```
 
----
+### `DELETE /api/v1/credentials/:id`
 
-### 删除凭证
+**认证**:
+- 需要 `credential:write` 或 `admin`
 
-软删除指定凭证。
+**响应**:
 
-**Endpoint**: `DELETE /api/v1/credentials/:id`
-
-**Scope**: `credential:write` 或 `admin`
-
-**路径参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 凭证 ID (UUID v7) |
-
-**响应 (200 OK)**:
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
@@ -287,468 +1029,401 @@ Authorization: Bearer <paseto_v4_local_token>
 }
 ```
 
----
+### `POST /api/v1/credentials/:id/decrypt`
 
-## 审计日志 API
+**认证**:
+- 需要 `credential:decrypt`
 
-### 查询审计日志
+**请求体**:
 
-分页查询审计日志，支持多种过滤条件。
-
-**Endpoint**: `GET /api/v1/audit/logs`
-
-**Scope**: `audit:read` 或 `admin`
-
-**查询参数**:
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `start_time` | u64 | 否 | 开始时间戳（Unix 秒） |
-| `end_time` | u64 | 否 | 结束时间戳（Unix 秒） |
-| `action` | string | 否 | 操作类型过滤 |
-| `risk_tier` | string | 否 | 风险等级：Low/Medium/High/Critical |
-| `user_id_hash` | string | 否 | 用户 ID 哈希过滤 |
-| `outcome` | string | 否 | 结果：Success/Failure/Denied/Timeout/Aborted |
-| `limit` | u32 | 否 | 返回条数限制（默认 20，最大 100） |
-| `offset` | u32 | 否 | 分页偏移量（默认 0） |
-
-**支持的操作类型 (AuditAction)**:
-
-| 操作 | 风险等级 | 说明 |
-|------|----------|------|
-| `CredentialDecrypt` | High | 凭证解密 |
-| `CredentialAccess` | Medium | 凭证访问 |
-| `CredentialCreate` | Medium | 凭证创建 |
-| `CredentialDelete` | High | 凭证删除 |
-| `TokenIssue` | Medium | Token 签发 |
-| `TokenRevoke` | Medium | Token 撤销 |
-| `TokenValidate` | Low | Token 验证 |
-| `AuditQuery` | High | 审计日志查询 |
-| `KeyRotation` | Critical | 密钥轮换 |
-| `AdminLogin` | Critical | 管理员登录 |
-| `SystemConfigChange` | High | 系统配置变更 |
-| `FailedAuth` | High | 认证失败 |
-
-**响应 (200 OK)**:
 ```json
 {
-  "entries": [
-    {
-      "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-      "user_id_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "timestamp": 1709990400000,
-      "session_id": "session_xyz789",
-      "service": "vault-service",
-      "action": "CredentialDecrypt",
-      "risk_tier": "High",
-      "outcome": "Success",
-      "tee_mrenclave": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-      "action_token_jti": "jti_abc123",
-      "chain_index": 42,
-      "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    }
-  ],
-  "total": 150,
-  "limit": 20,
-  "offset": 0,
-  "has_more": true
+  "reason": "support-debug"
 }
 ```
 
-**字段说明**:
+`reason` 可省略。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | UUID v7 格式的事件 ID |
-| `user_id_hash` | string | SHA-256 哈希的用户 ID |
-| `timestamp` | u64 | UTC 时间戳（毫秒） |
-| `session_id` | string | 会话标识 |
-| `service` | string | 服务名称 |
-| `action` | string | 操作类型 |
-| `risk_tier` | string | 风险等级 |
-| `outcome` | string | 操作结果 |
-| `tee_mrenclave` | string | TEE MRENCLAVE 测量值 |
-| `action_token_jti` | string | Action Token JTI |
-| `chain_index` | u64 | 审计链中的索引位置 |
-| `merkle_root` | string | Merkle Tree 根哈希 |
+**响应**:
 
----
-
-### 获取审计日志详情
-
-获取单个审计日志条目的完整信息和验证证明。
-
-**Endpoint**: `GET /api/v1/audit/logs/:id`
-
-**Scope**: `audit:read` 或 `admin`
-
-**路径参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 审计条目 ID (UUID v7) |
-
-**响应 (200 OK)**:
 ```json
 {
-  "entry": {
-    "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-    "user_id_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "timestamp": 1709990400000,
-    "session_id": "session_xyz789",
-    "service": "vault-service",
-    "action": "CredentialDecrypt",
-    "risk_tier": "High",
-    "outcome": "Success",
-    "tee_mrenclave": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "action_token_jti": "jti_abc123",
-    "chain_index": 42,
-    "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  },
-  "verification": {
-    "verified": true,
-    "signature_valid": true,
-    "chain_hash_valid": true,
-    "merkle_proof": [
-      "abc123...",
-      "def456..."
-    ],
-    "state_hash": "a1b2c3d4..."
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "service_id": "schwab",
+  "credential_type": "username_password",
+  "plaintext_data": {
+    "username": "alice",
+    "password": "secret"
   }
 }
 ```
 
-**验证字段说明**:
+## 凭证版本
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `verified` | bool | 整体验证结果 |
-| `signature_valid` | bool | Ed25519 签名验证结果 |
-| `chain_hash_valid` | bool | 链式哈希验证结果 |
-| `merkle_proof` | array | Merkle Tree 包含证明 |
-| `state_hash` | string | immudb 状态哈希 |
+### 端点
 
----
+- `GET /api/v1/credentials/:id/versions`
+- `GET /api/v1/credentials/:id/versions/:version`
+- `POST /api/v1/credentials/:id/rollback`
 
-### 导出审计日志
+### `GET /api/v1/credentials/:id/versions`
 
-导出审计日志为 JSON 或 CSV 格式，包含数字签名确保完整性。
+**认证**:
+- 需要 `credential:read`
 
-**Endpoint**: `POST /api/v1/audit/export`
+**响应**:
 
-**Scope**: `audit:read` 或 `admin`
-
-**请求体**:
 ```json
 {
-  "start_time": 1704067200,
-  "end_time": 1706745600,
-  "format": "json",
-  "include_verification": true
-}
-```
-
-**请求字段说明**:
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `start_time` | u64 | 否 | 开始时间戳（Unix 秒） |
-| `end_time` | u64 | 否 | 结束时间戳（Unix 秒） |
-| `format` | string | 否 | 导出格式：`json` 或 `csv`（默认 json） |
-| `include_verification` | bool | 否 | 是否包含验证签名（默认 false） |
-
-**响应 (200 OK)**:
-```json
-{
-  "format": "json",
-  "filename": "audit_export_20240301_120000.json",
-  "content": "base64_encoded_export_content",
-  "entry_count": 150,
-  "signature": "base64_encoded_signature",
-  "exported_at": "2024-03-01T12:00:00Z",
-  "expires_at": "2024-03-08T12:00:00Z"
-}
-```
-
-**字段说明**:
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `format` | string | 导出格式 |
-| `filename` | string | 建议的文件名 |
-| `content` | string | Base64 编码的导出内容 |
-| `entry_count` | u64 | 导出的条目数量 |
-| `signature` | string | 导出内容的数字签名（可选） |
-| `exported_at` | string | 导出时间（ISO 8601） |
-| `expires_at` | string | 导出文件过期时间（ISO 8601） |
-
-**JSON 导出格式**:
-```json
-{
-  "export_metadata": {
-    "exported_at": "2024-03-01T12:00:00Z",
-    "start_time": 1704067200,
-    "end_time": 1706745600,
-    "entry_count": 150,
-    "signature": "base64_encoded_signature"
-  },
-  "entries": [
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "current_version": 3,
+  "total": 3,
+  "versions": [
     {
-      "id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-      "user_id_hash": "...",
-      "timestamp": 1709990400000,
-      "action": "CredentialDecrypt",
-      "risk_tier": "High",
-      "outcome": "Success"
+      "version": 1,
+      "created_at": "2026-04-11T10:00:00Z",
+      "changed_by": "user-id",
+      "change_reason": "initial create"
     }
   ]
 }
 ```
 
-**CSV 导出格式**:
-```csv
-id,timestamp,user_id_hash,session_id,service,action,risk_tier,outcome,tee_mrenclave,action_token_jti,chain_index
-018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c,1709990400000,e3b0c442...,session_xyz789,vault-service,CredentialDecrypt,High,Success,9f86d081...,jti_abc123,42
+### `GET /api/v1/credentials/:id/versions/:version`
+
+**认证**:
+- 需要 `credential:read`
+
+**响应**:
+
+```json
+{
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "version": 1,
+  "created_at": "2026-04-11T10:00:00Z",
+  "changed_by": "user-id",
+  "change_reason": "initial create",
+  "metadata": {
+    "service_id": "schwab",
+    "credential_type": "username_password",
+    "algorithm": "AES-256-GCM"
+  }
+}
 ```
 
----
+### `POST /api/v1/credentials/:id/rollback`
 
-### 验证审计条目
-
-验证特定审计条目的完整性和签名。
-
-**Endpoint**: `POST /api/v1/audit/verify`
-
-**Scope**: `audit:read` 或 `admin`
+**认证**:
+- 需要 `credential:write`
 
 **请求体**:
+
 ```json
 {
-  "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "include_proof": true
+  "target_version": 1,
+  "reason": "rollback to stable version"
 }
 ```
 
-**请求字段说明**:
+`reason` 是必填。
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `entry_id` | string | 是 | 审计条目 ID (UUID v7) |
-| `include_proof` | bool | 否 | 是否包含 Merkle Proof（默认 true） |
-| `chain_index` | u64 | 否 | 链索引（可选，用于直接索引验证） |
+**响应**:
 
-**响应 (200 OK)**:
 ```json
 {
-  "verified": true,
-  "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "chain_index": 42,
-  "signature_valid": true,
-  "chain_hash_valid": true,
-  "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "state_hash": "a1b2c3d4e5f6...",
-  "verification_timestamp": "2024-03-01T12:00:00Z",
-  "proof": {
-    "inclusion_proof": [
-      "abc123...",
-      "def456..."
+  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
+  "previous_version": 3,
+  "current_version": 4,
+  "rollback_to_version": 1,
+  "rollback_at": "2026-04-11T10:00:00Z",
+  "reason": "rollback to stable version"
+}
+```
+
+## 审计日志
+
+### 端点
+
+- `GET /api/v1/audit/logs`
+- `GET /api/v1/audit/logs/:id`
+- `POST /api/v1/audit/export`
+- `POST /api/v1/audit/verify`
+
+### 认证
+
+- 需要 `audit:read` 或 `admin`
+
+### `GET /api/v1/audit/logs`
+
+**Query**:
+- `start_time` 可选，毫秒时间戳
+- `end_time` 可选，毫秒时间戳
+- `user_id_hash` 可选
+- `action` 可选
+- `risk_tier` 可选
+- `outcome` 可选
+- `service` 可选
+- `page` 默认 `1`
+- `page_size` 默认 `20`，允许 `1..=1000`
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "audit-id",
+        "timestamp": 1741702800000,
+        "user_id_hash": "user-hash",
+        "session_id": "session-id",
+        "service": "vault",
+        "action": "credential_decrypt",
+        "risk_tier": "high",
+        "outcome": "success",
+        "log_index": 1
+      }
     ],
-    "transaction_id": 12345,
-    "root_hash": "a1b2c3d4e5f6..."
+    "total": 1,
+    "page": 1,
+    "page_size": 20,
+    "total_pages": 1
   }
 }
 ```
 
-**响应字段说明**:
+### `GET /api/v1/audit/logs/:id`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `verified` | bool | 整体验证结果 |
-| `entry_id` | string | 验证的条目 ID |
-| `chain_index` | u64 | 链索引位置 |
-| `signature_valid` | bool | Ed25519 签名验证 |
-| `chain_hash_valid` | bool | 链式哈希验证 |
-| `merkle_root` | string | Merkle Tree 根哈希 |
-| `state_hash` | string | immudb 状态哈希 |
-| `verification_timestamp` | string | 验证时间（ISO 8601） |
-| `proof` | object | 验证证明详情 |
-| `proof.inclusion_proof` | array | Merkle Tree 包含证明路径 |
-| `proof.transaction_id` | u64 | immudb 事务 ID |
-| `proof.root_hash` | string | 验证时的根哈希 |
+`id` 可以是审计条目 ID，也可以是数字形式的 `log_index`。
 
----
+**响应**: `AuditLogDetailResponse`，包含 `content_hash`、`previous_hash`、`merkle_root`、`signer_fingerprint` 与可选 `proof`。
 
-## 错误处理
+### `POST /api/v1/audit/export`
 
-### 错误响应格式
-
-所有错误响应使用以下统一格式：
+**请求体**:
 
 ```json
 {
-  "error": {
-    "code": "invalid_request",
-    "message": "请求参数验证失败",
-    "details": {
-      "field": "start_time",
-      "issue": "开始时间不能大于结束时间"
-    }
-  }
+  "start_time": 1741702800000,
+  "end_time": 1741706400000,
+  "format": "json",
+  "user_id_hash": "user-hash",
+  "action": "credential_decrypt"
 }
 ```
 
-### 错误码列表
+`format` 仅支持 `json` 和 `csv`。
 
-| HTTP 状态码 | 错误码 | 说明 |
-|-------------|--------|------|
-| 400 | `invalid_request` | 请求参数无效或缺失 |
-| 400 | `invalid_time_range` | 时间范围无效 |
-| 401 | `missing_token` | 缺少 Authorization 头 |
-| 401 | `invalid_token` | Token 格式无效或过期 |
-| 401 | `revoked_token` | Token 已被撤销 |
-| 403 | `insufficient_scope` | Token 缺少必需的 Scope |
-| 403 | `access_denied` | 访问被拒绝（权限不足） |
-| 404 | `not_found` | 资源不存在 |
-| 404 | `audit_entry_not_found` | 审计条目不存在 |
-| 404 | `credential_not_found` | 凭证不存在 |
-| 409 | `conflict` | 资源冲突 |
-| 422 | `unprocessable_entity` | 请求语义错误 |
-| 429 | `rate_limited` | 请求频率超限 |
-| 500 | `internal_error` | 服务器内部错误 |
-| 500 | `storage_error` | 审计存储错误 |
-| 503 | `service_unavailable` | 服务暂时不可用 |
+**响应**:
 
-### 认证错误示例
-
-**缺少 Token (401)**:
 ```json
 {
-  "error": {
-    "code": "missing_token",
-    "message": "缺少 Authorization 头"
+  "success": true,
+  "data": {
+    "export_id": "export-id",
+    "format": "json",
+    "content": "base64-content",
+    "integrity_hash": "sha256-hash",
+    "count": 10,
+    "generated_at": 1741702800000
   }
 }
 ```
 
-**Token 过期 (401)**:
+### `POST /api/v1/audit/verify`
+
+**请求体**:
+
 ```json
 {
-  "error": {
-    "code": "invalid_token",
-    "message": "Token 已过期"
-  }
+  "id": "audit-id",
+  "log_index": 1
 }
 ```
 
-**权限不足 (403)**:
+`log_index` 与 `id` 二选一；若同时存在，`log_index` 优先。
+
+**响应**:
+
 ```json
 {
-  "error": {
-    "code": "insufficient_scope",
-    "message": "需要 audit:read 或 admin Scope",
-    "details": {
-      "required": ["audit:read", "admin"],
-      "provided": ["credential:read"]
-    }
+  "success": true,
+  "status": "valid",
+  "data": {
+    "id": "audit-id",
+    "log_index": 1,
+    "verified": true,
+    "content_hash_match": true,
+    "signature_valid": true,
+    "merkle_proof_valid": true,
+    "details": [
+      {
+        "step": "内容哈希验证",
+        "passed": true,
+        "message": "..."
+      }
+    ],
+    "verified_at": 1741702800000
   }
 }
 ```
 
-### 审计 API 错误示例
+## Sandbox
 
-**条目不存在 (404)**:
+### 端点
+
+- `POST /api/v1/sandbox/sessions`
+- `GET /api/v1/sandbox/sessions`
+- `GET /api/v1/sandbox/sessions/:id`
+- `POST /api/v1/sandbox/sessions/:id/execute`
+- `POST /api/v1/sandbox/sessions/:id/pause`
+- `POST /api/v1/sandbox/sessions/:id/resume`
+- `DELETE /api/v1/sandbox/sessions/:id`
+- `POST /api/v1/sandbox/sessions/:id/export`
+- `POST /api/v1/sandbox/sessions/:id/dom-export`
+- `GET /api/v1/sandbox/operations/:operation_id`
+- `GET /api/v1/sandbox/stats`
+- `GET /api/v1/sandbox/sessions/:id/ws/:credential_id`
+
+### 认证摘要
+
+- 创建 session: 需要 `sandbox:write` 且同时需要 `credential:decrypt`
+- 读取 session/stats: `sandbox:read`
+- `execute` / `export` / `dom-export`: `sandbox:execute`
+- `pause` / `resume` / `close`: `sandbox:write`
+
+### `POST /api/v1/sandbox/sessions`
+
+**请求体**:
+
 ```json
 {
-  "error": {
-    "code": "audit_entry_not_found",
-    "message": "审计条目不存在",
-    "details": {
-      "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c"
-    }
+  "credential_id": "550e8400-e29b-41d4-a716-446655440000",
+  "original_intent": "Fetch account balances",
+  "metadata": {
+    "source": "dashboard"
   }
 }
 ```
 
-**验证失败 (400)**:
+`credential_id` 在 Rust 请求模型里是 `Option<Uuid>`，但 handler 会在运行时校验缺失并报错，因此当前 API 契约应将其视为必填。
+
+**响应**: `ApiSuccessResponse<CreateSessionResponse>`，状态码 `201 Created`。
+
+### `GET /api/v1/sandbox/sessions`
+
+**Query**:
+- `status` 可选，允许值为 `creating`、`ready`、`executing`、`paused`、`closed`
+
+**响应**: `ApiSuccessResponse<ListSessionsResponse>`。
+
+### `GET /api/v1/sandbox/sessions/:id`
+
+**响应**: `ApiSuccessResponse<SessionDetailResponse>`。
+
+说明：
+- 对外返回 `session_id` 与 `sandbox_id`。
+- 持久化层中的 `sandbox_sessions.tee_context_id` 对应运行时暴露的 `sandbox_id`，不是会话主键。
+
+### `POST /api/v1/sandbox/sessions/:id/execute`
+
+**请求体**:
+
 ```json
 {
-  "error": {
-    "code": "verification_failed",
-    "message": "审计条目验证失败",
-    "details": {
-      "entry_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-      "signature_valid": false,
-      "chain_valid": true
-    }
+  "operation_type": "navigate",
+  "description": "Open dashboard",
+  "parameters": {
+    "url": "https://example.com"
   }
 }
 ```
 
----
+**响应**: `ApiSuccessResponse<ExecuteOperationResponse>`。
 
-## 速率限制
+### `POST /api/v1/sandbox/sessions/:id/pause`
+### `POST /api/v1/sandbox/sessions/:id/resume`
+### `DELETE /api/v1/sandbox/sessions/:id`
 
-API 实施速率限制以防止滥用：
+均返回 `ApiSuccessResponse<SessionActionResponse>`。
 
-| 端点 | 限制 |
-|------|------|
-| `POST /api/v1/credentials` | 100/分钟 |
-| `GET /api/v1/credentials` | 300/分钟 |
-| `POST /api/v1/credentials/*/decrypt` | 60/分钟 |
-| `GET /api/v1/audit/logs` | 60/分钟 |
-| `POST /api/v1/audit/export` | 10/分钟 |
-| `POST /api/v1/audit/verify` | 120/分钟 |
+### `POST /api/v1/sandbox/sessions/:id/dom-export`
 
-超出限制的请求将返回 `429 Too Many Requests` 状态码。
+**请求体**:
 
----
-
-## 版本控制
-
-API 版本通过 URL 路径前缀指定：
-
-```
-/api/v1/...
+```json
+{
+  "root_selector": "body",
+  "format": "html",
+  "include_text": true,
+  "include_metadata": true,
+  "extra_sensitive_selectors": ["#token", ".secret"],
+  "max_bytes": 262144
+}
 ```
 
-当前版本: **v1**
+`format` 支持：
+- `html`
+- `text`
+- `json`
 
----
+返回 `ApiSuccessResponse<DomExportResponse>`。
 
-## 附录
+### `POST /api/v1/sandbox/sessions/:id/export`
 
-### 时间戳格式
+**请求体**:
 
-- 查询参数使用 **Unix 秒** (u64)
-- API 响应使用 **Unix 毫秒** (u64)
-- ISO 8601 格式用于导出元数据
+```json
+{
+  "format": "json",
+  "selectors": ["balances", "positions"]
+}
+```
 
-### ID 格式
+当前 `format` 支持：
+- `json`
+- `csv`
+- `pdf`
 
-- **凭证 ID**: UUID v7 (时间排序)
-- **审计条目 ID**: UUID v7 (时间排序)
-- **会话 ID**: 字符串格式
-- **用户 ID 哈希**: SHA-256 十六进制字符串
+返回 `ApiSuccessResponse<ExportDataResponse>`。
 
-### 枚举值
+### `GET /api/v1/sandbox/operations/:operation_id`
 
-**RiskTier**:
-- `Low` - 低风险操作
-- `Medium` - 中等风险操作
-- `High` - 高风险操作
-- `Critical` - 关键风险操作
+返回 `ApiSuccessResponse<OperationDetailResponse>`。
 
-**Outcome**:
-- `Success` - 操作成功
-- `Failure` - 操作失败
-- `Denied` - 操作被拒绝
-- `Timeout` - 操作超时
-- `Aborted` - 操作中止
+### `GET /api/v1/sandbox/stats`
 
-**CredentialType**:
-- `username_password`
-- `api_key`
-- `oauth_token`
-- `certificate`
-- `ssh_key`
-- `database_connection`
+返回 `ApiSuccessResponse<SandboxStatsApiResponse>`。
+
+### `GET /api/v1/sandbox/sessions/:id/ws/:credential_id`
+
+建立 Sandbox WebSocket 连接。
+
+**认证**:
+- 需要 `sandbox:execute`
+
+## 专项文档
+
+- 租户管理: [Tenant API](TENANT-API.md)
+- 远程认证: [Attestation API](ATTESTATION-API.md)
+
+## 错误说明
+
+不同模块错误响应并不完全相同：
+
+- `ApiErrorResponse` 模块通常是：
+  ```json
+  {
+    "success": false,
+    "error": "invalid_request",
+    "message": "错误描述",
+    "locale": "zh-CN"
+  }
+  ```
+- 凭证模块使用 `ApiError`，字段为 `code`、`message`，可能附带 `details`
+- 审计、租户、attestation 使用各自的 `success/data/error` 结构
+
+更新文档时不要假设整个服务只有一种错误格式。
+
+**更新时间**: 2026-04-11

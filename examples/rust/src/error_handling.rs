@@ -1,20 +1,20 @@
-//! CredBridge Rust SDK - 错误处理示例
+//! Toani Vault Rust SDK - 错误处理示例
 //!
 //! 展示各种错误场景的处理方式
 
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::{CredBridgeError, CredBridgeErrorCode};
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::{CredBridgeError, CredBridgeErrorCode};
 use std::time::Duration;
 use tokio::time::sleep;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (base_url, token) = crate::get_config();
 
-    let sdk = CredBridgeSDK::new(
+    let sdk = ToaniVaultSDK::new(
         CredBridgeConfig::new(base_url).with_token(token)
     )?;
 
-    println!("=== CredBridge 错误处理示例 ===\n");
+    println!("=== Toani Vault 错误处理示例 ===\n");
 
     // 示例 1: 凭证不存在
     println!("1. 处理凭证不存在错误...");

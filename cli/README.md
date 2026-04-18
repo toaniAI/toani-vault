@@ -1,211 +1,330 @@
-# CredBridge CLI
+# @toani/vault-cli
 
-CredBridge 命令行管理工具
+Toani Vault npm CLI package.
 
-## 安装
+- Package: `@toani/vault-cli`
+- Executable: `toani`
 
-```bash
-cargo install --path cli
-```
+## Scope
 
-## 快速开始
+The current published CLI is intentionally narrow:
 
-```bash
-# 登录到 CredBridge 服务
-credbridge auth login --url https://api.credbridge.io --token <your-token>
+- `config`
+- `credentials` (`list`, `get`)
+- `sandbox`
+- `--help`
+- `--version`
 
-# 查看登录状态
-credbridge auth status
+Do not assume the package exposes `auth`, mutating `credentials` commands, `tokens`,
+`service-accounts`, or `audit` commands unless you have verified a newer build.
 
-# 列出所有凭证
-credbridge credentials list
-
-# 创建新凭证
-credbridge credentials create --name "api-key" --type api_key --value "secret123"
-```
-
-## 命令参考
-
-### 认证 (auth)
-
-| 命令 | 描述 |
-|------|------|
-| `credbridge auth login` | 登录到服务 |
-| `credbridge auth status` | 查看登录状态 |
-| `credbridge auth logout` | 注销 |
-
-### 凭证 (credentials)
-
-| 命令 | 描述 |
-|------|------|
-| `credbridge credentials list` | 列出凭证 |
-| `credbridge credentials get <id>` | 获取单个凭证 |
-| `credbridge credentials create` | 创建凭证 |
-| `credbridge credentials update <id>` | 更新凭证 |
-| `credbridge credentials delete <id>` | 删除凭证 |
-| `credbridge credentials decrypt <id>` | 解密凭证 |
-| `credbridge credentials versions <id>` | 查看版本历史 |
-| `credbridge credentials rollback <id> <version>` | 回滚版本 |
-
-**示例：**
+## Install
 
 ```bash
-# 列出凭证（表格格式）
-credbridge credentials list
-
-# 列出凭证（JSON 格式）
-credbridge --output json credentials list
-
-# 创建 API Key 凭证
-credbridge credentials create \
-  --name "production-api-key" \
-  --type api_key \
-  --value "sk-live-xxx"
-
-# 创建用户名密码凭证
-credbridge credentials create \
-  --name "db-credentials" \
-  --type username_password \
-  --value "secret-password" \
-  --metadata "username=admin"
-
-# 解密凭证
-credbridge credentials decrypt <credential-id>
-
-# 删除凭证（带确认）
-credbridge credentials delete <credential-id>
-
-# 强制删除凭证
-credbridge credentials delete <credential-id> --force
+npm install -g @toani/vault-cli@0.0.11
 ```
 
-### Token (tokens)
+## Configure
 
-| 命令 | 描述 |
-|------|------|
-| `credbridge tokens create` | 创建 Token |
-| `credbridge tokens list` | 列出 Token |
-| `credbridge tokens revoke <id>` | 撤销 Token |
-| `credbridge tokens verify` | 验证 Token |
+Create credentials and issue bearer tokens in the Dashboard UI first. The CLI only consumes an
+existing `credential_id` and bearer token; it does not mint either one.
 
-**示例：**
+Use the Dashboard UI to:
+
+- create the credential
+- copy the resulting `credential_id`
+- issue or copy a restricted bearer token
+
+Then configure the CLI with flags, environment variables, or local config:
 
 ```bash
-# 验证当前配置的 Token
-credbridge tokens verify
+export TOANI_BASE_URL="https://api.example.com"
+export TOANI_VAULT_TOKEN="<BEARER_TOKEN>"
 
-# 撤销当前 Token
-credbridge tokens revoke
+toani config init --url https://api.example.com --token <BEARER_TOKEN>
+toani config show
 ```
 
-### 审计 (audit)
+When `--base-url`, `--token`, or `--output` are passed, the CLI persists those values to
+`~/.toani/config.json` for the active profile.
 
-| 命令 | 描述 |
-|------|------|
-| `credbridge audit logs` | 查询审计日志 |
-| `credbridge audit export <file>` | 导出审计日志 |
-| `credbridge audit verify` | 验证日志完整性 |
+Config file fields include:
 
-### 沙箱 (sandbox)
+- `baseUrl`
+- `token`
+- `currentTenantId`
+- `currentProfile`
+- `profiles`
+- `output` (`table` or `json`)
+- `timeout`
 
-| 命令 | 描述 |
-|------|------|
-| `credbridge sandbox create-session` | 创建沙箱会话 |
-| `credbridge sandbox list-sessions` | 列出沙箱会话 |
-| `credbridge sandbox get-session <id>` | 获取会话详情 |
-| `credbridge sandbox terminate <id>` | 终止会话 |
-| `credbridge sandbox execute <session-id>` | 执行操作 |
-| `credbridge sandbox get-operation <id>` | 获取操作结果 |
-| `credbridge sandbox stats` | 查看沙箱统计 |
+Token resolution priority:
 
-### 配置 (config)
+1. explicit `--token`
+2. `TOANI_VAULT_TOKEN`
+3. `CREDBRIDGE_TOKEN`
+4. saved profile `token` in `~/.toani/config.json`
 
-| 命令 | 描述 |
-|------|------|
-| `credbridge config init` | 初始化配置 |
-| `credbridge config show` | 查看配置 |
-| `credbridge config set <key> <value>` | 设置配置项 |
-| `credbridge config get <key>` | 获取配置项 |
+Base URL resolution priority:
 
-**示例：**
+1. explicit `--base-url`
+2. `TOANI_BASE_URL`
+3. `CREDBRIDGE_BASE_URL`
+4. saved profile `baseUrl` in `~/.toani/config.json`
+5. default `https://api.credbridge.example/`
+
+## Commands
 
 ```bash
-# 交互式初始化配置
-credbridge config init
-
-# 使用参数初始化配置
-credbridge config init \
-  --url https://api.credbridge.io \
-  --token "v4.local.xxx"
-
-# 查看当前配置
-credbridge config show
-
-# 设置输出格式为 JSON
-credbridge config set output_format json
-
-# 设置超时时间
-credbridge config set timeout 60
+toani config init --url <service-url> [--token <BEARER_TOKEN>]
+toani config show
+toani credentials list [--service-id <id>] [--credential-type <type>] [--only-valid true|false]
+toani credentials get <credentialId>
+toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
+toani sandbox list-sessions
+toani sandbox get-session <sessionId>
+toani sandbox terminate <sessionId>
+toani sandbox pause <sessionId>
+toani sandbox resume <sessionId>
+toani sandbox bootstrap-page <sessionId> --mode rocket_loader [--script-selectors '<json-array>'] [--include-plain-scripts true|false] [--replay-lifecycle-events true|false] [--wait-selector <selector>] [--wait-timeout-ms <ms>]
+toani sandbox execute <sessionId> --operation-type <type> [--params '{"selector":"#btn"}']
+toani sandbox export-dom <sessionId> [--format html|text|json] [--root-selector body]
+toani sandbox export-data <sessionId> --selectors '[".row"]' [--format json|csv|pdf]
+toani sandbox get-operation <operationId>
+toani sandbox stats
+toani --version
+toani --help
 ```
 
-## 全局选项
+## Credential Metadata Workflow
 
-| 选项 | 描述 |
-|------|------|
-| `-o, --output <format>` | 输出格式: table, json (默认: table) |
-| `-c, --config <path>` | 配置文件路径 |
-| `-v, --verbose` | 详细日志输出 |
-| `-h, --help` | 显示帮助信息 |
-| `-V, --version` | 显示版本信息 |
-
-## 环境变量
-
-| 变量 | 描述 |
-|------|------|
-| `CREDBRIDGE_URL` | 服务 URL |
-| `CREDBRIDGE_TOKEN` | API Token |
-| `HOME` | 配置目录 (默认: ~/.config/credbridge/) |
-
-## 配置示例
-
-```toml
-# ~/.config/credbridge/config.toml
-url = "https://api.credbridge.io"
-token = "v4.local.xxx"
-output_format = "table"
-timeout = 30
-```
-
-配置文件权限自动设置为 0600（仅用户可读写）。
-
-## 凭证类型
-
-支持的凭证类型：
-
-| 类型 | 说明 |
-|------|------|
-| `username_password` | 用户名密码 |
-| `api_key` | API 密钥 |
-| `oauth_refresh` | OAuth 刷新令牌 |
-| `session_cookie` | 会话 Cookie |
-| `kyc_document` | KYC 文档 |
-| `certificate` | 证书 |
-| `ssh_key` | SSH 密钥 |
-| `database_connection` | 数据库连接 |
-
-## 开发
+The CLI now exposes a read-only `credentials` group for metadata retrieval.
 
 ```bash
-# 编译
-cargo build
+# List all readable credentials
+toani credentials list
 
-# 运行测试
-cargo test
+# Filter by service id
+toani credentials list --service-id schwab
 
-# 发布构建
-cargo build --release
+# Filter by type and validity
+toani credentials list --credential-type api_key --only-valid true
+
+# Fetch one credential metadata record
+toani credentials get 018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c
 ```
 
-## 许可证
+These commands read metadata only. They do not expose plaintext secrets, do not decrypt credentials,
+and still require a bearer token with `credential:read`.
 
-MIT
+## Sandbox Workflow
+
+The CLI controls remote TEE sandbox sessions. Browser-backed operations run through the backend
+Lightpanda + puppeteer-core runtime; `http_request` is the direct HTTP operation and does not start
+Lightpanda. The CLI is not a local browser runner and not an abstract "sandbox node" system.
+
+Use this sequence:
+
+1. Identify or create the credential in the Dashboard UI.
+2. Copy the `credential_id`.
+3. `toani sandbox create-session --service-id <service> --credential-id <credential_id> --original-intent <intent> [--start-url <url>]`
+4. `toani sandbox execute <sessionId> --operation-type navigate ...`
+5. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...` when the page needs controlled bundle replay; add `--replay-lifecycle-events true` for late-mounted login forms
+6. `toani sandbox execute <sessionId> --operation-type wait ...`
+7. `toani sandbox execute <sessionId> --operation-type fill|click ...`
+8. `toani sandbox get-operation` when the server returns an operation id
+9. `toani sandbox get-session` when you need current state
+10. `toani sandbox terminate`
+
+For secret-backed login flows, always pass `--credential-id` when creating the session. The
+backend can also resolve by `service_id`, but explicit credential binding is the reliable path for
+sessions that need secret consumption.
+
+### Recommended `test-web.zk.me` chain
+
+Use this chain when validating a secret-backed login flow against `test-web.zk.me`:
+
+```bash
+toani sandbox create-session \
+  --service-id <service> \
+  --credential-id <credential_id> \
+  --original-intent "Sign in to test-web.zk.me" \
+  --start-url https://test-web.zk.me/login
+
+toani sandbox execute <sessionId> \
+  --operation-type navigate \
+  --params '{"url":"https://test-web.zk.me/login"}'
+
+toani sandbox bootstrap-page <sessionId> \
+  --mode rocket_loader \
+  --replay-lifecycle-events true \
+  --wait-selector 'input[name=email]' \
+  --wait-timeout-ms 15000
+
+toani sandbox execute <sessionId> \
+  --operation-type wait \
+  --params '{"selector":"input[name=email]","timeout_ms":15000}'
+
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'
+
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
+
+toani sandbox get-session <sessionId>
+toani sandbox terminate <sessionId>
+```
+
+### Operation types
+
+- `navigate`
+- `click`
+- `fill`
+- `get_text`
+- `bootstrap_page` via the dedicated `sandbox bootstrap-page` subcommand
+- `execute_script`
+- `wait`
+- `http_request`
+- `export`
+- `dom_export`
+
+### Secret handling contract
+
+- `bootstrap-page` only replays approved page bundles. It does not accept raw script text, does not accept bindings, does not consume credentials, and rejects credential references in its request body.
+- When `--script-selectors` is omitted, the backend uses its built-in generic external-script discovery set and still keeps `include_plain_scripts` as the gate for replaying non-Rocket-Loader scripts.
+- `bootstrap-page` optionally supports `--replay-lifecycle-events true` to replay `DOMContentLoaded` / `load` / `pageshow` after bundle reinjection for compatibility-sensitive pages.
+- When `bootstrap-page` times out on `--wait-selector`, the backend error includes URL, title, script counts, matched selectors, sample script descriptors, and pre/post-injection `readyState` diagnostics to help isolate whether discovery, reinjection, or page mount failed.
+- `fill` remains the controlled secret sink. Its top-level `value` field may be either a plain
+  string or a credential reference such as `{"$credential":"password"}`.
+- `execute_script` may still receive `bindings`, but every binding value must be a plain string.
+  Do not pass credential references in `execute_script.bindings`.
+- When `execute_script.bindings` contains `{"$credential":"..."}`, the backend rejects the request
+  instead of resolving the secret into script-visible data.
+
+### Examples
+
+```bash
+# Create a sandbox session
+toani sandbox create-session \
+  --service-id svc_example \
+  --original-intent "Open the login page in TEE sandbox" \
+  --start-url https://target-site.com/login
+
+# Navigate
+toani sandbox execute <sessionId> \
+  --operation-type navigate \
+  --params '{"url":"https://target-site.com/login"}'
+
+# Bootstrap a Rocket Loader page before waiting/filling
+toani sandbox bootstrap-page <sessionId> \
+  --mode rocket_loader \
+  --replay-lifecycle-events true \
+  --wait-selector 'input[name=email]' \
+  --wait-timeout-ms 15000
+
+# Wait for the login form after bundle replay
+toani sandbox execute <sessionId> \
+  --operation-type wait \
+  --params '{"selector":"input[name=email]","timeout_ms":15000}'
+
+# Click
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
+
+# Fill
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=email]","value":"user@example.com"}'
+
+# Fill from a stored credential reference
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+
+# Login flow for Rocket Loader pages
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'
+toani sandbox execute <sessionId> \
+  --operation-type fill \
+  --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
+toani sandbox execute <sessionId> \
+  --operation-type click \
+  --params '{"selector":"button[type=submit]"}'
+
+# Execute script with plain-string bindings only
+toani sandbox execute <sessionId> \
+  --operation-type execute_script \
+  --params '{"script":"return document.querySelector(bindings.selector)?.textContent?.trim() ?? null","bindings":{"selector":"h1"}}'
+
+# Invalid: execute_script bindings cannot resolve credentials
+toani sandbox execute <sessionId> \
+  --operation-type execute_script \
+  --params '{"script":"return bindings.password","bindings":{"password":{"$credential":"password"}}}'
+# Expected result: backend rejects the request because execute_script bindings only support plain strings.
+
+# Export redacted DOM
+toani sandbox export-dom <sessionId> \
+  --format html \
+  --root-selector body \
+  --include-text true \
+  --include-metadata true \
+  --extra-sensitive-selectors '["#token",".secret"]'
+
+# Export selected text data
+toani sandbox export-data <sessionId> \
+  --format json \
+  --selectors '[".balance",".status"]'
+
+# Inspect operation result
+toani sandbox get-operation <operationId>
+
+# End the session
+toani sandbox terminate <sessionId>
+```
+
+## Notes
+
+- Dashboard UI is the supported creation surface for credentials and bearer tokens.
+- CLI integrations only use bearer tokens. Browser-side Privy/session flows are not exposed as CLI
+  commands.
+- Prefer top-level controlled operations such as `fill` for credential consumption; do not design
+  flows that require secrets to become script-visible values.
+- `sandbox terminate` maps to the backend close-session route (`DELETE /api/v1/sandbox/sessions/:id`).
+
+## Common Failures
+
+- `未检测到 CLI 可用的 API Token`
+  - Create or copy the token in the Dashboard UI, then run `toani config init --url <api-url> --token <BEARER_TOKEN>` or set `TOANI_VAULT_TOKEN`.
+
+- `missing required field: credential_id or service_id`
+  - Provide `--credential-id` for secret-backed login, or provide `--service-id` when the backend
+    should resolve the credential for you.
+
+- `credential_id does not match service_id '<service>'`
+  - The session is bound to a credential from a different service. Recheck the Dashboard UI and use
+    the credential that belongs to the target service.
+
+- `bootstrap_failed: selector_not_found: ...`
+  - Inspect `discovered_scripts`, `reinjected_scripts`, `ready_state_before_scan`,
+    `ready_state_after_injection`, `matched_selectors`, `sample_script_descriptors`, and
+    `selector_exists_at_failure`. If the page mounts late, retry with `--replay-lifecycle-events true`.
+
+- `bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported`
+  - Use only the dedicated bootstrap flags. Do not send raw script text, bindings, or `--params` to
+    `bootstrap-page`.
+
+- `execute_script.bindings` rejects a credential reference
+  - Move the secret to `fill.value` or another controlled host operation. `execute_script.bindings`
+    only accepts plain strings.
+
+- 401 / 403 responses from the API
+  - Confirm the bearer token came from the Dashboard UI and that the CLI is reading the intended
+    `~/.toani/config.json`, environment variables, and global flags.

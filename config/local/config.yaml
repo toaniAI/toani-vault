@@ -1,6 +1,7 @@
 # CredBridge Local Environment Configuration
 # 本地开发环境配置
 # 此配置文件用于本地开发，连接本地数据库和 Redis
+# NOTE: Copy this file and fill in your actual credentials. Do not commit real credentials.
 
 server:
   host: "0.0.0.0"
@@ -8,23 +9,19 @@ server:
 
 # =============================================================================
 # PostgreSQL 数据库配置 (本地访问)
-# 连接地址: 10.11.25.9:15432
-# User: dn
-# Password: dnXcdYxcv56H
-# 建表参考: https://help.aliyun.com/zh/rds/apsaradb-rds-for-postgresql/use-the-timescaledb-extension
+# 使用 DATABASE_URL 环境变量覆盖，或修改此占位符
 # =============================================================================
 database:
-  url: "postgres://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge"
+  url: "postgres://CHANGE_ME_USER:CHANGE_ME_PASSWORD@127.0.0.1:5432/credbridge"
   pool_size: 10
   timeout_seconds: 30
 
 # =============================================================================
-# Redis 缓存配置 (集群外访问)
-# 连接地址: dev-r-n9ehhd6lin7zi5x0jwpd.redis.rds.aliyuncs.com:6379
-# Database: 3
+# Redis 缓存配置
+# 使用 REDIS_URL 环境变量覆盖，或修改此占位符
 # =============================================================================
 redis:
-  url: "redis://:devredis@4y93j3Usi@dev-r-n9ehhd6lin7zi5x0jwpd.redis.rds.aliyuncs.com:6379/3"
+  url: "redis://:CHANGE_ME_REDIS_PASSWORD@localhost:6379/0"
   pool_size: 10
 
 # Vault 配置 (本地开发使用模拟或本地 Vault)

@@ -14,16 +14,23 @@ image:
 imagePullSecrets: []
 
 command:
+  - /app/runtime-preflight.sh
+args:
   - /app/vault-service
-args: []
 
 envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: production
+  SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: info
-  DATABASE_URL: "postgresql://dn:dnXcdYxcv56H@10.11.25.9:15432/credbridge"
+  DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
+  REDIS_URL: "redis://:Ysdn2025G0217@redis74-master.test.svc.cluster.local:6379/0"
   VAULT_ADDR: "http://vault:8200"
+  # Optional plaintext fallback for CI/CD when Drone secrets are unavailable.
+  # Prefer Drone secrets in production; these values are committed to git if filled in here.
+  PRIVY_APP_ID: "cmniaifov006t0cl1af6l5xqs"
+  PRIVY_APP_SECRET: "privy_app_secret_51xduL8UX9MyuZDEizgyhhh9MXsAQsZbW5n9T1xBTdrT1fgcYDqK64Yv4Cnefyhirjx94sctJPzNyAFqyVJ2GH73"
 
 o_envs: []
 
@@ -64,7 +71,7 @@ resources:
 
 configs: {}
 configPath: /configs/
-configExist: "credbridge-go"
+configExist: "credbridge"
 
 nodeSelector:
   tee: tee

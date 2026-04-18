@@ -270,13 +270,13 @@ CREDBRIDGE_MCP_SSE_PORT=3721 \
 
 ### Scope 类型
 
-| Scope | 权限说明 | 工具 |
-|-------|---------|------|
-| `credential:read` | 读取凭证元数据 | list_credentials, get_credential |
-| `credential:write` | 创建/更新/删除凭证 | create_credential, update_credential, delete_credential |
-| `credential:delete` | 删除凭证（可与 write 互换） | delete_credential |
-| `credential:decrypt` | 解密凭证内容 | decrypt_credential |
-| `admin` | 所有权限 | 所有工具 |
+| Scope                | 权限说明                    | 工具                                                    |
+| -------------------- | --------------------------- | ------------------------------------------------------- |
+| `credential:read`    | 读取凭证元数据              | list_credentials, get_credential                        |
+| `credential:write`   | 创建/更新/删除凭证          | create_credential, update_credential, delete_credential |
+| `credential:delete`  | 删除凭证（可与 write 互换） | delete_credential                                       |
+| `credential:decrypt` | 解密凭证内容                | decrypt_credential                                      |
+| `admin`              | 所有权限                    | 所有工具                                                |
 
 ### 权限继承
 
@@ -314,7 +314,7 @@ CREDBRIDGE_MCP_SSE_PORT=3721 \
 ```json
 {
   "credential_type": "api_key",
-  "expires_at": 1735689600  // 90 天后过期
+  "expires_at": 1735689600 // 90 天后过期
 }
 ```
 
@@ -425,29 +425,29 @@ print(f"Created credential: {result['credential_id']}")
 ### Node.js 客户端
 
 ```javascript
-const { spawn } = require('child_process');
+const { spawn } = require("child_process");
 
 class CredBridgeMCPClient {
   constructor(serverPath) {
     this.proc = spawn(serverPath);
-    this.buffer = '';
-    this.proc.stdout.on('data', (data) => {
+    this.buffer = "";
+    this.proc.stdout.on("data", (data) => {
       this.buffer += data.toString();
-      const lines = this.buffer.split('\n');
+      const lines = this.buffer.split("\n");
       this.buffer = lines.pop();
-      lines.forEach(line => this.handleResponse(line));
+      lines.forEach((line) => this.handleResponse(line));
     });
   }
 
   callTool(name, arguments) {
     return new Promise((resolve) => {
       const request = {
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id: Date.now(),
-        method: 'tools/call',
-        params: { name, arguments }
+        method: "tools/call",
+        params: { name, arguments },
       };
-      this.proc.stdin.write(JSON.stringify(request) + '\n');
+      this.proc.stdin.write(JSON.stringify(request) + "\n");
       this.pending = resolve;
     });
   }
@@ -462,18 +462,20 @@ class CredBridgeMCPClient {
 }
 
 // 使用示例
-const client = new CredBridgeMCPClient('./credbridge-mcp-server');
+const client = new CredBridgeMCPClient("./credbridge-mcp-server");
 
-client.callTool('create_credential', {
-  tenant_id: 'acme_corp',
-  user_id: 'john_doe',
-  service_id: 'github',
-  credential_type: 'username_password',
-  plaintext_data: { username: 'user', password: 'pass' },
-  scope: 'credential:write'
-}).then(result => {
-  console.log('Created credential:', result.credential_id);
-});
+client
+  .callTool("create_credential", {
+    tenant_id: "acme_corp",
+    user_id: "john_doe",
+    service_id: "github",
+    credential_type: "username_password",
+    plaintext_data: { username: "user", password: "pass" },
+    scope: "credential:write",
+  })
+  .then((result) => {
+    console.log("Created credential:", result.credential_id);
+  });
 ```
 
 ## 参考资料

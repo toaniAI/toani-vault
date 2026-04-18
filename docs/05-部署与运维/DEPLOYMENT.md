@@ -19,25 +19,25 @@
 
 ### 最低配置
 
-| 组件 | CPU | 内存 | 存储 | 网络 |
-|------|-----|------|------|------|
-| Vault Service | 1核 | 1GB | 10GB | 100Mbps |
-| PostgreSQL | 1核 | 2GB | 50GB | 100Mbps |
-| Redis | 0.5核 | 512MB | 5GB | 100Mbps |
-| immudb | 1核 | 2GB | 100GB | 100Mbps |
-| HashiCorp Vault | 0.5核 | 512MB | 5GB | 100Mbps |
+| 组件            | CPU   | 内存  | 存储  | 网络    |
+| --------------- | ----- | ----- | ----- | ------- |
+| Vault Service   | 1核   | 1GB   | 10GB  | 100Mbps |
+| PostgreSQL      | 1核   | 2GB   | 50GB  | 100Mbps |
+| Redis           | 0.5核 | 512MB | 5GB   | 100Mbps |
+| immudb          | 1核   | 2GB   | 100GB | 100Mbps |
+| HashiCorp Vault | 0.5核 | 512MB | 5GB   | 100Mbps |
 
 **总计：4核 CPU，6GB 内存，170GB 存储**
 
 ### 推荐配置
 
-| 组件 | CPU | 内存 | 存储 | 说明 |
-|------|-----|------|------|------|
-| Vault Service | 2核 | 2GB | 20GB | 支持水平扩展 |
-| PostgreSQL | 2核 | 4GB | 200GB | SSD 存储，主从复制 |
-| Redis | 1核 | 1GB | 10GB | 主从 + Sentinel |
-| immudb | 2核 | 4GB | 500GB | SSD 存储 |
-| HashiCorp Vault | 1核 | 1GB | 10GB | 集群模式 |
+| 组件            | CPU | 内存 | 存储  | 说明               |
+| --------------- | --- | ---- | ----- | ------------------ |
+| Vault Service   | 2核 | 2GB  | 20GB  | 支持水平扩展       |
+| PostgreSQL      | 2核 | 4GB  | 200GB | SSD 存储，主从复制 |
+| Redis           | 1核 | 1GB  | 10GB  | 主从 + Sentinel    |
+| immudb          | 2核 | 4GB  | 500GB | SSD 存储           |
+| HashiCorp Vault | 1核 | 1GB  | 10GB  | 集群模式           |
 
 **总计：8核 CPU，12GB 内存，740GB SSD 存储**
 
@@ -70,6 +70,7 @@ chmod +x scripts/*.sh
 ```
 
 初始化脚本会：
+
 - 检查 Docker 环境
 - 生成随机密码
 - 创建必要的目录结构
@@ -105,12 +106,12 @@ curl http://localhost:8080/health
 
 #### 服务端口
 
-| 服务 | 端口 | 访问地址 |
-|------|------|----------|
-| Vault Service | 8080 | http://localhost:8080 |
-| PostgreSQL | 5432 | localhost:5432 |
-| Redis | 6379 | localhost:6379 |
-| immudb | 3322 | localhost:3322 |
+| 服务            | 端口 | 访问地址              |
+| --------------- | ---- | --------------------- |
+| Vault Service   | 8080 | http://localhost:8080 |
+| PostgreSQL      | 5432 | localhost:5432        |
+| Redis           | 6379 | localhost:6379        |
+| immudb          | 3322 | localhost:3322        |
 | HashiCorp Vault | 8200 | http://localhost:8200 |
 
 ### 环境变量配置
@@ -367,57 +368,57 @@ spec:
         runAsUser: 1000
         fsGroup: 1000
       containers:
-      - name: vault-service
-        image: credbridge/vault-service:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8080
-          name: http
-        envFrom:
-        - configMapRef:
-            name: vault-service-config
-        - secretRef:
-            name: vault-service-secrets
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
-        resources:
-          requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "2000m"
-        livenessProbe:
-          exec:
-            command:
-            - /app/healthcheck.sh
-          initialDelaySeconds: 60
-          periodSeconds: 30
-          timeoutSeconds: 10
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        volumeMounts:
-        - name: tmp
-          mountPath: /tmp
-        - name: data
-          mountPath: /app/data
+        - name: vault-service
+          image: credbridge/vault-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: vault-service-config
+            - secretRef:
+                name: vault-service-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2000m"
+          livenessProbe:
+            exec:
+              command:
+                - /app/healthcheck.sh
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /app/data
       volumes:
-      - name: tmp
-        emptyDir: {}
-      - name: data
-        persistentVolumeClaim:
-          claimName: vault-service-data
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: vault-service-data
 ```
 
 #### Service
@@ -432,10 +433,10 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 8080
-    targetPort: 8080
-    protocol: TCP
-    name: http
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
   selector:
     app: vault-service
 ```
@@ -455,20 +456,20 @@ metadata:
     cert-manager.io/cluster-issuer: "letsencrypt"
 spec:
   tls:
-  - hosts:
-    - api.credbridge.io
-    secretName: vault-service-tls
+    - hosts:
+        - api.credbridge.io
+      secretName: vault-service-tls
   rules:
-  - host: api.credbridge.io
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: vault-service
-            port:
-              number: 8080
+    - host: api.credbridge.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vault-service
+                port:
+                  number: 8080
 ```
 
 ### Kustomize 配置
@@ -481,25 +482,25 @@ kind: Kustomization
 namespace: credbridge
 
 resources:
-- ../../base
+  - ../../base
 
 replicas:
-- name: vault-service
-  count: 5
+  - name: vault-service
+    count: 5
 
 images:
-- name: credbridge/vault-service
-  newTag: v1.2.3
+  - name: credbridge/vault-service
+    newTag: v1.2.3
 
 patchesStrategicMerge:
-- deployment-patch.yaml
+  - deployment-patch.yaml
 
 configMapGenerator:
-- name: vault-service-config
-  behavior: merge
-  literals:
-  - VAULT_SERVICE_ENV=production
-  - RUST_LOG=info
+  - name: vault-service-config
+    behavior: merge
+    literals:
+      - VAULT_SERVICE_ENV=production
+      - RUST_LOG=info
 ```
 
 ### 部署命令
@@ -539,6 +540,7 @@ docker-compose exec vault vault secrets enable -path=credbridge kv-v2
 #### 自动解封（开发环境）
 
 生产环境建议使用自动解封机制：
+
 - AWS KMS
 - Azure Key Vault
 - GCP Cloud KMS
@@ -551,7 +553,7 @@ docker-compose exec vault vault secrets enable -path=credbridge kv-v2
 ```yaml
 networks:
   credbridge_internal:
-    internal: true  # 无外部访问
+    internal: true # 无外部访问
   credbridge_external:
     driver: bridge
 ```
@@ -569,24 +571,24 @@ spec:
     matchLabels:
       app: vault-service
   policyTypes:
-  - Ingress
-  - Egress
+    - Ingress
+    - Egress
   ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    ports:
-    - protocol: TCP
-      port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
   egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: postgres
-    ports:
-    - protocol: TCP
-      port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
 ```
 
 ### 3. 审计日志
@@ -622,15 +624,16 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'vault-service'
+  - job_name: "vault-service"
     static_configs:
-      - targets: ['vault-service:8080']
-    metrics_path: '/metrics'
+      - targets: ["vault-service:8080"]
+    metrics_path: "/metrics"
 ```
 
 ### Grafana 仪表盘
 
 导入预配置的仪表盘：
+
 - Vault Service 概览
 - 数据库性能
 - Redis 监控
@@ -641,15 +644,15 @@ scrape_configs:
 ```yaml
 # Prometheus 告警规则
 groups:
-- name: vault-service
-  rules:
-  - alert: HighErrorRate
-    expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
-    for: 5m
-    labels:
-      severity: critical
-    annotations:
-      summary: "High error rate detected"
+  - name: vault-service
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
 ```
 
 ---
@@ -759,6 +762,7 @@ docker-compose exec vault-service sh
 ## 支持
 
 如有问题，请联系：
+
 - 邮箱：support@credbridge.io
 - 工单：https://support.credbridge.io
 - 社区论坛：https://community.credbridge.io

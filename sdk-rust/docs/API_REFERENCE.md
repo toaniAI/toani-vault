@@ -1,8 +1,10 @@
-# CredBridge Rust SDK - API 参考
+# Toani Vault Rust SDK - API 参考
+
+> **迁移注意**: 此 crate 已从 `credbridge-sdk` 重命名为 `toani-vault-sdk`。`CredBridgeSDK` 已被弃用，请使用 `ToaniVaultSDK`。`CredBridgeSDK` 仍可作为 `ToaniVaultSDK` 的类型别名使用。
 
 ## 目录
 
-- [CredBridgeSDK](#credbridgesdk)
+- [ToaniVaultSDK](#toanivaultsdk)
 - [CredBridgeClient](#credbridgeclient)
 - [CredentialsService](#credentialsservice)
 - [TokenManager](#tokenmanager)
@@ -11,13 +13,14 @@
 
 ---
 
-## CredBridgeSDK
+## ToaniVaultSDK
 
 SDK 主入口，提供便捷的方法访问各种服务。
 
 ### 方法
 
 #### new(config)
+
 创建新的 SDK 实例。
 
 ```rust
@@ -25,6 +28,7 @@ pub fn new(config: CredBridgeConfig) -> Result<Self>
 ```
 
 #### from_client(client)
+
 从现有客户端创建 SDK 实例。
 
 ```rust
@@ -32,6 +36,7 @@ pub fn from_client(client: Arc<CredBridgeClient>) -> Self
 ```
 
 #### client()
+
 获取原始客户端。
 
 ```rust
@@ -39,6 +44,7 @@ pub fn client(&self) -> &CredBridgeClient
 ```
 
 #### credentials()
+
 获取凭证管理服务。
 
 ```rust
@@ -46,6 +52,7 @@ pub fn credentials(&self) -> CredentialsService
 ```
 
 #### token()
+
 获取 Token 管理器。
 
 ```rust
@@ -53,6 +60,7 @@ pub fn token(&self) -> TokenManager
 ```
 
 #### version()
+
 获取 SDK 版本。
 
 ```rust
@@ -68,6 +76,7 @@ HTTP 客户端，实现请求、错误重试、Token 管理等功能。
 ### 方法
 
 #### new(config)
+
 创建新的客户端。
 
 ```rust
@@ -75,6 +84,7 @@ pub fn new(config: CredBridgeConfig) -> Result<Self>
 ```
 
 #### get_config()
+
 获取当前配置。
 
 ```rust
@@ -82,6 +92,7 @@ pub fn get_config(&self) -> &CredBridgeConfig
 ```
 
 #### set_token(new_token)
+
 更新 Token。
 
 ```rust
@@ -89,6 +100,7 @@ pub fn set_token(&self, new_token: impl Into<String>)
 ```
 
 #### get_token()
+
 获取当前 Token。
 
 ```rust
@@ -96,6 +108,7 @@ pub fn get_token(&self) -> Option<String>
 ```
 
 #### get_token_info()
+
 获取 Token 信息。
 
 ```rust
@@ -103,6 +116,7 @@ pub fn get_token_info(&self) -> Option<TokenInfo>
 ```
 
 #### is_token_expiring_soon()
+
 检查 Token 是否即将过期。
 
 ```rust
@@ -110,6 +124,7 @@ pub fn is_token_expiring_soon(&self) -> bool
 ```
 
 #### is_token_expired()
+
 检查 Token 是否已过期。
 
 ```rust
@@ -178,6 +193,7 @@ pub async fn patch<T: DeserializeOwned>(
 ### 方法
 
 #### new(client)
+
 创建新的凭证管理服务。
 
 ```rust
@@ -185,6 +201,7 @@ pub fn new(client: Arc<CredBridgeClient>) -> Self
 ```
 
 #### create(service_id, credential_type, plaintext_data, expires_at, options)
+
 创建新凭证。
 
 ```rust
@@ -200,15 +217,16 @@ pub async fn create(
 
 **CreateCredentialResponse:**
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `credential_id` | `String` | 凭证 ID |
-| `service_id` | `String` | 服务 ID |
-| `credential_type` | `String` | 凭证类型 |
-| `created_at` | `String` | 创建时间 |
-| `expires_at` | `Option<String>` | 过期时间 |
+| 字段              | 类型             | 描述     |
+| ----------------- | ---------------- | -------- |
+| `credential_id`   | `String`         | 凭证 ID  |
+| `service_id`      | `String`         | 服务 ID  |
+| `credential_type` | `String`         | 凭证类型 |
+| `created_at`      | `String`         | 创建时间 |
+| `expires_at`      | `Option<String>` | 过期时间 |
 
 #### create_username_password(service_id, username, password, expires_at, options)
+
 创建用户名密码凭证（快捷方法）。
 
 ```rust
@@ -223,6 +241,7 @@ pub async fn create_username_password(
 ```
 
 #### create_api_key(service_id, api_key, api_secret, expires_at, options)
+
 创建 API Key 凭证（快捷方法）。
 
 ```rust
@@ -237,6 +256,7 @@ pub async fn create_api_key(
 ```
 
 #### create_oauth_refresh(service_id, refresh_token, expires_at, options)
+
 创建 OAuth 刷新令牌凭证（快捷方法）。
 
 ```rust
@@ -250,6 +270,7 @@ pub async fn create_oauth_refresh(
 ```
 
 #### list(filter, options)
+
 获取凭证列表。
 
 ```rust
@@ -262,27 +283,28 @@ pub async fn list(
 
 **CredentialFilter:**
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `service_id` | `Option<String>` | 按服务 ID 过滤 |
-| `credential_type` | `Option<CredentialType>` | 按凭证类型过滤 |
-| `include_deleted` | `Option<bool>` | 包含已删除的凭证 |
-| `only_valid` | `Option<bool>` | 仅返回未过期的凭证 |
+| 字段              | 类型                     | 描述               |
+| ----------------- | ------------------------ | ------------------ |
+| `service_id`      | `Option<String>`         | 按服务 ID 过滤     |
+| `credential_type` | `Option<CredentialType>` | 按凭证类型过滤     |
+| `include_deleted` | `Option<bool>`           | 包含已删除的凭证   |
+| `only_valid`      | `Option<bool>`           | 仅返回未过期的凭证 |
 
 **CredentialMetadata:**
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `credential_id` | `String` | 凭证 ID |
-| `credential_type` | `CredentialType` | 凭证类型 |
-| `user_id_hash` | `String` | 用户 ID 哈希 |
-| `service_id` | `String` | 服务 ID |
-| `tenant_id` | `String` | 租户 ID |
-| `created_at` | `String` | 创建时间 |
-| `expires_at` | `Option<String>` | 过期时间 |
-| `is_deleted` | `bool` | 是否已删除 |
+| 字段              | 类型             | 描述         |
+| ----------------- | ---------------- | ------------ |
+| `credential_id`   | `String`         | 凭证 ID      |
+| `credential_type` | `CredentialType` | 凭证类型     |
+| `user_id_hash`    | `String`         | 用户 ID 哈希 |
+| `service_id`      | `String`         | 服务 ID      |
+| `tenant_id`       | `String`         | 租户 ID      |
+| `created_at`      | `String`         | 创建时间     |
+| `expires_at`      | `Option<String>` | 过期时间     |
+| `is_deleted`      | `bool`           | 是否已删除   |
 
 #### get(credential_id, options)
+
 获取单个凭证详情。
 
 ```rust
@@ -294,6 +316,7 @@ pub async fn get(
 ```
 
 #### decrypt(credential_id, reason, options)
+
 解密凭证。
 
 ```rust
@@ -307,14 +330,15 @@ pub async fn decrypt(
 
 **DecryptCredentialResponse:**
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `credential_id` | `String` | 凭证 ID |
-| `service_id` | `String` | 服务 ID |
-| `credential_type` | `String` | 凭证类型 |
-| `plaintext_data` | `HashMap<String, Value>` | 解密的明文数据 |
+| 字段              | 类型                     | 描述           |
+| ----------------- | ------------------------ | -------------- |
+| `credential_id`   | `String`                 | 凭证 ID        |
+| `service_id`      | `String`                 | 服务 ID        |
+| `credential_type` | `String`                 | 凭证类型       |
+| `plaintext_data`  | `HashMap<String, Value>` | 解密的明文数据 |
 
 #### delete(credential_id, options)
+
 删除凭证。
 
 ```rust
@@ -326,6 +350,7 @@ pub async fn delete(
 ```
 
 #### get_by_service(service_id, options)
+
 获取指定服务的所有凭证。
 
 ```rust
@@ -337,6 +362,7 @@ pub async fn get_by_service(
 ```
 
 #### get_by_type(credential_type, options)
+
 获取指定类型的所有凭证。
 
 ```rust
@@ -348,6 +374,7 @@ pub async fn get_by_type(
 ```
 
 #### exists(credential_id, options)
+
 检查凭证是否存在。
 
 ```rust
@@ -367,6 +394,7 @@ Token 管理器，提供 Token 验证、刷新和管理功能。
 ### 方法
 
 #### new(client)
+
 创建新的 Token 管理器。
 
 ```rust
@@ -374,6 +402,7 @@ pub fn new(client: Arc<CredBridgeClient>) -> Self
 ```
 
 #### get_token_info()
+
 获取当前 Token 信息。
 
 ```rust
@@ -382,17 +411,18 @@ pub fn get_token_info(&self) -> Option<TokenInfo>
 
 **TokenInfo:**
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `token_id` | `String` | Token ID |
-| `subject` | `String` | 主题（租户ID:用户ID） |
-| `tenant_id` | `String` | 租户 ID |
-| `user_id` | `String` | 用户 ID |
-| `expires_at` | `i64` | 过期时间（Unix 时间戳） |
-| `scopes` | `Vec<TokenScope>` | 授权 Scope 列表 |
-| `issued_at` | `i64` | 颁发时间 |
+| 字段         | 类型              | 描述                    |
+| ------------ | ----------------- | ----------------------- |
+| `token_id`   | `String`          | Token ID                |
+| `subject`    | `String`          | 主题（租户ID:用户ID）   |
+| `tenant_id`  | `String`          | 租户 ID                 |
+| `user_id`    | `String`          | 用户 ID                 |
+| `expires_at` | `i64`             | 过期时间（Unix 时间戳） |
+| `scopes`     | `Vec<TokenScope>` | 授权 Scope 列表         |
+| `issued_at`  | `i64`             | 颁发时间                |
 
 #### get_token()
+
 获取当前 Token。
 
 ```rust
@@ -400,6 +430,7 @@ pub fn get_token(&self) -> Option<String>
 ```
 
 #### set_token(token)
+
 设置新的 Token。
 
 ```rust
@@ -407,6 +438,7 @@ pub fn set_token(&self, token: impl Into<String>)
 ```
 
 #### is_valid()
+
 检查 Token 是否有效。
 
 ```rust
@@ -414,6 +446,7 @@ pub fn is_valid(&self) -> bool
 ```
 
 #### is_expiring_soon(buffer_seconds)
+
 检查 Token 是否即将过期。
 
 ```rust
@@ -423,6 +456,7 @@ pub fn is_expiring_soon(&self, buffer_seconds: i64) -> bool
 - `buffer_seconds`: 过期前缓冲时间（秒）
 
 #### get_remaining_time()
+
 获取 Token 剩余有效时间。
 
 ```rust
@@ -432,6 +466,7 @@ pub fn get_remaining_time(&self) -> i64
 返回剩余秒数（如果 Token 无效则返回 0）。
 
 #### get_remaining_time_formatted()
+
 获取 Token 剩余有效时间的友好显示字符串。
 
 ```rust
@@ -441,6 +476,7 @@ pub fn get_remaining_time_formatted(&self) -> String
 返回格式如："5分钟", "2小时", "3天", "已过期"
 
 #### verify(options)
+
 验证当前 Token（向服务器确认）。
 
 ```rust
@@ -448,6 +484,7 @@ pub async fn verify(&self, options: Option<RequestOptions>) -> Result<bool>
 ```
 
 #### revoke(options)
+
 撤销当前 Token。
 
 ```rust
@@ -455,6 +492,7 @@ pub async fn revoke(&self, options: Option<RequestOptions>) -> Result<bool>
 ```
 
 #### has_scope(scope)
+
 检查 Token 是否具有指定的 Scope。
 
 ```rust
@@ -462,6 +500,7 @@ pub fn has_scope(&self, scope: TokenScope) -> bool
 ```
 
 #### has_any_scope(scopes)
+
 检查 Token 是否具有指定的任一 Scope。
 
 ```rust
@@ -469,6 +508,7 @@ pub fn has_any_scope(&self, scopes: &[TokenScope]) -> bool
 ```
 
 #### has_all_scopes(scopes)
+
 检查 Token 是否具有所有指定的 Scope。
 
 ```rust
@@ -476,6 +516,7 @@ pub fn has_all_scopes(&self, scopes: &[TokenScope]) -> bool
 ```
 
 #### get_scopes()
+
 获取 Token 中的所有 Scope。
 
 ```rust
@@ -483,6 +524,7 @@ pub fn get_scopes(&self) -> Vec<TokenScope>
 ```
 
 #### get_tenant_id()
+
 获取租户 ID。
 
 ```rust
@@ -490,6 +532,7 @@ pub fn get_tenant_id(&self) -> Option<String>
 ```
 
 #### get_user_id()
+
 获取用户 ID。
 
 ```rust
@@ -497,6 +540,7 @@ pub fn get_user_id(&self) -> Option<String>
 ```
 
 #### get_token_id()
+
 获取 Token ID。
 
 ```rust
@@ -504,6 +548,7 @@ pub fn get_token_id(&self) -> Option<String>
 ```
 
 #### get_issued_at()
+
 获取 Token 颁发时间。
 
 ```rust
@@ -511,6 +556,7 @@ pub fn get_issued_at(&self) -> Option<i64>
 ```
 
 #### get_expires_at()
+
 获取 Token 过期时间。
 
 ```rust
@@ -665,6 +711,7 @@ pub const VERSION: &str;
 ## 辅助函数
 
 ### create_client(config)
+
 创建新的 CredBridge 客户端。
 
 ```rust
@@ -672,6 +719,7 @@ pub fn create_client(config: CredBridgeConfig) -> Result<CredBridgeClient>
 ```
 
 ### version()
+
 获取 SDK 版本。
 
 ```rust

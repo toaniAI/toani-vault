@@ -1,9 +1,9 @@
-//! CredBridge Rust SDK - 批量操作示例
+//! Toani Vault Rust SDK - 批量操作示例
 //!
 //! 展示批量创建、获取和删除凭证的操作
 
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::CredentialFilter;
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::CredentialFilter;
 use futures::future::join_all;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,9 +12,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
-    println!("=== CredBridge 批量操作示例 ===\n");
+    println!("=== Toani Vault 批量操作示例 ===\n");
 
     let mut created_ids = Vec::new();
 
@@ -125,7 +125,7 @@ pub async fn rotate_credentials_example() -> Result<(), Box<dyn std::error::Erro
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     println!("\n=== 凭证轮换示例 ===\n");
 

@@ -5,6 +5,7 @@
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{Postgres, Transaction, pool::PoolConnection};
+use std::path::Path;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -69,6 +70,14 @@ impl DatabaseConfig {
 
         let url = env::var("DATABASE_URL")
             .map_err(|_| DatabaseError::ConfigError("DATABASE_URL not set".to_string()))?;
+        let config_file_path_for_log = detect_config_file_path_for_log();
+        let database_url_for_log = redact_database_url(&url);
+        tracing::info!(
+            database_url = %database_url_for_log,
+            database_url_source = "env:DATABASE_URL",
+            config_file_path = %config_file_path_for_log,
+            "database configuration loaded"
+        );
 
         let max_connections = env::var("DATABASE_MAX_CONNECTIONS")
             .ok()
@@ -149,11 +158,13 @@ impl DatabasePool {
     /// 创建新的数据库连接池
     pub async fn new(config: DatabaseConfig) -> Result<Self, DatabaseError> {
         config.validate()?;
+        let database_url_for_log = redact_database_url(&config.url);
 
         tracing::info!(
             max_connections = config.max_connections,
             min_connections = config.min_connections,
             connect_timeout_s = config.connect_timeout,
+            database_url = %database_url_for_log,
             "creating database connection pool"
         );
 
@@ -165,7 +176,11 @@ impl DatabasePool {
             .connect(&config.url)
             .await
             .map_err(|e| {
-                tracing::error!(error = %e, "database connection pool creation failed");
+                tracing::error!(
+                    error = %e,
+                    database_url = %database_url_for_log,
+                    "database connection pool creation failed"
+                );
                 DatabaseError::ConnectionFailed(e.to_string())
             })?;
 
@@ -352,6 +367,45 @@ impl DatabasePool {
                 .collect(),
         })
     }
+}
+
+/// 脱敏数据库 URL，避免日志泄露凭据。
+fn redact_database_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+
+    match rest.rsplit_once('@') {
+        Some((_credentials, host_and_path)) => format!("{scheme}://***:***@{host_and_path}"),
+        None => format!("{scheme}://{rest}"),
+    }
+}
+
+/// 推断配置文件路径（仅用于日志排查，不参与业务配置加载）。
+fn detect_config_file_path_for_log() -> String {
+    // 优先检查显式配置路径环境变量。
+    for key in ["CREDBRIDGE_CONFIG_PATH", "CONFIG_PATH", "CONFIG_FILE"] {
+        if let Ok(value) = std::env::var(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return format!("{key}={trimmed}");
+            }
+        }
+    }
+
+    // 其次检查部署中常见的挂载路径。
+    for path in [
+        "/configs/config.yaml",
+        "/app/config/config.yaml",
+        "config/dev/config.yaml",
+        "config/test/config.yaml",
+    ] {
+        if Path::new(path).exists() {
+            return path.to_string();
+        }
+    }
+
+    "not-detected (DATABASE_URL currently loaded from env only)".to_string()
 }
 
 /// RLS 状态信息

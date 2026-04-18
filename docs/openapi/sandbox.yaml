@@ -9,7 +9,7 @@ info:
     - 创建和管理沙箱会话
     - 在TEE环境中执行浏览器自动化操作
     - 实时WebSocket流控制
-    - 截图和数据导出
+    - DOM导出和数据导出
 
     ## 认证
     所有API端点（除健康检查外）都需要使用PASETO v4.local令牌进行认证。
@@ -36,7 +36,7 @@ tags:
   - name: Operations
     description: 操作执行和控制
   - name: Export
-    description: 数据导出和截图
+    description: 数据导出和DOM导出
   - name: WebSocket
     description: WebSocket实时流
 
@@ -58,7 +58,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateSessionRequest'
+              $ref: "#/components/schemas/CreateSessionRequest"
             examples:
               basic:
                 summary: 基本创建请求
@@ -74,22 +74,22 @@ paths:
                     source: "mobile_app"
                     priority: "high"
       responses:
-        '201':
+        "201":
           description: 会话创建成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateSessionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+                $ref: "#/components/schemas/CreateSessionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
     get:
       summary: 列出会话
@@ -100,16 +100,16 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: 会话列表获取成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ListSessionsResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/ListSessionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /sandbox/sessions/{id}:
     get:
@@ -129,18 +129,18 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: 会话详情获取成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionDetailResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/SessionDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
     delete:
       summary: 关闭会话
@@ -161,18 +161,18 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: 会话关闭成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionActionResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/SessionActionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ==================== 操作执行 ====================
   /sandbox/sessions/{id}/execute:
@@ -185,8 +185,8 @@ paths:
         - click: 点击元素
         - fill: 填写表单
         - get_text: 获取文本内容
-        - screenshot: 截图
         - export: 导出数据
+        - dom_export: 导出脱敏DOM
         - execute_script: 执行JavaScript
         - wait: 等待元素
         - custom: 自定义操作
@@ -207,7 +207,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExecuteOperationRequest'
+              $ref: "#/components/schemas/ExecuteOperationRequest"
             examples:
               navigate:
                 summary: 页面导航
@@ -232,26 +232,26 @@ paths:
                     selector: "#username"
                     value: "user@example.com"
       responses:
-        '200':
+        "200":
           description: 操作执行成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExecuteOperationResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
+                $ref: "#/components/schemas/ExecuteOperationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
           description: 会话状态冲突（如会话已暂停或已关闭）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /sandbox/sessions/{id}/pause:
     post:
@@ -271,24 +271,24 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: 会话暂停成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionActionResponse'
-        '400':
+                $ref: "#/components/schemas/SessionActionResponse"
+        "400":
           description: 会话状态无效（如已暂停或已关闭）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /sandbox/sessions/{id}/resume:
     post:
@@ -308,31 +308,31 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: 会话恢复成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionActionResponse'
-        '400':
+                $ref: "#/components/schemas/SessionActionResponse"
+        "400":
           description: 会话状态无效（如未暂停或已关闭）
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ==================== 导出功能 ====================
-  /sandbox/sessions/{id}/screenshot:
+  /sandbox/sessions/{id}/dom-export:
     post:
-      summary: 截图导出
-      operationId: takeScreenshot
-      description: 截取当前会话页面的屏幕截图
+      summary: DOM 导出
+      operationId: exportDom
+      description: 导出当前会话页面 DOM（默认强制脱敏）
       tags:
         - Export
       security:
@@ -349,20 +349,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ScreenshotRequest'
+              $ref: "#/components/schemas/DomExportRequest"
       responses:
-        '200':
-          description: 截图成功
+        "200":
+          description: 导出成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScreenshotResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/DomExportResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /sandbox/sessions/{id}/export:
     post:
@@ -386,22 +386,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExportDataRequest'
+              $ref: "#/components/schemas/ExportDataRequest"
       responses:
-        '200':
+        "200":
           description: 数据导出成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExportDataResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: "#/components/schemas/ExportDataResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ==================== WebSocket ====================
   /sandbox/sessions/{id}/ws/{credential_id}:
@@ -418,7 +418,6 @@ paths:
 
         ## 客户端消息类型
         - `execute`: 执行操作
-        - `screenshot`: 请求截图
         - `heartbeat`: 心跳保持
         - `close`: 关闭连接
 
@@ -426,7 +425,6 @@ paths:
         - `connected`: 连接成功
         - `operation_progress`: 操作进度更新
         - `operation_completed`: 操作完成
-        - `screenshot_result`: 截图结果
         - `heartbeat_ack`: 心跳确认
         - `session_status_update`: 会话状态更新
         - `error`: 错误消息
@@ -453,14 +451,14 @@ paths:
             type: string
             format: uuid
       responses:
-        '101':
+        "101":
           description: WebSocket连接成功，协议切换到WebSocket
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   # ==================== 安全方案 ====================
@@ -519,8 +517,8 @@ components:
             - click
             - fill
             - get_text
-            - screenshot
             - export
+            - dom_export
             - execute_script
             - wait
             - custom
@@ -538,46 +536,44 @@ components:
             url: "https://example.com/login"
             selector: "#login-button"
 
-    ScreenshotRequest:
+    DomExportRequest:
       type: object
       properties:
-        selector:
+        root_selector:
           type: string
-          description: CSS选择器，指定要截图的元素（不指定则截取整个页面）
-          example: "#chart-container"
-        full_page:
-          type: boolean
-          description: 是否截取完整页面
-          default: false
-        type:
+          description: 导出根节点选择器
+          default: html
+          example: body
+        format:
           type: string
-          description: 图片格式
+          description: 导出格式
           enum:
-            - png
-            - jpeg
-          default: png
-        quality:
+            - html
+            - text
+            - json
+          default: html
+        include_text:
+          type: boolean
+          description: 是否包含文本内容
+          default: true
+        include_metadata:
+          type: boolean
+          description: 是否包含元数据
+          default: true
+        extra_sensitive_selectors:
+          type: array
+          description: 额外敏感选择器
+          items:
+            type: string
+          example:
+            - "#token"
+            - ".secret"
+        max_bytes:
           type: integer
-          description: 图片质量（仅jpeg，1-100）
+          format: int64
+          description: 返回内容最大字节数，超出时截断
+          default: 262144
           minimum: 1
-          maximum: 100
-          default: 80
-        clip:
-          type: object
-          description: 裁剪区域
-          properties:
-            x:
-              type: number
-              description: X坐标
-            y:
-              type: number
-              description: Y坐标
-            width:
-              type: number
-              description: 宽度
-            height:
-              type: number
-              description: 高度
 
     ExportDataRequest:
       type: object
@@ -590,7 +586,7 @@ components:
           enum:
             - json
             - csv
-            - html
+            - pdf
           example: "json"
         selectors:
           type: array
@@ -685,7 +681,7 @@ components:
               type: array
               description: 会话列表
               items:
-                $ref: '#/components/schemas/SessionSummary'
+                $ref: "#/components/schemas/SessionSummary"
             total:
               type: integer
               description: 总会话数
@@ -888,7 +884,7 @@ components:
               type: string
               example: "Session paused successfully"
 
-    ScreenshotResponse:
+    DomExportResponse:
       type: object
       required:
         - success
@@ -900,29 +896,38 @@ components:
         data:
           type: object
           required:
-            - screenshot_base64
+            - operation_id
+            - success
             - format
-            - width
-            - height
+            - truncated
+            - execution_time_ms
           properties:
-            screenshot_base64:
+            operation_id:
               type: string
-              description: Base64编码的图片数据
-              example: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+              format: uuid
+              description: 操作ID
+            success:
+              type: boolean
+              description: 操作是否成功
             format:
               type: string
               enum:
-                - png
-                - jpeg
-              example: "png"
-            width:
+                - html
+                - text
+                - json
+            data:
+              description: 导出的DOM内容（已脱敏）
+              nullable: true
+            truncated:
+              type: boolean
+              description: 是否发生截断
+            error:
+              type: string
+              nullable: true
+              description: 错误信息
+            execution_time_ms:
               type: integer
-              description: 图片宽度（像素）
-              example: 1920
-            height:
-              type: integer
-              description: 图片高度（像素）
-              example: 1080
+              description: 执行耗时（毫秒）
 
     ExportDataResponse:
       type: object
@@ -975,14 +980,13 @@ components:
           type: string
           enum:
             - execute
-            - screenshot
             - heartbeat
             - close
           description: 消息类型
 
     WebSocketExecuteMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketClientMessage'
+        - $ref: "#/components/schemas/WebSocketClientMessage"
         - type: object
           required:
             - operation_type
@@ -1006,22 +1010,9 @@ components:
               description: 操作参数
               additionalProperties: true
 
-    WebSocketScreenshotMessage:
-      allOf:
-        - $ref: '#/components/schemas/WebSocketClientMessage'
-        - type: object
-          properties:
-            type:
-              type: string
-              enum:
-                - screenshot
-            request_id:
-              type: string
-              description: 请求ID（可选）
-
     WebSocketHeartbeatMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketClientMessage'
+        - $ref: "#/components/schemas/WebSocketClientMessage"
         - type: object
           required:
             - timestamp
@@ -1036,7 +1027,7 @@ components:
 
     WebSocketCloseMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketClientMessage'
+        - $ref: "#/components/schemas/WebSocketClientMessage"
         - type: object
           properties:
             type:
@@ -1058,7 +1049,6 @@ components:
             - connected
             - operation_progress
             - operation_completed
-            - screenshot_result
             - heartbeat_ack
             - session_status_update
             - error
@@ -1066,7 +1056,7 @@ components:
 
     WebSocketConnectedMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketServerMessage'
+        - $ref: "#/components/schemas/WebSocketServerMessage"
         - type: object
           required:
             - session_id
@@ -1089,7 +1079,7 @@ components:
 
     WebSocketOperationProgressMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketServerMessage'
+        - $ref: "#/components/schemas/WebSocketServerMessage"
         - type: object
           required:
             - operation_id
@@ -1129,7 +1119,7 @@ components:
 
     WebSocketOperationCompletedMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketServerMessage'
+        - $ref: "#/components/schemas/WebSocketServerMessage"
         - type: object
           required:
             - operation_id
@@ -1161,7 +1151,7 @@ components:
 
     WebSocketErrorMessage:
       allOf:
-        - $ref: '#/components/schemas/WebSocketServerMessage'
+        - $ref: "#/components/schemas/WebSocketServerMessage"
         - type: object
           required:
             - code
@@ -1211,7 +1201,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           example:
             success: false
             error: "invalid_request"
@@ -1222,7 +1212,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           example:
             success: false
             error: "unauthorized"
@@ -1233,7 +1223,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           example:
             success: false
             error: "forbidden"
@@ -1244,7 +1234,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           example:
             success: false
             error: "not_found"
@@ -1255,7 +1245,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           example:
             success: false
             error: "rate_limited"
@@ -1266,7 +1256,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           example:
             success: false
             error: "service_unavailable"

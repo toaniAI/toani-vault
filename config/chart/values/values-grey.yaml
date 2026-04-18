@@ -4,7 +4,7 @@ cluster: hk
 
 vault:
   enabled: true
-  address: "https://vault.bitkinetic.com"
+  address: "https://vault.example.com"
   path: "secret/data/credbridge/grey"
   secrets:
     keys:

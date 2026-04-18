@@ -14,6 +14,7 @@
 
 use crate::crypto::constants::KEY_LENGTH;
 use crate::crypto::{CryptoError, KeyHandle};
+use crate::tee::host_runtime::SharedEnclaveRuntime;
 use crate::tee::sealing::{SealPolicy, SealedStorage, SealingService};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -534,6 +535,24 @@ impl KeyManager {
     pub fn new(storage_path: String, mrsigner: [u8; 32], mrenclave: [u8; 32]) -> Self {
         let storage = SealedStorage::new(storage_path);
         let sealing_service = SealingService::new();
+
+        Self {
+            storage,
+            sealing_service,
+            current_mrsigner: mrsigner,
+            current_mrenclave: mrenclave,
+        }
+    }
+
+    /// 创建绑定到共享 runtime 的密钥管理器。
+    pub fn new_with_runtime(
+        storage_path: String,
+        mrsigner: [u8; 32],
+        mrenclave: [u8; 32],
+        runtime: SharedEnclaveRuntime,
+    ) -> Self {
+        let storage = SealedStorage::new(storage_path);
+        let sealing_service = SealingService::with_runtime(runtime);
 
         Self {
             storage,

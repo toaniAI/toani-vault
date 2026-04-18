@@ -1,9 +1,9 @@
-//! CredBridge Rust SDK - Token 管理示例
+//! Toani Vault Rust SDK - Token 管理示例
 //!
 //! 展示 Token 验证、权限检查和刷新操作
 
-use credbridge_sdk::{CredBridgeConfig, CredBridgeSDK};
-use credbridge_sdk::types::TokenScope;
+use toani_vault_sdk::{CredBridgeConfig, ToaniVaultSDK};
+use toani_vault_sdk::types::TokenScope;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (base_url, token) = crate::get_config();
@@ -11,9 +11,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
-    println!("=== CredBridge Token 管理示例 ===\n");
+    println!("=== Toani Vault Token 管理示例 ===\n");
 
     // 1. 获取 Token 信息
     println!("1. 获取 Token 信息...");
@@ -54,16 +54,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("   是否有 read+write: {}", sdk.token().has_all_scopes(&write_scopes));
     println!("   是否有任一 read/write: {}", sdk.token().has_any_scope(&read_scopes));
 
-    // 5. 验证 Token（向服务器确认）
-    println!("\n5. 验证 Token（向服务器确认）...");
-    match sdk.token().verify(None).await {
-        Ok(is_valid) => println!("   服务器验证结果: {}", is_valid),
-        Err(e) => println!("   验证错误: {}", e),
-    }
+    // 5. 本地检查 Token 状态
+    println!("\n5. 本地检查 Token 状态...");
+    println!("   当前是否仍在有效期内: {}", sdk.token().is_valid());
 
     // 6. 权限检查辅助函数
     println!("\n6. 权限检查辅助函数...");
-    fn check_permission(sdk: &CredBridgeSDK, scope: TokenScope) {
+    fn check_permission(sdk: &ToaniVaultSDK, scope: TokenScope) {
         if sdk.token().has_scope(scope) {
             println!("   ✓ 有 {:?} 权限", scope);
         } else {
@@ -116,7 +113,7 @@ pub async fn token_refresh_monitor() -> Result<(), Box<dyn std::error::Error>> {
     let config = CredBridgeConfig::new(base_url)
         .with_token(token);
 
-    let sdk = CredBridgeSDK::new(config)?;
+    let sdk = ToaniVaultSDK::new(config)?;
 
     println!("\n=== Token 刷新监控示例 ===\n");
 

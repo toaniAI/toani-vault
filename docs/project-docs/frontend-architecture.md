@@ -1,6 +1,6 @@
 # CredBridge 前端架构文档
 
-**生成日期**: 2026-03-18
+**生成日期**: 2026-03-25
 **框架**: React 19 + TypeScript
 **构建工具**: Vite
 **样式**: Tailwind CSS + shadcn/ui
@@ -9,19 +9,54 @@
 
 ## 技术栈
 
-| 类别 | 技术 | 版本 | 用途 |
-|------|------|------|------|
-| 框架 | React | 19.2.0 | UI 框架 |
-| 语言 | TypeScript | 5.9.3 | 类型安全 |
-| 构建 | Vite | 7.3.1 | 开发和生产构建 |
-| 样式 | Tailwind CSS | 3.4.1 | 原子化 CSS |
-| 组件 | shadcn/ui | 4.0.5 | UI 组件库 |
-| 基础 | Radix UI | 1.x | 无样式组件原语 |
-| 状态 | Zustand | 5.0.11 | 全局状态管理 |
-| 数据 | TanStack Query | 5.90.21 | 服务器状态管理 |
-| 路由 | React Router | 7.13.1 | 客户端路由 |
-| 字体 | Geist | 5.2.8 | 字体家族 |
-| 图标 | Lucide React | 0.577.0 | 图标库 |
+| 类别 | 技术                          | 版本         | 用途              |
+| ---- | ----------------------------- | ------------ | ----------------- |
+| 框架 | React                         | 19.2.0       | UI 框架           |
+| 语言 | TypeScript                    | 5.9.3        | 类型安全          |
+| 构建 | Vite                          | 7.3.1        | 开发和生产构建    |
+| 样式 | Tailwind CSS                  | 3.4.1        | 原子化 CSS        |
+| 组件 | shadcn/ui                     | 4.0.5        | UI 组件库         |
+| 基础 | Radix UI                      | 1.x          | 无样式组件原语    |
+| 状态 | Zustand                       | 5.0.11       | 全局状态管理      |
+| 数据 | TanStack Query                | 5.90.21      | 服务器状态管理    |
+| 路由 | React Router                  | 7.13.1       | 客户端路由        |
+| 字体 | Circular Std + HarmonyOS Sans | local assets | zkme 对齐字体策略 |
+| 图标 | Lucide React                  | 0.577.0      | 图标库            |
+
+---
+
+## 主题与设计系统
+
+本轮前端深度重构明确使用了 `/Users/yvan/.codex/skills/zkme-frontend-design/SKILL.md`，并以 `/Users/yvan/AIWorkspace/zkme-web` 作为只读设计源。
+
+### 设计源
+
+- 设计映射文档: `/Users/yvan/AIWorkspace/credbridge/docs/plans/frontend-zkme-source-map.md`
+- 核心 token 源: `/Users/yvan/AIWorkspace/zkme-web/src/assets/css/components/ui-design-preview/_base.scss`
+- 预览与主题切换参考: `/Users/yvan/AIWorkspace/zkme-web/src/components/ui-design-preview/PreviewContent.vue`
+- 字体源: `/Users/yvan/AIWorkspace/zkme-web/src/assets/css/utils/_fonts.scss`
+- 代表性页面样式源: `/Users/yvan/AIWorkspace/zkme-web/src/assets/css/views/_Uidesign.scss`
+
+### 当前主题策略
+
+- 默认主题切换为浅底 zkme 风格，主品牌色为 `#005563`
+- 保留 `light | dark | system` 兼容结构，但默认落在 `light`
+- Tailwind 与 shadcn 颜色别名继续通过 CSS variables 驱动
+- 历史深色页面的部分硬编码在第一轮通过兼容层兜底，后续逐页继续清理
+
+### 组件变体策略
+
+- `Button`：主按钮、次按钮、outline、ghost、subtle、destructive 均重绑到 zkme token
+- `Card`：默认、muted、elevated、gradient 四类容器气质
+- `Badge`：语义徽章以圆角 pill 和轻底色为主
+- `Input` / `Dialog` / `Sidebar`：统一采用大圆角、轻边框、浅表面层级
+
+### 静态资源接入
+
+- 品牌资源复制到 `/Users/yvan/AIWorkspace/credbridge/frontend/src/assets/brand/images`
+- 字体复制到 `/Users/yvan/AIWorkspace/credbridge/frontend/src/assets/brand/fonts`
+- 应用级导航图标继续使用 `lucide-react`
+- zkme iconfont 仅保留为参考，不在本轮直接接入 React 应用
 
 ---
 
@@ -60,11 +95,13 @@ frontend/src/
 路径: `features/auth/`
 
 **功能**:
+
 - 登录/登出
 - Token 管理
 - 权限检查
 
 **组件**:
+
 - `LoginForm` - 登录表单
 - `AuthGuard` - 认证守卫
 - `TokenManager` - Token 管理界面
@@ -74,12 +111,14 @@ frontend/src/
 路径: `features/credentials/`
 
 **功能**:
+
 - 凭证列表
 - 创建/编辑凭证
 - 凭证解密
 - 版本历史
 
 **组件**:
+
 - `CredentialList` - 凭证列表
 - `CredentialForm` - 凭证表单
 - `CredentialDetail` - 凭证详情
@@ -91,11 +130,13 @@ frontend/src/
 路径: `features/audit/`
 
 **功能**:
+
 - 审计日志列表
 - 日志筛选
 - 日志导出
 
 **组件**:
+
 - `AuditLogList` - 审计日志列表
 - `AuditLogFilter` - 日志筛选器
 - `AuditLogDetail` - 日志详情
@@ -105,11 +146,13 @@ frontend/src/
 路径: `features/dashboard/`
 
 **功能**:
+
 - 统计数据展示
 - 活动图表
 - 快捷操作
 
 **组件**:
+
 - `StatsCards` - 统计卡片
 - `ActivityChart` - 活动图表
 - `QuickActions` - 快捷操作
@@ -119,11 +162,13 @@ frontend/src/
 路径: `features/tenants/`
 
 **功能**:
+
 - 租户列表
 - 租户配置
 - 配额管理
 
 **组件**:
+
 - `TenantList` - 租户列表
 - `TenantConfig` - 租户配置
 - `QuotaManager` - 配额管理
@@ -136,7 +181,7 @@ frontend/src/
 
 ```typescript
 // stores/auth.ts
-import { create } from 'zustand';
+import { create } from "zustand";
 
 interface AuthState {
   token: string | null;
@@ -161,11 +206,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 ```typescript
 // hooks/useCredentials.ts
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation } from "@tanstack/react-query";
 
 export function useCredentials() {
   return useQuery({
-    queryKey: ['credentials'],
+    queryKey: ["credentials"],
     queryFn: fetchCredentials,
     staleTime: 5 * 60 * 1000, // 5 分钟
   });
@@ -177,7 +222,7 @@ export function useCreateCredential() {
   return useMutation({
     mutationFn: createCredential,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['credentials'] });
+      queryClient.invalidateQueries({ queryKey: ["credentials"] });
     },
   });
 }
@@ -191,12 +236,12 @@ export function useCreateCredential() {
 
 ```typescript
 // shared/api/client.ts
-import axios from 'axios';
+import axios from "axios";
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || "/api/v1",
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
@@ -217,7 +262,7 @@ apiClient.interceptors.response.use(
       useAuthStore.getState().logout();
     }
     return Promise.reject(error);
-  }
+  },
 );
 ```
 
@@ -226,14 +271,14 @@ apiClient.interceptors.response.use(
 ```typescript
 // features/credentials/api.ts
 export async function fetchCredentials(): Promise<Credential[]> {
-  const response = await apiClient.get('/credentials');
+  const response = await apiClient.get("/credentials");
   return response.data;
 }
 
 export async function createCredential(
-  data: CreateCredentialRequest
+  data: CreateCredentialRequest,
 ): Promise<Credential> {
-  const response = await apiClient.post('/credentials', data);
+  const response = await apiClient.post("/credentials", data);
   return response.data;
 }
 
@@ -251,36 +296,36 @@ export async function decryptCredential(id: string): Promise<DecryptResponse> {
 
 使用的组件库组件：
 
-| 组件 | 用途 |
-|------|------|
-| `Button` | 按钮 |
-| `Card` | 卡片容器 |
-| `Dialog` | 弹窗对话框 |
-| `Form` | 表单处理 |
-| `Input` | 文本输入 |
-| `Select` | 下拉选择 |
-| `Table` | 数据表格 |
-| `Tabs` | 标签页 |
-| `Toast` | 消息提示 |
-| `DropdownMenu` | 下拉菜单 |
-| `Tooltip` | 工具提示 |
-| `Progress` | 进度条 |
-| `ScrollArea` | 滚动区域 |
-| `Separator` | 分隔线 |
-| `Avatar` | 头像 |
-| `Badge` | 徽章 |
-| `AlertDialog` | 确认对话框 |
-| `Accordion` | 手风琴 |
-| `Collapsible` | 可折叠 |
-| `Label` | 标签 |
+| 组件           | 用途       |
+| -------------- | ---------- |
+| `Button`       | 按钮       |
+| `Card`         | 卡片容器   |
+| `Dialog`       | 弹窗对话框 |
+| `Form`         | 表单处理   |
+| `Input`        | 文本输入   |
+| `Select`       | 下拉选择   |
+| `Table`        | 数据表格   |
+| `Tabs`         | 标签页     |
+| `Toast`        | 消息提示   |
+| `DropdownMenu` | 下拉菜单   |
+| `Tooltip`      | 工具提示   |
+| `Progress`     | 进度条     |
+| `ScrollArea`   | 滚动区域   |
+| `Separator`    | 分隔线     |
+| `Avatar`       | 头像       |
+| `Badge`        | 徽章       |
+| `AlertDialog`  | 确认对话框 |
+| `Accordion`    | 手风琴     |
+| `Collapsible`  | 可折叠     |
+| `Label`        | 标签       |
 
 ### 组件示例
 
 ```tsx
 // features/credentials/components/CredentialCard.tsx
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 interface CredentialCardProps {
   credential: Credential;
@@ -293,7 +338,7 @@ export function CredentialCard({ credential, onDecrypt }: CredentialCardProps) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">{credential.service_id}</h3>
-          <Badge variant={credential.is_deleted ? 'destructive' : 'default'}>
+          <Badge variant={credential.is_deleted ? "destructive" : "default"}>
             {credential.credential_type}
           </Badge>
         </div>
@@ -352,24 +397,24 @@ export const router = createBrowserRouter([
 ```javascript
 // tailwind.config.js
 module.exports = {
-  darkMode: ['class'],
-  content: ['./src/**/*.{ts,tsx}'],
+  darkMode: ["class"],
+  content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
         // ... 更多颜色
       },
       fontFamily: {
-        sans: ['Geist Variable', 'system-ui', 'sans-serif'],
+        sans: ["Geist Variable", "system-ui", "sans-serif"],
       },
     },
   },
@@ -431,7 +476,7 @@ module.exports = {
 
 ```tsx
 // 1. Imports
-import { useState } from 'react';
+import { useState } from "react";
 
 // 2. Types
 interface Props {
@@ -444,7 +489,7 @@ export function MyComponent({ title }: Props) {
   const [count, setCount] = useState(0);
 
   // Handlers
-  const handleClick = () => setCount(c => c + 1);
+  const handleClick = () => setCount((c) => c + 1);
 
   // Render
   return (
@@ -493,4 +538,4 @@ npm run format
 
 ---
 
-*本文档由 BMAD document-project 工作流自动生成*
+_本文档由 BMAD document-project 工作流自动生成_

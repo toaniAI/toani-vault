@@ -1,9 +1,21 @@
 //! API 认证中间件
 //!
-//! 实现 PASETO v4.local Token 验证中间件
-//! - Token 15 分钟有效期
-//! - jti 单次使用验证
+//! 实现 Session Token 和 Privy Token 验证中间件：
+//! - 支持 Privy Access Token（用于创建会话）
+//! - 支持 Session Token（用于 API 访问）
 //! - Scope 权限控制
+//! - Membership-based tenant isolation
+//!
+//! # Token 类型
+//!
+//! 1. **Privy Access Token**: 前端从 Privy 获取，用于创建会话
+//!    - 格式: Privy JWT
+//!    - 用途: POST /auth/session
+//!
+//! 2. **Session Token**: 后端生成，用于 API 访问
+//!    - 格式: PASETO v4.local 或内部 Token
+//!    - 用途: 所有需要认证的 API 请求
+//!    - 包含: user_id, tenant_id, membership_id, scopes
 
 use axum::{
     Json,
@@ -14,6 +26,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::context::RequestContext;
@@ -22,10 +35,19 @@ use super::i18n::{
     translate,
 };
 use serde_json::Value;
+use std::sync::Arc;
 
 use super::token_blacklist::TokenStore;
+use crate::auth::AuthService;
+use crate::token::{
+    TOKEN_ISSUED_FROM_SESSION, TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER,
+};
+
+const UNASSIGNED_TENANT_ID: &str = "00000000-0000-0000-0000-000000000000";
 
 /// Token Scope 定义
+///
+/// 基于 MembershipRole 的权限范围
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenScope {
@@ -35,6 +57,8 @@ pub enum TokenScope {
     CredentialDecrypt,
     /// 凭证写入权限（创建/删除）
     CredentialWrite,
+    /// 凭证删除权限
+    CredentialDelete,
     /// 审计日志读取权限
     AuditRead,
     /// 沙箱执行权限
@@ -43,7 +67,35 @@ pub enum TokenScope {
     SandboxRead,
     /// 沙箱写入权限（创建/删除）
     SandboxWrite,
-    /// 管理员权限
+    /// 租户管理权限
+    TenantAdmin,
+    /// 租户读取权限
+    TenantRead,
+    /// 租户写入权限
+    TenantWrite,
+    /// 租户删除权限
+    TenantDelete,
+    /// 成员管理权限
+    MembersRead,
+    /// 成员写入权限
+    MembersWrite,
+    /// 成员邀请权限
+    MembersInvite,
+    /// 邀请管理权限
+    InvitationsRead,
+    /// 邀请写入权限
+    InvitationsWrite,
+    /// Token 读取权限
+    TokensRead,
+    /// Token 写入权限（创建）
+    TokensWrite,
+    /// Token 撤销权限
+    TokensRevoke,
+    /// 用户管理权限
+    UsersManage,
+    /// 角色管理权限
+    RolesManage,
+    /// 管理员权限（超级权限）
     Admin,
 }
 
@@ -54,10 +106,25 @@ impl TokenScope {
             TokenScope::CredentialRead => "credential:read",
             TokenScope::CredentialDecrypt => "credential:decrypt",
             TokenScope::CredentialWrite => "credential:write",
+            TokenScope::CredentialDelete => "credential:delete",
             TokenScope::AuditRead => "audit:read",
             TokenScope::SandboxExecute => "sandbox:execute",
             TokenScope::SandboxRead => "sandbox:read",
             TokenScope::SandboxWrite => "sandbox:write",
+            TokenScope::TenantAdmin => "tenant:admin",
+            TokenScope::TenantRead => "tenant:read",
+            TokenScope::TenantWrite => "tenant:write",
+            TokenScope::TenantDelete => "tenant:delete",
+            TokenScope::MembersRead => "members:read",
+            TokenScope::MembersWrite => "members:write",
+            TokenScope::MembersInvite => "members:invite",
+            TokenScope::InvitationsRead => "invitations:read",
+            TokenScope::InvitationsWrite => "invitations:write",
+            TokenScope::TokensRead => "tokens:read",
+            TokenScope::TokensWrite => "tokens:write",
+            TokenScope::TokensRevoke => "tokens:revoke",
+            TokenScope::UsersManage => "users:manage",
+            TokenScope::RolesManage => "roles:manage",
             TokenScope::Admin => "admin",
         }
     }
@@ -68,13 +135,149 @@ impl TokenScope {
             "credential:read" => Some(TokenScope::CredentialRead),
             "credential:decrypt" => Some(TokenScope::CredentialDecrypt),
             "credential:write" => Some(TokenScope::CredentialWrite),
+            "credential:delete" => Some(TokenScope::CredentialDelete),
             "audit:read" => Some(TokenScope::AuditRead),
             "sandbox:execute" => Some(TokenScope::SandboxExecute),
             "sandbox:read" => Some(TokenScope::SandboxRead),
             "sandbox:write" => Some(TokenScope::SandboxWrite),
+            "tenant:admin" => Some(TokenScope::TenantAdmin),
+            "tenant:read" => Some(TokenScope::TenantRead),
+            "tenant:write" => Some(TokenScope::TenantWrite),
+            "tenant:delete" => Some(TokenScope::TenantDelete),
+            "members:read" => Some(TokenScope::MembersRead),
+            "members:write" => Some(TokenScope::MembersWrite),
+            "members:invite" => Some(TokenScope::MembersInvite),
+            "invitations:read" => Some(TokenScope::InvitationsRead),
+            "invitations:write" => Some(TokenScope::InvitationsWrite),
+            "tokens:read" => Some(TokenScope::TokensRead),
+            "tokens:write" => Some(TokenScope::TokensWrite),
+            "tokens:revoke" => Some(TokenScope::TokensRevoke),
+            "users:manage" => Some(TokenScope::UsersManage),
+            "roles:manage" => Some(TokenScope::RolesManage),
             "admin" => Some(TokenScope::Admin),
+            // Legacy compatibility mappings
+            "credentials:read" => Some(TokenScope::CredentialRead),
+            "credentials:write" => Some(TokenScope::CredentialWrite),
+            "credentials:delete" => Some(TokenScope::CredentialDelete),
             _ => None,
         }
+    }
+
+    /// 从 MembershipRole 的默认 scopes 转换
+    pub fn from_membership_scopes(scope_str: &str) -> Vec<TokenScope> {
+        scope_str
+            .split_whitespace()
+            .filter_map(Self::parse)
+            .collect()
+    }
+
+    /// 从 MembershipRole 映射到 TokenScope 列表
+    ///
+    /// # 映射规则
+    /// - **owner**: 所有权限（包含 Admin）
+    /// - **admin**: credential:*, sandbox:*, tokens:*, audit:read, members:*, invitations:*
+    /// - **member**: credential:read/write, sandbox:*, tokens:read, tokens:write
+    /// - **readonly**: credential:read, tokens:read
+    pub fn from_role(role: crate::auth::models::MembershipRole) -> Vec<TokenScope> {
+        use crate::auth::models::MembershipRole;
+        match role {
+            MembershipRole::Owner => vec![
+                TokenScope::Admin,
+                TokenScope::TenantRead,
+                TokenScope::TenantWrite,
+                TokenScope::TenantAdmin,
+                TokenScope::TenantDelete,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialWrite,
+                TokenScope::CredentialDelete,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxExecute,
+                TokenScope::AuditRead,
+                TokenScope::MembersRead,
+                TokenScope::MembersWrite,
+                TokenScope::MembersInvite,
+                TokenScope::InvitationsRead,
+                TokenScope::InvitationsWrite,
+                TokenScope::TokensRead,
+                TokenScope::TokensWrite,
+                TokenScope::TokensRevoke,
+                TokenScope::UsersManage,
+                TokenScope::RolesManage,
+            ],
+            MembershipRole::Admin => vec![
+                TokenScope::TenantRead,
+                TokenScope::TenantWrite,
+                TokenScope::TenantAdmin,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialWrite,
+                TokenScope::CredentialDelete,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxExecute,
+                TokenScope::AuditRead,
+                TokenScope::MembersRead,
+                TokenScope::MembersWrite,
+                TokenScope::MembersInvite,
+                TokenScope::InvitationsRead,
+                TokenScope::InvitationsWrite,
+                TokenScope::TokensRead,
+                TokenScope::TokensWrite,
+                TokenScope::TokensRevoke,
+                TokenScope::UsersManage,
+            ],
+            MembershipRole::Member => vec![
+                TokenScope::TenantRead,
+                TokenScope::CredentialRead,
+                TokenScope::CredentialWrite,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxExecute,
+                TokenScope::AuditRead,
+                TokenScope::TokensRead,
+                TokenScope::TokensWrite,
+            ],
+            MembershipRole::Readonly => vec![
+                TokenScope::TenantRead,
+                TokenScope::CredentialRead,
+                TokenScope::TokensRead,
+            ],
+        }
+    }
+
+    pub fn is_implied_by_credential_read(&self) -> bool {
+        matches!(
+            self,
+            TokenScope::CredentialDecrypt
+                | TokenScope::SandboxWrite
+                | TokenScope::SandboxRead
+                | TokenScope::SandboxExecute
+        )
+    }
+
+    pub fn expand_credential_read_permissions(scopes: &[TokenScope]) -> Vec<TokenScope> {
+        let mut expanded = Vec::new();
+
+        for scope in scopes {
+            if !expanded.contains(scope) {
+                expanded.push(scope.clone());
+            }
+        }
+
+        if scopes.contains(&TokenScope::CredentialRead) {
+            for implied in [
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxWrite,
+                TokenScope::SandboxRead,
+                TokenScope::SandboxExecute,
+            ] {
+                if !expanded.contains(&implied) {
+                    expanded.push(implied);
+                }
+            }
+        }
+
+        expanded
     }
 }
 
@@ -87,28 +290,44 @@ impl std::str::FromStr for TokenScope {
 }
 
 /// 验证后的 Token 信息
+///
+/// 包含从 Session Token 或 Privy Token 中提取的用户身份和权限信息。
+/// 支持 membership-based 的租户隔离和权限控制。
 #[derive(Debug, Clone)]
 pub struct ValidatedToken {
     /// Token ID (jti)
     pub token_id: String,
     /// 主题（租户ID:用户ID）
     pub subject: String,
-    /// 租户 ID
+    /// 租户 ID（从 membership 中获取）
     pub tenant_id: String,
     /// 用户 ID
     pub user_id: String,
     /// Token 有效期（秒）
     pub expires_at: u64,
-    /// 授权 Scope 列表
+    /// 授权 Scope 列表（从 membership 中获取）
     pub scopes: Vec<TokenScope>,
     /// 签发时间
     pub issued_at: u64,
+    /// 成员资格 ID（可选，用于 membership-based 隔离）
+    pub membership_id: Option<String>,
+    /// 额外元数据（如 session_id, identity_id 等）
+    pub metadata: HashMap<String, String>,
+    /// 主体类型
+    pub subject_type: String,
+    /// 令牌来源
+    pub issued_from: String,
+    /// 资源级凭证白名单；None 表示不受限
+    pub allowed_credential_ids: Option<Vec<String>>,
 }
 
 impl ValidatedToken {
     /// 检查是否包含指定 scope
     pub fn has_scope(&self, scope: &TokenScope) -> bool {
-        self.scopes.contains(scope) || self.scopes.contains(&TokenScope::Admin)
+        self.scopes.contains(&TokenScope::Admin)
+            || self.scopes.contains(scope)
+            || (self.scopes.contains(&TokenScope::CredentialRead)
+                && scope.is_implied_by_credential_read())
     }
 
     /// 检查是否包含任一指定 scope
@@ -123,6 +342,74 @@ impl ValidatedToken {
             .unwrap()
             .as_secs();
         now > self.expires_at
+    }
+
+    /// 获取 membership_id（如果存在）
+    pub fn membership_id(&self) -> Option<&str> {
+        self.metadata.get("membership_id").map(|s| s.as_str())
+    }
+
+    /// 获取 session_id（如果存在）
+    pub fn session_id(&self) -> Option<&str> {
+        self.metadata.get("session_id").map(|s| s.as_str())
+    }
+
+    pub fn subject_type(&self) -> &str {
+        &self.subject_type
+    }
+
+    /// 获取当前主体 ID（user_id 或 service_account_id）
+    pub fn principal_id(&self) -> &str {
+        &self.user_id
+    }
+
+    pub fn issued_from(&self) -> &str {
+        &self.issued_from
+    }
+
+    pub fn is_user_subject(&self) -> bool {
+        self.subject_type == TOKEN_SUBJECT_TYPE_USER
+    }
+
+    pub fn is_service_account_subject(&self) -> bool {
+        self.subject_type == TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT
+    }
+
+    pub fn allowed_credential_ids(&self) -> Option<&[String]> {
+        self.allowed_credential_ids.as_deref()
+    }
+
+    pub fn can_access_credential(&self, credential_id: &str) -> bool {
+        match &self.allowed_credential_ids {
+            None => true,
+            Some(ids) => ids.iter().any(|id| id == credential_id),
+        }
+    }
+
+    /// 创建用于测试的模拟 Token
+    #[cfg(test)]
+    pub fn mock(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) -> Self {
+        Self {
+            token_id: uuid::Uuid::now_v7().to_string(),
+            subject: format!("{tenant_id}:{user_id}"),
+            tenant_id: tenant_id.to_string(),
+            user_id: user_id.to_string(),
+            expires_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 3600,
+            scopes,
+            issued_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            membership_id: None,
+            metadata: HashMap::new(),
+            subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
+        }
     }
 }
 
@@ -213,16 +500,29 @@ const TOKEN_BLACKLIST_TTL_SECONDS: u64 = 900; // 15 分钟
 /// 如需单次使用 Token，请使用专门的 Action Token 机制。
 async fn validate_token(
     token: &str,
-    _token_store: &TokenStore,
+    token_store: &TokenStore,
     secret_key: &[u8],
+    auth_service: &Arc<dyn AuthService>,
     locale: &str,
 ) -> Result<ValidatedToken, AuthError> {
-    // 使用 pasetors 验证 v4.local Token
-    let validation_result = validate_paseto_token(token, secret_key, locale).map_err(|e| {
-        let mut params = I18nParams::new();
-        params.insert("reason".to_string(), Value::String(e));
-        AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
-    })?;
+    let mut validation_result = match validate_paseto_token(token, secret_key, locale) {
+        Ok(token) => token,
+        Err(error) => {
+            // PASETO-like tokens should fail fast with a token error instead of falling
+            // back to session-token lookup (which produces misleading "session not found").
+            if token.starts_with("v4.local.") || token.starts_with("v4.public.") {
+                let mut params = I18nParams::new();
+                params.insert("reason".to_string(), Value::String(error));
+                return Err(AuthError::new(
+                    "invalid_token",
+                    locale,
+                    "errors.auth.invalid_token",
+                    params,
+                ));
+            }
+            validate_session_token(token, auth_service, locale).await?
+        }
+    };
 
     // 检查是否过期
     let now = SystemTime::now()
@@ -238,11 +538,197 @@ async fn validate_token(
         ));
     }
 
+    if token_store
+        .is_blacklisted(&validation_result.token_id)
+        .await
+        .map_err(|e| {
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(e.to_string()));
+            AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+        })?
+    {
+        let mut params = I18nParams::new();
+        params.insert(
+            "reason".to_string(),
+            Value::String("Token has been revoked".to_string()),
+        );
+        return Err(AuthError::new(
+            "revoked_token",
+            locale,
+            "errors.auth.invalid_token",
+            params,
+        ));
+    }
+
+    if let Ok(Some(metadata)) = auth_service
+        .get_api_token_metadata(&validation_result.token_id)
+        .await
+    {
+        if !metadata.credential_ids.is_empty() {
+            validation_result.allowed_credential_ids = Some(metadata.credential_ids.clone());
+        }
+
+        if metadata.revoked_at.is_some() {
+            let mut params = I18nParams::new();
+            let reason = metadata
+                .revoked_reason
+                .clone()
+                .unwrap_or_else(|| "Token has been revoked".to_string());
+            params.insert("reason".to_string(), Value::String(reason));
+            return Err(AuthError::new(
+                "revoked_token",
+                locale,
+                "errors.auth.invalid_token",
+                params,
+            ));
+        }
+
+        if metadata.expires_at.timestamp() as u64 <= now {
+            return Err(AuthError::new(
+                "expired_token",
+                locale,
+                "errors.auth.expired_token",
+                I18nParams::new(),
+            ));
+        }
+
+        if metadata.tenant_id.to_string() != validation_result.tenant_id {
+            return Err(AuthError::new(
+                "invalid_token",
+                locale,
+                "errors.auth.invalid_token",
+                I18nParams::new(),
+            ));
+        }
+
+        if metadata.subject_id.to_string() != validation_result.user_id {
+            return Err(AuthError::new(
+                "invalid_token",
+                locale,
+                "errors.auth.invalid_token",
+                I18nParams::new(),
+            ));
+        }
+
+        if let Some(membership_id) = metadata.membership_id {
+            let membership = auth_service
+                .get_membership_by_id(membership_id)
+                .await
+                .ok()
+                .flatten()
+                .ok_or_else(|| {
+                    AuthError::new(
+                        "invalid_token",
+                        locale,
+                        "errors.auth.invalid_token",
+                        I18nParams::new(),
+                    )
+                })?;
+
+            let has_admin = membership
+                .scopes
+                .iter()
+                .any(|scope| scope == TokenScope::Admin.as_str());
+            let scopes_still_allowed = validation_result.scopes.iter().all(|scope| {
+                has_admin
+                    || membership
+                        .scopes
+                        .iter()
+                        .any(|owned| owned == scope.as_str())
+            });
+
+            if membership.user_id.to_string() != validation_result.user_id
+                || membership.tenant_id.to_string() != validation_result.tenant_id
+                || !membership.status.allows_access()
+                || !scopes_still_allowed
+            {
+                return Err(AuthError::new(
+                    "invalid_token",
+                    locale,
+                    "errors.auth.invalid_token",
+                    I18nParams::new(),
+                ));
+            }
+        }
+
+        let _ = auth_service
+            .mark_api_token_used(&validation_result.token_id, chrono::Utc::now())
+            .await;
+    }
+
     Ok(validation_result)
 }
 
+async fn validate_session_token(
+    token: &str,
+    auth_service: &Arc<dyn AuthService>,
+    locale: &str,
+) -> Result<ValidatedToken, AuthError> {
+    let session = auth_service.verify_session(token).await.map_err(|err| {
+        let mut params = I18nParams::new();
+        params.insert("reason".to_string(), Value::String(err.to_string()));
+        AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+    })?;
+
+    let memberships = auth_service
+        .get_user_memberships(session.user_id)
+        .await
+        .map_err(|err| {
+            let mut params = I18nParams::new();
+            params.insert("reason".to_string(), Value::String(err.to_string()));
+            AuthError::new("invalid_token", locale, "errors.auth.invalid_token", params)
+        })?;
+
+    let fallback_membership = memberships.first().cloned();
+    let membership = memberships
+        .into_iter()
+        .find(|membership| Some(membership.id) == session.active_membership_id)
+        .or(fallback_membership);
+
+    let mut metadata = HashMap::new();
+    metadata.insert("session_id".to_string(), session.id.to_string());
+
+    if let Some(membership) = membership {
+        metadata.insert("membership_id".to_string(), membership.id.to_string());
+
+        return Ok(ValidatedToken {
+            token_id: session.id.to_string(),
+            subject: format!("{}:{}", membership.tenant_id, session.user_id),
+            tenant_id: membership.tenant_id.to_string(),
+            user_id: session.user_id.to_string(),
+            expires_at: session.expires_at.timestamp() as u64,
+            scopes: membership
+                .scopes
+                .iter()
+                .filter_map(|scope| TokenScope::parse(scope))
+                .collect(),
+            issued_at: session.created_at.timestamp() as u64,
+            membership_id: Some(membership.id.to_string()),
+            metadata,
+            subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
+        });
+    }
+
+    Ok(ValidatedToken {
+        token_id: session.id.to_string(),
+        subject: format!("{UNASSIGNED_TENANT_ID}:{}", session.user_id),
+        tenant_id: UNASSIGNED_TENANT_ID.to_string(),
+        user_id: session.user_id.to_string(),
+        expires_at: session.expires_at.timestamp() as u64,
+        scopes: Vec::new(),
+        issued_at: session.created_at.timestamp() as u64,
+        membership_id: None,
+        metadata,
+        subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+        issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
+    })
+}
+
 /// 使用 pasetors 验证 Token
-fn validate_paseto_token(
+pub(crate) fn validate_paseto_token(
     token: &str,
     secret_key: &[u8],
     locale: &str,
@@ -261,8 +747,9 @@ fn validate_paseto_token(
     let untrusted =
         UntrustedToken::try_from(token).map_err(|e| format!("Token 解析失败: {e:?}"))?;
 
-    // 验证 Token
-    let validation_rules = ClaimsValidationRules::new();
+    // 验证 Token（禁用自动 exp 验证，我们自己检查过期时间以提供更清晰的错误消息）
+    let mut validation_rules = ClaimsValidationRules::new();
+    validation_rules.allow_non_expiring();
     let trusted_token = local::decrypt(&sk, &untrusted, &validation_rules, None, None)
         .map_err(|e| format!("解密失败: {e:?}"))?;
 
@@ -322,9 +809,40 @@ fn validate_paseto_token(
         return Err("Token 缺少 scope 声明".to_string());
     }
 
+    let subject_type = claims
+        .get_claim("subject_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or(TOKEN_SUBJECT_TYPE_USER)
+        .to_string();
+    let issued_from = claims
+        .get_claim("issued_from")
+        .and_then(|v| v.as_str())
+        .unwrap_or(TOKEN_ISSUED_FROM_SESSION)
+        .to_string();
+
     // 解析租户 ID 和用户 ID
     let (tenant_id, user_id) = parse_subject(&subject, locale)
         .map_err(|e| format!("parse subject failed: {}", e.message))?;
+
+    // 提取可选的 membership_id 和 session_id
+    let membership_id = claims
+        .get_claim("membership_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let session_id = claims
+        .get_claim("session_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // 构建元数据
+    let mut metadata = HashMap::new();
+    if let Some(ref sid) = session_id {
+        metadata.insert("session_id".to_string(), sid.clone());
+    }
+    if let Some(ref mid) = membership_id {
+        metadata.insert("membership_id".to_string(), mid.clone());
+    }
 
     Ok(ValidatedToken {
         token_id,
@@ -334,6 +852,11 @@ fn validate_paseto_token(
         expires_at,
         scopes,
         issued_at,
+        membership_id,
+        metadata,
+        subject_type,
+        issued_from,
+        allowed_credential_ids: None,
     })
 }
 
@@ -353,7 +876,11 @@ fn parse_subject(subject: &str, locale: &str) -> Result<(String, String), AuthEr
 
 /// Token 验证中间件
 pub async fn auth_middleware(
-    State((token_store, secret_key)): State<(TokenStore, Vec<u8>)>,
+    State((token_store, secret_key, auth_service)): State<(
+        TokenStore,
+        Vec<u8>,
+        Arc<dyn AuthService>,
+    )>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -365,11 +892,18 @@ pub async fn auth_middleware(
     };
 
     // 验证 Token
-    let validated_token =
-        match validate_token(&token, &token_store, &secret_key, &request_locale).await {
-            Ok(t) => t,
-            Err(e) => return e.into_response(),
-        };
+    let validated_token = match validate_token(
+        &token,
+        &token_store,
+        &secret_key,
+        &auth_service,
+        &request_locale,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(e) => return e.into_response(),
+    };
 
     // 将验证后的 Token 添加到请求扩展
     let context = RequestContext::from_validated_token(&validated_token)
@@ -464,6 +998,13 @@ pub fn require_any_scope(
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use uuid::Uuid;
+
+    use crate::auth::{
+        AuthError as ServiceAuthError, AuthService, AuthSession, CreateUserRequest,
+        ExternalIdentity, MembershipRole, MfaStatus, TenantInvitation, TenantMembership, User,
+    };
 
     /// 获取测试密钥
     pub fn get_test_key() -> Vec<u8> {
@@ -491,6 +1032,167 @@ pub mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
+            membership_id: None,
+            metadata: HashMap::new(),
+            subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         }
+    }
+
+    struct NoMembershipAuthService {
+        session: AuthSession,
+    }
+
+    #[async_trait]
+    impl AuthService for NoMembershipAuthService {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn get_or_create_external_identity(
+            &self,
+            _user_id: Uuid,
+            _provider: crate::auth::IdentityProvider,
+            _provider_subject: &str,
+            _profile: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn create_tenant_invitation(
+            &self,
+            _tenant_id: Uuid,
+            _role: MembershipRole,
+            _invitee_type: crate::auth::InviteeType,
+            _invitee_email: Option<String>,
+            _invitee_wallet: Option<String>,
+            _created_by: Uuid,
+            _expires_hours: i64,
+        ) -> Result<(TenantInvitation, String), ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn consume_invitation(
+            &self,
+            _invitation_token: &str,
+            _user_id: Uuid,
+        ) -> Result<TenantMembership, ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn create_session(
+            &self,
+            _user_id: Uuid,
+            _identity_id: Option<Uuid>,
+            _request: CreateUserRequest,
+        ) -> Result<(AuthSession, String), ServiceAuthError> {
+            unreachable!()
+        }
+
+        async fn get_active_membership(
+            &self,
+            _user_id: Uuid,
+            _tenant_id: Uuid,
+        ) -> Result<Option<TenantMembership>, ServiceAuthError> {
+            Ok(None)
+        }
+
+        async fn audit_log(
+            &self,
+            _event_type: crate::auth::AuthEventType,
+            _user_id: Option<Uuid>,
+            _data: Option<serde_json::Value>,
+        ) -> Result<(), ServiceAuthError> {
+            Ok(())
+        }
+
+        async fn verify_session(
+            &self,
+            _session_token: &str,
+        ) -> Result<AuthSession, ServiceAuthError> {
+            Ok(self.session.clone())
+        }
+
+        async fn revoke_session(
+            &self,
+            _session_id: Uuid,
+            _reason: &str,
+        ) -> Result<(), ServiceAuthError> {
+            Ok(())
+        }
+
+        async fn get_user(&self, _user_id: Uuid) -> Result<User, ServiceAuthError> {
+            Ok(User::new())
+        }
+
+        async fn get_user_identities(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<ExternalIdentity>, ServiceAuthError> {
+            Ok(vec![])
+        }
+
+        async fn get_user_memberships(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<Vec<TenantMembership>, ServiceAuthError> {
+            Ok(vec![])
+        }
+
+        async fn sync_mfa_status(
+            &self,
+            _user_id: Uuid,
+            _privy_token: &str,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, ServiceAuthError> {
+            Ok(crate::auth::service::MfaStatusSnapshot::default())
+        }
+
+        async fn get_mfa_status(
+            &self,
+            _user_id: Uuid,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, ServiceAuthError> {
+            Ok(crate::auth::service::MfaStatusSnapshot::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_validate_session_token_without_membership_uses_unassigned_tenant() {
+        let user_id = Uuid::now_v7();
+        let session = AuthSession {
+            id: Uuid::now_v7(),
+            user_id,
+            session_token_hash: "ignored".to_string(),
+            identity_id: None,
+            active_membership_id: None,
+            mfa_status: MfaStatus::NotRequired,
+            mfa_verified_at: None,
+            user_agent: None,
+            ip_address: None,
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+            last_active_at: chrono::Utc::now(),
+            revoked_at: None,
+            revoked_reason: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let auth_service: Arc<dyn AuthService> = Arc::new(NoMembershipAuthService { session });
+
+        let validated = validate_session_token("session-token", &auth_service, "en")
+            .await
+            .expect("session without membership should still validate");
+
+        assert_eq!(validated.user_id, user_id.to_string());
+        assert_eq!(validated.tenant_id, UNASSIGNED_TENANT_ID);
+        assert!(validated.membership_id.is_none());
+        assert!(validated.scopes.is_empty());
+        assert_eq!(
+            validated.metadata.get("session_id").map(String::as_str),
+            Some(validated.token_id.as_str())
+        );
     }
 }

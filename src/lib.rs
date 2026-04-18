@@ -23,9 +23,10 @@
 
 pub mod api;
 pub mod audit;
+pub mod auth;
+pub mod config;
 pub mod connector;
 pub mod crypto;
-pub mod mcp;
 pub mod models;
 pub mod services;
 pub mod tee;
@@ -41,10 +42,16 @@ pub use crypto::{
     encrypt_credential, key_derivation, key_rotation,
 };
 
-pub use tee::{Enclave, EnclaveState, driver_verify, upgrade};
+pub use config::{
+    ConfigError, PrivyConfig, TEE_DEBUG_ENV, TEE_MODE_ENV, TEE_PCS_BASE_URL_ENV, TeeRuntimeConfig,
+    TeeRuntimeMode,
+};
 
-// 重新导出 MCP 模块
-pub use mcp::token_storage;
+pub use tee::{
+    Enclave, EnclaveState, SelfCheckItem, SelfCheckStatus, SharedEnclave, StartupReadiness,
+    TeeCapabilities, TeeRuntimeError, TeeType, detect_tee_capabilities, driver_verify, upgrade,
+    validate_runtime_requirements,
+};
 
 // 重新导出 Token 模块
 pub use token::{
@@ -78,6 +85,14 @@ pub use connector::{
     http::{HttpConnector, HttpConnectorConfig},
     timeout::{TimeoutConfig, TimeoutError, TimeoutWrapper},
     validator::{CompositeValidator, SchemaValidator, ValidationRule, ValidatorBuilder},
+};
+
+// 重新导出 Auth 模块
+pub use auth::{
+    AuthAuditLog, AuthError, AuthEventType, AuthService, AuthServiceImpl, AuthSession,
+    CreateSessionRequest, CreateUserRequest, ExternalIdentity, IdentityProvider, InvitationStatus,
+    InviteeType, MembershipRole, MembershipSource, MembershipStatus, MfaStatus, PrivyAuthResponse,
+    TenantInvitation, TenantMembership, User, UserStatus, create_owner_membership,
 };
 
 /// 库版本

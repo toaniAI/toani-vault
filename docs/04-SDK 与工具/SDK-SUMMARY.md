@@ -4,24 +4,24 @@
 
 ### TypeScript SDK 文档
 
-| 文件 | 路径 | 描述 |
-|------|------|------|
-| 快速入门 | `sdk-typescript/docs/QUICKSTART.md` | 安装、初始化、基础使用指南 |
-| API 参考 | `sdk-typescript/docs/API_REFERENCE.md` | 完整的 API 文档和类型定义 |
-| 高级示例 | `sdk-typescript/docs/EXAMPLES.md` | 10+ 个实际应用场景的详细示例 |
+| 文件     | 路径                                   | 描述                         |
+| -------- | -------------------------------------- | ---------------------------- |
+| 快速入门 | `sdk-typescript/docs/QUICKSTART.md`    | 安装、初始化、基础使用指南   |
+| API 参考 | `sdk-typescript/docs/API_REFERENCE.md` | 完整的 API 文档和类型定义    |
+| 高级示例 | `sdk-typescript/docs/EXAMPLES.md`      | 10+ 个实际应用场景的详细示例 |
 
 ### Rust SDK 文档
 
-| 文件 | 路径 | 描述 |
-|------|------|------|
-| 快速入门 | `sdk-rust/docs/QUICKSTART.md` | 安装、初始化、基础使用指南 |
-| API 参考 | `sdk-rust/docs/API_REFERENCE.md` | 完整的 API 文档和类型定义 |
-| 高级示例 | `sdk-rust/docs/EXAMPLES.md` | 10+ 个实际应用场景的详细示例 |
+| 文件     | 路径                             | 描述                         |
+| -------- | -------------------------------- | ---------------------------- |
+| 快速入门 | `sdk-rust/docs/QUICKSTART.md`    | 安装、初始化、基础使用指南   |
+| API 参考 | `sdk-rust/docs/API_REFERENCE.md` | 完整的 API 文档和类型定义    |
+| 高级示例 | `sdk-rust/docs/EXAMPLES.md`      | 10+ 个实际应用场景的详细示例 |
 
 ### 综合文档
 
-| 文件 | 路径 | 描述 |
-|------|------|------|
+| 文件         | 路径                | 描述                           |
+| ------------ | ------------------- | ------------------------------ |
 | SDK 综合指南 | `docs/SDK_GUIDE.md` | 双语言对比、常见用例、最佳实践 |
 
 ### TypeScript 示例项目
@@ -98,6 +98,7 @@
 ## 文档特性
 
 ### 通用特性
+
 - 完整的 API 参考，包含所有公共方法和类型
 - 详细的参数说明和返回值描述
 - 丰富的代码示例
@@ -105,11 +106,13 @@
 - Web 框架集成示例（Express/Axum）
 
 ### TypeScript SDK 特有
+
 - Event 系统（token_expiring, token_refreshed 等）
 - React Hook 示例
 - Express 中间件
 
 ### Rust SDK 特有
+
 - 异步/并发操作示例
 - Axum 集成
 - 类型安全的错误处理
@@ -117,14 +120,17 @@
 ## 验收标准检查
 
 ✅ **Given**: 开发者需要集成 CredBridge
+
 - **When**: 查阅 SDK 文档
 - **Then**: 找到完整的 API 参考、快速入门指南
 
 ✅ **Given**: 开发者需要示例代码
+
 - **When**: 查看示例文档
 - **Then**: 找到 10+ 个实际应用场景的完整示例（TypeScript + Rust 双语言）
 
 ✅ **Given**: 开发者需要部署 SDK
+
 - **When**: 按照文档操作
 - **Then**: 能够成功安装、配置、使用 SDK 完成第一个凭证操作
 

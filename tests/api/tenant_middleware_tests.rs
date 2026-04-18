@@ -17,6 +17,7 @@ use axum::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
+use uuid::Uuid;
 
 use vault_service::api::{
     context::{RequestContext, TenantId},
@@ -44,6 +45,11 @@ fn create_test_token(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) ->
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs(),
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
+        subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+        issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 
@@ -287,6 +293,7 @@ async fn test_rls_context_sql_generation() {
     let ctx = RlsContext {
         tenant_id: "tenant_123".to_string(),
         user_id: "user_456".to_string(),
+        membership_id: None,
         scopes: vec!["read".to_string(), "write".to_string()],
         is_admin: false,
     };
@@ -356,4 +363,327 @@ async fn test_cross_tenant_error_response() {
     assert!(response.error.message.contains("tenant_a"));
     assert!(response.error.message.contains("tenant_b"));
     assert_eq!(response.meta.request_id, "req_test123");
+}
+
+// ============================================================================
+// 成员资格基础的租户隔离测试
+// ============================================================================
+
+#[tokio::test]
+async fn test_membership_based_tenant_isolation() {
+    // 场景：基于成员资格的租户隔离
+    // 用户必须拥有活跃的成员资格才能访问租户资源
+
+    use vault_service::auth::{MembershipStatus, TenantMembership};
+
+    // Given: 用户在租户 A 有成员资格
+    let tenant_a = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let membership = TenantMembership::new_owner(tenant_a, user_id);
+
+    // Then: 成员资格允许访问
+    assert_eq!(membership.tenant_id, tenant_a);
+    assert_eq!(membership.status, MembershipStatus::Active);
+    assert!(membership.status.allows_access());
+}
+
+#[tokio::test]
+async fn test_suspended_membership_denies_access() {
+    // 场景：暂停的成员资格拒绝访问
+
+    use vault_service::auth::{MembershipStatus, TenantMembership};
+
+    // Given: 暂停的成员资格
+    let tenant_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let mut membership = TenantMembership::new_owner(tenant_id, user_id);
+    membership.suspend();
+
+    // Then: 成员资格不允许访问
+    assert_eq!(membership.status, MembershipStatus::Suspended);
+    assert!(!membership.status.allows_access());
+}
+
+#[tokio::test]
+async fn test_pending_membership_denies_access() {
+    // 场景：待确认的成员资格拒绝访问
+
+    use vault_service::auth::{MembershipRole, MembershipStatus, TenantMembership};
+
+    // Given: 待确认的成员资格（用户还未接受邀请）
+    let tenant_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let membership = TenantMembership::new_from_invitation(
+        tenant_id,
+        user_id,
+        MembershipRole::Member,
+        Uuid::now_v7(),
+    );
+
+    // Then: 待确认成员资格不允许访问
+    assert_eq!(membership.status, MembershipStatus::Pending);
+    assert!(!membership.status.allows_access());
+}
+
+#[tokio::test]
+async fn test_cross_tenant_access_with_membership_check() {
+    // 场景：跨租户访问检查（带成员资格验证）
+
+    let app = create_test_router();
+
+    // Given: 用户 A 在 tenant_a 有成员资格
+    let token_a = create_test_token("tenant_a", "user_a", vec![TokenScope::CredentialRead]);
+
+    // When: 尝试访问 tenant_b 的资源
+    let request = Request::builder()
+        .uri("/api/v1/tenants/tenant_b/credentials")
+        .body(Body::empty())
+        .unwrap();
+
+    let (mut parts, body) = request.into_parts();
+    parts.extensions.insert(token_a);
+    let request = Request::from_parts(parts, body);
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // Then: 应该被拒绝（跨租户访问）
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_membership_role_scope_enforcement() {
+    // 场景：成员资格角色的 Scope 强制执行
+
+    use vault_service::auth::{MembershipRole, TenantMembership};
+
+    // Given: 不同角色的成员资格
+    let tenant_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+
+    // Owner 角色
+    let owner_membership = TenantMembership::new_owner(tenant_id, user_id);
+    assert!(owner_membership.has_scope("tenant:delete"));
+    assert!(owner_membership.has_scope("members:invite"));
+
+    // Member 角色
+    let member_membership = TenantMembership::new_from_invitation(
+        tenant_id,
+        user_id,
+        MembershipRole::Member,
+        Uuid::now_v7(),
+    );
+    assert!(!member_membership.has_scope("tenant:delete"));
+    assert!(!member_membership.has_scope("members:invite"));
+    assert!(member_membership.has_scope("credential:read"));
+    assert!(member_membership.has_scope("credential:write"));
+
+    // Readonly 角色
+    let readonly_membership = TenantMembership::new_from_invitation(
+        tenant_id,
+        user_id,
+        MembershipRole::Readonly,
+        Uuid::now_v7(),
+    );
+    assert!(readonly_membership.has_scope("credential:read"));
+    assert!(!readonly_membership.has_scope("credential:write"));
+}
+
+#[tokio::test]
+async fn test_invitation_based_membership_access() {
+    // 场景：基于邀请的成员资格访问
+
+    use vault_service::auth::{
+        InvitationStatus, MembershipRole, MembershipStatus, TenantInvitation, TenantMembership,
+    };
+
+    // Given: 管理员创建邀请
+    let tenant_id = Uuid::now_v7();
+    let admin_id = Uuid::now_v7();
+    let invitation = TenantInvitation::new_wallet_invitation(
+        tenant_id,
+        MembershipRole::Member,
+        "0xwallet123",
+        admin_id,
+        24,
+    );
+
+    // Then: 邀请有效
+    assert!(invitation.is_valid());
+    assert_eq!(invitation.status, InvitationStatus::Pending);
+
+    // When: 用户接受邀请
+    let user_id = Uuid::now_v7();
+    let mut membership =
+        TenantMembership::new_from_invitation(tenant_id, user_id, invitation.role, admin_id);
+    membership.accept_invitation();
+
+    // Then: 成员资格激活，可以访问
+    assert_eq!(membership.status, MembershipStatus::Active);
+    assert!(membership.status.allows_access());
+}
+
+#[tokio::test]
+async fn test_expired_invitation_membership_denied() {
+    // 场景：过期邀请无法获得成员资格
+
+    use chrono::{Duration, Utc};
+    use vault_service::auth::{MembershipRole, TenantInvitation};
+
+    // Given: 过期的邀请
+    let tenant_id = Uuid::now_v7();
+    let admin_id = Uuid::now_v7();
+    let mut invitation = TenantInvitation::new_wallet_invitation(
+        tenant_id,
+        MembershipRole::Member,
+        "0xwallet456",
+        admin_id,
+        -1, // 已过期
+    );
+    invitation.expires_at = Utc::now() - Duration::hours(1);
+
+    // Then: 邀请无效
+    assert!(!invitation.is_valid());
+    assert!(invitation.is_expired());
+
+    // 用户无法通过过期邀请获得成员资格
+    // 这在 AuthService.consume_invitation 中会返回 InvitationExpired 错误
+}
+
+#[tokio::test]
+async fn test_membership_scope_in_request_context() {
+    // 场景：请求上下文中的成员资格 Scope
+
+    // Given: 带有特定 scope 的 Token
+    let token = create_test_token(
+        "tenant_test",
+        "user_test",
+        vec![TokenScope::CredentialRead, TokenScope::CredentialWrite],
+    );
+
+    let context = RequestContext::from_validated_token(&token);
+
+    // Then: 上下文中包含正确的 scope
+    assert!(context.has_scope("credential:read"));
+    assert!(context.has_scope("credential:write"));
+    assert!(!context.has_scope("credential:delete"));
+    assert!(!context.has_scope("admin"));
+}
+
+#[tokio::test]
+async fn test_membership_management_permission() {
+    // 场景：成员管理权限检查
+
+    use vault_service::auth::{MembershipRole, TenantMembership};
+
+    // Given: Admin 角色的成员资格
+    let tenant_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let mut admin_membership = TenantMembership::new_from_invitation(
+        tenant_id,
+        user_id,
+        MembershipRole::Admin,
+        Uuid::now_v7(),
+    );
+    admin_membership.accept_invitation();
+
+    // Then: Admin 可以管理成员
+    assert!(admin_membership.can_manage());
+    assert!(admin_membership.has_scope("members:read"));
+    assert!(admin_membership.has_scope("members:write"));
+    assert!(admin_membership.has_scope("members:invite"));
+
+    // Given: Member 角色的成员资格
+    let mut member_membership = TenantMembership::new_from_invitation(
+        tenant_id,
+        user_id,
+        MembershipRole::Member,
+        Uuid::now_v7(),
+    );
+    member_membership.accept_invitation();
+
+    // Then: Member 不能管理成员
+    assert!(!member_membership.can_manage());
+    assert!(!member_membership.has_scope("members:read"));
+    assert!(!member_membership.has_scope("members:invite"));
+}
+
+#[tokio::test]
+async fn test_inactive_membership_access_denied() {
+    // 场景：非活跃成员资格拒绝访问
+
+    use vault_service::auth::{MembershipStatus, TenantMembership};
+
+    // Given: 用户离开租户后的成员资格
+    let tenant_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let mut membership = TenantMembership::new_owner(tenant_id, user_id);
+    membership.leave();
+
+    // Then: 成员资格不允许访问
+    assert_eq!(membership.status, MembershipStatus::Inactive);
+    assert!(!membership.status.allows_access());
+    assert!(!membership.can_manage());
+}
+
+#[tokio::test]
+async fn test_membership_role_upgrade() {
+    // 场景：成员资格角色升级
+
+    use vault_service::auth::{MembershipRole, TenantMembership};
+
+    // Given: Member 角色的成员资格
+    let tenant_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let mut membership = TenantMembership::new_from_invitation(
+        tenant_id,
+        user_id,
+        MembershipRole::Member,
+        Uuid::now_v7(),
+    );
+    membership.accept_invitation();
+
+    // 初始状态：Member 权限
+    assert!(!membership.can_manage());
+    assert!(!membership.has_scope("tenant:admin"));
+
+    // When: 升级为 Admin
+    membership.update_role(MembershipRole::Admin);
+
+    // Then: 权限更新
+    assert!(membership.can_manage());
+    assert!(membership.has_scope("tenant:admin"));
+    assert!(membership.has_scope("members:invite"));
+}
+
+#[tokio::test]
+async fn test_multi_tenant_user_isolation() {
+    // 场景：多租户用户隔离
+
+    use vault_service::auth::{MembershipRole, TenantMembership};
+
+    // Given: 用户在两个租户有不同角色的成员资格
+    let tenant_a = Uuid::now_v7();
+    let tenant_b = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+
+    let membership_a = TenantMembership::new_owner(tenant_a, user_id);
+    let mut membership_b = TenantMembership::new_from_invitation(
+        tenant_b,
+        user_id,
+        MembershipRole::Readonly,
+        Uuid::now_v7(),
+    );
+    membership_b.accept_invitation();
+
+    // Then: 租户 A 有完全权限
+    assert!(membership_a.is_owner());
+    assert!(membership_a.has_scope("tenant:delete"));
+
+    // Then: 租户 B 只有读取权限
+    assert!(!membership_b.is_owner());
+    assert!(!membership_b.can_manage());
+    assert!(membership_b.has_scope("credential:read"));
+    assert!(!membership_b.has_scope("credential:write"));
+
+    // 权限不跨租户
 }

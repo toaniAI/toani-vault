@@ -131,6 +131,12 @@ export IMMUDB_USE_TLS=false
 
 # 集合名称（默认 audit_logs）
 export IMMUDB_COLLECTION=audit_logs
+
+# 开发环境下若暂时没有 immudb，可显式允许回退到内存审计
+export CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=false
+
+# 可选：固定审计签名密钥路径，确保重启后 verify 仍使用同一把密钥
+export CREDBRIDGE_AUDIT_SIGNING_KEY_PATH=/var/lib/credbridge/audit-signing-key.json
 ```
 
 ### 代码配置
@@ -174,16 +180,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 环境变量
 
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `IMMUDB_HOST` | `localhost` | immudb 服务器地址 |
-| `IMMUDB_PORT` | `3322` | immudb 服务器端口 |
-| `IMMUDB_DATABASE` | `credbridge_audit` | 数据库名称 |
-| `IMMUDB_USERNAME` | `immudb` | 连接用户名 |
-| `IMMUDB_PASSWORD` | `immudb` | 连接密码 |
-| `IMMUDB_TIMEOUT` | `30` | 连接超时（秒） |
-| `IMMUDB_USE_TLS` | `false` | 是否使用 TLS |
-| `IMMUDB_COLLECTION` | `audit_logs` | 审计日志集合名称 |
+| 变量名                                   | 默认值                                                      | 说明                                               |
+| ---------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------- |
+| `IMMUDB_HOST`                            | `localhost`                                                 | immudb 服务器地址                                  |
+| `IMMUDB_PORT`                            | `3322`                                                      | immudb 服务器端口                                  |
+| `IMMUDB_DATABASE`                        | `credbridge_audit`                                          | 数据库名称                                         |
+| `IMMUDB_USERNAME`                        | `immudb`                                                    | 连接用户名                                         |
+| `IMMUDB_PASSWORD`                        | `immudb`                                                    | 连接密码                                           |
+| `IMMUDB_TIMEOUT`                         | `30`                                                        | 连接超时（秒）                                     |
+| `IMMUDB_USE_TLS`                         | `false`                                                     | 是否使用 TLS                                       |
+| `IMMUDB_COLLECTION`                      | `audit_logs`                                                | 审计日志集合名称                                   |
+| `CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK` | `false`                                                     | 仅开发环境使用；显式允许无 immudb 时回退到内存审计 |
+| `CREDBRIDGE_AUDIT_SIGNING_KEY_PATH`      | 系统临时目录下的 `credbridge-immudb-sim/*.signing-key.json` | 审计签名密钥持久化路径，确保重启后校验公钥稳定     |
 
 ### 生产环境配置
 
@@ -197,6 +205,8 @@ IMMUDB_PASSWORD=<your-strong-password>
 IMMUDB_TIMEOUT=60
 IMMUDB_USE_TLS=true
 IMMUDB_COLLECTION=audit_logs
+CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK=false
+CREDBRIDGE_AUDIT_SIGNING_KEY_PATH=/var/lib/credbridge/audit-signing-key.json
 ```
 
 ## 数据库初始化
@@ -315,7 +325,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: `Failed to connect to immudb`
 
 **解决方案**:
+
 1. 检查 immudb 服务是否运行：
+
    ```bash
    docker ps | grep immudb
    # 或
@@ -323,6 +335,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    ```
 
 2. 检查防火墙设置：
+
    ```bash
    # 检查端口是否开放
    telnet localhost 3322
@@ -339,7 +352,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: `Authentication failed`
 
 **解决方案**:
+
 1. 验证用户名和密码：
+
    ```bash
    immuclient -a localhost -p 3322 login immudb
    ```
@@ -354,7 +369,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: `Database not found`
 
 **解决方案**:
+
 1. 手动创建数据库：
+
    ```bash
    immuclient -a localhost -p 3322
    > login immudb
@@ -368,13 +385,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: 写入速度慢
 
 **解决方案**:
+
 1. 增加批处理大小：
+
    ```rust
    // 使用批量存储
    store.store_batch(&entries).await?;
    ```
 
 2. 调整缓存大小：
+
    ```rust
    let config = ImmuDbStoreConfig {
        max_cache_size: 50_000,  // 增加缓存
@@ -389,12 +409,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 **问题**: TLS 连接失败
 
 **解决方案**:
+
 1. 生成证书：
+
    ```bash
    openssl req -x509 -newkey rsa:4096 -keyout immudb.key -out immudb.crt -days 365 -nodes
    ```
 
 2. 启动 immudb 时启用 TLS：
+
    ```bash
    immudb --tls --certificate immudb.crt --key immudb.key
    ```

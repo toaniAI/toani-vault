@@ -65,7 +65,7 @@
 //! # 架构约束
 //!
 //! 符合以下架构约束：
-//! - **SA-003**: PASETO v4.local + 15min Access Token + jti 单次使用
+//! - **SA-003**: PASETO v4.local + 2h Access Token + jti 单次使用
 //! - **FR2**: 有限 Scope Token 系统
 
 pub mod claims;
@@ -77,7 +77,10 @@ pub mod scope;
 
 // 公开导出 - Claims
 pub use claims::{
-    ClaimsError, DEFAULT_TOKEN_TTL_SECONDS, MAX_TOKEN_TTL_SECONDS, ScopeValidator, TokenClaims,
+    ClaimsError, DEFAULT_TOKEN_TTL_SECONDS, MAX_SERVICE_ACCOUNT_TOKEN_TTL_SECONDS,
+    MAX_TOKEN_TTL_SECONDS, MIN_TOKEN_TTL_SECONDS, ScopeValidator, TOKEN_ISSUED_FROM_ACCESS_TOKEN,
+    TOKEN_ISSUED_FROM_AUTOMATION, TOKEN_ISSUED_FROM_SERVICE_ACCOUNT, TOKEN_ISSUED_FROM_SESSION,
+    TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT, TOKEN_SUBJECT_TYPE_USER, TokenClaims,
 };
 
 // 公开导出 - Scope 常量
@@ -112,6 +115,7 @@ pub use permission::{
 pub const TOKEN_VERSION: &str = "0.1.0";
 
 /// Token 验证结果
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum TokenValidationResult {
     /// 验证成功

@@ -6,6 +6,9 @@
 
 ```
 docker/
+├── base/
+│   ├── builder.Dockerfile      # CI 预构建 SGX builder 基础镜像
+│   └── runtime.Dockerfile      # CI 预构建 SGX runtime 基础镜像
 ├── Dockerfile                  # Vault Service 多阶段构建镜像
 ├── docker-compose.yml          # 开发环境服务编排
 ├── docker-compose.prod.yml     # 生产环境配置
@@ -22,6 +25,28 @@ docker/
     └── prometheus/
 ```
 
+## CI 基础镜像
+
+为缩短远程 `docker-build` 的冷构建时间，仓库新增了两类可复用基础镜像：
+
+- `docker/base/builder.Dockerfile`
+  预装 Rust、Intel SGX SDK、Rust 构建依赖，以及面向 CI 的更快 release 编译配置。
+- `docker/base/runtime.Dockerfile`
+  预装 SGX runtime 相关系统依赖，供最终业务镜像直接复用。
+
+根目录 `Dockerfile` 使用可复用基础镜像构建：
+
+- `BASE_BUILDER_IMAGE` 指向预装 Rust、Intel SGX SDK 和构建依赖的 builder 镜像。
+- `RUNTIME_BASE_IMAGE` 指向预装 SGX runtime、nsjail 和浏览器运行时依赖的 runtime 镜像。
+
+`.drone.yml` 已经接入这两个基础镜像的构建与引用流程。
+
+另外，CI 中的 `kaniko` 构建已启用远端 layer cache：
+
+- 基础镜像 manifest 检查同时接受 OCI 与 Docker schema，避免镜像已存在却被误判为 `404 not found`。
+- `builder`、`runtime`、业务镜像构建均启用 `--cache=true`，后续重复构建可直接复用远端缓存层。
+- 基础镜像是否需要重建，和 `kaniko` layer cache 是否可命中，是两套独立机制。
+
 ## 快速开始
 
 ### 1. 初始化环境
@@ -33,6 +58,7 @@ chmod +x scripts/*.sh
 ```
 
 这将生成：
+
 - `.env` 文件（包含随机生成的密码）
 - 必要的配置文件
 - 目录结构
@@ -40,11 +66,13 @@ chmod +x scripts/*.sh
 ### 2. 启动服务
 
 **开发环境：**
+
 ```bash
 docker-compose up -d
 ```
 
 **生产环境：**
+
 ```bash
 docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
@@ -64,61 +92,61 @@ curl http://localhost:8080/health
 
 ## 服务清单
 
-| 服务 | 端口 | 用途 |
-|------|------|------|
-| vault-service | 8080 | CredBridge 主服务 |
-| postgres | 5432 | 主数据库 |
-| redis | 6379 | 缓存与会话存储 |
-| immudb | 3322 | 不可变审计日志 |
-| vault | 8200 | HashiCorp Vault 密钥管理 |
-| grafana | 3000 | 监控仪表盘（可选） |
-| prometheus | 9090 | 指标收集（可选） |
+| 服务          | 端口 | 用途                     |
+| ------------- | ---- | ------------------------ |
+| vault-service | 8080 | CredBridge 主服务        |
+| postgres      | 5432 | 主数据库                 |
+| redis         | 6379 | 缓存与会话存储           |
+| immudb        | 3322 | 不可变审计日志           |
+| vault         | 8200 | HashiCorp Vault 密钥管理 |
+| grafana       | 3000 | 监控仪表盘（可选）       |
+| prometheus    | 9090 | 指标收集（可选）         |
 
 ## 环境变量
 
 ### 核心服务配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `VAULT_SERVICE_HOST` | 0.0.0.0 | 服务绑定地址 |
-| `VAULT_SERVICE_PORT` | 8080 | 服务端口 |
-| `VAULT_SERVICE_ENV` | development | 环境类型 |
-| `RUST_LOG` | debug | 日志级别 |
+| 变量                 | 默认值      | 说明         |
+| -------------------- | ----------- | ------------ |
+| `VAULT_SERVICE_HOST` | 0.0.0.0     | 服务绑定地址 |
+| `VAULT_SERVICE_PORT` | 8080        | 服务端口     |
+| `VAULT_SERVICE_ENV`  | development | 环境类型     |
+| `RUST_LOG`           | debug       | 日志级别     |
 
 ### 数据库配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DATABASE_URL` | - | PostgreSQL 连接字符串 |
-| `DB_USER` | credbridge | 数据库用户名 |
-| `DB_PASSWORD` | - | 数据库密码 |
-| `DB_NAME` | credbridge | 数据库名称 |
+| 变量           | 默认值     | 说明                  |
+| -------------- | ---------- | --------------------- |
+| `DATABASE_URL` | -          | PostgreSQL 连接字符串 |
+| `DB_USER`      | credbridge | 数据库用户名          |
+| `DB_PASSWORD`  | -          | 数据库密码            |
+| `DB_NAME`      | credbridge | 数据库名称            |
 
 ### Redis 配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `REDIS_URL` | - | Redis 连接字符串 |
-| `REDIS_HOST` | redis | Redis 主机 |
-| `REDIS_PORT` | 6379 | Redis 端口 |
-| `REDIS_PASSWORD` | - | Redis 密码 |
+| 变量             | 默认值 | 说明             |
+| ---------------- | ------ | ---------------- |
+| `REDIS_URL`      | -      | Redis 连接字符串 |
+| `REDIS_HOST`     | redis  | Redis 主机       |
+| `REDIS_PORT`     | 6379   | Redis 端口       |
+| `REDIS_PASSWORD` | -      | Redis 密码       |
 
 ### immudb 配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `IMMUDB_HOST` | immudb | immudb 主机 |
-| `IMMUDB_PORT` | 3322 | immudb 端口 |
-| `IMMUDB_DATABASE` | credbridge_audit | 审计数据库名 |
-| `IMMUDB_USERNAME` | credbridge | immudb 用户名 |
-| `IMMUDB_PASSWORD` | - | immudb 密码 |
+| 变量              | 默认值           | 说明          |
+| ----------------- | ---------------- | ------------- |
+| `IMMUDB_HOST`     | immudb           | immudb 主机   |
+| `IMMUDB_PORT`     | 3322             | immudb 端口   |
+| `IMMUDB_DATABASE` | credbridge_audit | 审计数据库名  |
+| `IMMUDB_USERNAME` | credbridge       | immudb 用户名 |
+| `IMMUDB_PASSWORD` | -                | immudb 密码   |
 
 ### Vault 配置
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `VAULT_ADDR` | http://vault:8200 | Vault 地址 |
-| `VAULT_TOKEN` | - | Vault Root Token |
+| 变量          | 默认值            | 说明             |
+| ------------- | ----------------- | ---------------- |
+| `VAULT_ADDR`  | http://vault:8200 | Vault 地址       |
+| `VAULT_TOKEN` | -                 | Vault Root Token |
 
 ## 常用命令
 
@@ -224,6 +252,7 @@ docker-compose --profile monitoring up -d
 ```
 
 访问地址：
+
 - Grafana: http://localhost:3000 (admin/admin)
 - Prometheus: http://localhost:9090
 

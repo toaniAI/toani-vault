@@ -321,7 +321,7 @@ async fn test_cleanup_expired_tokens() {
     let tenant_id = test_tenant_id();
     let now = current_timestamp();
 
-    // 存储一个即将过期的 Token（1秒后过期）
+    // 留出足够时间窗口，避免 `current_timestamp()` 跨秒导致刚写入就被判为过期。
     let jti_expired = test_jti();
     store
         .store_token(
@@ -329,7 +329,7 @@ async fn test_cleanup_expired_tokens() {
             &jti_expired,
             "user_123",
             "credential:read",
-            now + 1,
+            now + 3,
         )
         .await
         .unwrap();
@@ -348,7 +348,7 @@ async fn test_cleanup_expired_tokens() {
         .unwrap();
 
     // 等待过期
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
 
     // 清理过期 Token
     let cleaned = store.cleanup_expired(&tenant_id).await.unwrap();

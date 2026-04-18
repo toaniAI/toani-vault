@@ -42,7 +42,7 @@ impl Default for TenantIsolationConfig {
             public_paths: vec![
                 "/health".to_string(),
                 "/api/v1/health".to_string(),
-                "/api/v1/auth/login".to_string(),
+                "/api/v1/auth/session".to_string(),
             ],
         }
     }
@@ -68,7 +68,7 @@ impl TenantIsolationConfig {
             public_paths: vec![
                 "/health".to_string(),
                 "/api/v1/health".to_string(),
-                "/api/v1/auth/login".to_string(),
+                "/api/v1/auth/session".to_string(),
                 "/api/v1/auth/register".to_string(),
             ],
         }
@@ -372,6 +372,11 @@ mod tests {
             expires_at: u64::MAX,
             scopes: vec![TokenScope::CredentialRead],
             issued_at: 0,
+            membership_id: None,
+            metadata: std::collections::HashMap::new(),
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            allowed_credential_ids: None,
         }
     }
 
@@ -382,6 +387,8 @@ mod tests {
         assert!(!config.enable_tenant_active_check);
         assert!(config.enable_rls_context);
         assert!(config.is_public_path("/health"));
+        assert!(config.is_public_path("/api/v1/auth/session"));
+        assert!(!config.is_public_path("/api/v1/auth/login"));
         assert!(!config.is_public_path("/api/v1/credentials"));
     }
 

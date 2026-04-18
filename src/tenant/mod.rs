@@ -36,13 +36,14 @@ pub mod service;
 
 // 重新导出主要类型
 pub use config::{
-    FeatureFlags, MemoryTenantConfigStore, PartialTenantConfig, QuotaLimits, TenantConfig,
-    TenantConfigError, TenantConfigManager, TenantConfigStore, TenantSettings, TenantStatus,
+    FeatureFlags, MemoryTenantConfigStore, PartialTenantConfig, PostgresTenantConfigStore,
+    QuotaLimits, TenantConfig, TenantConfigError, TenantConfigManager, TenantConfigStore,
+    TenantSettings, TenantStatus,
 };
 pub use service::{
-    CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, TenantCreationError,
-    TenantManager, TenantManagerBuilder, TenantProvisioningError, TenantService,
-    UpdateTenantRequest,
+    CreateTenantRequest, CreateTenantResult, MemoryTenantStorage, OwnerExternalIdentity,
+    PostgresTenantStorage, TenantCreationError, TenantManager, TenantManagerBuilder,
+    TenantProvisioningError, TenantService, UpdateTenantRequest,
 };
 
 use chrono::{DateTime, Utc};

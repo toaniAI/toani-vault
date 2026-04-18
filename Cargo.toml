@@ -64,10 +64,13 @@ time = { version = "=0.3.36", features = ["serde"] }
 # PASETO Token (降级到兼容 Rust 1.85 的版本)
 pasetors = { version = "=0.6.8", features = ["v4"] }
 
+# JWT 验证 (用于 Privy)
+jsonwebtoken = "9"
+
 # HTTP API 框架（Axum）
 axum = { version = "0.7", features = ["json", "macros", "ws"] }
 tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "normalize-path"] }
 http = "1.0"
 http-body-util = "0.1"
 
@@ -125,6 +128,8 @@ default = ["screenshot-cdp"]
 strict-production = []
 # 允许调试模式（即使在发布构建中）
 allow-debug = []
+# TEE 硬件 provider 边界（阶段 B 仅占位，默认不启用）
+tee-hardware = []
 # RLS 集成测试（需要数据库连接）
 rls-tests = []
 # RLS 性能基准测试
@@ -183,5 +188,29 @@ name = "sandbox_export_tests"
 path = "tests/tee/sandbox_export_tests.rs"
 
 [[test]]
+name = "sandbox_executor_contract_tests"
+path = "tests/tee/sandbox_executor_contract_tests.rs"
+
+[[test]]
 name = "sandbox_performance"
 path = "tests/tee/sandbox_performance.rs"
+
+[[test]]
+name = "privy_auth_tests"
+path = "tests/auth/privy_auth_tests.rs"
+
+[[test]]
+name = "scope_mapping_tests"
+path = "tests/auth/scope_mapping_tests.rs"
+
+[[test]]
+name = "auth_flow_tests"
+path = "tests/integration/auth_flow_tests.rs"
+
+[[test]]
+name = "sandbox_persistence_tests"
+path = "tests/integration/sandbox_persistence_tests.rs"
+
+[[test]]
+name = "tenant_config_persistence_tests"
+path = "tests/integration/tenant_config_persistence_tests.rs"

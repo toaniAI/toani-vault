@@ -352,6 +352,21 @@ impl SigningKeyPair {
         })
     }
 
+    /// 从持久化的 PKCS#8 私钥恢复签名密钥对
+    pub fn from_pkcs8(private_key: Vec<u8>) -> Result<Self, RecorderError> {
+        let key_pair = Ed25519KeyPair::from_pkcs8(&private_key)
+            .map_err(|e| RecorderError::KeyError(format!("密钥解析失败: {e:?}")))?;
+
+        let public_key = key_pair.public_key().as_ref().to_vec();
+        let fingerprint = Self::compute_fingerprint(&public_key);
+
+        Ok(Self {
+            private_key,
+            public_key,
+            fingerprint,
+        })
+    }
+
     /// 计算公钥指纹
     fn compute_fingerprint(public_key: &[u8]) -> String {
         let digest = digest(&SHA256, public_key);
@@ -366,6 +381,11 @@ impl SigningKeyPair {
     /// 获取密钥指纹
     pub fn fingerprint(&self) -> &str {
         &self.fingerprint
+    }
+
+    /// 导出 PKCS#8 私钥
+    pub fn private_key(&self) -> &[u8] {
+        &self.private_key
     }
 
     /// 对数据进行签名
@@ -414,6 +434,26 @@ impl AuditRecorder {
             signing_key,
             max_entries,
         }
+    }
+
+    /// 使用已存在的签名条目恢复日志链状态
+    pub fn restore_entries(&self, entries: &[SignedAuditEntry]) -> Result<(), RecorderError> {
+        let mut chain = self
+            .chain
+            .lock()
+            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
+
+        *chain = AuditLogChain::new();
+
+        let mut ordered_entries = entries.to_vec();
+        ordered_entries.sort_by_key(|entry| entry.log_index);
+
+        for entry in ordered_entries {
+            chain.append(entry);
+        }
+
+        self.cleanup_old_entries(&mut chain)?;
+        Ok(())
     }
 
     /// 记录审计事件

@@ -23,10 +23,11 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
 
 ### 端点
 
-| 端点 | 描述 | 状态码 |
-|------|------|--------|
-| `GET /health` | 基础健康检查 | 200 (健康/降级) / 503 (不健康) |
-| `GET /health/detail` | 详细健康检查（包含系统信息） | 同上 |
+| 端点                 | 描述                                   | 状态码    |
+| -------------------- | -------------------------------------- | --------- |
+| `GET /health`        | 进程存活检查（liveness）               | 200       |
+| `GET /ready`         | 服务就绪检查（readiness）              | 200 / 503 |
+| `GET /health/detail` | 详细就绪检查（包含启动自检与系统信息） | 200 / 503 |
 
 ### 响应格式
 
@@ -34,37 +35,14 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
 
 ```json
 {
-  "status": "healthy",
+  "status": "alive",
   "service": "credbridge-vault",
   "version": "0.1.0",
-  "timestamp": 1710123456,
-  "uptime_seconds": 3600,
-  "components": [
-    {
-      "name": "database",
-      "status": "healthy",
-      "latency_ms": 5
-    },
-    {
-      "name": "redis",
-      "status": "healthy",
-      "latency_ms": 2
-    },
-    {
-      "name": "tee",
-      "status": "healthy",
-      "latency_ms": 1,
-      "metadata": {
-        "tee_type": "SGX",
-        "enclave_state": "initialized",
-        "initialized": true
-      }
-    }
-  ]
+  "message": "CredBridge service is running"
 }
 ```
 
-#### 详细健康检查 (`/health/detail`)
+#### 服务就绪检查 (`/ready` 或 `/health/detail`)
 
 ```json
 {
@@ -92,11 +70,18 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
 
 ### 状态说明
 
-| 状态 | 含义 | HTTP 状态码 |
-|------|------|------------|
-| `healthy` | 所有组件正常 | 200 |
-| `degraded` | 部分组件异常，但服务可用 | 200 |
-| `unhealthy` | 关键组件异常，服务不可用 | 503 |
+| 状态        | 含义                                   | HTTP 状态码 |
+| ----------- | -------------------------------------- | ----------- |
+| `alive`     | 仅表示进程仍在运行                     | 200         |
+| `healthy`   | 启动自检与关键依赖满足，对外可提供服务 | 200         |
+| `degraded`  | 非关键项异常，但当前仍允许服务         | 200         |
+| `unhealthy` | 关键自检或依赖失败，服务未就绪         | 503         |
+
+### Probe 建议
+
+- Kubernetes `livenessProbe` 应指向 `/health`
+- Kubernetes `readinessProbe` 应指向 `/ready`
+- `/health/detail` 适合人工排障与运维系统采样，不建议替代 liveness probe
 
 ## Prometheus 指标
 
@@ -109,53 +94,53 @@ Content-Type: text/plain; version=0.0.4; charset=utf-8
 
 ### HTTP 请求指标
 
-| 指标名 | 类型 | 描述 |
-|--------|------|------|
-| `credbridge_http_requests_total` | Counter | HTTP 请求总数 |
-| `credbridge_http_requests_by_status` | Counter | 按状态码的请求数 |
+| 指标名                                    | 类型      | 描述                                                       |
+| ----------------------------------------- | --------- | ---------------------------------------------------------- |
+| `credbridge_http_requests_total`          | Counter   | HTTP 请求总数                                              |
+| `credbridge_http_requests_by_status`      | Counter   | 按状态码的请求数                                           |
 | `credbridge_http_request_duration_bucket` | Histogram | 请求延迟分布（桶：10ms, 50ms, 100ms, 500ms, 1000ms, +Inf） |
-| `credbridge_http_request_duration_sum` | Histogram | 总延迟 |
-| `credbridge_http_request_duration_count` | Histogram | 延迟样本数 |
-| `credbridge_http_error_rate_percentage` | Gauge | HTTP 错误率百分比 |
+| `credbridge_http_request_duration_sum`    | Histogram | 总延迟                                                     |
+| `credbridge_http_request_duration_count`  | Histogram | 延迟样本数                                                 |
+| `credbridge_http_error_rate_percentage`   | Gauge     | HTTP 错误率百分比                                          |
 
 ### Token 指标
 
-| 指标名 | 类型 | 描述 |
-|--------|------|------|
-| `credbridge_tokens_issued_total` | Counter | 签发 Token 总数 |
-| `credbridge_tokens_active` | Gauge | 当前活跃 Token 数 |
-| `credbridge_token_validations_success_total` | Counter | Token 验证成功次数 |
-| `credbridge_token_validations_failed_total` | Counter | Token 验证失败次数 |
-| `credbridge_token_validation_failure_rate` | Gauge | Token 验证失败率百分比 |
+| 指标名                                       | 类型    | 描述                   |
+| -------------------------------------------- | ------- | ---------------------- |
+| `credbridge_tokens_issued_total`             | Counter | 签发 Token 总数        |
+| `credbridge_tokens_active`                   | Gauge   | 当前活跃 Token 数      |
+| `credbridge_token_validations_success_total` | Counter | Token 验证成功次数     |
+| `credbridge_token_validations_failed_total`  | Counter | Token 验证失败次数     |
+| `credbridge_token_validation_failure_rate`   | Gauge   | Token 验证失败率百分比 |
 
 ### TEE 性能指标
 
-| 指标名 | 类型 | 描述 |
-|--------|------|------|
-| `credbridge_tee_encryption_ops_total` | Counter | TEE 加密操作数 |
-| `credbridge_tee_decryption_ops_total` | Counter | TEE 解密操作数 |
-| `credbridge_tee_key_derivation_ops_total` | Counter | TEE 密钥派生操作数 |
-| `credbridge_tee_attestation_ops_total` | Counter | TEE 远程认证操作数 |
-| `credbridge_tee_epc_usage_percent` | Gauge | EPC 内存使用率百分比 |
-| `credbridge_tee_operation_latency_ms` | Gauge | TEE 操作延迟（毫秒） |
+| 指标名                                    | 类型    | 描述                 |
+| ----------------------------------------- | ------- | -------------------- |
+| `credbridge_tee_encryption_ops_total`     | Counter | TEE 加密操作数       |
+| `credbridge_tee_decryption_ops_total`     | Counter | TEE 解密操作数       |
+| `credbridge_tee_key_derivation_ops_total` | Counter | TEE 密钥派生操作数   |
+| `credbridge_tee_attestation_ops_total`    | Counter | TEE 远程认证操作数   |
+| `credbridge_tee_epc_usage_percent`        | Gauge   | EPC 内存使用率百分比 |
+| `credbridge_tee_operation_latency_ms`     | Gauge   | TEE 操作延迟（毫秒） |
 
 ### 系统指标
 
-| 指标名 | 类型 | 描述 |
-|--------|------|------|
-| `credbridge_system_uptime_seconds` | Gauge | 系统运行时间（秒） |
-| `credbridge_system_cpu_usage_percent` | Gauge | CPU 使用率百分比 |
-| `credbridge_system_memory_usage_percent` | Gauge | 内存使用率百分比 |
-| `credbridge_db_pool_usage_percent` | Gauge | 数据库连接池使用率百分比 |
-| `credbridge_redis_pool_usage_percent` | Gauge | Redis 连接池使用率百分比 |
+| 指标名                                   | 类型  | 描述                     |
+| ---------------------------------------- | ----- | ------------------------ |
+| `credbridge_system_uptime_seconds`       | Gauge | 系统运行时间（秒）       |
+| `credbridge_system_cpu_usage_percent`    | Gauge | CPU 使用率百分比         |
+| `credbridge_system_memory_usage_percent` | Gauge | 内存使用率百分比         |
+| `credbridge_db_pool_usage_percent`       | Gauge | 数据库连接池使用率百分比 |
+| `credbridge_redis_pool_usage_percent`    | Gauge | Redis 连接池使用率百分比 |
 
 ### 告警指标
 
-| 指标名 | 类型 | 描述 |
-|--------|------|------|
-| `credbridge_alerts_triggered_total` | Counter | 触发告警总数 |
-| `credbridge_alerts_by_severity` | Counter | 按严重级别的告警数 |
-| `credbridge_alerts_by_type` | Counter | 按类型的告警数 |
+| 指标名                              | 类型    | 描述               |
+| ----------------------------------- | ------- | ------------------ |
+| `credbridge_alerts_triggered_total` | Counter | 触发告警总数       |
+| `credbridge_alerts_by_severity`     | Counter | 按严重级别的告警数 |
+| `credbridge_alerts_by_type`         | Counter | 按类型的告警数     |
 
 ## 告警系统
 
@@ -163,19 +148,19 @@ Content-Type: text/plain; version=0.0.4; charset=utf-8
 
 默认内置的告警规则：
 
-| 规则名称 | 严重级别 | 触发条件 | 持续时间 | 建议操作 |
-|----------|----------|----------|----------|----------|
-| `high_error_rate` | Warning | 错误率 > 5% | 3 次连续 | 检查服务日志 |
-| `tee_anomaly` | Critical | TEE 错误数 ≥ 1 | 1 次 | 检查 Enclave 状态 |
-| `high_memory_usage` | Warning | 内存使用率 > 85% | 5 次连续 | 考虑扩容或重启 |
-| `high_token_validation_failure` | Warning | Token 验证失败率 > 10% | 3 次连续 | 检查 Token 密钥 |
+| 规则名称                        | 严重级别 | 触发条件               | 持续时间 | 建议操作          |
+| ------------------------------- | -------- | ---------------------- | -------- | ----------------- |
+| `high_error_rate`               | Warning  | 错误率 > 5%            | 3 次连续 | 检查服务日志      |
+| `tee_anomaly`                   | Critical | TEE 错误数 ≥ 1         | 1 次     | 检查 Enclave 状态 |
+| `high_memory_usage`             | Warning  | 内存使用率 > 85%       | 5 次连续 | 考虑扩容或重启    |
+| `high_token_validation_failure` | Warning  | Token 验证失败率 > 10% | 3 次连续 | 检查 Token 密钥   |
 
 ### 告警严重级别
 
-| 级别 | 颜色 | 说明 |
-|------|------|------|
-| `info` | 🔵 蓝色 | 信息性告警，无需处理 |
-| `warning` | 🟡 黄色 | 警告，需要注意但不紧急 |
+| 级别       | 颜色    | 说明                   |
+| ---------- | ------- | ---------------------- |
+| `info`     | 🔵 蓝色 | 信息性告警，无需处理   |
+| `warning`  | 🟡 黄色 | 警告，需要注意但不紧急 |
 | `critical` | 🔴 红色 | 严重问题，需要立即处理 |
 
 ### Webhook 通知
@@ -272,26 +257,34 @@ rate(credbridge_alerts_triggered_total[1h])
     "panels": [
       {
         "title": "Request Rate",
-        "targets": [{
-          "expr": "rate(credbridge_http_requests_total[1m])"
-        }]
+        "targets": [
+          {
+            "expr": "rate(credbridge_http_requests_total[1m])"
+          }
+        ]
       },
       {
         "title": "Error Rate",
-        "targets": [{
-          "expr": "credbridge_http_error_rate_percentage"
-        }],
+        "targets": [
+          {
+            "expr": "credbridge_http_error_rate_percentage"
+          }
+        ],
         "alert": {
-          "conditions": [{
-            "evaluator": { "params": [5], "type": "gt" }
-          }]
+          "conditions": [
+            {
+              "evaluator": { "params": [5], "type": "gt" }
+            }
+          ]
         }
       },
       {
         "title": "Active Tokens",
-        "targets": [{
-          "expr": "credbridge_tokens_active"
-        }]
+        "targets": [
+          {
+            "expr": "credbridge_tokens_active"
+          }
+        ]
       }
     ]
   }
@@ -357,29 +350,29 @@ spec:
   template:
     spec:
       containers:
-      - name: vault
-        image: credbridge/vault-service:latest
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
+        - name: vault
+          image: credbridge/vault-service:latest
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
 ```
 
 ### Prometheus 抓取配置
 
 ```yaml
 scrape_configs:
-  - job_name: 'credbridge-vault'
+  - job_name: "credbridge-vault"
     static_configs:
-      - targets: ['credbridge-vault:8080']
+      - targets: ["credbridge-vault:8080"]
     metrics_path: /metrics
     scrape_interval: 15s
     scrape_timeout: 10s
@@ -426,6 +419,7 @@ groups:
 #### 1. 健康检查返回 503
 
 检查各个组件状态：
+
 - 数据库连接是否正常
 - Redis 连接是否正常
 - TEE Enclave 是否已初始化
@@ -433,12 +427,14 @@ groups:
 #### 2. Prometheus 指标为空
 
 确保：
+
 - 服务已接收过请求
 - 指标收集器已正确配置到路由
 
 #### 3. Webhook 通知未送达
 
 检查：
+
 - Webhook URL 是否正确
 - 网络连接是否正常
 - 告警严重级别是否在过滤器中

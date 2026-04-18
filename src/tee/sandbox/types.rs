@@ -176,6 +176,29 @@ pub struct SessionRequest {
     pub metadata: Option<HashMap<String, String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialReference {
+    pub field: String,
+}
+
+impl CredentialReference {
+    pub fn from_value(value: &serde_json::Value) -> Option<Self> {
+        let object = value.as_object()?;
+        if object.len() != 1 {
+            return None;
+        }
+
+        let field = object.get("$credential")?.as_str()?.trim();
+        if field.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            field: field.to_string(),
+        })
+    }
+}
+
 /// 会话上下文
 #[derive(Debug, Clone)]
 pub struct SessionContext {
@@ -242,16 +265,26 @@ pub enum OperationType {
     Fill,
     /// 获取文本
     GetText,
-    /// 截图
-    Screenshot,
     /// 导出数据
     Export,
+    /// 导出 DOM
+    DomExport,
     /// 执行脚本
     ExecuteScript,
+    /// 受控页面启动脚本注入
+    BootstrapPage,
     /// 等待元素
     Wait,
+    /// 直接发起 HTTP 请求
+    HttpRequest,
     /// 自定义操作
     Custom,
+}
+
+impl OperationType {
+    pub fn requires_browser(self) -> bool {
+        !matches!(self, OperationType::HttpRequest | OperationType::Custom)
+    }
 }
 
 impl std::fmt::Display for OperationType {
@@ -261,10 +294,12 @@ impl std::fmt::Display for OperationType {
             OperationType::Click => write!(f, "click"),
             OperationType::Fill => write!(f, "fill"),
             OperationType::GetText => write!(f, "get_text"),
-            OperationType::Screenshot => write!(f, "screenshot"),
             OperationType::Export => write!(f, "export"),
+            OperationType::DomExport => write!(f, "dom_export"),
             OperationType::ExecuteScript => write!(f, "execute_script"),
+            OperationType::BootstrapPage => write!(f, "bootstrap_page"),
             OperationType::Wait => write!(f, "wait"),
+            OperationType::HttpRequest => write!(f, "http_request"),
             OperationType::Custom => write!(f, "custom"),
         }
     }
@@ -281,8 +316,26 @@ pub struct OperationRequest {
     pub description: String,
     /// 操作参数
     pub parameters: HashMap<String, serde_json::Value>,
+    /// 运行时解析后的参数
+    pub resolved_parameters: HashMap<String, serde_json::Value>,
     /// 创建时间
     pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedOperation {
+    pub parameters: HashMap<String, serde_json::Value>,
+    pub persisted_parameters: serde_json::Value,
+}
+
+impl OperationRequest {
+    pub fn effective_parameters(&self) -> &HashMap<String, serde_json::Value> {
+        if self.resolved_parameters.is_empty() {
+            &self.parameters
+        } else {
+            &self.resolved_parameters
+        }
+    }
 }
 
 /// 操作状态
@@ -330,8 +383,6 @@ pub struct ExecutionResult {
     pub error: Option<String>,
     /// 执行时间（毫秒）
     pub execution_time_ms: u64,
-    /// 截图数据（如果有）
-    pub screenshot: Option<Vec<u8>>,
     /// 审计日志
     pub audit_log: Vec<AuditLogEntry>,
 }
@@ -449,6 +500,8 @@ mod tests {
     #[test]
     fn test_operation_type_display() {
         assert_eq!(OperationType::Navigate.to_string(), "navigate");
-        assert_eq!(OperationType::Screenshot.to_string(), "screenshot");
+        assert_eq!(OperationType::DomExport.to_string(), "dom_export");
+        assert_eq!(OperationType::BootstrapPage.to_string(), "bootstrap_page");
+        assert_eq!(OperationType::HttpRequest.to_string(), "http_request");
     }
 }

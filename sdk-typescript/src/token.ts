@@ -1,41 +1,94 @@
 /**
  * CredBridge SDK - Token 管理模块
  *
- * 提供 Token 验证、刷新和管理功能
+ * 管理 bearer tokens，用于 automation token、access token 和 service account token。
+ *
+ * **重要说明**:
+ * 此 TokenManager 管理的是对外 bearer token，
+ * 包括 automation token、access token 和 service account token。
+ * 浏览器侧 Privy / session 流程不属于 SDK 对外认证面。
+ *
+ * @module token
  */
 
-import type { CredBridgeClient } from './client.js';
+import type { CredBridgeClient } from "./client.js";
 import {
+  type CreateTokenRequest,
+  type CreateTokenResponse,
   type TokenInfo,
-  type TokenScope,
   type RequestOptions,
+  type TokenMetadata,
+  type TokenRevokeByIdResponse,
+  type TokenStatsResponse,
+  type TokenScope,
   CredBridgeError,
   CredBridgeErrorCode,
-} from './types.js';
-
-/** Token 验证响应 */
-interface TokenVerifyResponse {
-  valid: boolean;
-  claims?: {
-    jti: string;
-    sub: string;
-    exp: number;
-    iat: number;
-    scope: string;
-    tenant_id: string;
-    aud?: string;
-    iss?: string;
-  };
-  error?: string;
-}
+} from "./types.js";
 
 /** Token 撤销响应 */
 interface TokenRevokeResponse {
   revoked: boolean;
 }
 
+interface CreateTokenResponseApi {
+  access_token: string;
+  token_id: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+  issued_at: number;
+  expires_at: number;
+}
+
+interface TokenStatsResponseApi {
+  total_tokens?: number;
+  active_tokens: number;
+  revoked_tokens?: number;
+}
+
+interface TokenMetadataApi {
+  token_id: string;
+  token_type: string;
+  subject_type: string;
+  subject_id: string;
+  tenant_id: string;
+  issued_from: string;
+  session_id?: string | null;
+  membership_id?: string | null;
+  display_name?: string | null;
+  granted_scopes: string[];
+  expires_at: string;
+  revoked_at?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
+function mapTokenMetadata(value: TokenMetadataApi): TokenMetadata {
+  return {
+    tokenId: value.token_id,
+    tokenType: value.token_type,
+    subjectType: value.subject_type,
+    subjectId: value.subject_id,
+    tenantId: value.tenant_id,
+    issuedFrom: value.issued_from,
+    sessionId: value.session_id ?? undefined,
+    membershipId: value.membership_id ?? undefined,
+    displayName: value.display_name ?? undefined,
+    grantedScopes: value.granted_scopes,
+    expiresAt: value.expires_at,
+    revokedAt: value.revoked_at ?? undefined,
+    createdAt: value.created_at,
+    lastUsedAt: value.last_used_at ?? undefined,
+  };
+}
+
 /**
  * Token 管理类
+ *
+ * 管理 bearer tokens。
+ *
+ * **注意**: 此类管理的 Token 用于自动化和服务集成，
+ * 不负责浏览器侧 Privy / session 登录流程。
  */
 export class TokenManager {
   private client: CredBridgeClient;
@@ -149,43 +202,65 @@ export class TokenManager {
   }
 
   /**
-   * 验证当前 Token
-   *
-   * 向服务器发送验证请求，确认 Token 是否被撤销
-   *
-   * @param options - 请求选项
-   * @returns 验证结果
-   *
-   * @example
-   * ```typescript
-   * const isValid = await sdk.token.verify();
-   * if (!isValid) {
-   *   console.log('Token is invalid or revoked');
-   * }
-   * ```
+   * 创建新的平台 Token
    */
-  public async verify(options?: RequestOptions): Promise<boolean> {
-    const token = this.client.getToken();
-    if (!token) {
-      return false;
-    }
+  public async create(
+    request: CreateTokenRequest,
+    options?: RequestOptions,
+  ): Promise<CreateTokenResponse> {
+    const response = await this.client.post<CreateTokenResponseApi>(
+      "/tokens",
+      {
+        scopes: request.scopes,
+        expires_in: request.expiresIn,
+        credential_ids: request.credentialIds,
+      },
+      options,
+    );
 
-    try {
-      const response = await this.client.post<TokenVerifyResponse>(
-        '/tokens/verify',
-        { token },
-        { ...options, skipRetry: true }
-      );
-      return response.valid;
-    } catch (error) {
-      if (error instanceof CredBridgeError) {
-        // 如果是认证错误，Token 无效
-        if (error.isAuthError()) {
-          return false;
-        }
-      }
-      throw error;
-    }
+    return {
+      accessToken: response.access_token,
+      tokenId: response.token_id,
+      tokenType: response.token_type,
+      expiresIn: response.expires_in,
+      scope: response.scope,
+      issuedAt: response.issued_at,
+      expiresAt: response.expires_at,
+    };
+  }
+
+  /**
+   * 获取 Token 统计
+   */
+  public async stats(options?: RequestOptions): Promise<TokenStatsResponse> {
+    const response = await this.client.get<TokenStatsResponseApi>(
+      "/tokens/stats",
+      options,
+    );
+    return {
+      totalTokens: response.total_tokens,
+      activeTokens: response.active_tokens,
+      revokedTokens: response.revoked_tokens,
+    };
+  }
+
+  public async list(options?: RequestOptions): Promise<TokenMetadata[]> {
+    const response = await this.client.get<TokenMetadataApi[]>(
+      "/tokens",
+      options,
+    );
+    return response.map(mapTokenMetadata);
+  }
+
+  public async get(
+    tokenId: string,
+    options?: RequestOptions,
+  ): Promise<TokenMetadata> {
+    const response = await this.client.get<TokenMetadataApi>(
+      `/tokens/${tokenId}`,
+      options,
+    );
+    return mapTokenMetadata(response);
   }
 
   /**
@@ -193,6 +268,9 @@ export class TokenManager {
    *
    * @param options - 请求选项
    * @returns 是否撤销成功
+   *
+   * @deprecated 该方法保留用于兼容旧版 `/tokens/{id}/revoke` 路由。
+   * 优先使用后端对齐的 `create`、`verify` 和 `stats`。
    *
    * @example
    * ```typescript
@@ -205,17 +283,33 @@ export class TokenManager {
     if (!tokenInfo) {
       throw new CredBridgeError(
         CredBridgeErrorCode.InvalidToken,
-        'No token to revoke'
+        "No token to revoke",
       );
     }
 
     const response = await this.client.post<TokenRevokeResponse>(
       `/tokens/${tokenInfo.tokenId}/revoke`,
       {},
-      options
+      options,
     );
 
     return response.revoked;
+  }
+
+  public async revokeById(
+    tokenId: string,
+    options?: RequestOptions,
+  ): Promise<TokenRevokeByIdResponse> {
+    const response = await this.client.post<TokenRevokeResponse>(
+      `/tokens/${tokenId}/revoke`,
+      {},
+      options,
+    );
+
+    return {
+      revoked: response.revoked,
+      tokenId,
+    };
   }
 
   /**
@@ -239,8 +333,10 @@ export class TokenManager {
     const tokenInfo = this.client.getTokenInfo();
     if (!tokenInfo) return false;
 
-    return tokenInfo.scopes.includes(scope as TokenScope) ||
-           tokenInfo.scopes.includes('admin' as TokenScope);
+    return (
+      tokenInfo.scopes.includes(scope as TokenScope) ||
+      tokenInfo.scopes.includes("admin" as TokenScope)
+    );
   }
 
   /**
@@ -257,7 +353,7 @@ export class TokenManager {
    * ```
    */
   public hasAnyScope(scopes: TokenScope[] | string[]): boolean {
-    return scopes.some(scope => this.hasScope(scope));
+    return scopes.some((scope) => this.hasScope(scope));
   }
 
   /**
@@ -274,7 +370,7 @@ export class TokenManager {
    * ```
    */
   public hasAllScopes(scopes: TokenScope[] | string[]): boolean {
-    return scopes.every(scope => this.hasScope(scope));
+    return scopes.every((scope) => this.hasScope(scope));
   }
 
   /**
@@ -353,7 +449,7 @@ export class TokenManager {
     const seconds = this.getRemainingTime();
 
     if (seconds === 0) {
-      return '已过期';
+      return "已过期";
     }
 
     if (seconds < 60) {

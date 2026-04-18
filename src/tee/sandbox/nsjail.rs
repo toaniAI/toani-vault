@@ -1,18 +1,23 @@
 //! nsjail 沙箱实现
 
 use crate::tee::sandbox::{
-    config::NsjailConfig,
+    config::{MountConfig, NsjailConfig},
     error::{SandboxError, SecurityError},
     types::{SandboxId, SandboxStatus, WarmInstanceInfo},
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use time::OffsetDateTime;
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
+use tokio::time::{Duration, timeout};
 use tracing::{debug, error, info, warn};
+
+static CGROUP_FALLBACK_WARNED: Once = Once::new();
+const CHILD_REAP_TIMEOUT_SECS: u64 = 30;
 
 /// nsjail 沙箱
 #[allow(dead_code)]
@@ -85,7 +90,15 @@ impl NsjailSandbox {
         }
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
+                if let Some(status) = child.try_wait().map_err(SandboxError::Io)? {
+                    let detail =
+                        describe_child_exit("failed to start nsjail", &mut child, status).await;
+                    error!("Failed to start nsjail sandbox {}: {}", self.id, detail);
+                    *self.status.write().await = SandboxStatus::Error;
+                    return Err(SandboxError::Process(detail));
+                }
+
                 let pid = child.id().unwrap_or(0);
                 info!("Nsjail sandbox started: {} (PID: {})", self.id, pid);
                 self.process = Some(child);
@@ -117,21 +130,30 @@ impl NsjailSandbox {
             match process.start_kill() {
                 Ok(_) => {
                     // 等待进程退出
-                    let timeout = tokio::time::Duration::from_secs(5);
-                    match tokio::time::timeout(timeout, process.wait()).await {
+                    let wait_timeout = Duration::from_secs(5);
+                    match timeout(wait_timeout, process.wait()).await {
                         Ok(Ok(_)) => {
                             info!("Nsjail sandbox {} stopped gracefully", self.id);
                         }
-                        _ => {
+                        Ok(Err(e)) => {
+                            warn!("Failed to wait for nsjail sandbox {}: {}", self.id, e);
+                        }
+                        Err(_) => {
                             warn!(
-                                "Nsjail sandbox {} did not stop gracefully, killing",
+                                "Nsjail sandbox {} did not stop gracefully, handing to background reaper",
                                 self.id
+                            );
+                            spawn_child_reaper(
+                                process,
+                                format!("nsjail sandbox {}", self.id),
+                                false,
                             );
                         }
                     }
                 }
                 Err(e) => {
                     warn!("Failed to kill nsjail sandbox {}: {}", self.id, e);
+                    spawn_child_reaper(process, format!("nsjail sandbox {}", self.id), true);
                 }
             }
         }
@@ -181,9 +203,115 @@ impl NsjailSandbox {
         self.process.as_ref().and_then(|p| p.id())
     }
 
+    /// 获取当前沙箱工作目录
+    pub fn working_dir(&self) -> PathBuf {
+        self.config.sandbox.working_dir.join(self.id.to_string())
+    }
+
+    /// Host-side uid/gid that correspond to root inside the nsjail user namespace.
+    pub fn mapped_host_ids(&self) -> (u32, u32) {
+        (
+            self.config.uid_map.outside_uid,
+            self.config.gid_map.outside_gid,
+        )
+    }
+
+    pub fn assign_mapped_root_owner(&self, path: &std::path::Path) -> Result<(), SandboxError> {
+        let (uid, gid) = self.mapped_host_ids();
+        chown_for_mapped_root(path, uid, gid)
+    }
+
     /// 设置凭证环境变量
     pub fn set_credential_env(&mut self, key: String, value: String) {
         self.credential_env.insert(key, value);
+    }
+
+    pub async fn spawn_scoped_process(
+        &self,
+        command: Vec<String>,
+        cwd: PathBuf,
+        env: HashMap<String, String>,
+        disable_seccomp_for_browser_runtime: bool,
+        extra_mounts: Vec<MountConfig>,
+    ) -> Result<Child, SandboxError> {
+        if command.is_empty() {
+            return Err(SandboxError::Process(
+                "scoped process command may not be empty".to_string(),
+            ));
+        }
+
+        let scoped_config = self.scoped_process_config(
+            command,
+            cwd,
+            env,
+            disable_seccomp_for_browser_runtime,
+            extra_mounts,
+        );
+
+        let mut cmd = Command::new(&scoped_config.sandbox.nsjail_path);
+        cmd.args(scoped_config.to_args())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|error| {
+            SandboxError::Process(format!("failed to spawn scoped process: {error}"))
+        })?;
+
+        if let Some(status) = child.try_wait().map_err(SandboxError::Io)? {
+            let detail =
+                describe_child_exit("failed to spawn scoped process", &mut child, status).await;
+            return Err(SandboxError::Process(detail));
+        }
+
+        Ok(child)
+    }
+
+    fn scoped_process_config(
+        &self,
+        command: Vec<String>,
+        cwd: PathBuf,
+        env: HashMap<String, String>,
+        disable_seccomp_for_browser_runtime: bool,
+        extra_mounts: Vec<MountConfig>,
+    ) -> NsjailConfig {
+        let mut scoped_config = self.config.clone();
+        scoped_config.command = command;
+        scoped_config.cwd = cwd;
+        scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
+
+        let sandbox_work_dir = self.working_dir();
+        Self::push_mount_if_missing(
+            &mut scoped_config.sandbox.security.namespace.mount_points,
+            MountConfig {
+                src: sandbox_work_dir.clone(),
+                dst: sandbox_work_dir,
+                mount_type: crate::tee::sandbox::config::MountType::Bind,
+                read_only: false,
+            },
+        );
+
+        for mount in extra_mounts {
+            Self::push_mount_if_missing(
+                &mut scoped_config.sandbox.security.namespace.mount_points,
+                mount,
+            );
+        }
+
+        for (key, value) in env {
+            scoped_config.env.insert(key, value);
+        }
+
+        scoped_config
+    }
+
+    fn push_mount_if_missing(mounts: &mut Vec<MountConfig>, mount: MountConfig) {
+        if !mounts
+            .iter()
+            .any(|existing| existing.src == mount.src && existing.dst == mount.dst)
+        {
+            mounts.push(mount);
+        }
     }
 
     /// 获取沙箱统计信息
@@ -201,7 +329,14 @@ impl NsjailSandbox {
             .and_then(|p| p.id())
             .ok_or_else(|| SandboxError::process("No process ID available"))?;
 
-        let stats = Self::read_process_stats(pid).await?;
+        let mut stats = Self::read_process_stats(pid).await?;
+        stats.process_health = Self::inspect_process_tree(pid);
+        if !stats.process_health.is_healthy() {
+            return Err(SandboxError::Process(format!(
+                "sandbox process health check failed: {}",
+                stats.process_health.summary()
+            )));
+        }
 
         Ok(stats)
     }
@@ -210,21 +345,31 @@ impl NsjailSandbox {
     pub async fn prepare_for_reuse(&mut self) -> Result<(), SandboxError> {
         // 清理会话状态，但保持进程运行
         self.credential_env.clear();
-        Ok(())
-    }
-
-    // 私有辅助方法
-
-    async fn prepare_working_dir(&self) -> Result<(), SandboxError> {
-        let work_dir = self.config.sandbox.working_dir.join(self.id.to_string());
+        let work_dir = self.working_dir();
+        if work_dir.exists() {
+            tokio::fs::remove_dir_all(&work_dir)
+                .await
+                .map_err(SandboxError::Io)?;
+        }
         tokio::fs::create_dir_all(&work_dir)
             .await
             .map_err(SandboxError::Io)?;
         Ok(())
     }
 
+    // 私有辅助方法
+
+    async fn prepare_working_dir(&self) -> Result<(), SandboxError> {
+        let work_dir = self.working_dir();
+        tokio::fs::create_dir_all(&work_dir)
+            .await
+            .map_err(SandboxError::Io)?;
+        self.assign_mapped_root_owner(&work_dir)?;
+        Ok(())
+    }
+
     async fn cleanup_working_dir(&self) -> Result<(), SandboxError> {
-        let work_dir = self.config.sandbox.working_dir.join(self.id.to_string());
+        let work_dir = self.working_dir();
         if work_dir.exists() {
             tokio::fs::remove_dir_all(&work_dir)
                 .await
@@ -235,15 +380,32 @@ impl NsjailSandbox {
 
     async fn setup_cgroup(&mut self) -> Result<(), SandboxError> {
         let cgroup_config = &self.config.sandbox.security.cgroup;
+        if !cgroup_config.enabled {
+            debug!("cgroup limits disabled for sandbox {}", self.id);
+            return Ok(());
+        }
+
+        if cgroup_config.version == crate::tee::sandbox::config::CgroupVersion::V2
+            && !cgroup_config
+                .cgroup_root
+                .join("cgroup.controllers")
+                .exists()
+        {
+            return self.handle_cgroup_setup_failure("cgroup v2 controllers unavailable");
+        }
+
         let cgroup_path = cgroup_config
             .cgroup_root
             .join("credbridge")
             .join("sandbox")
             .join(self.id.to_string());
 
-        tokio::fs::create_dir_all(&cgroup_path)
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::create_dir_all(&cgroup_path).await {
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to create cgroup directory {}: {e}",
+                cgroup_path.display()
+            ));
+        }
 
         // 设置资源限制
         let limits = &self.config.sandbox.resource_limits;
@@ -252,24 +414,52 @@ impl NsjailSandbox {
         let cpu_max_path = cgroup_path.join("cpu.max");
         let cpu_quota = limits.cpu_percent * 1000; // Convert to microseconds
         let cpu_max = format!("{cpu_quota} 100000");
-        tokio::fs::write(&cpu_max_path, cpu_max)
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::write(&cpu_max_path, cpu_max).await {
+            let _ = tokio::fs::remove_dir_all(&cgroup_path).await;
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to write {}: {e}",
+                cpu_max_path.display()
+            ));
+        }
 
         // 内存限制
         let memory_max_path = cgroup_path.join("memory.max");
         let memory_limit = limits.memory_limit_mb * 1024 * 1024;
-        tokio::fs::write(&memory_max_path, memory_limit.to_string())
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::write(&memory_max_path, memory_limit.to_string()).await {
+            let _ = tokio::fs::remove_dir_all(&cgroup_path).await;
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to write {}: {e}",
+                memory_max_path.display()
+            ));
+        }
 
         // PIDs 限制
         let pids_max_path = cgroup_path.join("pids.max");
-        tokio::fs::write(&pids_max_path, limits.max_pids.to_string())
-            .await
-            .map_err(|e| SandboxError::Security(SecurityError::Cgroup(e.to_string())))?;
+        if let Err(e) = tokio::fs::write(&pids_max_path, limits.max_pids.to_string()).await {
+            let _ = tokio::fs::remove_dir_all(&cgroup_path).await;
+            return self.handle_cgroup_setup_failure(format!(
+                "failed to write {}: {e}",
+                pids_max_path.display()
+            ));
+        }
 
         self.cgroup_path = Some(cgroup_path);
+        Ok(())
+    }
+
+    fn handle_cgroup_setup_failure(&self, details: impl Into<String>) -> Result<(), SandboxError> {
+        let details = details.into();
+
+        if self.config.sandbox.security.cgroup.required {
+            return Err(SandboxError::Security(SecurityError::Cgroup(details)));
+        }
+
+        CGROUP_FALLBACK_WARNED.call_once(|| {
+            warn!(
+                "cgroup setup unavailable; continuing without cgroup resource controls. Set CREDBRIDGE_SANDBOX_CGROUP_REQUIRED=true to fail closed."
+            );
+        });
+        debug!("Skipping cgroup setup for sandbox {}: {}", self.id, details);
         Ok(())
     }
 
@@ -285,6 +475,10 @@ impl NsjailSandbox {
     fn check_process_running(pid: u32) -> bool {
         // 检查进程是否存在
         unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+
+    pub fn process_health(&self) -> Option<SandboxProcessHealth> {
+        self.pid().map(Self::inspect_process_tree)
     }
 
     async fn read_process_stats(pid: u32) -> Result<SandboxStats, SandboxError> {
@@ -324,6 +518,7 @@ impl NsjailSandbox {
             virtual_memory_bytes: virtual_memory,
             cpu_time_ms,
             fd_count,
+            process_health: Self::inspect_process_tree(pid),
         })
     }
 
@@ -337,6 +532,261 @@ impl NsjailSandbox {
         }
 
         Ok(count)
+    }
+
+    fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
+        inspect_process_tree(root_pid)
+    }
+}
+
+impl Drop for NsjailSandbox {
+    fn drop(&mut self) {
+        if let Some(process) = self.process.take() {
+            spawn_child_reaper(process, format!("dropped nsjail sandbox {}", self.id), true);
+        }
+    }
+}
+
+async fn describe_child_exit(
+    context: &str,
+    child: &mut Child,
+    status: std::process::ExitStatus,
+) -> String {
+    let mut stderr = String::new();
+    if let Some(mut stream) = child.stderr.take() {
+        let _ = stream.read_to_string(&mut stderr).await;
+    }
+
+    let stderr = stderr.trim();
+    if stderr.is_empty() {
+        format!("{context}: process exited early with status {status}")
+    } else {
+        format!("{context}: process exited early with status {status}: {stderr}")
+    }
+}
+
+#[cfg(unix)]
+fn chown_for_mapped_root(path: &std::path::Path, uid: u32, gid: u32) -> Result<(), SandboxError> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
+        SandboxError::Config(format!(
+            "path contains an interior NUL byte: {}",
+            path.display()
+        ))
+    })?;
+    let result = unsafe { libc::chown(c_path.as_ptr(), uid as libc::uid_t, gid as libc::gid_t) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(SandboxError::Io(std::io::Error::last_os_error()))
+    }
+}
+
+#[cfg(not(unix))]
+fn chown_for_mapped_root(
+    _path: &std::path::Path,
+    _uid: u32,
+    _gid: u32,
+) -> Result<(), SandboxError> {
+    Ok(())
+}
+
+pub(crate) fn spawn_child_reaper(mut child: Child, label: String, kill_first: bool) {
+    let pid = child.id();
+    if kill_first && let Err(error) = child.start_kill() {
+        warn!("Failed to signal child reaper target {label}: {error}");
+    }
+
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            handle.spawn(reap_child(child, label, pid));
+        }
+        Err(error) => {
+            warn!(
+                "No Tokio runtime available for child reaper {label} pid={pid:?}; starting fallback runtime: {error}"
+            );
+            let thread_label = label.clone();
+            if let Err(spawn_error) = std::thread::Builder::new()
+                .name("credbridge-child-reaper".to_string())
+                .spawn(move || {
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(runtime) => runtime.block_on(reap_child(child, label, pid)),
+                        Err(runtime_error) => warn!(
+                            "Failed to build fallback runtime for child reaper {label} pid={pid:?}: {runtime_error}"
+                        ),
+                    }
+                })
+            {
+                warn!(
+                    "Failed to start fallback child reaper thread {thread_label} pid={pid:?}: {spawn_error}"
+                );
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxProcessHealth {
+    pub root_pid: u32,
+    pub process_count: usize,
+    pub zombie_count: usize,
+    pub zombie_pids: Vec<u32>,
+    pub checked: bool,
+}
+
+impl SandboxProcessHealth {
+    pub fn healthy(root_pid: u32, process_count: usize) -> Self {
+        Self {
+            root_pid,
+            process_count,
+            zombie_count: 0,
+            zombie_pids: Vec::new(),
+            checked: true,
+        }
+    }
+
+    pub fn unchecked(root_pid: u32) -> Self {
+        Self {
+            root_pid,
+            process_count: 0,
+            zombie_count: 0,
+            zombie_pids: Vec::new(),
+            checked: false,
+        }
+    }
+
+    pub fn is_healthy(&self) -> bool {
+        !self.checked || self.zombie_count == 0
+    }
+
+    pub fn summary(&self) -> String {
+        if !self.checked {
+            return format!("process tree check unavailable for pid {}", self.root_pid);
+        }
+        if self.zombie_count == 0 {
+            return format!(
+                "pid {} process tree healthy ({} processes)",
+                self.root_pid, self.process_count
+            );
+        }
+        format!(
+            "pid {} process tree has {} zombie processes: {:?}",
+            self.root_pid, self.zombie_count, self.zombie_pids
+        )
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
+    let processes = match read_proc_processes() {
+        Ok(processes) => processes,
+        Err(error) => {
+            warn!("Failed to inspect sandbox process tree for pid {root_pid}: {error}");
+            return SandboxProcessHealth::unchecked(root_pid);
+        }
+    };
+
+    let mut children_by_parent: HashMap<u32, Vec<&ProcProcess>> = HashMap::new();
+    for process in &processes {
+        children_by_parent
+            .entry(process.ppid)
+            .or_default()
+            .push(process);
+    }
+
+    let mut visited = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::from([root_pid]);
+    let mut zombie_pids = Vec::new();
+
+    while let Some(pid) = queue.pop_front() {
+        if !visited.insert(pid) {
+            continue;
+        }
+
+        if let Some(process) = processes.iter().find(|process| process.pid == pid)
+            && process.state == 'Z'
+        {
+            zombie_pids.push(pid);
+        }
+
+        if let Some(children) = children_by_parent.get(&pid) {
+            for child in children {
+                queue.push_back(child.pid);
+            }
+        }
+    }
+
+    SandboxProcessHealth {
+        root_pid,
+        process_count: visited.len(),
+        zombie_count: zombie_pids.len(),
+        zombie_pids,
+        checked: true,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
+    SandboxProcessHealth::unchecked(root_pid)
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct ProcProcess {
+    pid: u32,
+    ppid: u32,
+    state: char,
+}
+
+#[cfg(target_os = "linux")]
+fn read_proc_processes() -> std::io::Result<Vec<ProcProcess>> {
+    let mut processes = Vec::new();
+    for entry in std::fs::read_dir("/proc")? {
+        let entry = entry?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        else {
+            continue;
+        };
+
+        let stat_path = entry.path().join("stat");
+        let Ok(stat) = std::fs::read_to_string(stat_path) else {
+            continue;
+        };
+        if let Some((state, ppid)) = parse_proc_stat_state_ppid(&stat) {
+            processes.push(ProcProcess { pid, ppid, state });
+        }
+    }
+    Ok(processes)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_proc_stat_state_ppid(stat: &str) -> Option<(char, u32)> {
+    let close_paren = stat.rfind(')')?;
+    let mut fields = stat[close_paren + 1..].split_whitespace();
+    let state = fields.next()?.chars().next()?;
+    let ppid = fields.next()?.parse().ok()?;
+    Some((state, ppid))
+}
+
+async fn reap_child(mut child: Child, label: String, pid: Option<u32>) {
+    match timeout(Duration::from_secs(CHILD_REAP_TIMEOUT_SECS), child.wait()).await {
+        Ok(Ok(status)) => {
+            debug!("Reaped child process {label} pid={pid:?} status={status}");
+        }
+        Ok(Err(error)) => {
+            warn!("Failed to reap child process {label} pid={pid:?}: {error}");
+        }
+        Err(_) => {
+            warn!("Timed out waiting for child process {label} pid={pid:?} to be reaped");
+        }
     }
 }
 
@@ -353,6 +803,8 @@ pub struct SandboxStats {
     pub cpu_time_ms: u64,
     /// 打开的文件描述符数
     pub fd_count: usize,
+    /// 沙箱进程树健康状态
+    pub process_health: SandboxProcessHealth,
 }
 
 /// 热 nsjail 实例
@@ -383,7 +835,8 @@ impl WarmNsjailInstance {
     /// 检查实例是否健康
     pub fn is_healthy(&self) -> bool {
         // 检查进程是否仍在运行
-        unsafe { libc::kill(self.info.pid as i32, 0) == 0 }
+        (unsafe { libc::kill(self.info.pid as i32, 0) == 0 })
+            && inspect_process_tree(self.info.pid).is_healthy()
     }
 
     /// 检查是否过期
@@ -411,6 +864,7 @@ mod tests {
             command: vec!["sleep".to_string(), "100".to_string()],
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
+            disable_seccomp_for_browser_runtime: false,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
@@ -432,10 +886,126 @@ mod tests {
             virtual_memory_bytes: 1024 * 1024 * 10,
             cpu_time_ms: 1000,
             fd_count: 10,
+            process_health: SandboxProcessHealth::healthy(1234, 1),
         };
 
         assert_eq!(stats.pid, 1234);
         assert_eq!(stats.memory_usage_bytes, 1048576);
+        assert!(stats.process_health.is_healthy());
+    }
+
+    #[test]
+    fn test_process_health_reports_zombies() {
+        let health = SandboxProcessHealth {
+            root_pid: 1234,
+            process_count: 3,
+            zombie_count: 1,
+            zombie_pids: vec![5678],
+            checked: true,
+        };
+
+        assert!(!health.is_healthy());
+        assert_eq!(
+            health.summary(),
+            "pid 1234 process tree has 1 zombie processes: [5678]"
+        );
+    }
+
+    #[test]
+    fn test_unchecked_process_health_does_not_fail_closed() {
+        let health = SandboxProcessHealth::unchecked(1234);
+
+        assert!(health.is_healthy());
+        assert_eq!(
+            health.summary(),
+            "process tree check unavailable for pid 1234"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_proc_stat_state_ppid() {
+        let stat = "1234 (node worker) Z 42 1 1 0 -1 4194560";
+
+        assert_eq!(parse_proc_stat_state_ppid(stat), Some(('Z', 42)));
+    }
+
+    #[tokio::test]
+    async fn test_setup_cgroup_skips_when_disabled() {
+        let mut config = create_test_config();
+        config.sandbox.security.cgroup.enabled = false;
+
+        let mut sandbox = NsjailSandbox::new(config);
+        sandbox.setup_cgroup().await.unwrap();
+
+        assert!(sandbox.cgroup_path.is_none());
+    }
+
+    #[test]
+    fn test_optional_cgroup_failure_does_not_error() {
+        let sandbox = NsjailSandbox::new(create_test_config());
+        sandbox
+            .handle_cgroup_setup_failure("permission denied")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_required_cgroup_failure_returns_error() {
+        let mut config = create_test_config();
+        config.sandbox.security.cgroup.required = true;
+
+        let sandbox = NsjailSandbox::new(config);
+        let error = sandbox
+            .handle_cgroup_setup_failure("permission denied")
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            SandboxError::Security(SecurityError::Cgroup(_))
+        ));
+    }
+
+    #[test]
+    fn test_scoped_process_config_adds_browser_runtime_mounts() {
+        let sandbox = NsjailSandbox::new(create_test_config());
+        let extra_mount = MountConfig {
+            src: PathBuf::from("/app/src/tee/sandbox/scripts"),
+            dst: PathBuf::from("/app/src/tee/sandbox/scripts"),
+            mount_type: crate::tee::sandbox::config::MountType::Bind,
+            read_only: true,
+        };
+        let scoped_config = sandbox.scoped_process_config(
+            vec!["/usr/bin/node".to_string(), "script.cjs".to_string()],
+            PathBuf::from("/tmp/runtime"),
+            HashMap::new(),
+            true,
+            vec![extra_mount.clone()],
+        );
+
+        assert!(
+            scoped_config
+                .sandbox
+                .security
+                .namespace
+                .mount_points
+                .iter()
+                .any(|mount| mount.src == extra_mount.src
+                    && mount.dst == extra_mount.dst
+                    && mount.read_only)
+        );
+
+        let sandbox_work_dir = sandbox.working_dir();
+        assert!(
+            scoped_config
+                .sandbox
+                .security
+                .namespace
+                .mount_points
+                .iter()
+                .any(|mount| mount.src == sandbox_work_dir
+                    && mount.dst == sandbox_work_dir
+                    && !mount.read_only)
+        );
     }
 
     #[tokio::test]

@@ -37,7 +37,7 @@ fn test_tenant_config_default() {
     assert_eq!(config.quota_limits.max_requests_per_minute, 1000);
 
     // 验证默认设置
-    assert_eq!(config.settings.token_ttl_seconds, 900);
+    assert_eq!(config.settings.token_ttl_seconds, 7200);
     assert_eq!(config.settings.timezone, "UTC");
     assert_eq!(config.settings.language, "zh-CN");
 
@@ -174,7 +174,7 @@ fn test_quota_limits_tiers() {
 fn test_tenant_settings_default() {
     let settings = TenantSettings::default();
 
-    assert_eq!(settings.token_ttl_seconds, 900); // 15分钟
+    assert_eq!(settings.token_ttl_seconds, 7200); // 2小时
     assert_eq!(settings.session_timeout_seconds, 3600); // 1小时
     assert_eq!(settings.max_login_attempts, 5);
     assert_eq!(settings.lockout_duration_seconds, 900); // 15分钟

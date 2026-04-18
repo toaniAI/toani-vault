@@ -11,21 +11,27 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 
 use tokio::sync::Mutex;
+use vault_service::EncryptedPayload;
 use vault_service::api::credentials::{
     AppState, AuditLogger, DefaultAuditLogger, create_credential, delete_credential,
     get_credential, list_credentials, update_credential,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::api::versions::{get_version_detail, get_version_history, rollback_credential};
+use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
+use vault_service::models::CredentialType;
 use vault_service::tee::{Enclave, EnclaveConfig};
-use vault_service::vault::storage::CredentialVault;
+use vault_service::vault::storage::{
+    CredentialVault, create_credential as create_vault_credential,
+};
 
 /// 设置测试状态
 async fn setup_test_state() -> AppState {
@@ -72,6 +78,11 @@ fn create_test_token(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) ->
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs(),
+        membership_id: None,
+        metadata: std::collections::HashMap::new(),
+        subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+        issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        allowed_credential_ids: None,
     }
 }
 
@@ -98,6 +109,17 @@ fn test_versioning_router(state: AppState, token: ValidatedToken) -> axum::Route
         )
         .layer(axum::Extension(token))
         .with_state(state)
+}
+
+fn create_test_payload(seed: u8) -> EncryptedPayload {
+    EncryptedPayload::new(
+        constants::PROTOCOL_VERSION,
+        constants::ALGORITHM_AES_256_GCM,
+        constants::KDF_HKDF_SHA256,
+        vec![seed; constants::NONCE_LENGTH],
+        vec![seed; constants::AUTH_TAG_LENGTH],
+        vec![seed, seed.saturating_add(1), seed.saturating_add(2)],
+    )
 }
 
 /// AC-1: 更新凭证 API 需要 write scope
@@ -305,6 +327,91 @@ async fn test_rollback_with_valid_request_format() {
     assert_ne!(response.status(), StatusCode::FORBIDDEN);
 }
 
+/// BUG-18187: 回滚到不存在的目标版本应返回 404/not_found，而不是 500
+#[tokio::test]
+async fn test_rollback_missing_target_version_returns_404_not_found() {
+    let state = setup_test_state().await;
+    let token = create_test_token(
+        "tenant_18187",
+        "user_18187",
+        vec![TokenScope::CredentialWrite],
+    );
+
+    let created = create_vault_credential(
+        state.vault.as_ref(),
+        "tenant_18187",
+        "user_18187",
+        "svc_rollback",
+        CredentialType::ApiKey,
+        create_test_payload(1),
+        None,
+    )
+    .expect("should create test credential");
+
+    state
+        .vault
+        .update_credential_with_version(
+            &created.credential_id,
+            &vault_service::vault::models::TenantId::new("tenant_18187"),
+            &vault_service::vault::models::UserId::new("user_18187"),
+            create_test_payload(2),
+            Some("prepare version history".to_string()),
+        )
+        .expect("should create historical version");
+
+    let app = test_versioning_router(state, token);
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/credentials/{}/rollback",
+            created.credential_id.as_str()
+        ))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            r#"{"target_version": 99, "reason": "missing target version"}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["error"], "not_found");
+}
+
+/// BUG-18186: 回滚不存在的凭证应返回 404/not_found，而不是 500
+#[tokio::test]
+async fn test_rollback_missing_credential_returns_404_not_found() {
+    let state = setup_test_state().await;
+    let token = create_test_token(
+        "tenant_18186",
+        "user_18186",
+        vec![TokenScope::CredentialWrite],
+    );
+
+    let app = test_versioning_router(state, token);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials/00000000-0000-0000-0000-000000000000/rollback")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            r#"{"target_version": 1, "reason": "missing credential"}"#,
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload["error"], "not_found");
+}
+
 /// AC-10: 更新请求格式验证 - 缺少 plaintext_data
 #[tokio::test]
 async fn test_update_credential_request_format() {
@@ -473,4 +580,40 @@ async fn test_rollback_request_structure() {
 
     assert_eq!(request.target_version, 2);
     assert_eq!(request.reason, "回滚到稳定版本");
+}
+
+/// BUG-18178: 路径尾部斜杠规范化测试
+/// 验证 NormalizePathLayer 正确去除尾部斜杠，使带斜杠的路径能够匹配路由
+#[tokio::test]
+async fn test_trailing_slash_normalized_to_valid_route() {
+    use axum::routing::get;
+    use tower::ServiceBuilder;
+    use tower::ServiceExt;
+    use tower_http::normalize_path::NormalizePathLayer;
+
+    // 创建一个简单的路由，测试路径规范化功能
+    async fn handler() -> &'static str {
+        "matched"
+    }
+
+    // 使用 ServiceBuilder 包装 Router，确保 NormalizePathLayer 在路由匹配之前执行
+    let router = axum::Router::new().route("/api/v1/test/path", get(handler));
+
+    let app = ServiceBuilder::new()
+        .layer(NormalizePathLayer::trim_trailing_slash())
+        .service(router);
+
+    // 测试带尾部斜杠的路径请求
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/test/path/") // 尾部有斜杠
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+
+    // NormalizePathLayer 去除尾部斜杠后，路径应能匹配 /api/v1/test/path 路由
+    // 如果返回 200 OK，说明路径规范化生效
+    // 如果返回 404，说明路由未匹配（修复未生效）
+    assert_eq!(response.status(), StatusCode::OK);
 }

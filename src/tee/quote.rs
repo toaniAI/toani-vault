@@ -721,12 +721,13 @@ pub mod utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TeeRuntimeMode;
     use crate::tee::dcap::{DcapConfig, DcapService};
     use crate::tee::{Enclave, EnclaveConfig};
 
     fn create_test_quote() -> DcapQuote {
         let config = DcapConfig {
-            simulation_mode: true,
+            runtime_mode: TeeRuntimeMode::Simulation,
             ..Default::default()
         };
         let service = DcapService::new(config).unwrap();

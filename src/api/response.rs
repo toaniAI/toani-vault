@@ -30,6 +30,7 @@
 //! | `forbidden` | 403 | 权限不足 |
 //! | `not_found` | 404 | 资源不存在 |
 //! | `conflict` | 409 | 资源冲突 |
+//! | `unprocessable_entity` | 422 | 请求体缺少必填字段或字段类型错误 |
 //! | `rate_limited` | 429 | 请求过于频繁 |
 //! | `internal_error` | 500 | 服务器内部错误 |
 //! | `service_unavailable` | 503 | 服务暂不可用 |
@@ -58,8 +59,12 @@ pub enum ErrorCode {
     Forbidden,
     /// 资源不存在
     NotFound,
+    /// 凭证不存在
+    CredentialNotFound,
     /// 资源冲突
     Conflict,
+    /// 请求体缺少必填字段或字段类型错误
+    UnprocessableEntity,
     /// 请求过于频繁
     RateLimited,
     /// 服务器内部错误
@@ -82,7 +87,9 @@ impl ErrorCode {
             ErrorCode::Unauthorized => "unauthorized",
             ErrorCode::Forbidden => "forbidden",
             ErrorCode::NotFound => "not_found",
+            ErrorCode::CredentialNotFound => "credential_not_found",
             ErrorCode::Conflict => "conflict",
+            ErrorCode::UnprocessableEntity => "unprocessable_entity",
             ErrorCode::RateLimited => "rate_limited",
             ErrorCode::InternalError => "internal_error",
             ErrorCode::ServiceUnavailable => "service_unavailable",
@@ -99,7 +106,9 @@ impl ErrorCode {
             ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
             ErrorCode::Forbidden => StatusCode::FORBIDDEN,
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
+            ErrorCode::CredentialNotFound => StatusCode::NOT_FOUND,
             ErrorCode::Conflict => StatusCode::CONFLICT,
+            ErrorCode::UnprocessableEntity => StatusCode::UNPROCESSABLE_ENTITY,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             ErrorCode::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -188,6 +197,11 @@ impl ApiErrorResponse {
         Self::new(ErrorCode::Conflict, message)
     }
 
+    /// 创建无法处理的实体错误（缺少必填字段或字段类型错误）
+    pub fn unprocessable_entity(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::UnprocessableEntity, message)
+    }
+
     /// 创建速率限制错误
     pub fn rate_limited(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::RateLimited, message)
@@ -246,7 +260,9 @@ impl ErrorCode {
             "unauthorized" => Some(ErrorCode::Unauthorized),
             "forbidden" => Some(ErrorCode::Forbidden),
             "not_found" => Some(ErrorCode::NotFound),
+            "credential_not_found" => Some(ErrorCode::CredentialNotFound),
             "conflict" => Some(ErrorCode::Conflict),
+            "unprocessable_entity" => Some(ErrorCode::UnprocessableEntity),
             "rate_limited" => Some(ErrorCode::RateLimited),
             "internal_error" => Some(ErrorCode::InternalError),
             "service_unavailable" => Some(ErrorCode::ServiceUnavailable),
@@ -327,6 +343,10 @@ mod tests {
         assert_eq!(ErrorCode::Unauthorized.to_string(), "unauthorized");
         assert_eq!(ErrorCode::Forbidden.to_string(), "forbidden");
         assert_eq!(ErrorCode::NotFound.to_string(), "not_found");
+        assert_eq!(
+            ErrorCode::CredentialNotFound.to_string(),
+            "credential_not_found"
+        );
         assert_eq!(ErrorCode::InternalError.to_string(), "internal_error");
     }
 
@@ -343,6 +363,10 @@ mod tests {
         assert_eq!(ErrorCode::Forbidden.http_status(), StatusCode::FORBIDDEN);
         assert_eq!(ErrorCode::NotFound.http_status(), StatusCode::NOT_FOUND);
         assert_eq!(
+            ErrorCode::CredentialNotFound.http_status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
             ErrorCode::InternalError.http_status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
@@ -357,6 +381,10 @@ mod tests {
         assert_eq!(
             ErrorCode::from_string("unauthorized"),
             Some(ErrorCode::Unauthorized)
+        );
+        assert_eq!(
+            ErrorCode::from_string("credential_not_found"),
+            Some(ErrorCode::CredentialNotFound)
         );
         assert_eq!(ErrorCode::from_string("unknown"), None);
     }
