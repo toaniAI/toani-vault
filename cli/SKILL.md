@@ -5,6 +5,7 @@
 给 agent 一份可直接执行的 `toani` 使用规范，重点覆盖：
 
 - 当前真实可用命令面
+- `credentials list/get` 的只读能力边界
 - 标准 `sandbox` 调用链
 - `bootstrap_page` 的受控页面引导注入语义
 - `execute_script.bindings` 和 secret 消费的真实语义
@@ -19,7 +20,7 @@
 5. Rocket Loader 一类页面要先显式执行 `bootstrap-page`，再 `wait` / `fill` / `click`。
 6. 需要页面状态时，优先用 `get-session`、`get-operation`、`export-dom`、`execute_script`。
 7. 完成后要 `terminate`，不要留下长期活跃会话。
-8. Dashboard / UI 是凭证和 token 的创建入口；CLI 只消费 `credential_id` 和 bearer token，不负责创建它们。
+8. Dashboard / UI 仍是凭证和 token 的创建入口；CLI 目前只开放凭证元数据读取，不负责创建、更新、删除或解密凭证。
 
 ## 当前真实能力面
 
@@ -28,6 +29,7 @@
 当前公开命令组只有：
 
 - `config`
+- `credentials`
 - `sandbox`
 - `--help`
 - `--version`
@@ -35,16 +37,27 @@
 不要默认存在这些命令组，除非你先验证过：
 
 - `auth`
-- `credentials`
 - `tokens`
 - `service-accounts`
 - `audit`
+
+`credentials` 当前只开放两个只读子命令：
+
+- `toani credentials list [--service-id <id>] [--credential-type <type>] [--only-valid true|false]`
+- `toani credentials get <credentialId>`
+
+不要默认存在这些尚未开放的 `credentials` 子命令：
+
+- `create`
+- `update`
+- `delete`
+- `decrypt`
 
 ## Dashboard / UI 责任边界
 
 - 凭证在 Dashboard 的 Credentials 页面创建
 - bearer token 在 Dashboard 的 Tokens 页面签发
-- CLI 只读取和消费这些产物，不负责创建凭证或 token
+- CLI 读取这些产物；当前可直接读取凭证元数据，但不负责创建凭证或 token
 
 ## 全局参数与优先级
 
@@ -80,12 +93,28 @@ Token 优先级：
 ```bash
 toani --help
 toani config show --output json
+toani credentials list --output json
 toani sandbox create-session --help
 toani sandbox execute --help
 ```
 
-如果用户只给了“凭证名”但没给 `credential_id`，先核对当前环境和 token，再请求 CredBridge API 或控制面查真实凭证 ID，不要猜。
-如果这个凭证要用于 secret-backed login，优先在 Dashboard UI 里确认它对应的 `credential_id`，再把该 ID 传给 `create-session`。
+如果用户只给了“凭证名”但没给 `credential_id`，先核对当前环境和 token，再优先用 `toani credentials list --service-id <service>` 查元数据，不要猜。
+如果这个凭证要用于 secret-backed login，先用 `toani credentials list` 或 `toani credentials get <id>` 确认真实 `credential_id`，再把该 ID 传给 `create-session`。如果 CLI token 无权读取元数据，再退回 Dashboard UI 确认。
+
+## Credentials 命令表
+
+```bash
+toani credentials list [--service-id <id>] [--credential-type <type>] [--only-valid true|false]
+toani credentials get <credentialId>
+```
+
+能力边界：
+
+- 只返回凭证元数据
+- 不返回明文 secret
+- 不执行 decrypt
+- 仍要求 bearer token 具备 `credential:read`
+- 返回失败时，优先检查 token scope、base URL 和目标环境
 
 ## Sandbox 命令表
 
@@ -166,7 +195,7 @@ toani sandbox stats
 
 1. `toani --help`
 2. `toani config show --output json`
-3. 如需凭证 ID，先查询并确认凭证
+3. 如需凭证 ID，先用 `toani credentials list` / `get` 查询并确认凭证
 4. `toani sandbox create-session ...`
 5. `toani sandbox execute <sessionId> --operation-type navigate ...`
 6. 如果是 Rocket Loader / bundle 未启动页面，显式执行 `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...`
@@ -185,7 +214,8 @@ toani sandbox stats
 
 这两个动作不是一回事：
 
-1. 先在控制面或 API 列表里拿到 `credential_id`
+1. 先拿到 `credential_id`
+   优先路径现在是 `toani credentials list` / `toani credentials get`
 2. 再在 `toani sandbox create-session --credential-id ...` 中把该凭证绑定到 TEE 会话
 3. 后续执行 `fill` 时，后端才会在沙盒内部按需解析并消费对应字段
 
@@ -295,6 +325,27 @@ toani sandbox create-session \
   --credential-id <credentialId> \
   --original-intent "Login with credential-backed session" \
   --start-url "https://target-site.com/login"
+```
+
+### 示例 3A：列出可读凭证元数据
+
+```bash
+toani credentials list --output json
+```
+
+### 示例 3B：按服务过滤凭证元数据
+
+```bash
+toani credentials list \
+  --service-id svc_example \
+  --only-valid true \
+  --output json
+```
+
+### 示例 3C：读取单个凭证元数据
+
+```bash
+toani credentials get <credentialId> --output json
 ```
 
 ### 示例 4：导航
@@ -454,15 +505,16 @@ toani sandbox execute <sessionId> \
 
 1. 在 Dashboard UI 里创建凭证并确认 `credential_id`
 2. 在 Dashboard UI 里生成 bearer token
-3. `toani sandbox create-session --service-id <service> --credential-id <credentialId> --original-intent "Sign in to test-web.zk.me" --start-url https://test-web.zk.me/login`
-4. `toani sandbox execute <sessionId> --operation-type navigate --params '{"url":"https://test-web.zk.me/login"}'`
-5. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader --replay-lifecycle-events true --wait-selector 'input[name=email]' --wait-timeout-ms 15000`
-6. `toani sandbox execute <sessionId> --operation-type wait --params '{"selector":"input[name=email]","timeout_ms":15000}'`
-7. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'`
-8. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'`
-9. `toani sandbox execute <sessionId> --operation-type click --params '{"selector":"button[type=submit]"}'`
-10. `toani sandbox get-session <sessionId>`
-11. `toani sandbox terminate <sessionId>`
+3. `toani credentials list --service-id <service> --output json` 或 `toani credentials get <credentialId> --output json` 复核目标凭证
+4. `toani sandbox create-session --service-id <service> --credential-id <credentialId> --original-intent "Sign in to test-web.zk.me" --start-url https://test-web.zk.me/login`
+5. `toani sandbox execute <sessionId> --operation-type navigate --params '{"url":"https://test-web.zk.me/login"}'`
+6. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader --replay-lifecycle-events true --wait-selector 'input[name=email]' --wait-timeout-ms 15000`
+7. `toani sandbox execute <sessionId> --operation-type wait --params '{"selector":"input[name=email]","timeout_ms":15000}'`
+8. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'`
+9. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'`
+10. `toani sandbox execute <sessionId> --operation-type click --params '{"selector":"button[type=submit]"}'`
+11. `toani sandbox get-session <sessionId>`
+12. `toani sandbox terminate <sessionId>`
 
 ### 示例 20：结束会话
 
@@ -487,6 +539,12 @@ toani sandbox terminate <sessionId>
 
 - 错误：`Unknown command group`
   - 修复：先执行 `toani --help`，不要使用旧文档里的未发布命令组
+
+- 错误：`Usage: toani credentials get <credentialId>`
+  - 修复：`get` 必须显式传位置参数 `<credentialId>`
+
+- 错误：`Invalid boolean for --only-valid: <value>`
+  - 修复：`--only-valid` 只接受可解析的布尔值，例如 `true` / `false`
 
 - 错误：`未检测到 CLI 可用的 API Token`
   - 修复：先在 Dashboard UI 里创建或复制 token，然后执行 `toani config init --url <api-url> --token <BEARER_TOKEN>`，或者设置 `TOANI_VAULT_TOKEN`

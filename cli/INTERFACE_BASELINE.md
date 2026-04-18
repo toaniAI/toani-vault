@@ -77,13 +77,15 @@ API base path: `/api/v1`.
 
 ### Command groups
 
+- `config`
+- `credentials`
 - `sandbox`
 
 ### Known drift
 
 - CLI surface drift:
-  - Current npm CLI exposes the `sandbox` group plus global flags/version
-  - Historical docs referenced unshipped `auth`, `config`, `credentials`, `tokens`, and `audit` groups
+  - Current npm CLI exposes `config`, read-only `credentials` (`list`, `get`), `sandbox`, plus global flags/version
+  - Historical docs still referenced broader unshipped `auth`, mutating `credentials`, `tokens`, and `audit` groups
 - Sandbox terminate naming drift:
   - Real close-session route is `DELETE /sandbox/sessions/:id`
   - Some historical constants still referenced `/sandbox/sessions/:id/terminate`

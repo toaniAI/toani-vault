@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig } from "./config/store.js";
+import { runCredentials } from "./commands/credentials.js";
 import { runConfig } from "./commands/config.js";
 import { runSandbox } from "./commands/index.js";
 import { printResult } from "./output/print.js";
@@ -18,6 +19,7 @@ Usage:
 
 Groups:
   config       init/show
+  credentials  list/get
   sandbox      create-session/list-sessions/get-session/terminate/pause/resume/bootstrap-page/execute/export-dom/export-data/get-operation/stats
 `;
 
@@ -112,6 +114,9 @@ async function main(): Promise<void> {
   switch (group) {
     case "config":
       await runConfig(runtimeConfig, subArgs);
+      return;
+    case "credentials":
+      await runCredentials(runtimeConfig, subArgs);
       return;
     case "sandbox":
       await runSandbox(runtimeConfig, subArgs);

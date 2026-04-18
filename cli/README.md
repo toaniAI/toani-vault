@@ -10,12 +10,13 @@ Toani Vault npm CLI package.
 The current published CLI is intentionally narrow:
 
 - `config`
+- `credentials` (`list`, `get`)
 - `sandbox`
 - `--help`
 - `--version`
 
-Do not assume the package exposes `auth`, `credentials`, `tokens`, `service-accounts`, or `audit`
-commands unless you have verified a newer build.
+Do not assume the package exposes `auth`, mutating `credentials` commands, `tokens`,
+`service-accounts`, or `audit` commands unless you have verified a newer build.
 
 ## Install
 
@@ -77,6 +78,8 @@ Base URL resolution priority:
 ```bash
 toani config init --url <service-url> [--token <BEARER_TOKEN>]
 toani config show
+toani credentials list [--service-id <id>] [--credential-type <type>] [--only-valid true|false]
+toani credentials get <credentialId>
 toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
@@ -92,6 +95,27 @@ toani sandbox stats
 toani --version
 toani --help
 ```
+
+## Credential Metadata Workflow
+
+The CLI now exposes a read-only `credentials` group for metadata retrieval.
+
+```bash
+# List all readable credentials
+toani credentials list
+
+# Filter by service id
+toani credentials list --service-id schwab
+
+# Filter by type and validity
+toani credentials list --credential-type api_key --only-valid true
+
+# Fetch one credential metadata record
+toani credentials get 018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c
+```
+
+These commands read metadata only. They do not expose plaintext secrets, do not decrypt credentials,
+and still require a bearer token with `credential:read`.
 
 ## Sandbox Workflow
 
