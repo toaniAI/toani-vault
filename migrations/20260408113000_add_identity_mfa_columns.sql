@@ -1,0 +1,3 @@
+ALTER TABLE external_identities
+    ADD COLUMN IF NOT EXISTS mfa_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS mfa_verified_at TIMESTAMPTZ;

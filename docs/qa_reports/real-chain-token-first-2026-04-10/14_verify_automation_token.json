@@ -1,0 +1,1 @@
+{"valid":true,"token_id":"019d7678-69e8-7071-929b-40cd3626e232","user_id":"019d7199-7017-7791-8e7b-c9f8cf883284","tenant_id":"019d71b3-a66b-73e1-92f4-1bb616db9f8f","scopes":["tokens:read","tokens:write","credential:read","audit:read"],"expires_at":1775812696,"subject_type":"user","issued_from":"automation"}

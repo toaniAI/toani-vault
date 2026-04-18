@@ -1,0 +1,2 @@
+Invalid PASETO token format. Token must start with v4.local. or v4.public.
+EXIT:1
