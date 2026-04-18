@@ -466,14 +466,14 @@ steps:
     settings:
       registry: hub.bitkinetic.com
       repo: hub.bitkinetic.com/zkme/credbridge
+      context: ./
+      dockerfile: Dockerfile
       tags: ${DRONE_TAG}
       purge: true
       username:
         from_secret: docker-hub-username
       password:
         from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
       build_args:
         - APT_MIRROR_SCHEME=https
         - APT_MIRROR_HOST=mirrors.aliyun.com
@@ -520,7 +520,6 @@ steps:
       ref:
         - refs/tags/*
         - refs/heads/*
-
 ---
 kind: secret
 name: sgx-signing-key
