@@ -485,6 +485,20 @@ steps:
       ref:
         - refs/tags/*
 
+  - name: notify
+    image: hub.bitkinetic.com/public/deploy:v1
+    pull: if-not-exists
+    environment:
+      DEPLOY_AUTH_KEY:
+        from_secret: deploy-auth-key
+      DEPLOY_SERVER:
+        from_secret: deploy-base-url
+    commands:
+      - app call -b
+    when:
+      ref:
+        - refs/tags/*
+        - refs/heads/*
 ---
 kind: secret
 name: sgx-signing-key
