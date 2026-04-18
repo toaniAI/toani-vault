@@ -1,0 +1,60 @@
+enclave {
+    include "sgx_report.h"
+    include "stddef.h"
+    include "stdint.h"
+
+    trusted {
+        public int32_t credbridge_enclave_get_identity(
+            [out, size=32] uint8_t* mrenclave,
+            size_t mrenclave_len,
+            [out, size=32] uint8_t* mrsigner,
+            size_t mrsigner_len
+        );
+
+        public int32_t credbridge_enclave_get_report(
+            [in, size=64] const uint8_t* report_data,
+            size_t report_data_len,
+            [out, size=432] uint8_t* report_bytes,
+            size_t report_bytes_len,
+            [out] size_t* written_len
+        );
+
+        public int32_t credbridge_enclave_get_targeted_report(
+            [in, size=512] const uint8_t* target_info,
+            size_t target_info_len,
+            [in, size=64] const uint8_t* report_data,
+            size_t report_data_len,
+            [out, size=432] uint8_t* report_bytes,
+            size_t report_bytes_len,
+            [out] size_t* written_len
+        );
+
+        public int32_t credbridge_enclave_get_sealing_key(
+            uint32_t policy,
+            [out, size=32] uint8_t* key_bytes,
+            size_t key_bytes_len,
+            [out] size_t* written_len
+        );
+
+        public int32_t credbridge_enclave_encrypt_credential(
+            [in, string] const char* tenant_id,
+            [in, string] const char* user_id_hash,
+            [in, string] const char* credential_id,
+            [in, size=plaintext_len] const uint8_t* plaintext,
+            size_t plaintext_len,
+            [out, size=16384] uint8_t* blob_json,
+            size_t blob_json_len,
+            [out] size_t* written_len
+        );
+
+        public int32_t credbridge_enclave_decrypt_credential(
+            [in, string] const char* tenant_id,
+            [in, string] const char* user_id_hash,
+            [in, string] const char* credential_id,
+            [in, string] const char* blob_json,
+            [out, size=65536] uint8_t* plaintext,
+            size_t plaintext_len,
+            [out] size_t* written_len
+        );
+    };
+};
