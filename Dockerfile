@@ -1,6 +1,9 @@
 # CredBridge 后端 Dockerfile
 
+# 这两个 ARG 必须在任何 FROM 之前声明为全局,否则第二个 FROM 拿不到 RUNTIME_BASE_IMAGE
+# (kaniko 容忍,但 plugins/docker 会报 "base name (${RUNTIME_BASE_IMAGE}) should not be blank")
 ARG BASE_BUILDER_IMAGE=hub.bitkinetic.com/zkme/credbridge-builder:rust1.88.0-sgx2.28.100.1-bookworm
+ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer
 
 FROM ${BASE_BUILDER_IMAGE} AS builder
 
@@ -41,8 +44,6 @@ RUN set -eu; \
     bash scripts/sign-sgx-enclave.sh; \
     rm -f /tmp/sgx-signing-key.pem
 RUN cargo build --release --features tee-hardware
-
-ARG RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer
 
 FROM ${RUNTIME_BASE_IMAGE}
 

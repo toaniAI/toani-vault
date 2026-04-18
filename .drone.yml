@@ -327,6 +327,10 @@ steps:
           sleep $((attempt * 10))
         done
         exit 1
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6
