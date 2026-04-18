@@ -1,0 +1,28 @@
+1. Application deployed successfully!
+   
+   Check the ConfigMap:
+   kubectl get configmap {{ include "credbridge.fullname" . }}-config -n {{ .Release.Namespace }}
+
+2. Check the deployment status:
+   kubectl get deployment {{ include "credbridge.fullname" . }} -n {{ .Release.Namespace }}
+
+3. View the pods:
+   kubectl get pods -l app.kubernetes.io/name={{ include "credbridge.name" . }} -n {{ .Release.Namespace }}
+
+4. Check the logs:
+   kubectl logs -l app.kubernetes.io/name={{ include "credbridge.name" . }} -n {{ .Release.Namespace }}
+
+{{- if .Values.vault.enabled }}
+
+5. Vault Integration Status:
+   kubectl get externalsecrets {{ include "credbridge.fullname" . }}-secrets -n {{ .Release.Namespace }}
+   {{- if .Values.externalSecrets.secretStore.create }}
+   kubectl get secretstore {{ include "credbridge.fullname" . }}-vault -n {{ .Release.Namespace }}
+   {{- else }}
+   kubectl get secretstore {{ .Values.externalSecrets.secretStore.existingName }} -n {{ .Release.Namespace }}
+   {{- end }}
+{{- end }}
+
+Thank you for using credbridge Helm chart!
+Project: {{ .Values.project.name }}
+Service: {{ .Values.project.server }}

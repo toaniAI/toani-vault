@@ -1,20 +1,8 @@
+# Environment-specific configuration
 environment: grey
-namespace: suna
-cluster: hk
+namespace: zkme-pd
 
-vault:
-  enabled: true
-  address: "https://vault.example.com"
-  path: "secret/data/credbridge/grey"
-  secrets:
-    keys:
-      - DATABASE_URL
-      - REDIS_URL
-      - VAULT_TOKEN
-      - JWT_SECRET
-      - ENCRYPTION_KEY
-      - API_SECRET
-
-externalSecrets:
-  enabled: true
-  refreshInterval: "1h"
+# Project configuration
+project:
+  name: zkme              # 项目名称
+  server: credbridge             # 服务名称

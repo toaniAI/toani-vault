@@ -1,0 +1,58 @@
+# CredBridge Dev Environment Configuration
+# 此配置文件通过 drone 部署时直接推送到集群
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+# =============================================================================
+# PostgreSQL 数据库配置 (K8s 集群内访问)
+# 连接地址: postgresql-hl.dev.svc.cluster.local:5432
+# User: dn
+# Password: dnXcdYxcv56H
+# Database: credbridge
+# SSL: disabled (集群内访问)
+# 建表参考: https://help.aliyun.com/zh/rds/apsaradb-rds-for-postgresql/use-the-timescaledb-extension
+# =============================================================================
+database:
+  url: "postgres://${POSTGRES_CREDBRIDGE_USERNAME}:${POSTGRES_CREDBRIDGE_PASSWORD}@rds-pgsql.zkme-pd.svc.cluster.local:5432/credbridge?sslmode=disable"
+  pool_size: 10
+  timeout_seconds: 30
+
+# =============================================================================
+# Redis 缓存配置 (K8s 集群内访问)
+# 连接地址: redis.dev.svc.cluster.local:6379
+# Database: 2
+# =============================================================================
+redis:
+  url: "redis://default:${REDIS_PASSWORD}@redis.zkme-pd.svc.cluster.local:6379/0"
+  pool_size: 10
+
+# Vault 配置
+vault:
+  addr: "http://vault:8200"
+  token: "${VAULT_TOKEN}"
+  kv_path: "secret/dev"
+
+# 日志配置
+log:
+  level: "debug"
+  format: "json"
+
+# 安全配置
+security:
+  jwt_secret: "${JWT_SECRET}"
+  token_expiry: 3600
+  encryption_key: "${ENCRYPTION_KEY}"
+
+# CORS 配置
+cors:
+  allowed_origins:
+    - "https://dev.credbridge.local"
+    - "https://dashboard.toani.ai"
+    - "https://toani.ai"
+
+# API 限流
+rate_limit:
+  requests_per_minute: 100
+  burst: 10
