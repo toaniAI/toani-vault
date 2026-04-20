@@ -240,6 +240,18 @@ describe("runLogin", () => {
     expect(sharedMenuCall?.options).toHaveLength(3);
   });
 
+  it("opens credentials instead of forcing the login route for sign-up flow", async () => {
+    promptState.selectQueue.push("no");
+    promptState.confirmQueue.push(false);
+
+    await runLogin(baseConfig, []);
+
+    expect(openMock).toHaveBeenCalledWith("https://dashboard.toani.ai/credentials");
+    expect(promptState.log.step).toHaveBeenCalledWith(
+      "Opening Dashboard in your browser...",
+    );
+  });
+
   it("rechecks .env through the shared token entry flow", async () => {
     promptState.selectQueue.push("env");
     promptState.confirmQueue.push(true);
