@@ -1,1 +1,0 @@
-{"status":"ready","ready":true,"requested_mode":"hardware","effective_mode":"hardware","root_key_source":"sgx_sealing_key","detected_type":"Intel SGX","enclave_state":"running","dcap_version":"1.0.0","quote_valid":true,"quote_expires_at":1776135231,"error":null}

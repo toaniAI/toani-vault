@@ -1,3 +1,0 @@
-service_id=tee-full-case07-20260413T232909-service-20260413T155309Z
-username=tee-full-case07-20260413T232909-user-20260413T155309Z@example.com
-credential_id=019d878b-f659-7bc0-8aaa-a252f8a8a02f

@@ -1,1 +1,0 @@
-run_curl:37: command not found: rtk

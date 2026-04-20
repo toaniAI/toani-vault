@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_API_BASE_URL } from "../lib/validate.js";
 import type { CliConfig, CliProfile, OutputFormat } from "../types/cli.js";
 import { keychain } from "../lib/keychain.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".toani");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
-const DEFAULT_BASE_URL = "https://dashboard.toani.ai";
+const DEFAULT_BASE_URL = DEFAULT_API_BASE_URL;
 
 const DEFAULT_CONFIG: CliConfig = {
   baseUrl: DEFAULT_BASE_URL,

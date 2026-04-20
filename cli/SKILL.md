@@ -79,7 +79,7 @@ Base URL 优先级：
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. `config.baseUrl`
-5. 默认 `https://dashboard.toani.ai`
+5. 默认 `TOANI_VAULT_DASHBOARD_BASE_URL` 或 `https://dashboard.toani.ai`
 
 Token 优先级：
 
@@ -136,6 +136,7 @@ toani login [--base-url <URL>] [--skip-validate]
 - 默认会调用 API 校验 token
 - `--skip-validate` 只跳过 API 校验，不跳过交互流程
 - 校验成功后，token 会尝试写入 OS Keychain
+- 登录成功后，可选把 npm 包内自带的 `SKILL.md` 安装到用户级 `~/.claude/skills/toani-vault-cli/` 或 `~/.codex/skills/toani-vault-cli/`
 - 若 Keychain 写入失败，会明确提示“未持久化”，但不会自动回写明文 config
 
 ### `toani doctor`

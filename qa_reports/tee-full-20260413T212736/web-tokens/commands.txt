@@ -1,7 +1,0 @@
-rtk ls -la /Users/yvan/AIWorkspace/credbridge/frontend/node_modules/.bin/playwright /Users/yvan/AIWorkspace/credbridge/frontend/node_modules/playwright /Users/yvan/AIWorkspace/credbridge/frontend/package.json
-rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/frontend/package.json
-rtk sed -n '1,260p' /Users/yvan/AIWorkspace/credbridge/frontend/src/features/tokens/pages/TokensPage.tsx
-rtk sed -n '260,420p' /Users/yvan/AIWorkspace/credbridge/frontend/src/features/tokens/pages/TokensPage.tsx
-rtk node /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/case04-run.mjs
-rtk sed -n '170,240p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/request-response-summaries.json
-rtk sed -n '1,220p' /Users/yvan/AIWorkspace/credbridge/qa_reports/tee-full-20260413T212736/web-tokens/responses/12-POST-_api_v1_tokens.txt

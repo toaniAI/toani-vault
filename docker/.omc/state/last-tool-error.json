@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd /Users/yvan/AIWorkspace/credbridge && export DATABASE_URL=\\\"postgresql://credbridge:credbridge_secret@localhost:5432/credbridge\\\" && sqlx migrate run 2>&1\",\"timeout\":60000,\"description\"...",
-  "error": "Exit code 1\nerror: while executing migration 20260312120000: error returned from database: relation \"credentials\" does not exist",
-  "timestamp": "2026-04-03T07:23:08.639Z",
-  "retry_count": 1
-}

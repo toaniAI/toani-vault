@@ -1,8 +1,0 @@
-### Result
-Trace recording stopped.
-- [Trace](.playwright-cli/traces/trace-1776094643637.trace)
-- [Network log](.playwright-cli/traces/trace-1776094643637.network)
-- [Resources](.playwright-cli/traces/resources)
-### Page
-- Page URL: https://dev-credbridge.bitkinetic.com/credentials
-- Page Title: Toani Vault

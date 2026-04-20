@@ -86,7 +86,7 @@ Base URL resolution priority:
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. saved profile `baseUrl` in `~/.toani/config.json`
-5. default `https://dashboard.toani.ai`
+5. default `TOANI_VAULT_DASHBOARD_BASE_URL` or `https://dashboard.toani.ai`
 
 ## Commands
 

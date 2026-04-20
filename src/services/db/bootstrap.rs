@@ -42,9 +42,64 @@ const TENANT_REQUIRED_TABLES: &[&str] = &[
 
 const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &["credentials", "credential_versions", "audit_logs"];
 
+const PUBLIC_VERSIONING_AND_AUDIT_SQL: &str = r#"
+BEGIN;
+
+ALTER TABLE credentials
+    ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.constraint_table_usage
+        WHERE table_name = 'credentials' AND constraint_name = 'credentials_version_check'
+    ) THEN
+        ALTER TABLE credentials
+        ADD CONSTRAINT credentials_version_check CHECK (version >= 1);
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS credential_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    credential_id VARCHAR(64) NOT NULL,
+    version INTEGER NOT NULL,
+    encrypted_payload JSONB NOT NULL,
+    change_reason TEXT,
+    changed_by UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT unique_credential_version UNIQUE (credential_id, version),
+    CONSTRAINT credential_versions_version_check CHECK (version >= 1),
+    CONSTRAINT fk_credential_versions_credential
+        FOREIGN KEY (credential_id) REFERENCES credentials(credential_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_credentials_version
+    ON credentials(version);
+CREATE INDEX IF NOT EXISTS idx_credential_versions_credential_id
+    ON credential_versions(credential_id);
+CREATE INDEX IF NOT EXISTS idx_credential_versions_created_at
+    ON credential_versions(created_at);
+CREATE INDEX IF NOT EXISTS idx_credential_versions_changed_by
+    ON credential_versions(changed_by);
+CREATE INDEX IF NOT EXISTS idx_credential_versions_lookup
+    ON credential_versions(credential_id, version DESC);
+
+ALTER TABLE audit_logs
+    ADD COLUMN IF NOT EXISTS event_category VARCHAR(32);
+ALTER TABLE audit_logs
+    ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_category
+    ON audit_logs(event_category);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_metadata
+    ON audit_logs USING GIN (metadata);
+
+COMMIT;
+"#;
+
 const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../scripts/init-database.sql"),
-    include_str!("../../../migrations/20260312120000_add_credential_versioning.sql"),
+    PUBLIC_VERSIONING_AND_AUDIT_SQL,
     include_str!("../../../migrations/20260317000001_create_sandbox_tables.sql"),
     include_str!("../../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"),
     include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),

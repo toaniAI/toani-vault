@@ -1,1 +1,0 @@
-{"name":"CredBridge API","version":"0.1.0","environment":"development","endpoints":[{"path":"/api/v1/credentials","description":"凭证管理 API"},{"path":"/api/v1/audit/logs","description":"审计日志 API"},{"path":"/api/v1/tenants","description":"租户管理 API"},{"path":"/health","description":"进程存活检查（liveness）"},{"path":"/ready","description":"服务就绪检查（readiness）"}]}

@@ -33,10 +33,18 @@ toani sandbox stats
 ## Recommended Setup
 
 ```bash
+export TOANI_VAULT_DASHBOARD_BASE_URL=https://dashboard.example.com
 export TOANI_BASE_URL=https://api.example.com/
 export TOANI_VAULT_TOKEN=<BEARER_TOKEN>
 toani config init --url https://api.example.com --token <BEARER_TOKEN>
 ```
+
+After `toani login`, the CLI can also copy the bundled `SKILL.md` into:
+
+- `~/.claude/skills/toani-vault-cli/SKILL.md`
+- `~/.codex/skills/toani-vault-cli/SKILL.md`
+
+You can choose Claude Code, Codex, both, or skip the install.
 
 ## Important Scope Note
 
