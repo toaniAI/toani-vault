@@ -1,18 +1,16 @@
 {{/*
-CredBridge Config Chart Helper Templates
-*/}}
-
-{{/*
 Expand the name of the chart.
 */}}
-{{- define "credbridge-config.name" -}}
+{{- define "credbridge.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+If release name contains chart name it will be used as a full name.
 */}}
-{{- define "credbridge-config.fullname" -}}
+{{- define "credbridge.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -28,40 +26,39 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "credbridge-config.chart" -}}
+{{- define "credbridge.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "credbridge-config.labels" -}}
-helm.sh/chart: {{ include "credbridge-config.chart" . }}
-{{ include "credbridge-config.selectorLabels" . }}
+{{- define "credbridge.labels" -}}
+helm.sh/chart: {{ include "credbridge.chart" . }}
+{{ include "credbridge.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+project.name: {{ .Values.project.name }}
+project.server: {{ .Values.project.server }}
 {{- end }}
 
 {{/*
 Selector labels
 */}}
-{{- define "credbridge-config.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "credbridge-config.name" . }}
+{{- define "credbridge.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "credbridge.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-ConfigMap name
+Create the name of the service account to use
 */}}
-{{- define "credbridge-config.configMapName" -}}
-{{- printf "%s-config" (include "credbridge-config.fullname" .) }}
+{{- define "credbridge.serviceAccountName" -}}
+{{- if .Values.deployment.serviceAccount.create }}
+{{- default (include "credbridge.fullname" .) .Values.deployment.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.deployment.serviceAccount.name }}
 {{- end }}
-
-{{/*
-ExternalSecret name
-*/}}
-{{- define "credbridge-config.externalSecretName" -}}
-{{- printf "%s-vault-secrets" (include "credbridge-config.fullname" .) }}
 {{- end }}

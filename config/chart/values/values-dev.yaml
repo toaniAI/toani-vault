@@ -1,9 +1,8 @@
+# Environment-specific configuration
 environment: dev
-namespace: suna
-cluster: hk
+namespace: zkme-dev
 
-vault:
-  enabled: false
-
-externalSecrets:
-  enabled: false
+# Project configuration
+project:
+  name: zkme              # 项目名称
+  server: credbridge             # 服务名称

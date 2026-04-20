@@ -1,26 +1,64 @@
-# 默认 values - 会被环境 specific values 覆盖
+# Default values for credbridge.
+# This is a YAML-formatted file.
+# ================================================
+# 注意: 以下是必须保留的，不要删除。以下是应用配置，自由发挥。对应configmap的配置。
+# 注意：想从 valu推读取的机密数据要使用大写 shell 变量标记，如：${REDIS_USERNAME}，它将在服务启动前一刻完成替换。
+# ================================================
+# Project configuration
 project:
-  name: credbridge
-  server: credbridge-go
+  name: zkme             # 项目名称
+  server: credbridge             # 服务名称
 
+# Environment configuration
 environment: dev
-namespace: suna
-cluster: hk
+# Kubernetes namespace
+namespace: dev
+# current cluster
+cluster: ""
 
-# Vault 配置 - 生产环境从 Vault 读取机密
+# Vault configuration for External Secrets
 vault:
   enabled: true
-  address: "https://vault.example.com"
-  path: "secret/data/credbridge"
+  address: "http://vault.vault.svc.cluster.local:8200"
+  auth:
+    appRole:
+      # AppRole credentials will be provided by ArgoCD as external secrets or injected during deployment
+      roleId: ""  # Set by ArgoCD or CI/CD environment values
+      secretId: ""  # Set by ArgoCD or CI/CD, only used if creating secret via template
+      mountPath: "approle"
+      secretRef:
+        # custom example-vault-auth name
+        name: ""
+        key: "secretId"
   secrets:
-    keys:
-      - DATABASE_URL
-      - REDIS_URL
-      - VAULT_TOKEN
-      - JWT_SECRET
-      - ENCRYPTION_KEY
+    # 全局基础路径，作为默认路径，支持变量模板
+    basePath: "secret/projects/{{ .Values.project.name }}/common/{{ .Values.environment }}"
+    # 使用通用的 external-secrets: vault-common-prod
+    keys: []
 
-# External Secrets 配置
+# External Secrets configuration
 externalSecrets:
-  enabled: true
+  existing: vault-common-prod
+  enabled: false
   refreshInterval: "1h"
+  # SecretStore configuration
+  secretStore:
+    # 是否创建新的SecretStore，如果为false则使用已存在的
+    create: false
+    # 如果create=false，指定要引用的已存在SecretStore名称
+    existingName: "vault-ops-read"
+    # SecretStore的类型：SecretStore 或 ClusterSecretStore
+    kind: "SecretStore"
+
+# 配置处理器 - 从Secret文件读取机密值，替换配置中的占位符
+configProcessor:
+  # 是否启用配置处理器
+  enabled: true
+
+
+# ================================================
+# 注意: 以上是必须保留的，不要删除。以下是应用配置，自由发挥。对应configmap的配置。
+# ================================================
+# External services configuration templates
+# Actual values will be injected from Vault via External Secrets
+

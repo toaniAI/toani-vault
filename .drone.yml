@@ -327,6 +327,10 @@ steps:
           sleep $((attempt * 10))
         done
         exit 1
+    when:
+      ref:
+        - refs/heads/branch_dev
+        - refs/heads/branch_test
 
   - name: deploy-dev
     image: tttlkkkl/drone-helm:v6
@@ -453,17 +457,30 @@ steps:
   - name: docker-build-pd
     image: plugins/docker
     pull: if-not-exists
+    depends_on:
+      - build-builder-base-image
+      - build-runtime-base-image
+    environment:
+      SGX_SIGNING_KEY:
+        from_secret: sgx-signing-key
     settings:
       registry: hub.bitkinetic.com
       repo: hub.bitkinetic.com/zkme/credbridge
+      context: ./
+      dockerfile: Dockerfile
       tags: ${DRONE_TAG}
       purge: true
       username:
         from_secret: docker-hub-username
       password:
         from_secret: docker-hub-password
-      context: ./
-      dockerfile: Dockerfile
+      build_args:
+        - APT_MIRROR_SCHEME=https
+        - APT_MIRROR_HOST=mirrors.aliyun.com
+        - BASE_BUILDER_IMAGE=hub.bitkinetic.com/zkme/credbridge-builder:rust1.88.0-sgx2.28.100.1-bookworm
+        - RUNTIME_BASE_IMAGE=hub.bitkinetic.com/zkme/credbridge-runtime-sandbox:jammy-sgx2.28.100.1-nsjail3.6-node20-lightpanda-nightly-puppeteer
+      build_args_from_env:
+        - SGX_SIGNING_KEY
     when:
       ref:
         - refs/tags/*
@@ -485,6 +502,24 @@ steps:
       ref:
         - refs/tags/*
 
+  - name: notify
+    image: hub.bitkinetic.com/public/deploy:v1
+    pull: if-not-exists
+    depends_on:
+      - deploy-dev
+      - deploy-test
+      - apply push to online
+    environment:
+      DEPLOY_AUTH_KEY:
+        from_secret: deploy-auth-key
+      DEPLOY_SERVER:
+        from_secret: deploy-base-url
+    commands:
+      - app call -b
+    when:
+      ref:
+        - refs/tags/*
+        - refs/heads/*
 ---
 kind: secret
 name: sgx-signing-key
