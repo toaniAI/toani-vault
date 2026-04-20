@@ -7,8 +7,10 @@ Toani Vault npm CLI package.
 
 ## Scope
 
-The current published CLI is intentionally narrow:
+The CLI now supports interactive onboarding in addition to the existing read-only and sandbox flows:
 
+- `login`
+- `doctor`
 - `config`
 - `credentials` (`list`, `get`)
 - `sandbox`
@@ -21,13 +23,25 @@ Do not assume the package exposes `auth`, mutating `credentials` commands, `toke
 ## Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.11
+npm install -g @toani/vault-cli@0.0.12
 ```
 
 ## Configure
 
-Create credentials and issue bearer tokens in the Dashboard UI first. The CLI only consumes an
-existing `credential_id` and bearer token; it does not mint either one.
+Recommended first-run flow:
+
+```bash
+toani login
+toani doctor
+```
+
+`toani login` opens the Dashboard in your browser, walks you through credential + token creation,
+watches the clipboard for a copied PASETO token, validates it, and stores it in the OS Keychain
+(macOS Keychain / libsecret / Windows Credential Manager).
+
+Manual configuration remains available for compatibility. Create credentials and issue bearer tokens
+in the Dashboard UI first. The CLI only consumes an existing `credential_id` and bearer token; it
+does not mint either one.
 
 Use the Dashboard UI to:
 
@@ -45,13 +59,13 @@ toani config init --url https://api.example.com --token <BEARER_TOKEN>
 toani config show
 ```
 
-When `--base-url`, `--token`, or `--output` are passed, the CLI persists those values to
-`~/.toani/config.json` for the active profile.
+When `--base-url` or `--output` are passed, the CLI persists those values to
+`~/.toani/config.json` for the active profile. When `--token` is passed to `toani config init`,
+the token is stored in the OS Keychain instead of being written to disk.
 
 Config file fields include:
 
 - `baseUrl`
-- `token`
 - `currentTenantId`
 - `currentProfile`
 - `profiles`
@@ -63,7 +77,8 @@ Token resolution priority:
 1. explicit `--token`
 2. `TOANI_VAULT_TOKEN`
 3. `CREDBRIDGE_TOKEN`
-4. saved profile `token` in `~/.toani/config.json`
+4. OS Keychain entry `toani-vault-cli:default`
+5. legacy saved profile `token` in `~/.toani/config.json`
 
 Base URL resolution priority:
 
@@ -76,6 +91,8 @@ Base URL resolution priority:
 ## Commands
 
 ```bash
+toani login [--base-url <service-url>] [--skip-validate]
+toani doctor [--base-url <service-url>]
 toani config init --url <service-url> [--token <BEARER_TOKEN>]
 toani config show
 toani credentials list [--service-id <id>] [--credential-type <type>] [--only-valid true|false]
@@ -95,6 +112,26 @@ toani sandbox stats
 toani --version
 toani --help
 ```
+
+## Onboarding
+
+`toani login` supports three paths:
+
+- account exists: open Dashboard and guide you through credential + token setup
+- needs signup: open the sign-in page, then return to the guided flow
+- already has token: read from `.env`, clipboard, or masked paste input
+
+Validation failures are classified with concrete next steps for:
+
+- invalid or expired token (`401`)
+- insufficient scope (`403`)
+- DNS failure
+- connection refused
+- timeout
+- generic network failure
+
+Run `toani doctor` after setup to verify CLI version, Node.js, token storage, token format, base
+URL reachability, and token validity.
 
 ## Credential Metadata Workflow
 

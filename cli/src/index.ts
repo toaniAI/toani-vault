@@ -4,9 +4,11 @@ import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig } from "./config/store.js";
 import { runCredentials } from "./commands/credentials.js";
 import { runConfig } from "./commands/config.js";
+import { runDoctor } from "./commands/doctor.js";
+import { runLogin } from "./commands/login.js";
 import { runSandbox } from "./commands/index.js";
 import { printResult } from "./output/print.js";
-import type { OutputFormat } from "./types/cli.js";
+import type { CliConfig, CredentialSource, OutputFormat } from "./types/cli.js";
 
 const BASE_URL_ENV_KEYS = ["TOANI_BASE_URL", "CREDBRIDGE_BASE_URL"] as const;
 const TOKEN_ENV_KEYS = ["TOANI_VAULT_TOKEN", "CREDBRIDGE_TOKEN"] as const;
@@ -18,6 +20,8 @@ Usage:
   toani [--output json|table] [--base-url URL] [--token TOKEN] <group> <command> [options]
 
 Groups:
+  login        interactive onboarding with browser assist + keychain storage
+  doctor       health checks for CLI, token storage, and API reachability
   config       init/show
   credentials  list/get
   sandbox      create-session/list-sessions/get-session/terminate/pause/resume/bootstrap-page/execute/export-dom/export-data/get-operation/stats
@@ -100,11 +104,19 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const envBaseUrl = resolveBaseUrlFromEnv();
   const envToken = resolveTokenFromEnv();
-  const runtimeConfig = {
+  const credentialSource: CredentialSource = globals.token
+    ? "explicit"
+    : envToken
+      ? "env"
+      : config.token && config.credentialSource
+        ? config.credentialSource
+        : "none";
+  const runtimeConfig: CliConfig = {
     ...config,
     output: globals.output ?? config.output,
     baseUrl: globals.baseUrl ?? envBaseUrl ?? config.baseUrl,
     token: globals.token ?? envToken ?? config.token,
+    credentialSource,
   };
 
   if (globals.baseUrl || globals.token || globals.output) {
@@ -112,6 +124,12 @@ async function main(): Promise<void> {
   }
 
   switch (group) {
+    case "login":
+      await runLogin(runtimeConfig, subArgs);
+      return;
+    case "doctor":
+      await runDoctor(runtimeConfig, subArgs);
+      return;
     case "config":
       await runConfig(runtimeConfig, subArgs);
       return;

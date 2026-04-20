@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CliConfig, CliProfile, OutputFormat } from "../types/cli.js";
+import { keychain } from "../lib/keychain.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".toani");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
@@ -41,7 +42,10 @@ export function loadConfig(): CliConfig {
         : DEFAULT_CONFIG.timeout;
   const baseUrl =
     activeProfile.baseUrl ?? parsed.baseUrl ?? DEFAULT_CONFIG.baseUrl;
-  const token = activeProfile.token ?? parsed.token;
+  const legacyToken =
+    activeProfile.token ?? (typeof parsed.token === "string" ? parsed.token : undefined);
+  const keychainToken = keychain.get() ?? undefined;
+  const token = keychainToken ?? legacyToken;
   const sessionToken = activeProfile.sessionToken ?? parsed.sessionToken;
   const currentTenantId =
     activeProfile.currentTenantId ?? parsed.currentTenantId;
@@ -50,15 +54,18 @@ export function loadConfig(): CliConfig {
     ...parsed,
     baseUrl,
     token,
+    legacyToken,
     sessionToken,
     currentTenantId,
     currentProfile,
     profiles,
     output: output as OutputFormat,
     timeout,
-    credentialSource: token
-      ? "token"
-      : sessionToken
+    credentialSource: keychainToken
+      ? "keychain"
+      : legacyToken
+        ? "config_legacy"
+        : sessionToken
         ? "legacy"
         : "none",
   };
@@ -70,12 +77,13 @@ export function saveConfig(config: CliConfig): void {
       fs.mkdirSync(CONFIG_DIR, { recursive: true });
     }
     const currentProfile = config.currentProfile ?? "default";
+    const existingProfile = config.profiles?.[currentProfile] ?? {};
     const profiles = {
       ...(config.profiles ?? {}),
       [currentProfile]: {
-        ...(config.profiles?.[currentProfile] ?? {}),
+        ...existingProfile,
         baseUrl: config.baseUrl,
-        token: config.token,
+        token: undefined,
         currentTenantId: config.currentTenantId,
         output: config.output,
         timeout: config.timeout,
@@ -86,7 +94,6 @@ export function saveConfig(config: CliConfig): void {
       JSON.stringify(
         {
           baseUrl: config.baseUrl,
-          token: config.token,
           currentTenantId: config.currentTenantId,
           output: config.output,
           timeout: config.timeout,

@@ -56,6 +56,15 @@ describe("parseGlobalArgs", () => {
       token: "v4.local.test",
     });
   });
+
+  it("leaves command-local flags attached to new top-level commands", () => {
+    expect(parseGlobalArgs(["login", "--skip-validate"])).toEqual({
+      rest: ["login", "--skip-validate"],
+      output: undefined,
+      baseUrl: undefined,
+      token: undefined,
+    });
+  });
 });
 
 describe("isDirectExecution", () => {

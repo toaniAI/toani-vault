@@ -1,4 +1,5 @@
 import type { CliConfig } from "../types/cli.js";
+import { keychain } from "../lib/keychain.js";
 import { getConfigPath, saveConfig } from "../config/store.js";
 import { printResult } from "../output/print.js";
 import { parseOptions } from "./common.js";
@@ -12,10 +13,15 @@ export async function runConfig(
 
   switch (subcommand) {
     case "init": {
+      const tokenOption = options.token as string | undefined;
+      if (tokenOption) {
+        keychain.set(tokenOption);
+      }
       const next: CliConfig = {
         ...config,
         baseUrl: (options.url as string | undefined) ?? config.baseUrl,
-        token: (options.token as string | undefined) ?? config.token,
+        token: tokenOption ?? config.token,
+        credentialSource: tokenOption ? "keychain" : config.credentialSource,
       };
       saveConfig(next);
       printResult(

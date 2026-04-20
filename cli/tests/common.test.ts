@@ -29,7 +29,10 @@ describe("createSdk", () => {
       /Dashboard Tokens 页面创建或复制访问凭证：https:\/\/dev-credbridge\.bitkinetic\.com\/tokens/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /toani config init --url https:\/\/api\.example\.com --token <BEARER_TOKEN>/,
+      /推荐执行：toani login/,
+    );
+    expect(() => createSdk(config)).toThrowError(
+      /兼容方式：toani config init --url https:\/\/api\.example\.com --token <BEARER_TOKEN>/,
     );
   });
 });
