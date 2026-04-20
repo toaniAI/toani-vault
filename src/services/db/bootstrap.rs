@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use sqlx::{PgPool, Row};
 
 use crate::api::audit::PostgresAuditStorageAdapter;
-use crate::services::db::pool::{DatabaseError, execute_pg_raw_sql_pool};
+use crate::services::db::pool::{DatabaseError, execute_pg_raw_sql_conn};
 use crate::services::db::{DatabasePool, SchemaManager};
 use crate::vault::postgres::PostgresStorageBackend;
 
@@ -45,21 +45,26 @@ const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &["credentials", "credential_versi
 const PUBLIC_VERSIONING_AND_AUDIT_SQL: &str = r#"
 BEGIN;
 
-ALTER TABLE credentials
+ALTER TABLE public.credentials
     ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.constraint_table_usage
-        WHERE table_name = 'credentials' AND constraint_name = 'credentials_version_check'
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = 'credentials_version_check'
+          AND t.relname = 'credentials'
+          AND n.nspname = 'public'
     ) THEN
-        ALTER TABLE credentials
+        ALTER TABLE public.credentials
         ADD CONSTRAINT credentials_version_check CHECK (version >= 1);
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS credential_versions (
+CREATE TABLE IF NOT EXISTS public.credential_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     credential_id VARCHAR(64) NOT NULL,
     version INTEGER NOT NULL,
@@ -70,29 +75,29 @@ CREATE TABLE IF NOT EXISTS credential_versions (
     CONSTRAINT unique_credential_version UNIQUE (credential_id, version),
     CONSTRAINT credential_versions_version_check CHECK (version >= 1),
     CONSTRAINT fk_credential_versions_credential
-        FOREIGN KEY (credential_id) REFERENCES credentials(credential_id) ON DELETE CASCADE
+        FOREIGN KEY (credential_id) REFERENCES public.credentials(credential_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_credentials_version
-    ON credentials(version);
+    ON public.credentials(version);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_credential_id
-    ON credential_versions(credential_id);
+    ON public.credential_versions(credential_id);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_created_at
-    ON credential_versions(created_at);
+    ON public.credential_versions(created_at);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_changed_by
-    ON credential_versions(changed_by);
+    ON public.credential_versions(changed_by);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_lookup
-    ON credential_versions(credential_id, version DESC);
+    ON public.credential_versions(credential_id, version DESC);
 
-ALTER TABLE audit_logs
+ALTER TABLE public.audit_logs
     ADD COLUMN IF NOT EXISTS event_category VARCHAR(32);
-ALTER TABLE audit_logs
+ALTER TABLE public.audit_logs
     ADD COLUMN IF NOT EXISTS metadata JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_category
-    ON audit_logs(event_category);
+    ON public.audit_logs(event_category);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_metadata
-    ON audit_logs USING GIN (metadata);
+    ON public.audit_logs USING GIN (metadata);
 
 COMMIT;
 "#;
@@ -371,11 +376,33 @@ async fn repair_missing_tables(
 }
 
 async fn ensure_public_schema_baseline(pool: &PgPool) -> Result<(), DatabaseError> {
-    for script in PUBLIC_BASELINE_SCRIPTS {
-        execute_pg_raw_sql_pool(pool, script)
-            .await
-            .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    sqlx::query("SET search_path TO public")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    let apply_result = async {
+        for script in PUBLIC_BASELINE_SCRIPTS {
+            execute_pg_raw_sql_conn(&mut conn, script)
+                .await
+                .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+        }
+        Ok::<(), DatabaseError>(())
     }
+    .await;
+
+    let reset_result = sqlx::query("RESET search_path")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()));
+
+    apply_result?;
+    reset_result?;
     Ok(())
 }
 

@@ -382,3 +382,117 @@ async fn startup_bootstrap_repairs_public_partial_migrations() {
     drop_temp_database(&admin_pool, &database_name).await;
     admin_pool.close().await;
 }
+
+#[tokio::test]
+async fn startup_bootstrap_repairs_public_schema_even_when_search_path_is_stale() {
+    let Some(base_database_url) = test_database_url() else {
+        eprintln!(
+            "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
+        );
+        return;
+    };
+    let Some(admin_database_url) = postgres_admin_url(&base_database_url) else {
+        eprintln!("skip db bootstrap integration test: unable to derive admin database url");
+        return;
+    };
+
+    let admin_pool = match PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&admin_database_url)
+        .await
+    {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect admin database: {error}");
+            return;
+        }
+    };
+
+    let database_name = format!(
+        "credbridge_bootstrap_search_path_{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    if let Err(error) = create_temp_database(&admin_pool, &database_name).await {
+        eprintln!("skip db bootstrap integration test: cannot create temp database: {error}");
+        return;
+    }
+
+    let Some(temp_database_url) = temp_database_url(&base_database_url, &database_name) else {
+        eprintln!("skip db bootstrap integration test: cannot derive temp database url");
+        drop_temp_database(&admin_pool, &database_name).await;
+        return;
+    };
+
+    let fixed_schema = "credbridge_bootstrap_vault";
+    let original_fixed_schema = std::env::var("CREDBRIDGE_PG_SCHEMA").ok();
+    unsafe {
+        std::env::set_var("CREDBRIDGE_PG_SCHEMA", fixed_schema);
+    }
+
+    let config = DatabaseConfig {
+        url: temp_database_url.clone(),
+        max_connections: 1,
+        min_connections: 1,
+        connect_timeout: 10,
+        idle_timeout: 60,
+    };
+    let database_pool = match DatabasePool::new(config).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect temp database: {error}");
+            drop_temp_database(&admin_pool, &database_name).await;
+            return;
+        }
+    };
+
+    sqlx::query(&format!("CREATE SCHEMA \"{fixed_schema}\""))
+        .execute(database_pool.pool())
+        .await
+        .expect("should create fixed schema");
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE "{fixed_schema}".credentials (
+            credential_id VARCHAR(64) PRIMARY KEY,
+            tenant_id VARCHAR(128) NOT NULL,
+            user_id_hash VARCHAR(128) NOT NULL,
+            service_id VARCHAR(64) NOT NULL,
+            credential_type VARCHAR(32) NOT NULL,
+            encrypted_payload JSONB NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ,
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            CONSTRAINT credentials_version_check CHECK (version >= 1)
+        )
+        "#
+    ))
+    .execute(database_pool.pool())
+    .await
+    .expect("should create fixed schema credential table with conflicting constraint name");
+
+    sqlx::query(&format!("SET search_path TO \"{fixed_schema}\""))
+        .execute(database_pool.pool())
+        .await
+        .expect("should contaminate pooled connection search_path");
+
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .expect("bootstrap should still repair public schema");
+
+    let public_tables = fetch_schema_tables(database_pool.pool(), "public")
+        .await
+        .expect("should list public tables");
+    assert_tables_present(&public_tables, PUBLIC_REQUIRED_TABLES);
+
+    database_pool.close().await;
+
+    match original_fixed_schema {
+        Some(value) => unsafe { std::env::set_var("CREDBRIDGE_PG_SCHEMA", value) },
+        None => unsafe { std::env::remove_var("CREDBRIDGE_PG_SCHEMA") },
+    }
+
+    drop_temp_database(&admin_pool, &database_name).await;
+    admin_pool.close().await;
+}
