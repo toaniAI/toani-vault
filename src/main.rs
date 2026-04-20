@@ -58,7 +58,7 @@ use vault_service::api::{
     token_routes,
 };
 use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
-use vault_service::services::db::DatabasePool;
+use vault_service::services::db::{DatabasePool, ensure_required_tables_on_startup};
 use vault_service::tee::{
     Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, SharedEnclave, StartupReadiness,
     TEE_HARDWARE_BUILD_ENABLED, validate_runtime_requirements,
@@ -416,6 +416,9 @@ async fn initialize_app_state(
     );
 
     let database_pool = initialize_database_pool().await?;
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .map_err(|error| std::io::Error::other(format!("数据库启动期缺表检查失败: {error}")))?;
 
     // --- Audit ---
     info!(

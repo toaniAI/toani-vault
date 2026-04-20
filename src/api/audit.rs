@@ -135,7 +135,7 @@ impl PostgresAuditStorageAdapter {
         &self.public_key
     }
 
-    fn schema_from_env() -> Result<String, RecorderError> {
+    pub(crate) fn schema_from_env() -> Result<String, RecorderError> {
         const DEFAULT_SCHEMA: &str = "credbridge_vault";
 
         let schema =
@@ -157,7 +157,7 @@ impl PostgresAuditStorageAdapter {
         Ok(schema)
     }
 
-    async fn ensure_table(pool: &PgPool, schema: &str) -> Result<(), RecorderError> {
+    pub(crate) async fn ensure_table(pool: &PgPool, schema: &str) -> Result<(), RecorderError> {
         let create_schema_sql = format!(r#"CREATE SCHEMA IF NOT EXISTS "{schema}""#);
         let create_table_sql = format!(
             r#"

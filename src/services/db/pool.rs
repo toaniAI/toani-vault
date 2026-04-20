@@ -444,6 +444,14 @@ pub(crate) async fn execute_pg_script_pool(pool: &PgPool, script: &str) -> Resul
     Ok(())
 }
 
+/// 使用 sqlx 原生 raw_sql 执行整段 PostgreSQL 脚本，支持函数、DO 块等复杂语句。
+pub(crate) async fn execute_pg_raw_sql_pool(
+    pool: &PgPool,
+    script: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::raw_sql(script).execute(pool).await.map(|_| ())
+}
+
 /// 在池化连接上逐条执行分号分隔的脚本。
 pub(crate) async fn execute_pg_script_conn(
     conn: &mut PoolConnection<Postgres>,

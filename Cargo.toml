@@ -214,3 +214,7 @@ path = "tests/integration/sandbox_persistence_tests.rs"
 [[test]]
 name = "tenant_config_persistence_tests"
 path = "tests/integration/tenant_config_persistence_tests.rs"
+
+[[test]]
+name = "db_bootstrap_tests"
+path = "tests/integration/db_bootstrap_tests.rs"
