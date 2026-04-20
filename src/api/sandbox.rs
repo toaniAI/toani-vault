@@ -21,7 +21,7 @@ use crate::models::{CredentialMetadata, CredentialType};
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     config::SandboxConfig,
-    error::SandboxError,
+    error::{SandboxError, SessionError},
     pool::{NsjailSandboxPool, SandboxPool},
     repository::{PostgresSandboxRepository, SandboxOperationRecord, SandboxRepository},
     session::SandboxSession,
@@ -410,6 +410,7 @@ pub struct SandboxStatsApiResponse {
     pub warm_instances: usize,
     pub healthy: bool,
     pub error: Option<String>,
+    pub browser_runtime_probe_error: Option<String>,
     pub process_health_issues: usize,
     pub process_health_summaries: Vec<String>,
 }
@@ -528,47 +529,8 @@ pub async fn list_sessions(
 
     let tenant_id = parse_uuid(&token.tenant_id);
 
-    if let Some(repository) = &state.repository {
-        match repository.list_sessions_by_tenant(tenant_id).await {
-            Ok(records) => {
-                let sessions = records
-                    .into_iter()
-                    .filter(|record| {
-                        // 如果指定了 status 过滤，只返回匹配的会话
-                        if let Some(ref filter) = status_filter {
-                            record.status.to_lowercase() == *filter
-                        } else {
-                            true
-                        }
-                    })
-                    .map(|record| SessionSummary {
-                        session_id: record.session_id.into(),
-                        sandbox_id: record.sandbox_id,
-                        runtime_context_id: record.sandbox_id,
-                        credential_id: record.credential_id,
-                        status: record.status.clone(),
-                        original_intent: record.original_intent,
-                        created_at: record.started_at.to_rfc3339(),
-                        expires_at: record.expires_at.to_rfc3339(),
-                        is_expired: chrono::Utc::now() > record.expires_at
-                            || record.status == "expired",
-                    })
-                    .collect::<Vec<_>>();
-                let response = ListSessionsResponse {
-                    total: sessions.len(),
-                    sessions,
-                };
-                return Json(ApiSuccessResponse::new(response)).into_response();
-            }
-            Err(error) => {
-                warn!(
-                    "Failed to read sandbox sessions from repository, fallback to memory: {error}"
-                );
-            }
-        }
-    }
-
     let mut sessions = Vec::new();
+    let mut live_session_ids = std::collections::HashSet::new();
     if let Some(pool) = state.pool.as_any().downcast_ref::<NsjailSandboxPool>() {
         for session in pool.list_active_sessions().await {
             let context = session.context().clone();
@@ -582,6 +544,7 @@ pub async fn list_sessions(
                     continue;
                 }
             }
+            live_session_ids.insert(context.session_id);
             sessions.push(SessionSummary {
                 session_id: context.session_id.into(),
                 sandbox_id: context.sandbox_id.into(),
@@ -593,6 +556,38 @@ pub async fn list_sessions(
                 expires_at: context.expires_at.to_string(),
                 is_expired: context.is_expired(),
             });
+        }
+    }
+
+    if let Some(repository) = &state.repository {
+        match repository.list_sessions_by_tenant(tenant_id).await {
+            Ok(records) => {
+                sessions.extend(records.into_iter().filter_map(|record| {
+                    if live_session_ids.contains(&record.session_id) {
+                        return None;
+                    }
+                    if let Some(ref filter) = status_filter
+                        && record.status.to_lowercase() != *filter
+                    {
+                        return None;
+                    }
+                    Some(SessionSummary {
+                        session_id: record.session_id.into(),
+                        sandbox_id: record.sandbox_id,
+                        runtime_context_id: record.sandbox_id,
+                        credential_id: record.credential_id,
+                        status: record.status.clone(),
+                        original_intent: record.original_intent,
+                        created_at: record.started_at.to_rfc3339(),
+                        expires_at: record.expires_at.to_rfc3339(),
+                        is_expired: chrono::Utc::now() > record.expires_at
+                            || record.status == "expired",
+                    })
+                }));
+            }
+            Err(error) => {
+                warn!("Failed to read sandbox sessions from repository: {error}");
+            }
         }
     }
 
@@ -626,35 +621,6 @@ pub async fn get_session(
     let session_id = SessionId::from(id);
     let tenant_id = parse_uuid(&token.tenant_id);
 
-    if let Some(repository) = &state.repository {
-        match repository.get_session_by_id(tenant_id, session_id).await {
-            Ok(Some(record)) => {
-                let response = SessionDetailResponse {
-                    session_id: record.session_id.into(),
-                    sandbox_id: record.sandbox_id,
-                    runtime_context_id: record.sandbox_id,
-                    tenant_id: record.tenant_id,
-                    user_id: record.created_by,
-                    credential_id: record.credential_id,
-                    original_intent: record.original_intent,
-                    status: record.status.clone(),
-                    created_at: record.started_at.to_rfc3339(),
-                    expires_at: record.expires_at.to_rfc3339(),
-                    last_activity_at: record.updated_at.to_rfc3339(),
-                    is_expired: chrono::Utc::now() > record.expires_at
-                        || record.status == "expired",
-                };
-                return Json(ApiSuccessResponse::new(response)).into_response();
-            }
-            Ok(None) => {}
-            Err(error) => {
-                warn!(
-                    "Failed to read sandbox session from repository, fallback to memory: {error}"
-                );
-            }
-        }
-    }
-
     match state.pool.get_session(session_id).await {
         Ok(session) => {
             let context = session.context();
@@ -678,9 +644,36 @@ pub async fn get_session(
 
             Json(ApiSuccessResponse::new(response)).into_response()
         }
-        Err(e) => {
-            warn!("Session {} not found: {}", id, e);
-            map_sandbox_error(e).into_response()
+        Err(_) => {
+            if let Some(repository) = &state.repository {
+                match repository.get_session_by_id(tenant_id, session_id).await {
+                    Ok(Some(record)) => {
+                        let response = SessionDetailResponse {
+                            session_id: record.session_id.into(),
+                            sandbox_id: record.sandbox_id,
+                            runtime_context_id: record.sandbox_id,
+                            tenant_id: record.tenant_id,
+                            user_id: record.created_by,
+                            credential_id: record.credential_id,
+                            original_intent: record.original_intent,
+                            status: record.status.clone(),
+                            created_at: record.started_at.to_rfc3339(),
+                            expires_at: record.expires_at.to_rfc3339(),
+                            last_activity_at: record.updated_at.to_rfc3339(),
+                            is_expired: chrono::Utc::now() > record.expires_at
+                                || record.status == "expired",
+                        };
+                        return Json(ApiSuccessResponse::new(response)).into_response();
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        warn!("Failed to read sandbox session from repository: {error}");
+                    }
+                }
+            }
+
+            warn!("Session {} not found", id);
+            map_sandbox_error(SessionError::not_found(id).into()).into_response()
         }
     }
 }
@@ -850,7 +843,7 @@ pub async fn resume_session(
         Ok(session) => match session.resume().await {
             Ok(_) => {
                 if let Some(repository) = &state.repository
-                    && let Err(error) = repository.update_session_status(session_id, "active").await
+                    && let Err(error) = repository.update_session_status(session_id, "ready").await
                 {
                     error!(
                         "Failed to persist active status for session {}: {}",
@@ -1173,6 +1166,7 @@ pub async fn get_stats(
         warm_instances: health.warm_instances,
         healthy: health.healthy,
         error: health.error,
+        browser_runtime_probe_error: health.browser_runtime_probe_error,
         process_health_issues: health.process_health_issues,
         process_health_summaries: health.process_health_summaries,
     };

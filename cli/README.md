@@ -97,7 +97,7 @@ toani config init --url <service-url> [--token <BEARER_TOKEN>]
 toani config show
 toani credentials list [--service-id <id>] [--credential-type <type>] [--only-valid true|false]
 toani credentials get <credentialId>
-toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
+toani sandbox create-session --service-id <service> --original-intent <intent> [--credential-id <id>]
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
@@ -176,7 +176,7 @@ Use this sequence:
 
 1. Identify or create the credential in the Dashboard UI.
 2. Copy the `credential_id`.
-3. `toani sandbox create-session --service-id <service> --credential-id <credential_id> --original-intent <intent> [--start-url <url>]`
+3. `toani sandbox create-session --service-id <service> --credential-id <credential_id> --original-intent <intent>`
 4. `toani sandbox execute <sessionId> --operation-type navigate ...`
 5. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...` when the page needs controlled bundle replay; add `--replay-lifecycle-events true` for late-mounted login forms
 6. `toani sandbox execute <sessionId> --operation-type wait ...`
@@ -197,8 +197,7 @@ Use this chain when validating a secret-backed login flow against `test-web.zk.m
 toani sandbox create-session \
   --service-id <service> \
   --credential-id <credential_id> \
-  --original-intent "Sign in to test-web.zk.me" \
-  --start-url https://test-web.zk.me/login
+  --original-intent "Sign in to test-web.zk.me"
 
 toani sandbox execute <sessionId> \
   --operation-type navigate \
@@ -262,8 +261,7 @@ toani sandbox terminate <sessionId>
 # Create a sandbox session
 toani sandbox create-session \
   --service-id svc_example \
-  --original-intent "Open the login page in TEE sandbox" \
-  --start-url https://target-site.com/login
+  --original-intent "Open the login page in TEE sandbox"
 
 # Navigate
 toani sandbox execute <sessionId> \

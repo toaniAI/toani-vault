@@ -75,12 +75,10 @@ export async function runSandbox(
       const serviceId = requireArg(options, "service-id");
       const originalIntent = requireArg(options, "original-intent");
       const credentialId = options["credential-id"] as string | undefined;
-      const startUrl = options["start-url"] as string | undefined;
       const created = await sdk.sandbox.createSession({
         serviceId,
         originalIntent,
         credentialId,
-        startUrl,
       });
       printResult(created, config.output);
       return;

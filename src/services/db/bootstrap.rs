@@ -110,12 +110,24 @@ const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),
     include_str!("../../../migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql"),
     include_str!("../../../migrations/20260413102000_add_api_token_credential_ids.sql"),
+    include_str!(
+        "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
+    ),
 ];
 
 const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
     ("credentials", &["version"]),
     ("audit_logs", &["event_category", "metadata"]),
-    ("sandbox_sessions", &["credential_id", "original_intent"]),
+    (
+        "sandbox_sessions",
+        &[
+            "credential_id",
+            "original_intent",
+            "active_operation_id",
+            "active_operation_started_at",
+            "last_error_summary",
+        ],
+    ),
     (
         "api_tokens",
         &[

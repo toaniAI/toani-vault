@@ -175,7 +175,7 @@ toani credentials get <credentialId>
 ## Sandbox 命令表
 
 ```bash
-toani sandbox create-session --service-id <serviceId> --original-intent <intent> [--credential-id <id>] [--start-url <url>]
+toani sandbox create-session --service-id <serviceId> --original-intent <intent> [--credential-id <id>]
 toani sandbox list-sessions
 toani sandbox get-session <sessionId>
 toani sandbox terminate <sessionId>
@@ -376,8 +376,7 @@ toani config show --output json
 ```bash
 toani sandbox create-session \
   --service-id svc_example \
-  --original-intent "Open target page in TEE sandbox" \
-  --start-url "https://target-site.com/login"
+  --original-intent "Open target page in TEE sandbox"
 ```
 
 ### 示例 3：创建带凭证绑定的 sandbox 会话
@@ -386,8 +385,7 @@ toani sandbox create-session \
 toani sandbox create-session \
   --service-id svc_example \
   --credential-id <credentialId> \
-  --original-intent "Login with credential-backed session" \
-  --start-url "https://target-site.com/login"
+  --original-intent "Login with credential-backed session"
 ```
 
 ### 示例 3A：列出可读凭证元数据
@@ -569,7 +567,7 @@ toani sandbox execute <sessionId> \
 1. 在 Dashboard UI 里创建凭证并确认 `credential_id`
 2. 在 Dashboard UI 里生成 bearer token
 3. `toani credentials list --service-id <service> --output json` 或 `toani credentials get <credentialId> --output json` 复核目标凭证
-4. `toani sandbox create-session --service-id <service> --credential-id <credentialId> --original-intent "Sign in to test-web.zk.me" --start-url https://test-web.zk.me/login`
+4. `toani sandbox create-session --service-id <service> --credential-id <credentialId> --original-intent "Sign in to test-web.zk.me"`
 5. `toani sandbox execute <sessionId> --operation-type navigate --params '{"url":"https://test-web.zk.me/login"}'`
 6. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader --replay-lifecycle-events true --wait-selector 'input[name=email]' --wait-timeout-ms 15000`
 7. `toani sandbox execute <sessionId> --operation-type wait --params '{"selector":"input[name=email]","timeout_ms":15000}'`

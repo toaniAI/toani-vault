@@ -244,6 +244,15 @@ impl ActiveNsjailSession {
     async fn can_execute(&self) -> Result<(), SessionError> {
         let status = *self.status.read().await;
         if !status.can_execute() {
+            if status == SessionStatus::Executing
+                && let Some(record) = self.current_executing_operation().await
+            {
+                return Err(SessionError::busy_with_operation(
+                    self.id.into(),
+                    record.operation_id,
+                    record.started_at,
+                ));
+            }
             return Err(SessionError::invalid_state(
                 self.id.into(),
                 status,
@@ -281,6 +290,16 @@ impl ActiveNsjailSession {
 
     pub async fn get_operation_history(&self) -> Vec<OperationRecord> {
         self.operation_history.read().await.clone()
+    }
+
+    async fn current_executing_operation(&self) -> Option<OperationRecord> {
+        self.operation_history
+            .read()
+            .await
+            .iter()
+            .rev()
+            .find(|record| record.status == OperationStatus::Executing)
+            .cloned()
     }
 
     async fn shutdown_runtime(&self) {
@@ -447,7 +466,18 @@ impl ActiveNsjailSession {
         .await;
 
         if let Some(repository) = &self.repository {
-            repository
+            if let Err(error) = repository
+                .mark_session_operation_started(
+                    self.context.session_id,
+                    operation.operation_id,
+                    to_chrono_utc(start_time),
+                )
+                .await
+            {
+                *self.status.write().await = SessionStatus::Ready;
+                return Err(error);
+            }
+            if let Err(error) = repository
                 .create_operation(NewSandboxOperationRecord {
                     operation_id: operation.operation_id,
                     session_id: self.context.session_id,
@@ -460,7 +490,17 @@ impl ActiveNsjailSession {
                     ),
                     started_at: to_chrono_utc(start_time),
                 })
-                .await?;
+                .await
+            {
+                let _ = repository
+                    .mark_session_operation_finished(
+                        self.context.session_id,
+                        Some(error.to_string()),
+                    )
+                    .await;
+                *self.status.write().await = SessionStatus::Ready;
+                return Err(error);
+            }
         }
 
         if let Some(ref reviewer) = self.operation_reviewer {
@@ -491,12 +531,27 @@ impl ActiveNsjailSession {
                                     execution_duration_ms: 0,
                                 })
                                 .await?;
+                            repository
+                                .mark_session_operation_finished(
+                                    self.context.session_id,
+                                    Some(reason.clone()),
+                                )
+                                .await?;
                         }
                         return Err(SessionError::OperationRejected { reason }.into());
                     }
                 },
                 Err(error) if reviewer.is_strict_mode() => {
                     *self.status.write().await = SessionStatus::Ready;
+                    if let Some(repository) = &self.repository {
+                        let reason = format!("AI review failed: {error}");
+                        let _ = repository
+                            .mark_session_operation_finished(
+                                self.context.session_id,
+                                Some(reason.clone()),
+                            )
+                            .await;
+                    }
                     return Err(SessionError::OperationRejected {
                         reason: format!("AI review failed: {error}"),
                     }
@@ -518,8 +573,9 @@ impl ActiveNsjailSession {
             )
             .await;
 
+        let mut persistence_error = None;
         if let Some(repository) = &self.repository {
-            repository
+            if let Err(error) = repository
                 .complete_operation(CompleteSandboxOperationRecord {
                     operation_id: operation.operation_id,
                     status: if result.success {
@@ -536,10 +592,21 @@ impl ActiveNsjailSession {
                     execution_duration_ms: i32::try_from(result.execution_time_ms)
                         .unwrap_or(i32::MAX),
                 })
-                .await?;
+                .await
+            {
+                persistence_error = Some(error);
+            } else if let Err(error) = repository
+                .mark_session_operation_finished(self.context.session_id, result.error.clone())
+                .await
+            {
+                persistence_error = Some(error);
+            }
         }
 
         *self.status.write().await = SessionStatus::Ready;
+        if let Some(error) = persistence_error {
+            return Err(error);
+        }
         Ok(result)
     }
 
@@ -1641,6 +1708,23 @@ mod tests {
             &self,
             _session_id: SessionId,
             _status: &'static str,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_started(
+            &self,
+            _session_id: SessionId,
+            _operation_id: Uuid,
+            _started_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_finished(
+            &self,
+            _session_id: SessionId,
+            _last_error_summary: Option<String>,
         ) -> Result<(), SandboxError> {
             Ok(())
         }

@@ -4,6 +4,7 @@ use crate::crypto::hkdf::KeyHierarchy;
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     PoolStatus, SandboxHealth,
+    browser_runtime::SandboxBrowserRuntime,
     config::{MountConfig, MountType, NsjailConfig, SandboxConfig, SandboxPoolConfig},
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, WarmNsjailInstance},
@@ -74,6 +75,8 @@ pub struct NsjailSandboxPool {
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
     /// 共享 TEE Enclave
     enclave: Option<SharedEnclave>,
+    /// browser runtime 自检失败摘要
+    browser_runtime_probe_error: Arc<RwLock<Option<String>>>,
 }
 
 impl NsjailSandboxPool {
@@ -112,6 +115,7 @@ impl NsjailSandboxPool {
             vault,
             key_hierarchy,
             enclave,
+            browser_runtime_probe_error: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -156,6 +160,16 @@ impl NsjailSandboxPool {
                 );
             }
         }
+
+        let browser_runtime_probe_error =
+            self.run_browser_runtime_probe().await.err().map(|error| {
+                warn!(
+                    "Browser runtime probe failed during sandbox pool initialization: {}",
+                    error
+                );
+                error.to_string()
+            });
+        *self.browser_runtime_probe_error.write().await = browser_runtime_probe_error;
 
         *self.status.write().await = PoolStatus::Running;
         info!("NsjailSandboxPool initialized successfully");
@@ -259,6 +273,23 @@ impl NsjailSandboxPool {
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
+    }
+
+    async fn run_browser_runtime_probe(&self) -> Result<(), SandboxError> {
+        let mut sandbox = NsjailSandbox::new(self.create_nsjail_config());
+        sandbox.start().await?;
+
+        let work_dir = sandbox.working_dir();
+        let runtime = match SandboxBrowserRuntime::launch(work_dir, &sandbox).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                let _ = sandbox.stop().await;
+                return Err(error);
+            }
+        };
+        runtime.close().await;
+        sandbox.stop().await?;
+        Ok(())
     }
 
     /// 创建会话上下文
@@ -781,9 +812,11 @@ impl SandboxPool for NsjailSandboxPool {
         }
 
         let process_health_issues = process_health_summaries.len();
+        let browser_runtime_probe_error = self.browser_runtime_probe_error.read().await.clone();
         let healthy = status == PoolStatus::Running
             && active_sessions < self.config.max_concurrent_sessions
-            && process_health_issues == 0;
+            && process_health_issues == 0
+            && browser_runtime_probe_error.is_none();
 
         let mut errors = Vec::new();
         if warm_instances < self.config.min_warm_instances {
@@ -793,6 +826,9 @@ impl SandboxPool for NsjailSandboxPool {
             ));
         }
         errors.extend(process_health_summaries.iter().cloned());
+        if let Some(probe_error) = &browser_runtime_probe_error {
+            errors.push(format!("browser runtime probe failed: {probe_error}"));
+        }
 
         SandboxHealth {
             pool_status: status,
@@ -804,6 +840,7 @@ impl SandboxPool for NsjailSandboxPool {
             } else {
                 Some(errors.join("; "))
             },
+            browser_runtime_probe_error,
             process_health_issues,
             process_health_summaries,
         }
@@ -912,6 +949,23 @@ mod tests {
             &self,
             _session_id: SessionId,
             _status: &'static str,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_started(
+            &self,
+            _session_id: SessionId,
+            _operation_id: Uuid,
+            _started_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_finished(
+            &self,
+            _session_id: SessionId,
+            _last_error_summary: Option<String>,
         ) -> Result<(), SandboxError> {
             Ok(())
         }

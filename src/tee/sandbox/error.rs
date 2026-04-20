@@ -2,6 +2,7 @@
 
 use std::fmt;
 use thiserror::Error;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// 沙箱通用错误
@@ -274,6 +275,20 @@ impl SessionError {
             session_id,
             current: current.to_string(),
             expected: expected.to_string(),
+        }
+    }
+
+    pub fn busy_with_operation(
+        session_id: Uuid,
+        operation_id: Uuid,
+        started_at: OffsetDateTime,
+    ) -> Self {
+        SessionError::InvalidState {
+            session_id,
+            current: format!(
+                "executing (operation_id: {operation_id}, started_at: {started_at})"
+            ),
+            expected: "ready or paused".to_string(),
         }
     }
 

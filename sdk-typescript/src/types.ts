@@ -808,14 +808,16 @@ export interface AuthLogoutResponse {
 export enum SessionStatus {
   /** 正在创建 */
   Creating = "creating",
-  /** 运行中 */
-  Running = "running",
+  /** 已就绪 */
+  Ready = "ready",
+  /** 执行中 */
+  Executing = "executing",
+  /** @deprecated 请使用 Ready */
+  Running = "ready",
   /** 已暂停 */
   Paused = "paused",
   /** 已关闭 */
   Closed = "closed",
-  /** 错误状态 */
-  Error = "error",
 }
 
 /** 操作类型 */
@@ -866,8 +868,6 @@ export interface CreateSessionRequest {
   originalIntent: string;
   /** 凭证ID（可选） */
   credentialId?: string;
-  /** 启动URL */
-  startUrl?: string;
   /** 视口宽度 */
   viewportWidth?: number;
   /** 视口高度 */
@@ -930,6 +930,7 @@ export interface SandboxStats {
   warmInstances: number;
   healthy: boolean;
   error?: string;
+  browserRuntimeProbeError?: string;
 }
 
 /** 执行操作请求 */
