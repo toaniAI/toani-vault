@@ -63,6 +63,10 @@ impl SandboxConfig {
             }
         }
 
+        if let Some(max_pids) = env_positive_u64("CREDBRIDGE_SANDBOX_MAX_PIDS") {
+            config.resource_limits.max_pids = max_pids;
+        }
+
         config
     }
 }
@@ -95,6 +99,15 @@ fn env_bool(name: &str) -> Option<bool> {
         "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF" => Some(false),
         _ => None,
     })
+}
+
+fn env_positive_u64(name: &str) -> Option<u64> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
 }
 
 fn default_true() -> bool {
@@ -615,6 +628,12 @@ impl NsjailConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_default_sandbox_config() {
@@ -779,6 +798,7 @@ mod tests {
 
     #[test]
     fn test_from_env_prefers_nsjail_path_override() {
+        let _guard = env_lock().lock().expect("env lock");
         unsafe {
             std::env::set_var("NSJAIL_PATH", "/custom/nsjail");
         }
@@ -793,6 +813,7 @@ mod tests {
 
     #[test]
     fn test_from_env_reads_cgroup_overrides() {
+        let _guard = env_lock().lock().expect("env lock");
         unsafe {
             std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED", "false");
             std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED", "true");
@@ -811,6 +832,42 @@ mod tests {
             std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED");
             std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED");
             std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ROOT");
+        }
+    }
+
+    #[test]
+    fn test_from_env_reads_max_pids_override() {
+        let _guard = env_lock().lock().expect("env lock");
+        unsafe {
+            std::env::set_var("CREDBRIDGE_SANDBOX_MAX_PIDS", "200");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert_eq!(config.resource_limits.max_pids, 200);
+
+        unsafe {
+            std::env::remove_var("CREDBRIDGE_SANDBOX_MAX_PIDS");
+        }
+    }
+
+    #[test]
+    fn test_from_env_invalid_max_pids_falls_back_to_default() {
+        let _guard = env_lock().lock().expect("env lock");
+        for value in ["", "0", "abc"] {
+            unsafe {
+                std::env::set_var("CREDBRIDGE_SANDBOX_MAX_PIDS", value);
+            }
+
+            let config = SandboxConfig::from_env();
+            assert_eq!(
+                config.resource_limits.max_pids,
+                ResourceLimits::default().max_pids,
+                "unexpected max_pids for override {value:?}"
+            );
+        }
+
+        unsafe {
+            std::env::remove_var("CREDBRIDGE_SANDBOX_MAX_PIDS");
         }
     }
 }
