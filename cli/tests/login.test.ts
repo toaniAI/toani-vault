@@ -160,6 +160,71 @@ describe("runLogin", () => {
     expect(keychainMock.set).toHaveBeenCalled();
   });
 
+  it("uses the shared 3-option menu for the already-have-token path", async () => {
+    promptState.selectQueue.push("paste", "paste");
+    promptState.passwordQueue.push(`v4.local.${"c".repeat(120)}`);
+    envMock.readTokenFromEnv.mockReturnValue(null);
+    clipboardMock.read.mockResolvedValue("");
+    validateTokenMock.mockResolvedValue({ ok: true, status: 200 });
+
+    await runLogin(baseConfig, []);
+
+    expect(promptState.select.mock.calls[1]?.[0]).toMatchObject({
+      message: "How do you want to provide the token?",
+      options: [
+        expect.objectContaining({ value: "paste" }),
+        expect.objectContaining({ value: "env" }),
+        expect.objectContaining({ value: "cancel" }),
+      ],
+    });
+    expect(promptState.select.mock.calls[1]?.[0]?.options).toHaveLength(3);
+    expect(keychainMock.set).toHaveBeenCalled();
+  });
+
+  it("shows the guided flow token menu before clipboard watching", async () => {
+    promptState.selectQueue.push("yes", "yes", "paste", "paste");
+    promptState.passwordQueue.push(`v4.local.${"d".repeat(120)}`);
+    envMock.readTokenFromEnv.mockReturnValue(null);
+    validateTokenMock.mockResolvedValue({ ok: true, status: 200 });
+
+    await runLogin(baseConfig, []);
+
+    expect(promptState.select.mock.calls[2]?.[0]).toMatchObject({
+      message: "How do you want to provide the token?",
+      initialValue: "auto",
+      options: [
+        expect.objectContaining({ value: "auto" }),
+        expect.objectContaining({ value: "paste" }),
+        expect.objectContaining({ value: "env" }),
+        expect.objectContaining({ value: "cancel" }),
+      ],
+    });
+    expect(promptState.select.mock.calls[2]?.[0]?.options).toHaveLength(4);
+    expect(promptState.select.mock.calls[3]?.[0]?.options).toHaveLength(3);
+  });
+
+  it("rechecks .env through the shared token entry flow", async () => {
+    promptState.selectQueue.push("env");
+    promptState.confirmQueue.push(true);
+    envMock.readTokenFromEnv
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({
+        token: `v4.local.${"e".repeat(120)}`,
+        source: "/tmp/.env",
+      });
+    validateTokenMock.mockResolvedValue({ ok: true, status: 200 });
+
+    await __testables.requestTokenInput("https://api.example.com", false);
+
+    expect(promptState.note).toHaveBeenCalledWith(
+      expect.stringContaining('TOANI_VAULT_TOKEN="v4.local.your-token-here..."'),
+      expect.any(String),
+      expect.any(Object),
+    );
+    expect(promptState.confirm).toHaveBeenCalled();
+    expect(keychainMock.set).toHaveBeenCalled();
+  });
+
   it("maps validation failures to a detailed note without saving", async () => {
     validateTokenMock.mockResolvedValue({
       ok: false,

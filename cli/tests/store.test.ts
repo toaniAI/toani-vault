@@ -12,7 +12,7 @@ vi.mock("../src/lib/keychain.js", () => ({
 }));
 
 const testConfig: CliConfig = {
-  baseUrl: "https://dev-credbridge.bitkinetic.com/",
+  baseUrl: "https://dashboard.toani.ai",
   token: "v4.local.test",
   output: "json",
   timeout: 30000,

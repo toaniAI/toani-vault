@@ -6,7 +6,27 @@ vi.mock("undici", () => ({
   fetch: fetchMock,
 }));
 
-import { isPasetoToken, validateToken } from "../src/lib/validate.js";
+import {
+  DASHBOARD_BASE_URL,
+  DASHBOARD_CREDENTIALS_URL,
+  DASHBOARD_LOGIN_URL,
+  DASHBOARD_TOKENS_URL,
+  DEFAULT_API_BASE_URL,
+  isPasetoToken,
+  validateToken,
+} from "../src/lib/validate.js";
+
+describe("validate constants", () => {
+  it("points dashboard and default API URLs to production", () => {
+    expect(DASHBOARD_BASE_URL).toBe("https://dashboard.toani.ai");
+    expect(DASHBOARD_LOGIN_URL).toBe("https://dashboard.toani.ai/login");
+    expect(DASHBOARD_TOKENS_URL).toBe("https://dashboard.toani.ai/tokens");
+    expect(DASHBOARD_CREDENTIALS_URL).toBe(
+      "https://dashboard.toani.ai/credentials",
+    );
+    expect(DEFAULT_API_BASE_URL).toBe("https://dashboard.toani.ai");
+  });
+});
 
 describe("isPasetoToken", () => {
   it("accepts long v4 tokens and rejects short/unknown values", () => {

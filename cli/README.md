@@ -23,7 +23,7 @@ Do not assume the package exposes `auth`, mutating `credentials` commands, `toke
 ## Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.12
+npm install -g @toani/vault-cli@latest
 ```
 
 ## Configure
@@ -36,8 +36,8 @@ toani doctor
 ```
 
 `toani login` opens the Dashboard in your browser, walks you through credential + token creation,
-watches the clipboard for a copied PASETO token, validates it, and stores it in the OS Keychain
-(macOS Keychain / libsecret / Windows Credential Manager).
+then lets you choose between clipboard auto-detect, manual paste, or `.env` before validation and
+OS Keychain storage (macOS Keychain / libsecret / Windows Credential Manager).
 
 Manual configuration remains available for compatibility. Create credentials and issue bearer tokens
 in the Dashboard UI first. The CLI only consumes an existing `credential_id` and bearer token; it
@@ -86,7 +86,7 @@ Base URL resolution priority:
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. saved profile `baseUrl` in `~/.toani/config.json`
-5. default `https://api.credbridge.example/`
+5. default `https://dashboard.toani.ai`
 
 ## Commands
 
@@ -119,7 +119,19 @@ toani --help
 
 - account exists: open Dashboard and guide you through credential + token setup
 - needs signup: open the sign-in page, then return to the guided flow
-- already has token: read from `.env`, clipboard, or masked paste input
+- already has token: use the shared token entry flow
+
+Guided onboarding now shows a token menu before clipboard watching:
+
+- auto-detect from clipboard
+- paste it here now
+- set `TOANI_VAULT_TOKEN` in `.env`
+
+All manual token-entry paths share the same fallback menu:
+
+- `Paste it here now`
+- `Set TOANI_VAULT_TOKEN in .env`
+- `Cancel`
 
 Validation failures are classified with concrete next steps for:
 

@@ -23,10 +23,10 @@ describe("createSdk", () => {
     };
 
     expect(() => createSdk(config)).toThrowError(
-      /Dashboard 注册或登录账号：https:\/\/dev-credbridge\.bitkinetic\.com\/login/,
+      /Dashboard 注册或登录账号：https:\/\/dashboard\.toani\.ai\/login/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /Dashboard Tokens 页面创建或复制访问凭证：https:\/\/dev-credbridge\.bitkinetic\.com\/tokens/,
+      /Dashboard Tokens 页面创建或复制访问凭证：https:\/\/dashboard\.toani\.ai\/tokens/,
     );
     expect(() => createSdk(config)).toThrowError(
       /推荐执行：toani login/,

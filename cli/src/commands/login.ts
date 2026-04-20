@@ -278,6 +278,14 @@ async function manualPaste(
   baseUrl: string,
   skipValidate: boolean,
 ): Promise<void> {
+  await requestTokenInput(baseUrl, skipValidate);
+}
+
+async function requestTokenInput(
+  baseUrl: string,
+  skipValidate: boolean,
+  message = "How do you want to provide the token?",
+): Promise<void> {
   const envToken = readTokenFromEnv();
   if (envToken && isPasetoToken(envToken.token)) {
     log.success(
@@ -288,7 +296,7 @@ async function manualPaste(
   }
 
   const how = await select({
-    message: "How do you want to provide the token?",
+    message,
     options: [
       { value: "paste", label: "Paste it here now", hint: "masked input" },
       {
@@ -298,6 +306,7 @@ async function manualPaste(
       },
       { value: "cancel", label: "Cancel" },
     ],
+    initialValue: "paste",
   });
 
   if (isCancel(how) || how === "cancel") {
@@ -522,62 +531,7 @@ async function pasteFromClipboard(
     return;
   }
 
-  const how = await select({
-    message: "No token found. How do you want to provide it?",
-    options: [
-      { value: "paste", label: "Paste it here now", hint: "masked input" },
-      {
-        value: "env",
-        label: "Set TOANI_VAULT_TOKEN in .env",
-        hint: "exit and rerun",
-      },
-      { value: "cancel", label: "Cancel" },
-    ],
-  });
-
-  if (isCancel(how) || how === "cancel") {
-    cancel();
-  }
-
-  if (how === "env") {
-    note(
-      `Add this line to ${pc.cyan(".env")} (in your current directory):\n\n  ${pc.green('TOANI_VAULT_TOKEN="v4.local.your-token-here..."')}\n\nSave the file, then come back here.`,
-      brand("Configure .env"),
-      { format: (value) => value },
-    );
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const ready = await confirm({
-        message:
-          attempt === 0
-            ? "I've added it — re-check .env now?"
-            : `Still not found. Tried ${attempt} time${attempt > 1 ? "s" : ""}. Check again?`,
-        initialValue: true,
-      });
-
-      if (!ready || isCancel(ready)) {
-        cancel();
-      }
-
-      const retry = readTokenFromEnv();
-      if (retry && isPasetoToken(retry.token)) {
-        log.success(
-          `Found token in ${pc.cyan(retry.source)} ${pc.dim(`(${retry.token.length} chars)`)}`,
-        );
-        await processToken(retry.token, baseUrl, skipValidate);
-        return;
-      }
-
-      log.warn(
-        `Didn't find ${pc.cyan("TOANI_VAULT_TOKEN")} in .env (or it's not a PASETO v4.local token).`,
-      );
-    }
-
-    outro(pc.dim("Too many retries. Check .env format then rerun `toani login`."));
-    return;
-  }
-
-  await manualPaste(baseUrl, skipValidate);
+  await requestTokenInput(baseUrl, skipValidate);
 }
 
 async function guidedSetup(baseUrl: string, skipValidate: boolean): Promise<void> {
@@ -638,7 +592,35 @@ async function guidedSetup(baseUrl: string, skipValidate: boolean): Promise<void
     { format: (value) => value },
   );
 
-  await waitForClipboard(baseUrl, skipValidate);
+  const how = await select({
+    message: "How do you want to provide the token?",
+    options: [
+      {
+        value: "auto",
+        label: "Auto-detect from clipboard",
+        hint: "I watch, you click Copy",
+      },
+      { value: "paste", label: "Paste it here now", hint: "masked input" },
+      {
+        value: "env",
+        label: "Set TOANI_VAULT_TOKEN in .env",
+        hint: "edit file, come back",
+      },
+      { value: "cancel", label: "Cancel" },
+    ],
+    initialValue: "auto",
+  });
+
+  if (isCancel(how) || how === "cancel") {
+    cancel();
+  }
+
+  if (how === "auto") {
+    await waitForClipboard(baseUrl, skipValidate);
+    return;
+  }
+
+  await requestTokenInput(baseUrl, skipValidate);
 }
 
 export async function runLogin(
@@ -716,5 +698,6 @@ export const __testables = {
   pasteFromClipboard,
   printLogo,
   processToken,
+  requestTokenInput,
   waitForClipboard,
 };

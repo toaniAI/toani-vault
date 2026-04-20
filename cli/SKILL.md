@@ -79,7 +79,7 @@ Base URL 优先级：
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. `config.baseUrl`
-5. 默认 `https://api.credbridge.example/`
+5. 默认 `https://dashboard.toani.ai`
 
 Token 优先级：
 

@@ -1,10 +1,10 @@
 import { fetch } from "undici";
 
-export const DASHBOARD_BASE_URL = "https://dev-credbridge.bitkinetic.com";
+export const DASHBOARD_BASE_URL = "https://dashboard.toani.ai";
 export const DASHBOARD_LOGIN_URL = `${DASHBOARD_BASE_URL}/login`;
 export const DASHBOARD_TOKENS_URL = `${DASHBOARD_BASE_URL}/tokens`;
 export const DASHBOARD_CREDENTIALS_URL = `${DASHBOARD_BASE_URL}/credentials`;
-export const DEFAULT_API_BASE_URL = "https://dev-credbridge.bitkinetic.com";
+export const DEFAULT_API_BASE_URL = "https://dashboard.toani.ai";
 
 export type ValidationReason =
   | "invalid_or_expired"
@@ -96,4 +96,3 @@ export async function validateToken(
     return { ok: false, status: 0, reason: "network", error };
   }
 }
-

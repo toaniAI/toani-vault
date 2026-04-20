@@ -85,4 +85,20 @@ describe("runDoctor", () => {
       expect.stringContaining("Run `toani login`"),
     );
   });
+
+  it("shows the configured production base URL", async () => {
+    keychainMock.get.mockReturnValue(null);
+
+    await runDoctor(
+      {
+        ...baseConfig,
+        baseUrl: "https://dashboard.toani.ai",
+      },
+      [],
+    );
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("https://dashboard.toani.ai"),
+    );
+  });
 });

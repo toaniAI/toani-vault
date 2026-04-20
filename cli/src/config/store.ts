@@ -6,7 +6,7 @@ import { keychain } from "../lib/keychain.js";
 
 const CONFIG_DIR = path.join(os.homedir(), ".toani");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
-const DEFAULT_BASE_URL = "https://api.credbridge.example/";
+const DEFAULT_BASE_URL = "https://dashboard.toani.ai";
 
 const DEFAULT_CONFIG: CliConfig = {
   baseUrl: DEFAULT_BASE_URL,
