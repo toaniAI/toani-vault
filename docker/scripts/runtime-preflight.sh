@@ -109,6 +109,7 @@ ensure_nsjail_userns_prerequisites() {
     if ! "$nsjail_binary" --mode o \
         --uid_mapping "${inside_uid}:${outside_uid}:${uid_count}" \
         --gid_mapping "${inside_gid}:${outside_gid}:${gid_count}" \
+        --bindmount_ro /dev/null:/dev/null \
         --bindmount_ro /bin:/bin \
         --bindmount_ro /lib:/lib \
         --bindmount_ro /lib64:/lib64 \
