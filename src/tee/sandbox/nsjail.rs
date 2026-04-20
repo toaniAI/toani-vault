@@ -279,6 +279,7 @@ impl NsjailSandbox {
         scoped_config.command = command;
         scoped_config.cwd = cwd;
         scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
+        scoped_config.enable_user_namespace = false;
 
         let sandbox_work_dir = self.working_dir();
         Self::push_mount_if_missing(
@@ -865,6 +866,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
             disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
@@ -1006,6 +1008,7 @@ mod tests {
                     && mount.dst == sandbox_work_dir
                     && !mount.read_only)
         );
+        assert!(!scoped_config.enable_user_namespace);
     }
 
     #[tokio::test]

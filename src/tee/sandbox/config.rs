@@ -402,6 +402,8 @@ pub struct NsjailConfig {
     pub env: HashMap<String, String>,
     /// 为 browser runtime 使用单独的放宽 seccomp 策略，允许 node/playwright/chromium 启动。
     pub disable_seccomp_for_browser_runtime: bool,
+    /// 是否为当前 jail 启用 user namespace 隔离。
+    pub enable_user_namespace: bool,
     /// UID 映射
     pub uid_map: UidMap,
     /// GID 映射
@@ -416,6 +418,7 @@ impl Default for NsjailConfig {
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
             disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
             uid_map: UidMap::default(),
             gid_map: GidMap::default(),
         }
@@ -490,7 +493,7 @@ impl NsjailConfig {
         if !ns.uts {
             args.push("--disable_clone_newuts".to_string());
         }
-        if !ns.user {
+        if !ns.user || !self.enable_user_namespace {
             args.push("--disable_clone_newuser".to_string());
         }
 
@@ -538,18 +541,20 @@ impl NsjailConfig {
             args.push(format!("{key}={value}"));
         }
 
-        // UID/GID mapping
-        args.push("--uid_mapping".to_string());
-        args.push(format!(
-            "{}:{}:{}",
-            self.uid_map.inside_uid, self.uid_map.outside_uid, self.uid_map.count
-        ));
+        if self.enable_user_namespace {
+            // UID/GID mapping only applies when user namespace isolation is enabled.
+            args.push("--uid_mapping".to_string());
+            args.push(format!(
+                "{}:{}:{}",
+                self.uid_map.inside_uid, self.uid_map.outside_uid, self.uid_map.count
+            ));
 
-        args.push("--gid_mapping".to_string());
-        args.push(format!(
-            "{}:{}:{}",
-            self.gid_map.inside_gid, self.gid_map.outside_gid, self.gid_map.count
-        ));
+            args.push("--gid_mapping".to_string());
+            args.push(format!(
+                "{}:{}:{}",
+                self.gid_map.inside_gid, self.gid_map.outside_gid, self.gid_map.count
+            ));
+        }
 
         // Command
         args.push("--".to_string());
@@ -687,6 +692,20 @@ mod tests {
         let args = config.to_args();
 
         assert!(args.contains(&"--seccomp_string".to_string()));
+    }
+
+    #[test]
+    fn test_nsjail_config_disables_userns_when_requested() {
+        let config = NsjailConfig {
+            enable_user_namespace: false,
+            ..NsjailConfig::default()
+        };
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--disable_clone_newuser".to_string()));
+        assert!(!args.contains(&"--uid_mapping".to_string()));
+        assert!(!args.contains(&"--gid_mapping".to_string()));
     }
 
     #[test]

@@ -25,7 +25,7 @@ require_file() {
 require_grep() {
     pattern="$1"
     file_path="$2"
-    grep -Fq "$pattern" "$file_path" || fail "expected pattern not found in $file_path: $pattern"
+    grep -Fq -- "$pattern" "$file_path" || fail "expected pattern not found in $file_path: $pattern"
 }
 
 require_file "$RUNTIME_DOCKERFILE"
@@ -66,6 +66,10 @@ require_grep "require_subid_entry /etc/subuid" "$RUNTIME_PREFLIGHT"
 require_grep "require_subid_entry /etc/subgid" "$RUNTIME_PREFLIGHT"
 require_grep "CREDBRIDGE_SKIP_NSJAIL_PREFLIGHT" "$RUNTIME_PREFLIGHT"
 require_grep "NSJAIL_USERNS_OK" "$RUNTIME_PREFLIGHT"
+require_grep "--bindmount_ro /bin:/bin" "$RUNTIME_PREFLIGHT"
+require_grep "--bindmount_ro /lib:/lib" "$RUNTIME_PREFLIGHT"
+require_grep "--bindmount_ro /lib64:/lib64" "$RUNTIME_PREFLIGHT"
+require_grep "--bindmount_ro /usr:/usr" "$RUNTIME_PREFLIGHT"
 require_grep "ensure_browser_runtime_prerequisites" "$RUNTIME_PREFLIGHT"
 require_grep "CREDBRIDGE_SANDBOX_NODE_BINARY" "$RUNTIME_PREFLIGHT"
 require_grep "NODE_PATH" "$RUNTIME_PREFLIGHT"

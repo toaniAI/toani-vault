@@ -237,6 +237,7 @@ impl NsjailSandboxPool {
             // session jail on the same relaxed browser policy so Lightpanda child
             // process creation is not killed by the base denylist.
             disable_seccomp_for_browser_runtime: true,
+            enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
@@ -829,6 +830,7 @@ mod tests {
         let config = pool.create_nsjail_config();
 
         assert!(config.disable_seccomp_for_browser_runtime);
+        assert!(config.enable_user_namespace);
 
         let args = config.to_args();
         let seccomp_idx = args

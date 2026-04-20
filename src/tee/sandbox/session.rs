@@ -1447,6 +1447,7 @@ mod tests {
             cwd: std::path::PathBuf::from("/"),
             env: HashMap::new(),
             disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         });
