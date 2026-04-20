@@ -1,6 +1,6 @@
 {
   "name": "@toani/vault-cli",
-  "version": "0.0.12",
+  "version": "0.0.14",
   "description": "Toani Vault CLI",
   "type": "module",
   "bin": {
@@ -30,5 +30,13 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^1.2.0",
+    "@napi-rs/keyring": "^1.2.0",
+    "clipboardy": "^5.3.1",
+    "open": "^11.0.0",
+    "picocolors": "^1.1.1",
+    "undici": "^8.1.0"
+  }
 }

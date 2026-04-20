@@ -4,6 +4,7 @@
 
 给 agent 一份可直接执行的 `toani` 使用规范，重点覆盖：
 
+- `login` / `doctor` onboarding 与健康检查
 - 当前真实可用命令面
 - `credentials list/get` 的只读能力边界
 - 标准 `sandbox` 调用链
@@ -21,6 +22,8 @@
 6. 需要页面状态时，优先用 `get-session`、`get-operation`、`export-dom`、`execute_script`。
 7. 完成后要 `terminate`，不要留下长期活跃会话。
 8. Dashboard / UI 仍是凭证和 token 的创建入口；CLI 目前只开放凭证元数据读取，不负责创建、更新、删除或解密凭证。
+9. `login` 是当前首选接入路径；`config init --token` 只作为兼容入口保留。
+10. token 当前优先存到 OS Keychain，而不是默认写进 `~/.toani/config.json`。
 
 ## 当前真实能力面
 
@@ -28,6 +31,8 @@
 
 当前公开命令组只有：
 
+- `login`
+- `doctor`
 - `config`
 - `credentials`
 - `sandbox`
@@ -58,6 +63,7 @@
 - 凭证在 Dashboard 的 Credentials 页面创建
 - bearer token 在 Dashboard 的 Tokens 页面签发
 - CLI 读取这些产物；当前可直接读取凭证元数据，但不负责创建凭证或 token
+- 推荐流程是 `toani login` 打开 Dashboard 并引导用户完成凭证与 token 获取
 
 ## 全局参数与优先级
 
@@ -73,18 +79,21 @@ Base URL 优先级：
 2. `TOANI_BASE_URL`
 3. `CREDBRIDGE_BASE_URL`
 4. `config.baseUrl`
-5. 默认 `https://api.credbridge.example/`
+5. 默认 `https://dashboard.toani.ai`
 
 Token 优先级：
 
 1. `--token`
 2. `TOANI_VAULT_TOKEN`
 3. `CREDBRIDGE_TOKEN`
-4. `config.token`
+4. OS Keychain `toani-vault-cli:default`
+5. legacy `config.token`
 
 注意：
 
-- `--base-url`、`--token`、`--output` 会写回 `~/.toani/config.json`
+- `--base-url`、`--output` 会写回 `~/.toani/config.json`
+- `config init --token` 现在会把 token 写入 OS Keychain，不再默认明文落盘
+- 兼容读取历史 `~/.toani/config.json` 中的 `token`，但这属于 legacy 路径
 - 自动化默认用 `--output json`
 - 不要把 token 打进日志或提交到仓库
 
@@ -92,14 +101,60 @@ Token 优先级：
 
 ```bash
 toani --help
+toani login
+toani doctor
 toani config show --output json
 toani credentials list --output json
 toani sandbox create-session --help
 toani sandbox execute --help
 ```
 
+如果用户还没拿到 token，优先让他执行 `toani login`，不要先让他手填 `config init --token`，除非明确需要兼容旧流程。
+
 如果用户只给了“凭证名”但没给 `credential_id`，先核对当前环境和 token，再优先用 `toani credentials list --service-id <service>` 查元数据，不要猜。
 如果这个凭证要用于 secret-backed login，先用 `toani credentials list` 或 `toani credentials get <id>` 确认真实 `credential_id`，再把该 ID 传给 `create-session`。如果 CLI token 无权读取元数据，再退回 Dashboard UI 确认。
+
+## Onboarding / Doctor
+
+### `toani login`
+
+```bash
+toani login [--base-url <URL>] [--skip-validate]
+```
+
+真实语义：
+
+- 交互式 onboarding
+- 支持三条路径：
+  - 已有账号，浏览器引导到 Dashboard
+  - 先注册，再回流到主流程
+  - 已有 token，直接走 `.env` / clipboard / 手动粘贴
+- 监听剪贴板自动捕获 PASETO token
+- clipboard watching 期间支持：
+  - `P` 切到手动粘贴
+  - `Q` 取消
+- 默认会调用 API 校验 token
+- `--skip-validate` 只跳过 API 校验，不跳过交互流程
+- 校验成功后，token 会尝试写入 OS Keychain
+- 若 Keychain 写入失败，会明确提示“未持久化”，但不会自动回写明文 config
+
+### `toani doctor`
+
+```bash
+toani doctor [--base-url <URL>]
+```
+
+检查项：
+
+1. CLI version
+2. Node.js version
+3. Token storage
+4. Token format
+5. Base URL
+6. Server reachable
+7. Token valid
+
+优先读取 Keychain token；若只命中 legacy `config.json.token`，会提示 plaintext warning。
 
 ## Credentials 命令表
 
@@ -302,6 +357,13 @@ toani sandbox execute <sessionId> \
 ## 常用示例列表
 
 ### 示例 1：初始化配置
+
+```bash
+toani login
+toani doctor
+```
+
+### 示例 1A：兼容方式初始化配置
 
 ```bash
 toani config init --url https://api.example.com --token <BEARER_TOKEN>
@@ -547,7 +609,10 @@ toani sandbox terminate <sessionId>
   - 修复：`--only-valid` 只接受可解析的布尔值，例如 `true` / `false`
 
 - 错误：`未检测到 CLI 可用的 API Token`
-  - 修复：先在 Dashboard UI 里创建或复制 token，然后执行 `toani config init --url <api-url> --token <BEARER_TOKEN>`，或者设置 `TOANI_VAULT_TOKEN`
+  - 修复：优先执行 `toani login`；兼容路径是先在 Dashboard UI 里创建或复制 token，然后执行 `toani config init --url <api-url> --token <BEARER_TOKEN>`，或者设置 `TOANI_VAULT_TOKEN`
+
+- 错误：`Token invalid`、`Insufficient scope`、`DNS error`、`Connection refused`、`Timeout`
+  - 修复：这些是 `toani login` 的分类校验结果。优先按提示重新生成 token、放宽 scope、修正 `--base-url`、确认网络/VPN 或启动目标后端
 
 - 错误：`Usage: toani sandbox create-session ...` 或缺少 `--service-id`、`--original-intent`
   - 修复：`create-session` 这两个参数必填
@@ -589,11 +654,12 @@ toani sandbox terminate <sessionId>
   - 修复：把 secret 消费改成顶层 `fill.value` 这类受控操作；脚本 binding 只传普通字符串
 
 - 错误：401 / 403
-  - 修复：先确认 token 是否来自 Dashboard UI，再检查 `--token`、环境变量和 `~/.toani/config.json` 的覆盖顺序；如果连错环境，再核对 `--base-url`
+  - 修复：先确认 token 是否来自 Dashboard UI，再检查 `--token`、环境变量、Keychain 和 legacy `~/.toani/config.json` 的覆盖顺序；如果连错环境，再核对 `--base-url`
 
 ## 安全注意事项
 
 - 本地配置文件路径：`~/.toani/config.json`
-- 配置文件可能包含 token，禁止提交到仓库
+- 当前默认不再把新 token 写入配置文件，但历史文件里可能仍有 legacy token
+- OS Keychain 服务名：`toani-vault-cli`，账户名：`default`
 - 自动化优先用环境变量注入 token
 - 不要把 bearer token 写进长期保存的脚本、截图、日志

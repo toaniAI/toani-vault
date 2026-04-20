@@ -5,6 +5,14 @@ import path from "node:path";
 import { runConfig } from "../src/commands/config.js";
 import type { CliConfig } from "../src/types/cli.js";
 
+const keychainMock = vi.hoisted(() => ({
+  set: vi.fn(),
+}));
+
+vi.mock("../src/lib/keychain.js", () => ({
+  keychain: keychainMock,
+}));
+
 const CONFIG_DIR = path.join(os.homedir(), ".toani");
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
 
@@ -64,7 +72,7 @@ describe("runConfig", () => {
       timeout: 30000,
       currentProfile: "default",
       profiles: { default: {} },
-      credentialSource: "token",
+      credentialSource: "keychain",
     };
 
     await runConfig(runtimeConfig, [
@@ -75,6 +83,29 @@ describe("runConfig", () => {
 
     const saved = readConfigFile();
     expect(saved?.baseUrl).toBe(configuredBaseUrl);
-    expect(saved?.token).toBe("test-token-abc123");
+    expect(saved?.token).toBeUndefined();
+  });
+
+  it("config init writes explicit tokens to keychain instead of config.json", async () => {
+    const runtimeConfig: CliConfig = {
+      baseUrl: "https://example.com/",
+      output: "table",
+      timeout: 30000,
+      currentProfile: "default",
+      profiles: { default: {} },
+      credentialSource: "none",
+    };
+
+    await runConfig(runtimeConfig, [
+      "init",
+      "--url",
+      configuredBaseUrl,
+      "--token",
+      "v4.local.test-token",
+    ]);
+
+    expect(keychainMock.set).toHaveBeenCalledWith("v4.local.test-token");
+    const saved = readConfigFile();
+    expect(saved?.token).toBeUndefined();
   });
 });

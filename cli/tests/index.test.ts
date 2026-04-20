@@ -13,7 +13,7 @@ describe("parseGlobalArgs", () => {
         "config",
         "init",
         "--url",
-        "https://dev-credbridge.bitkinetic.com/",
+        "https://dashboard.toani.ai",
         "--token",
         "v4.local.test",
       ]),
@@ -22,7 +22,7 @@ describe("parseGlobalArgs", () => {
         "config",
         "init",
         "--url",
-        "https://dev-credbridge.bitkinetic.com/",
+        "https://dashboard.toani.ai",
         "--token",
         "v4.local.test",
       ],
@@ -42,18 +42,27 @@ describe("parseGlobalArgs", () => {
         "config",
         "init",
         "--url",
-        "https://dev-credbridge.bitkinetic.com/",
+        "https://dashboard.toani.ai",
       ]),
     ).toEqual({
       rest: [
         "config",
         "init",
         "--url",
-        "https://dev-credbridge.bitkinetic.com/",
+        "https://dashboard.toani.ai",
       ],
       output: "json",
       baseUrl: undefined,
       token: "v4.local.test",
+    });
+  });
+
+  it("leaves command-local flags attached to new top-level commands", () => {
+    expect(parseGlobalArgs(["login", "--skip-validate"])).toEqual({
+      rest: ["login", "--skip-validate"],
+      output: undefined,
+      baseUrl: undefined,
+      token: undefined,
     });
   });
 });

@@ -1,16 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
-import { saveConfig } from "../src/config/store.js";
+import { loadConfig, saveConfig } from "../src/config/store.js";
 import type { CliConfig } from "../src/types/cli.js";
 
+const keychainMock = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
+
+vi.mock("../src/lib/keychain.js", () => ({
+  keychain: keychainMock,
+}));
+
 const testConfig: CliConfig = {
-  baseUrl: "https://dev-credbridge.bitkinetic.com/",
+  baseUrl: "https://dashboard.toani.ai",
   token: "v4.local.test",
   output: "json",
   timeout: 30000,
   currentProfile: "default",
   profiles: { default: {} },
-  credentialSource: "token",
+  credentialSource: "keychain",
 };
 
 describe("saveConfig", () => {
@@ -23,5 +31,24 @@ describe("saveConfig", () => {
     expect(() => saveConfig(testConfig)).toThrowError(
       /Failed to write CLI config at .*config\.json: EACCES: permission denied/,
     );
+  });
+
+  it("loads keychain token ahead of legacy config token", () => {
+    keychainMock.get.mockReturnValue("v4.local.keychain-token");
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(
+      JSON.stringify({
+        baseUrl: "https://api.example.com/",
+        token: "v4.local.legacy-token",
+        currentProfile: "default",
+        profiles: { default: {} },
+      }),
+    );
+
+    const loaded = loadConfig();
+
+    expect(loaded.token).toBe("v4.local.keychain-token");
+    expect(loaded.legacyToken).toBe("v4.local.legacy-token");
+    expect(loaded.credentialSource).toBe("keychain");
   });
 });
