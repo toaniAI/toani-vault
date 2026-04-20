@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isDirectExecution, parseGlobalArgs } from "../src/index.js";
 
 const tempPaths: string[] = [];
@@ -64,6 +64,21 @@ describe("parseGlobalArgs", () => {
       baseUrl: undefined,
       token: undefined,
     });
+  });
+});
+
+describe("dashboard base URL override", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("lets the dashboard env override the persisted default base URL", async () => {
+    vi.stubEnv("TOANI_VAULT_DASHBOARD_BASE_URL", "https://vault.example.com");
+    vi.resetModules();
+
+    const { loadConfig } = await import("../src/config/store.js");
+
+    expect(loadConfig().baseUrl).toBe("https://vault.example.com");
   });
 });
 

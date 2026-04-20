@@ -1,1 +1,0 @@
-Missing required option --service-id

@@ -1,7 +1,0 @@
-{
-  "operation_type": "navigate",
-  "description": "tee-full-case09-20260413T212736 navigate example.com",
-  "parameters": {
-    "url": "https://example.com"
-  }
-}

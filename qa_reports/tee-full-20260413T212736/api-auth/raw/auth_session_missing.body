@@ -1,1 +1,0 @@
-{"error":"invalid_request","message":"服务器内部错误","error_description":"服务器内部错误","i18n":{"key":"errors.auth.invalid_request","params":{"detail":"Failed to deserialize the JSON body into the target type: missing field `privy_access_token` at line 1 column 2"}},"locale":"zh-CN"}

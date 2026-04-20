@@ -62,6 +62,17 @@ const validateTokenMock = vi.hoisted(() => vi.fn());
 const envMock = vi.hoisted(() => ({
   readTokenFromEnv: vi.fn(),
 }));
+const skillInstallerMock = vi.hoisted(() => ({
+  getDefaultSkillInstallChoice: vi.fn(() => "codex"),
+  getSkillInstallTargetLabel: vi.fn((target: string) =>
+    target === "claude" ? "Claude Code" : "Codex",
+  ),
+  installBundledSkill: vi.fn(() => ({
+    sourcePath: "/tmp/SKILL.md",
+    outcomes: [] as unknown[],
+    failures: [] as unknown[],
+  })),
+}));
 
 vi.mock("@clack/prompts", () => ({
   intro: promptState.intro,
@@ -88,6 +99,7 @@ vi.mock("../src/lib/keychain.js", () => ({
 }));
 
 vi.mock("../src/lib/env.js", () => envMock);
+vi.mock("../src/lib/skill-installer.js", () => skillInstallerMock);
 
 vi.mock("../src/lib/validate.js", async (importOriginal) => {
   const actual =
@@ -117,6 +129,18 @@ describe("runLogin", () => {
     keychainMock.set.mockReset();
     validateTokenMock.mockReset();
     envMock.readTokenFromEnv.mockReset();
+    skillInstallerMock.getDefaultSkillInstallChoice.mockReset();
+    skillInstallerMock.getDefaultSkillInstallChoice.mockReturnValue("codex");
+    skillInstallerMock.getSkillInstallTargetLabel.mockReset();
+    skillInstallerMock.getSkillInstallTargetLabel.mockImplementation(
+      (target: string) => (target === "claude" ? "Claude Code" : "Codex"),
+    );
+    skillInstallerMock.installBundledSkill.mockReset();
+    skillInstallerMock.installBundledSkill.mockReturnValue({
+      sourcePath: "/tmp/SKILL.md",
+      outcomes: [] as unknown[],
+      failures: [] as unknown[],
+    });
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     vi.spyOn(global, "setInterval").mockImplementation((fn: TimerHandler) => {
@@ -169,7 +193,12 @@ describe("runLogin", () => {
 
     await runLogin(baseConfig, []);
 
-    expect(promptState.select.mock.calls[1]?.[0]).toMatchObject({
+    const selectCalls = promptState.select.mock.calls as unknown[][];
+    const tokenMenuCall = selectCalls[1]?.[0] as
+      | { message?: string; options?: unknown[] }
+      | undefined;
+
+    expect(tokenMenuCall).toMatchObject({
       message: "How do you want to provide the token?",
       options: [
         expect.objectContaining({ value: "paste" }),
@@ -177,7 +206,7 @@ describe("runLogin", () => {
         expect.objectContaining({ value: "cancel" }),
       ],
     });
-    expect(promptState.select.mock.calls[1]?.[0]?.options).toHaveLength(3);
+    expect(tokenMenuCall?.options).toHaveLength(3);
     expect(keychainMock.set).toHaveBeenCalled();
   });
 
@@ -189,7 +218,15 @@ describe("runLogin", () => {
 
     await runLogin(baseConfig, []);
 
-    expect(promptState.select.mock.calls[2]?.[0]).toMatchObject({
+    const selectCalls = promptState.select.mock.calls as unknown[][];
+    const guidedMenuCall = selectCalls[2]?.[0] as
+      | { message?: string; initialValue?: string; options?: unknown[] }
+      | undefined;
+    const sharedMenuCall = selectCalls[3]?.[0] as
+      | { options?: unknown[] }
+      | undefined;
+
+    expect(guidedMenuCall).toMatchObject({
       message: "How do you want to provide the token?",
       initialValue: "auto",
       options: [
@@ -199,8 +236,8 @@ describe("runLogin", () => {
         expect.objectContaining({ value: "cancel" }),
       ],
     });
-    expect(promptState.select.mock.calls[2]?.[0]?.options).toHaveLength(4);
-    expect(promptState.select.mock.calls[3]?.[0]?.options).toHaveLength(3);
+    expect(guidedMenuCall?.options).toHaveLength(4);
+    expect(sharedMenuCall?.options).toHaveLength(3);
   });
 
   it("rechecks .env through the shared token entry flow", async () => {
@@ -254,6 +291,40 @@ describe("runLogin", () => {
     );
     expect(promptState.outro).toHaveBeenCalledWith(
       expect.stringContaining("🎉 Connected!"),
+    );
+  });
+
+  it("allows skipping the bundled agent skill install", async () => {
+    promptState.selectQueue.push("skip");
+
+    await __testables.maybeInstallBundledSkill();
+
+    expect(skillInstallerMock.installBundledSkill).not.toHaveBeenCalled();
+    expect(promptState.log.info).toHaveBeenCalledWith(
+      expect.stringContaining("Skipped agent skill install."),
+    );
+  });
+
+  it("installs the bundled agent skill into the selected target", async () => {
+    promptState.selectQueue.push("both");
+    skillInstallerMock.installBundledSkill.mockReturnValue({
+      sourcePath: "/tmp/SKILL.md",
+      outcomes: [
+        {
+          target: "claude",
+          destinationFile: "/Users/test/.claude/skills/toani-vault-cli/SKILL.md",
+          destinationDir: "/Users/test/.claude/skills/toani-vault-cli",
+          status: "installed",
+        },
+      ],
+      failures: [] as unknown[],
+    });
+
+    await __testables.maybeInstallBundledSkill();
+
+    expect(skillInstallerMock.installBundledSkill).toHaveBeenCalledWith("both");
+    expect(promptState.log.success).toHaveBeenCalledWith(
+      expect.stringContaining("Installed Claude Code skill"),
     );
   });
 });

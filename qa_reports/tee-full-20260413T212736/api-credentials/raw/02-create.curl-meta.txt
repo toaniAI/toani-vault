@@ -1,2 +1,0 @@
-http_code=201
-curl_exit=0

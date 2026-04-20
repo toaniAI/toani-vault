@@ -1,10 +1,21 @@
 import { fetch } from "undici";
 
-export const DASHBOARD_BASE_URL = "https://dashboard.toani.ai";
+const FALLBACK_DASHBOARD_BASE_URL = "https://dashboard.toani.ai";
+
+function resolveDashboardBaseUrl(): string {
+  const configured = process.env.TOANI_VAULT_DASHBOARD_BASE_URL?.trim();
+  if (!configured) {
+    return FALLBACK_DASHBOARD_BASE_URL;
+  }
+
+  return configured.endsWith("/") ? configured.slice(0, -1) : configured;
+}
+
+export const DASHBOARD_BASE_URL = resolveDashboardBaseUrl();
 export const DASHBOARD_LOGIN_URL = `${DASHBOARD_BASE_URL}/login`;
 export const DASHBOARD_TOKENS_URL = `${DASHBOARD_BASE_URL}/tokens`;
 export const DASHBOARD_CREDENTIALS_URL = `${DASHBOARD_BASE_URL}/credentials`;
-export const DEFAULT_API_BASE_URL = "https://dashboard.toani.ai";
+export const DEFAULT_API_BASE_URL = DASHBOARD_BASE_URL;
 
 export type ValidationReason =
   | "invalid_or_expired"

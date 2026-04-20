@@ -1,5 +1,0 @@
-http_code=400
-content_type=application/json
-url_effective=https://dev-credbridge.bitkinetic.com/api/v1/auth/access-token
-remote_ip=10.11.25.9
-time_total=0.087679
