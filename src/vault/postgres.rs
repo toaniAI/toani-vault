@@ -52,7 +52,7 @@ impl PostgresStorageBackend {
         &self.schema
     }
 
-    fn schema_from_env() -> Result<String, PostgresBackendError> {
+    pub(crate) fn schema_from_env() -> Result<String, PostgresBackendError> {
         let schema =
             env::var("CREDBRIDGE_PG_SCHEMA").unwrap_or_else(|_| DEFAULT_SCHEMA.to_string());
         if schema.is_empty() {
@@ -72,7 +72,14 @@ impl PostgresStorageBackend {
     }
 
     async fn ensure_schema(&self) -> Result<(), DatabaseError> {
-        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS {}", self.schema);
+        Self::ensure_schema_in_pool(self.db.pool(), &self.schema).await
+    }
+
+    pub(crate) async fn ensure_schema_in_pool(
+        pool: &sqlx::PgPool,
+        schema: &str,
+    ) -> Result<(), DatabaseError> {
+        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS {schema}");
         let credentials_sql = format!(
             r#"
             CREATE TABLE IF NOT EXISTS {schema}.credentials (
@@ -95,8 +102,7 @@ impl PostgresStorageBackend {
                 ON {schema}.credentials (tenant_id, user_id_hash, service_id);
             CREATE INDEX IF NOT EXISTS idx_cb_credentials_type
                 ON {schema}.credentials (tenant_id, user_id_hash, credential_type);
-            "#,
-            schema = self.schema
+            "#
         );
         let versions_sql = format!(
             r#"
@@ -113,20 +119,19 @@ impl PostgresStorageBackend {
             );
             CREATE INDEX IF NOT EXISTS idx_cb_credential_versions_lookup
                 ON {schema}.credential_versions (credential_id, version DESC);
-            "#,
-            schema = self.schema
+            "#
         );
 
         sqlx::query(&create_schema_sql)
-            .execute(self.db.pool())
+            .execute(pool)
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
-        execute_pg_script_pool(self.db.pool(), &credentials_sql)
+        execute_pg_script_pool(pool, &credentials_sql)
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
-        execute_pg_script_pool(self.db.pool(), &versions_sql)
+        execute_pg_script_pool(pool, &versions_sql)
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 

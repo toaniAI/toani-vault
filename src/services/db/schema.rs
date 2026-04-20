@@ -168,40 +168,7 @@ impl SchemaManager {
     /// * `Err(DatabaseError)` - 创建失败
     pub async fn create_tenant_schema(&self, tenant_id: &str) -> Result<(), DatabaseError> {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
-
-        // 创建 Schema
-        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS \"{schema_name}\"");
-
-        sqlx::query(&create_schema_sql)
-            .execute(self.db.pool())
-            .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create schema: {e}")))?;
-
-        // 设置 search_path 并创建表结构
-        let set_path_sql = format!("SET search_path TO \"{schema_name}\"");
-
-        // 在事务中执行所有 SQL
-        let mut tx = self
-            .db
-            .pool()
-            .begin()
-            .await
-            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
-
-        // 设置 search_path
-        sqlx::query(&set_path_sql)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to set search_path: {e}")))?;
-
-        // 创建表结构（多语句必须逐条执行，不能塞进单个 prepared statement）
-        execute_pg_script_tx(&mut tx, TENANT_SCHEMA_SQL)
-            .await
-            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {e}")))?;
-
-        tx.commit()
-            .await
-            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
+        self.ensure_schema_objects(&schema_name).await?;
 
         tracing::info!("Created tenant schema: {}", schema_name);
         Ok(())
@@ -213,6 +180,21 @@ impl SchemaManager {
     /// * `tenant_id` - 租户 ID
     pub async fn create_default_roles(&self, tenant_id: &str) -> Result<(), DatabaseError> {
         let schema_name = Self::schema_name_for_tenant(tenant_id);
+        self.ensure_default_roles_in_schema(&schema_name).await?;
+        tracing::info!("Created default roles for tenant: {}", tenant_id);
+        Ok(())
+    }
+
+    pub(crate) async fn ensure_schema_objects(
+        &self,
+        schema_name: &str,
+    ) -> Result<(), DatabaseError> {
+        let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS \"{schema_name}\"");
+
+        sqlx::query(&create_schema_sql)
+            .execute(self.db.pool())
+            .await
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create schema: {e}")))?;
 
         let mut tx = self
             .db
@@ -222,6 +204,34 @@ impl SchemaManager {
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
         // 设置 search_path
+        let set_path_sql = format!("SET search_path TO \"{schema_name}\"");
+        sqlx::query(&set_path_sql)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to set search_path: {e}")))?;
+
+        execute_pg_script_tx(&mut tx, TENANT_SCHEMA_SQL)
+            .await
+            .map_err(|e| DatabaseError::SchemaError(format!("Failed to create tables: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    pub(crate) async fn ensure_default_roles_in_schema(
+        &self,
+        schema_name: &str,
+    ) -> Result<(), DatabaseError> {
+        let mut tx = self
+            .db
+            .pool()
+            .begin()
+            .await
+            .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
+
         let set_path_sql = format!("SET search_path TO \"{schema_name}\"");
         sqlx::query(&set_path_sql)
             .execute(&mut *tx)
@@ -237,7 +247,6 @@ impl SchemaManager {
             .await
             .map_err(|e| DatabaseError::TransactionError(e.to_string()))?;
 
-        tracing::info!("Created default roles for tenant: {}", tenant_id);
         Ok(())
     }
 
