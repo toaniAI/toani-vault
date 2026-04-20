@@ -26,6 +26,12 @@ import {
 import { readTokenFromEnv } from "../lib/env.js";
 import { keychain } from "../lib/keychain.js";
 import {
+  getDefaultSkillInstallChoice,
+  getSkillInstallTargetLabel,
+  installBundledSkill,
+  type SkillInstallChoice,
+} from "../lib/skill-installer.js";
+import {
   DASHBOARD_BASE_URL,
   DASHBOARD_CREDENTIALS_URL,
   DASHBOARD_LOGIN_URL,
@@ -268,10 +274,83 @@ async function processToken(
     );
   }
 
+  await maybeInstallBundledSkill();
   await logoFlash();
   await confetti(1200);
 
   outro(`${pc.green(pc.bold("🎉 Connected!"))}\n\n  ${pc.dim("Storage:")}  OS Keychain (encrypted by macOS / libsecret / Windows Credential Manager)\n  ${pc.dim("API:")}      ${baseUrl}\n\n  ${pc.bold("What's next?")}\n    ${pc.dim("$")} ${pc.green("toani sandbox stats")}          ${pc.dim("— test connectivity")}\n    ${pc.dim("$")} ${pc.green("toani sandbox create-session")} ${pc.dim('--service-id <id> --original-intent "..."')}\n    ${pc.dim("$")} ${pc.green("toani --help")}                  ${pc.dim("— see all commands")}\n\n  ${pc.dim("Token expired? Just run `toani login` again.")}`);
+}
+
+async function maybeInstallBundledSkill(): Promise<void> {
+  const installChoice = await select({
+    message: "Install the bundled Toani CLI skill for your coding agent?",
+    options: [
+      {
+        value: "codex",
+        label: "Install for Codex",
+        hint: "~/.codex/skills/toani-vault-cli",
+      },
+      {
+        value: "claude",
+        label: "Install for Claude Code",
+        hint: "~/.claude/skills/toani-vault-cli",
+      },
+      {
+        value: "both",
+        label: "Install for both",
+        hint: "write both user-level skill dirs",
+      },
+      {
+        value: "skip",
+        label: "Skip for now",
+        hint: "login stays complete",
+      },
+    ],
+    initialValue: getDefaultSkillInstallChoice(),
+  });
+
+  if (
+    isCancel(installChoice) ||
+    installChoice === "skip" ||
+    installChoice === undefined
+  ) {
+    log.info(pc.dim("Skipped agent skill install."));
+    return;
+  }
+
+  const status = brandSpinner();
+  status.start("Installing bundled agent skill...");
+
+  try {
+    const report = installBundledSkill(
+      installChoice as Exclude<SkillInstallChoice, "skip">,
+    );
+
+    if (report.outcomes.length > 0 && report.failures.length === 0) {
+      status.stop(pc.green("✓ Agent skill installed"));
+    } else if (report.outcomes.length > 0) {
+      status.stop(pc.yellow("⚠ Agent skill installed with warnings"));
+    } else {
+      status.stop(pc.yellow("⚠ Agent skill not installed"));
+    }
+
+    for (const outcome of report.outcomes) {
+      const verb = outcome.status === "updated" ? "Updated" : "Installed";
+      log.success(
+        `${verb} ${getSkillInstallTargetLabel(outcome.target)} skill at ${pc.cyan(outcome.destinationFile)}`,
+      );
+    }
+
+    for (const failure of report.failures) {
+      log.warn(
+        `${getSkillInstallTargetLabel(failure.target)} skill install failed: ${failure.message}`,
+      );
+    }
+  } catch (error) {
+    const rendered = error instanceof Error ? error.message : String(error);
+    status.stop(pc.yellow("⚠ Agent skill install failed"));
+    log.warn(pc.dim(rendered));
+  }
 }
 
 async function manualPaste(
@@ -695,6 +774,7 @@ export const __testables = {
   heartbeat,
   logoFlash,
   manualPaste,
+  maybeInstallBundledSkill,
   pasteFromClipboard,
   printLogo,
   processToken,
