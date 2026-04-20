@@ -279,7 +279,6 @@ impl NsjailSandbox {
         scoped_config.command = command;
         scoped_config.cwd = cwd;
         scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
-        scoped_config.enable_user_namespace = false;
 
         let sandbox_work_dir = self.working_dir();
         Self::push_mount_if_missing(
@@ -1008,7 +1007,12 @@ mod tests {
                     && mount.dst == sandbox_work_dir
                     && !mount.read_only)
         );
-        assert!(!scoped_config.enable_user_namespace);
+
+        let args = scoped_config.to_args();
+        assert!(scoped_config.enable_user_namespace);
+        assert!(!args.contains(&"--disable_clone_newuser".to_string()));
+        assert!(args.contains(&"--uid_mapping".to_string()));
+        assert!(args.contains(&"--gid_mapping".to_string()));
     }
 
     #[tokio::test]
