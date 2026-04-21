@@ -136,10 +136,10 @@ describe("checkBaseUrlReachability", () => {
     );
   });
 
-  it("falls back to /health when the API health endpoint fails", async () => {
+  it("falls back to /health when the API health endpoint returns 404", async () => {
     const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
 
-    fetchMock.mockRejectedValueOnce({ code: "ECONNREFUSED" });
+    fetchMock.mockResolvedValueOnce({ status: 404 });
     fetchMock.mockResolvedValueOnce({ status: 503 });
 
     await expect(
@@ -151,9 +151,26 @@ describe("checkBaseUrlReachability", () => {
     });
   });
 
+  it("falls back to an authenticated endpoint when public health probes are missing", async () => {
+    const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
+
+    fetchMock.mockResolvedValueOnce({ status: 404 });
+    fetchMock.mockResolvedValueOnce({ status: 404 });
+    fetchMock.mockResolvedValueOnce({ status: 401 });
+
+    await expect(
+      checkBaseUrlReachability("https://api.example.com"),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 401,
+      url: "https://api.example.com/api/v1/sandbox/stats",
+    });
+  });
+
   it("preserves network failures when all health probes fail", async () => {
     const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
 
+    fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
     fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
     fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
 
@@ -162,7 +179,23 @@ describe("checkBaseUrlReachability", () => {
     ).resolves.toMatchObject({
       ok: false,
       reason: "dns",
-      url: "https://api.example.com/health",
+      url: "https://api.example.com/api/v1/sandbox/stats",
+    });
+  });
+
+  it("returns the last 404 when every probe path is missing", async () => {
+    const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
+
+    fetchMock.mockResolvedValueOnce({ status: 404 });
+    fetchMock.mockResolvedValueOnce({ status: 404 });
+    fetchMock.mockResolvedValueOnce({ status: 404 });
+
+    await expect(
+      checkBaseUrlReachability("https://api.example.com"),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 404,
+      url: "https://api.example.com/api/v1/sandbox/stats",
     });
   });
 });
