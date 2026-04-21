@@ -4,7 +4,7 @@
 
 Toani Vault is an AI-native, zero-trust credential vault built around Intel SGX TEE. The current
 repository centers on one main service runtime, a React console, Rust and TypeScript SDKs, and a
-sandbox-only CLI for bearer-token driven operations.
+CLI for onboarding, read-only credential metadata lookup, and bearer-token driven sandbox flows.
 
 ## What It Provides
 
@@ -63,7 +63,7 @@ Primary implementation areas:
 - `src/tee/`: TEE lifecycle, attestation, sealing, sandbox, hardware runtime bridge
 - `src/token/`: PASETO and session handling
 - `src/vault/`: credential persistence and storage backends
-- `cli/`: sandbox-only CLI
+- `cli/`: CLI for onboarding, read-only credential metadata, and sandbox operations
 - `sdk-rust/` and `sdk-typescript/`: client SDKs
 - `frontend/`: React web console
 
@@ -77,7 +77,8 @@ Primary implementation areas:
 
 ## CLI Usage Guide
 
-Toani Vault provides a sandbox-focused CLI for local config plus bearer-token authorized sandbox flows.
+Toani Vault provides a CLI for guided onboarding, local config, read-only credential metadata
+lookup, and bearer-token authorized sandbox flows.
 
 For the latest CLI install and usage details, see:
 
@@ -88,14 +89,14 @@ For the latest CLI install and usage details, see:
 
 ```bash
 # Install from npm (recommended)
-npm install -g @toani/vault-cli@0.0.11
+npm install -g @toani/vault-cli@latest
 
 # Install from source
 cd cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.11.tgz
+npm install -g ./toani-vault-cli-*.tgz
 
 # Verify installation
 toani --version
@@ -104,73 +105,55 @@ toani --version
 ### Quick Start
 
 ```bash
-# 1. Issue a restricted token in the Dashboard
-# 2. Persist the service URL locally
-export TOANI_BASE_URL="https://dev-credbridge.bitkinetic.com"
-export TOANI_VAULT_TOKEN="<dashboard-issued-token>"
+# Recommended first-run flow
+toani login
+toani doctor
 
-toani config init --url https://dev-credbridge.bitkinetic.com
+# Read-only credential metadata lookup
+toani --output json credentials list
 
-# 3. Call sandbox APIs with the CLI
+# Sandbox connectivity / session checks
 toani sandbox stats
 toani sandbox list-sessions
 ```
 
 ### CLI Commands Overview
 
-#### Sandbox Operations (`sandbox`)
+The current published CLI exposes these groups:
 
-The current published CLI exposes `config init/show` plus sandbox operations. Tokens must be issued
-manually in the Dashboard, and the restricted `credential_ids` allowlist determines which
-credentials the sandbox may resolve.
+- `login`
+- `doctor`
+- `config` (`init`, `show`)
+- `credentials` (`list`, `get`)
+- `sandbox`
 
-Do not assume the public CLI also exposes `auth`, `credentials`, `tokens`, `service-accounts`, or
-`audit` groups unless you have verified a newer build.
+Do not assume the public CLI also exposes `auth`, mutating `credentials`, `tokens`,
+`service-accounts`, or `audit` groups unless you have verified a newer build.
 
-| Command                                                                      | Description             |
-| ---------------------------------------------------------------------------- | ----------------------- |
-| `toani sandbox create-session --service-id <service> --original-intent <desc>` | Create sandbox session  |
-| `toani sandbox list-sessions`                                                | List active sessions    |
-| `toani sandbox get-session <id>`                                             | Get session details     |
-| `toani sandbox terminate <id>`                                               | Terminate session       |
-| `toani sandbox execute <session-id> --operation-type <type>`                 | Execute operation       |
-| `toani sandbox get-operation <operation-id>`                                 | Get operation result    |
-| `toani sandbox stats`                                                        | View sandbox statistics |
+`login` is the recommended setup path. It opens the Dashboard, guides credential + token setup,
+validates the token, and stores it in the OS Keychain when available. `doctor` verifies CLI
+version, Node.js, token storage, token format, base URL reachability, and token validity.
 
-**Examples:**
+`credentials` is read-only. It lists or fetches credential metadata only; it does not create,
+update, decrypt, or delete credentials.
 
-```bash
-# Create a sandbox session for a credential
-toani sandbox create-session \
-  --service-id <service-id> \
-  --credential-id <cred-id> \
-  --original-intent "Database backup operation"
+`sandbox` supports:
 
-# Execute operation in sandbox
-toani sandbox execute <session-id> \
-  --operation-type "navigate" \
-  --params '{"url":"https://target-site.com/login"}'
+- `create-session`
+- `list-sessions`
+- `get-session`
+- `terminate`
+- `pause`
+- `resume`
+- `bootstrap-page`
+- `execute`
+- `export-dom`
+- `export-data`
+- `get-operation`
+- `stats`
 
-# View sandbox statistics
-toani sandbox stats
-```
-
-#### Configuration (`config`)
-
-| Command             | Description                   |
-| ------------------- | ----------------------------- |
-| `toani config init` | Initialize configuration      |
-| `toani config show` | Display current configuration |
-
-**Examples:**
-
-```bash
-toani config init \
-  --url https://dev-credbridge.bitkinetic.com \
-  --token "v4.local.xxx"
-
-toani config show
-```
+For the exact command matrix and examples, use [cli/README.md](cli/README.md) as the detailed
+source of truth.
 
 ### Global Options
 
@@ -194,7 +177,9 @@ toani config show
 
 ### Configuration File
 
-The CLI stores configuration in `~/.toani/config.json`.
+The CLI stores configuration in `~/.toani/config.json`. Base URL, output mode, and timeout are
+saved there. Tokens are stored in the OS Keychain when configured through `toani login` or
+`toani config init --token`, with legacy plaintext token reads retained only for compatibility.
 
 ---
 

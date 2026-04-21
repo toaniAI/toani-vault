@@ -12,13 +12,13 @@ cd /Users/yvan/AIWorkspace/credbridge/cli
 npm install
 npm run build
 npm pack
-npm install -g ./toani-vault-cli-0.0.11.tgz
+npm install -g ./toani-vault-cli-*.tgz
 ```
 
 ## Registry Install
 
 ```bash
-npm install -g @toani/vault-cli@0.0.11
+npm install -g @toani/vault-cli@latest
 ```
 
 ## Smoke Checks
@@ -50,8 +50,11 @@ You can choose Claude Code, Codex, both, or skip the install.
 
 The currently published CLI exposes:
 
+- `login`
+- `doctor`
 - `config`
+- `credentials`
 - `sandbox`
 
-Do not expect `auth`, `credentials`, `tokens`, `service-accounts`, or `audit` groups unless you
-have verified a newer build.
+Do not expect `auth`, `tokens`, `service-accounts`, or `audit` groups unless you have verified a
+newer build.

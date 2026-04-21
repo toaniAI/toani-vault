@@ -73,6 +73,16 @@
 - `--base-url <URL>`
 - `--token <TOKEN>`
 
+注意：这些全局参数只能放在命令组前面，例如：
+
+- `toani --output json credentials list`
+- `toani --base-url https://api.example.com sandbox stats`
+
+不要写成：
+
+- `toani credentials list --output json`
+- `toani sandbox stats --base-url https://api.example.com`
+
 Base URL 优先级：
 
 1. `--base-url`
@@ -103,10 +113,8 @@ Token 优先级：
 toani --help
 toani login
 toani doctor
-toani config show --output json
-toani credentials list --output json
-toani sandbox create-session --help
-toani sandbox execute --help
+toani --output json config show
+toani --output json credentials list
 ```
 
 如果用户还没拿到 token，优先让他执行 `toani login`，不要先让他手填 `config init --token`，除非明确需要兼容旧流程。
@@ -250,7 +258,7 @@ toani sandbox stats
 当用户要“在 TEE 浏览器里打开页面并操作”时，按这个顺序：
 
 1. `toani --help`
-2. `toani config show --output json`
+2. `toani --output json config show`
 3. 如需凭证 ID，先用 `toani credentials list` / `get` 查询并确认凭证
 4. `toani sandbox create-session ...`
 5. `toani sandbox execute <sessionId> --operation-type navigate ...`
@@ -368,7 +376,7 @@ toani doctor
 
 ```bash
 toani config init --url https://api.example.com --token <BEARER_TOKEN>
-toani config show --output json
+toani --output json config show
 ```
 
 ### 示例 2：创建 sandbox 会话
@@ -391,22 +399,21 @@ toani sandbox create-session \
 ### 示例 3A：列出可读凭证元数据
 
 ```bash
-toani credentials list --output json
+toani --output json credentials list
 ```
 
 ### 示例 3B：按服务过滤凭证元数据
 
 ```bash
-toani credentials list \
+toani --output json credentials list \
   --service-id svc_example \
-  --only-valid true \
-  --output json
+  --only-valid true
 ```
 
 ### 示例 3C：读取单个凭证元数据
 
 ```bash
-toani credentials get <credentialId> --output json
+toani --output json credentials get <credentialId>
 ```
 
 ### 示例 4：导航
@@ -566,7 +573,7 @@ toani sandbox execute <sessionId> \
 
 1. 在 Dashboard UI 里创建凭证并确认 `credential_id`
 2. 在 Dashboard UI 里生成 bearer token
-3. `toani credentials list --service-id <service> --output json` 或 `toani credentials get <credentialId> --output json` 复核目标凭证
+3. `toani --output json credentials list --service-id <service>` 或 `toani --output json credentials get <credentialId>` 复核目标凭证
 4. `toani sandbox create-session --service-id <service> --credential-id <credentialId> --original-intent "Sign in to test-web.zk.me"`
 5. `toani sandbox execute <sessionId> --operation-type navigate --params '{"url":"https://test-web.zk.me/login"}'`
 6. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader --replay-lifecycle-events true --wait-selector 'input[name=email]' --wait-timeout-ms 15000`

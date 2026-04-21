@@ -47,11 +47,17 @@ CLI 是当前推荐的自动化入口，适用于脚本、运维和 Agent 工作
 
 常见命令族：
 
-- `credbridge auth ...`
-- `credbridge credentials ...`
-- `credbridge tokens ...`
-- `credbridge audit ...`
-- `credbridge sandbox ...`
+- `toani login`
+- `toani doctor`
+- `toani config init|show`
+- `toani credentials list|get`
+- `toani sandbox ...`
+
+说明：
+
+- 当前公开 CLI 不提供 `auth`、`tokens`、`service-accounts`、`audit` 等命令族。
+- `credentials` 当前只读，不负责创建、更新、解密或删除凭证。
+- 推荐先执行 `toani login`，再执行 `toani doctor`。
 
 ### 3.3 SDK
 
