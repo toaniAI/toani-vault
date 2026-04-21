@@ -496,3 +496,142 @@ async fn startup_bootstrap_repairs_public_schema_even_when_search_path_is_stale(
     drop_temp_database(&admin_pool, &database_name).await;
     admin_pool.close().await;
 }
+
+#[tokio::test]
+async fn startup_bootstrap_repairs_partial_migrations_with_legacy_sandbox_view_shape() {
+    let Some(base_database_url) = test_database_url() else {
+        eprintln!(
+            "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
+        );
+        return;
+    };
+    let Some(admin_database_url) = postgres_admin_url(&base_database_url) else {
+        eprintln!("skip db bootstrap integration test: unable to derive admin database url");
+        return;
+    };
+
+    let admin_pool = match PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&admin_database_url)
+        .await
+    {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect admin database: {error}");
+            return;
+        }
+    };
+
+    let database_name = format!(
+        "credbridge_bootstrap_legacy_view_{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    if let Err(error) = create_temp_database(&admin_pool, &database_name).await {
+        eprintln!("skip db bootstrap integration test: cannot create temp database: {error}");
+        return;
+    }
+
+    let Some(temp_database_url) = temp_database_url(&base_database_url, &database_name) else {
+        eprintln!("skip db bootstrap integration test: cannot derive temp database url");
+        drop_temp_database(&admin_pool, &database_name).await;
+        return;
+    };
+
+    let config = DatabaseConfig {
+        url: temp_database_url.clone(),
+        max_connections: 5,
+        min_connections: 1,
+        connect_timeout: 10,
+        idle_timeout: 60,
+    };
+    let database_pool = match DatabasePool::new(config).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect temp database: {error}");
+            drop_temp_database(&admin_pool, &database_name).await;
+            return;
+        }
+    };
+
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .expect("bootstrap should create all required tables");
+
+    sqlx::query("ALTER TABLE public.sandbox_sessions DROP COLUMN IF EXISTS original_intent")
+        .execute(database_pool.pool())
+        .await
+        .expect("should remove sandbox_sessions.original_intent");
+
+    sqlx::query(
+        r#"
+        CREATE OR REPLACE VIEW public.sandbox_active_sessions AS
+        SELECT
+            s.id,
+            s.tenant_id,
+            s.created_by,
+            s.status,
+            s.started_at,
+            s.expires_at,
+            s.terminated_at,
+            s.termination_reason,
+            s.tee_context_id,
+            s.security_policy,
+            s.metadata,
+            s.created_at,
+            s.updated_at,
+            COUNT(o.id) AS operation_count,
+            MAX(o.started_at) AS last_operation_at
+        FROM public.sandbox_sessions s
+        LEFT JOIN public.sandbox_operations o ON s.id = o.session_id
+        WHERE s.status = 'active'
+        GROUP BY
+            s.id,
+            s.tenant_id,
+            s.created_by,
+            s.status,
+            s.started_at,
+            s.expires_at,
+            s.terminated_at,
+            s.termination_reason,
+            s.tee_context_id,
+            s.security_policy,
+            s.metadata,
+            s.created_at,
+            s.updated_at
+        "#,
+    )
+    .execute(database_pool.pool())
+    .await
+    .expect("should create legacy sandbox_active_sessions view shape");
+
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .expect("bootstrap should repair partial migrations even with legacy sandbox view");
+
+    let sandbox_session_columns =
+        fetch_table_columns(database_pool.pool(), "public", "sandbox_sessions")
+            .await
+            .expect("should list sandbox_sessions columns");
+    assert_columns_present(&sandbox_session_columns, &["original_intent"]);
+
+    let sandbox_active_view_columns =
+        fetch_table_columns(database_pool.pool(), "public", "sandbox_active_sessions")
+            .await
+            .expect("should list sandbox_active_sessions view columns");
+    assert_columns_present(
+        &sandbox_active_view_columns,
+        &[
+            "credential_id",
+            "original_intent",
+            "active_operation_id",
+            "active_operation_started_at",
+            "last_error_summary",
+            "operation_count",
+            "last_operation_at",
+        ],
+    );
+
+    database_pool.close().await;
+    drop_temp_database(&admin_pool, &database_name).await;
+    admin_pool.close().await;
+}

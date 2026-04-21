@@ -285,9 +285,7 @@ impl SessionError {
     ) -> Self {
         SessionError::InvalidState {
             session_id,
-            current: format!(
-                "executing (operation_id: {operation_id}, started_at: {started_at})"
-            ),
+            current: format!("executing (operation_id: {operation_id}, started_at: {started_at})"),
             expected: "ready or paused".to_string(),
         }
     }

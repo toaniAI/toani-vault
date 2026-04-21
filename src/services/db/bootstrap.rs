@@ -102,9 +102,71 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_metadata
 COMMIT;
 "#;
 
+const PUBLIC_COMPATIBILITY_VIEW_RESET_SQL: &str = r#"
+DROP VIEW IF EXISTS public.sandbox_active_sessions;
+DROP VIEW IF EXISTS public.sandbox_session_stats;
+"#;
+
+const PUBLIC_SANDBOX_VIEW_REFRESH_SQL: &str = r#"
+DROP VIEW IF EXISTS public.sandbox_active_sessions;
+DROP VIEW IF EXISTS public.sandbox_session_stats;
+
+CREATE VIEW public.sandbox_active_sessions AS
+SELECT
+    s.id,
+    s.tenant_id,
+    s.created_by,
+    s.status,
+    s.started_at,
+    s.expires_at,
+    s.terminated_at,
+    s.termination_reason,
+    s.tee_context_id,
+    s.security_policy,
+    s.metadata,
+    s.created_at,
+    s.updated_at,
+    s.credential_id,
+    s.original_intent,
+    s.active_operation_id,
+    s.active_operation_started_at,
+    s.last_error_summary,
+    COALESCE(stats.operation_count, 0) AS operation_count,
+    stats.last_operation_at
+FROM public.sandbox_sessions s
+LEFT JOIN (
+    SELECT
+        o.session_id,
+        COUNT(o.id) AS operation_count,
+        MAX(o.started_at) AS last_operation_at
+    FROM public.sandbox_operations o
+    GROUP BY o.session_id
+) stats ON stats.session_id = s.id
+WHERE s.status = 'active';
+
+COMMENT ON VIEW public.sandbox_active_sessions IS '活跃沙箱会话视图 - 包含操作统计信息';
+
+CREATE VIEW public.sandbox_session_stats AS
+SELECT
+    s.id AS session_id,
+    s.tenant_id,
+    s.status,
+    COUNT(o.id) AS total_operations,
+    COUNT(o.id) FILTER (WHERE o.status = 'completed') AS completed_operations,
+    COUNT(o.id) FILTER (WHERE o.status = 'failed') AS failed_operations,
+    AVG(o.execution_duration_ms) FILTER (WHERE o.status = 'completed') AS avg_execution_time_ms,
+    MAX(o.started_at) AS last_operation_at
+FROM public.sandbox_sessions s
+LEFT JOIN public.sandbox_operations o ON s.id = o.session_id
+GROUP BY s.id, s.tenant_id, s.status;
+
+COMMENT ON VIEW public.sandbox_session_stats IS '沙箱会话统计视图 - 包含操作统计信息';
+"#;
+
 const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../scripts/init-database.sql"),
     PUBLIC_VERSIONING_AND_AUDIT_SQL,
+    PUBLIC_COMPATIBILITY_VIEW_RESET_SQL,
     include_str!("../../../migrations/20260317000001_create_sandbox_tables.sql"),
     include_str!("../../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"),
     include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),
@@ -113,6 +175,7 @@ const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!(
         "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
     ),
+    PUBLIC_SANDBOX_VIEW_REFRESH_SQL,
 ];
 
 const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
