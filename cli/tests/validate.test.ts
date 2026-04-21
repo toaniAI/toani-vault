@@ -108,3 +108,61 @@ describe("validateToken", () => {
     ).resolves.toMatchObject({ reason: "network" });
   });
 });
+
+describe("checkBaseUrlReachability", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("uses the API health endpoint when it responds", async () => {
+    const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
+
+    fetchMock.mockResolvedValueOnce({ status: 200 });
+
+    await expect(
+      checkBaseUrlReachability("https://api.example.com"),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 200,
+      url: "https://api.example.com/api/v1/health",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/api/v1/health",
+      expect.objectContaining({
+        signal: expect.any(Object),
+      }),
+    );
+  });
+
+  it("falls back to /health when the API health endpoint fails", async () => {
+    const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
+
+    fetchMock.mockRejectedValueOnce({ code: "ECONNREFUSED" });
+    fetchMock.mockResolvedValueOnce({ status: 503 });
+
+    await expect(
+      checkBaseUrlReachability("https://api.example.com"),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 503,
+      url: "https://api.example.com/health",
+    });
+  });
+
+  it("preserves network failures when all health probes fail", async () => {
+    const { checkBaseUrlReachability } = await import("../src/lib/validate.js");
+
+    fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
+    fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
+
+    await expect(
+      checkBaseUrlReachability("https://api.example.com"),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: "dns",
+      url: "https://api.example.com/health",
+    });
+  });
+});

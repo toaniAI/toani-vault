@@ -1,0 +1,7 @@
+{
+  "poolStatus": "running",
+  "activeSessions": 0,
+  "warmInstances": 0,
+  "healthy": true,
+  "error": "Insufficient warm instances: 0/2"
+}

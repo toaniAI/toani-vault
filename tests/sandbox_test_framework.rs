@@ -104,11 +104,14 @@ impl SandboxRepository for InMemorySandboxRepository {
             created_by: record.created_by,
             credential_id: record.credential_id,
             original_intent: record.original_intent,
-            status: "active".to_string(),
+            status: "ready".to_string(),
             started_at: record.started_at,
             expires_at: record.expires_at,
             terminated_at: None,
             updated_at: record.started_at,
+            active_operation_id: None,
+            active_operation_started_at: None,
+            last_error_summary: None,
         };
         self.sessions
             .write()
@@ -140,6 +143,37 @@ impl SandboxRepository for InMemorySandboxRepository {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(&session_id) {
             session.status = status.to_string();
+        }
+        Ok(())
+    }
+
+    async fn mark_session_operation_started(
+        &self,
+        session_id: SessionId,
+        operation_id: Uuid,
+        started_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), SandboxError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id) {
+            session.status = "executing".to_string();
+            session.active_operation_id = Some(operation_id);
+            session.active_operation_started_at = Some(started_at);
+            session.last_error_summary = None;
+        }
+        Ok(())
+    }
+
+    async fn mark_session_operation_finished(
+        &self,
+        session_id: SessionId,
+        last_error_summary: Option<String>,
+    ) -> Result<(), SandboxError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id) {
+            session.status = "ready".to_string();
+            session.active_operation_id = None;
+            session.active_operation_started_at = None;
+            session.last_error_summary = last_error_summary;
         }
         Ok(())
     }
@@ -184,7 +218,10 @@ impl SandboxRepository for InMemorySandboxRepository {
         let mut sessions = self.sessions.write().await;
         let mut count = 0;
         for (_, session) in sessions.iter_mut() {
-            if session.status == "active" {
+            if session.status == "active"
+                || session.status == "ready"
+                || session.status == "executing"
+            {
                 session.status = "expired".to_string();
                 count += 1;
             }
@@ -651,11 +688,14 @@ pub mod postgres {
                     created_by UUID NOT NULL,
                     credential_id UUID,
                     original_intent TEXT,
-                    status VARCHAR(32) NOT NULL DEFAULT 'active',
+                    status VARCHAR(32) NOT NULL DEFAULT 'ready',
                     started_at TIMESTAMPTZ NOT NULL,
                     expires_at TIMESTAMPTZ NOT NULL,
                     terminated_at TIMESTAMPTZ,
                     termination_reason TEXT,
+                    active_operation_id UUID,
+                    active_operation_started_at TIMESTAMPTZ,
+                    last_error_summary TEXT,
                     tee_context_id VARCHAR(128),
                     metadata JSONB,
                     created_at TIMESTAMPTZ DEFAULT NOW(),

@@ -865,6 +865,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
             disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
@@ -1006,6 +1007,12 @@ mod tests {
                     && mount.dst == sandbox_work_dir
                     && !mount.read_only)
         );
+
+        let args = scoped_config.to_args();
+        assert!(scoped_config.enable_user_namespace);
+        assert!(!args.contains(&"--disable_clone_newuser".to_string()));
+        assert!(args.contains(&"--uid_mapping".to_string()));
+        assert!(args.contains(&"--gid_mapping".to_string()));
     }
 
     #[tokio::test]

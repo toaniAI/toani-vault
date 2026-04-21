@@ -43,6 +43,7 @@ interface SandboxStatsApi {
   warm_instances: number;
   healthy: boolean;
   error?: string;
+  browser_runtime_probe_error?: string;
 }
 
 interface ExecuteOperationResponseApi {
@@ -157,7 +158,6 @@ export class SandboxService {
    * const session = await sdk.sandbox.createSession({
    *   serviceId: 'schwab',
    *   credentialId: 'cred-123',
-   *   startUrl: 'https://www.schwab.com',
    *   viewportWidth: 1920,
    *   viewportHeight: 1080,
    * });
@@ -174,7 +174,6 @@ export class SandboxService {
         service_id: request.serviceId,
         original_intent: request.originalIntent,
         credential_id: request.credentialId,
-        start_url: request.startUrl,
         viewport_width: request.viewportWidth,
         viewport_height: request.viewportHeight,
         user_agent: request.userAgent,
@@ -328,7 +327,7 @@ export class SandboxService {
    * @example
    * ```typescript
    * const session = await sdk.sandbox.resumeSession('session-123');
-   * console.log('Session resumed:', session.status === SessionStatus.Running);
+   * console.log('Session resumed:', session.status === SessionStatus.Ready);
    * ```
    */
   public async resumeSession(
@@ -490,6 +489,7 @@ export class SandboxService {
       warmInstances: response.warm_instances,
       healthy: response.healthy,
       error: response.error,
+      browserRuntimeProbeError: response.browser_runtime_probe_error,
     };
   }
 
@@ -779,7 +779,7 @@ export class SandboxService {
    *
    * @example
    * ```typescript
-   * const session = await sdk.sandbox.waitForStatus('session-123', SessionStatus.Running, {
+   * const session = await sdk.sandbox.waitForStatus('session-123', SessionStatus.Ready, {
    *   timeout: 30000,
    *   interval: 1000,
    * });

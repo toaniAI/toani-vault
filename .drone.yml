@@ -361,6 +361,8 @@ steps:
             printf "%s\n" "envs:"
             printf "%s\n" "  PRIVY_JWKS_URL: \"https://auth.privy.io/api/v1/apps/$${PRIVY_APP_ID}/jwks.json\""
             printf "%s\n" "  PRIVY_API_URL: \"https://auth.privy.io/api/v1\""
+            printf "%s\n" "  CREDBRIDGE_SKIP_NSJAIL_PREFLIGHT: \"false\""
+            printf "%s\n" "  CREDBRIDGE_SKIP_NSJAIL_SMOKE_TEST: \"false\""
 
             if [ -n "$$PRIVY_APP_ID" ]; then
               printf "  PRIVY_APP_ID: \"%s\"\n" "$$PRIVY_APP_ID"

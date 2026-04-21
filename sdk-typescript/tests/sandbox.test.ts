@@ -44,7 +44,6 @@ describe("SandboxService", () => {
         serviceId: "schwab",
         originalIntent: "login flow",
         credentialId: "cred-123",
-        startUrl: "https://www.schwab.com",
         viewportWidth: 1920,
         viewportHeight: 1080,
       });
@@ -57,7 +56,6 @@ describe("SandboxService", () => {
           service_id: "schwab",
           original_intent: "login flow",
           credential_id: "cred-123",
-          start_url: "https://www.schwab.com",
           viewport_width: 1920,
           viewport_height: 1080,
           user_agent: undefined,
@@ -70,7 +68,7 @@ describe("SandboxService", () => {
     it("应该支持自定义用户代理和超时", async () => {
       const mockResponse = {
         sessionId: "session-456",
-        status: SessionStatus.Running,
+        status: SessionStatus.Ready,
         wsUrl: "wss://vault.credbridge.io/sandbox/session-456",
         createdAt: "1704067200",
       };
@@ -80,7 +78,6 @@ describe("SandboxService", () => {
       await service.createSession({
         serviceId: "stripe",
         originalIntent: "open dashboard",
-        startUrl: "https://dashboard.stripe.com",
         userAgent: "CustomBot/1.0",
         timeout: 60000,
       });
@@ -91,7 +88,6 @@ describe("SandboxService", () => {
           service_id: "stripe",
           original_intent: "open dashboard",
           credential_id: undefined,
-          start_url: "https://dashboard.stripe.com",
           viewport_width: undefined,
           viewport_height: undefined,
           user_agent: "CustomBot/1.0",
@@ -108,7 +104,7 @@ describe("SandboxService", () => {
         sessions: [
           {
             sessionId: "session-1",
-            status: SessionStatus.Running,
+            status: SessionStatus.Ready,
             serviceId: "schwab",
             currentUrl: "https://www.schwab.com",
             createdAt: "1704067200",
@@ -149,7 +145,7 @@ describe("SandboxService", () => {
     it("应该获取会话详情", async () => {
       const mockResponse = {
         sessionId: "session-123",
-        status: SessionStatus.Running,
+        status: SessionStatus.Ready,
         serviceId: "schwab",
         credentialId: "cred-123",
         currentUrl: "https://www.schwab.com/accounts",
@@ -163,7 +159,7 @@ describe("SandboxService", () => {
       const result = await service.getSession("session-123");
 
       expect(result.sessionId).toBe("session-123");
-      expect(result.status).toBe(SessionStatus.Running);
+      expect(result.status).toBe(SessionStatus.Ready);
       expect(result.currentUrl).toBe("https://www.schwab.com/accounts");
       expect(client.get).toHaveBeenCalledWith(
         "/sandbox/sessions/session-123",
@@ -367,7 +363,7 @@ describe("SandboxService", () => {
     it("应该恢复会话", async () => {
       const mockResponse = {
         sessionId: "session-123",
-        status: SessionStatus.Running,
+        status: SessionStatus.Ready,
         serviceId: "schwab",
         createdAt: "1704067200",
       };
@@ -376,7 +372,7 @@ describe("SandboxService", () => {
 
       const result = await service.resumeSession("session-123");
 
-      expect(result.status).toBe(SessionStatus.Running);
+      expect(result.status).toBe(SessionStatus.Ready);
       expect(client.post).toHaveBeenCalledWith(
         "/sandbox/sessions/session-123/resume",
         {},
@@ -648,7 +644,7 @@ describe("SandboxService", () => {
     it("应该在会话存在时返回 true", async () => {
       vi.spyOn(client, "get").mockResolvedValue({
         sessionId: "session-123",
-        status: SessionStatus.Running,
+        status: SessionStatus.Ready,
         serviceId: "schwab",
         createdAt: "1704067200",
       });
@@ -677,17 +673,17 @@ describe("SandboxService", () => {
     it("应该在状态匹配时立即返回", async () => {
       vi.spyOn(client, "get").mockResolvedValue({
         sessionId: "session-123",
-        status: SessionStatus.Running,
+        status: SessionStatus.Ready,
         serviceId: "schwab",
         createdAt: "1704067200",
       });
 
       const result = await service.waitForStatus(
         "session-123",
-        SessionStatus.Running,
+        SessionStatus.Ready,
       );
 
-      expect(result.status).toBe(SessionStatus.Running);
+      expect(result.status).toBe(SessionStatus.Ready);
     });
 
     it("应该在超时前等待状态变化", async () => {
@@ -706,20 +702,20 @@ describe("SandboxService", () => {
         })
         .mockResolvedValue({
           sessionId: "session-123",
-          status: SessionStatus.Running,
+          status: SessionStatus.Ready,
           serviceId: "schwab",
           createdAt: "1704067200",
         });
 
       const result = await service.waitForStatus(
         "session-123",
-        SessionStatus.Running,
+        SessionStatus.Ready,
         {
           interval: 100,
         },
       );
 
-      expect(result.status).toBe(SessionStatus.Running);
+      expect(result.status).toBe(SessionStatus.Ready);
       expect(client.get).toHaveBeenCalledTimes(3);
     });
 
@@ -732,11 +728,11 @@ describe("SandboxService", () => {
       });
 
       await expect(
-        service.waitForStatus("session-123", SessionStatus.Running, {
+        service.waitForStatus("session-123", SessionStatus.Ready, {
           timeout: 200,
           interval: 100,
         }),
-      ).rejects.toThrow("Timeout waiting for session status: running");
+      ).rejects.toThrow("Timeout waiting for session status: ready");
     });
 
     it("应该为 bootstrap_page 发送受控请求体", async () => {

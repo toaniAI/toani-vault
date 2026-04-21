@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use sqlx::{PgPool, Row};
 
 use crate::api::audit::PostgresAuditStorageAdapter;
-use crate::services::db::pool::{DatabaseError, execute_pg_raw_sql_pool};
+use crate::services::db::pool::{DatabaseError, execute_pg_raw_sql_conn};
 use crate::services::db::{DatabasePool, SchemaManager};
 use crate::vault::postgres::PostgresStorageBackend;
 
@@ -41,25 +41,37 @@ const TENANT_REQUIRED_TABLES: &[&str] = &[
 ];
 
 const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &["credentials", "credential_versions", "audit_logs"];
+const FIXED_SCHEMA_SANDBOX_REQUIRED_TABLES: &[&str] = &["sandbox_sessions", "sandbox_operations"];
+const FIXED_SCHEMA_SANDBOX_OBJECTS: &[&str] = &[
+    "sandbox_sessions",
+    "sandbox_operations",
+    "sandbox_active_sessions",
+    "sandbox_session_stats",
+];
 
 const PUBLIC_VERSIONING_AND_AUDIT_SQL: &str = r#"
 BEGIN;
 
-ALTER TABLE credentials
+ALTER TABLE public.credentials
     ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.constraint_table_usage
-        WHERE table_name = 'credentials' AND constraint_name = 'credentials_version_check'
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = 'credentials_version_check'
+          AND t.relname = 'credentials'
+          AND n.nspname = 'public'
     ) THEN
-        ALTER TABLE credentials
+        ALTER TABLE public.credentials
         ADD CONSTRAINT credentials_version_check CHECK (version >= 1);
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS credential_versions (
+CREATE TABLE IF NOT EXISTS public.credential_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     credential_id VARCHAR(64) NOT NULL,
     version INTEGER NOT NULL,
@@ -70,47 +82,132 @@ CREATE TABLE IF NOT EXISTS credential_versions (
     CONSTRAINT unique_credential_version UNIQUE (credential_id, version),
     CONSTRAINT credential_versions_version_check CHECK (version >= 1),
     CONSTRAINT fk_credential_versions_credential
-        FOREIGN KEY (credential_id) REFERENCES credentials(credential_id) ON DELETE CASCADE
+        FOREIGN KEY (credential_id) REFERENCES public.credentials(credential_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_credentials_version
-    ON credentials(version);
+    ON public.credentials(version);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_credential_id
-    ON credential_versions(credential_id);
+    ON public.credential_versions(credential_id);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_created_at
-    ON credential_versions(created_at);
+    ON public.credential_versions(created_at);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_changed_by
-    ON credential_versions(changed_by);
+    ON public.credential_versions(changed_by);
 CREATE INDEX IF NOT EXISTS idx_credential_versions_lookup
-    ON credential_versions(credential_id, version DESC);
+    ON public.credential_versions(credential_id, version DESC);
 
-ALTER TABLE audit_logs
+ALTER TABLE public.audit_logs
     ADD COLUMN IF NOT EXISTS event_category VARCHAR(32);
-ALTER TABLE audit_logs
+ALTER TABLE public.audit_logs
     ADD COLUMN IF NOT EXISTS metadata JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_category
-    ON audit_logs(event_category);
+    ON public.audit_logs(event_category);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_metadata
-    ON audit_logs USING GIN (metadata);
+    ON public.audit_logs USING GIN (metadata);
 
 COMMIT;
+"#;
+
+const PUBLIC_COMPATIBILITY_VIEW_RESET_SQL: &str = r#"
+DROP VIEW IF EXISTS public.sandbox_active_sessions;
+DROP VIEW IF EXISTS public.sandbox_session_stats;
+"#;
+
+const PUBLIC_SANDBOX_VIEW_REFRESH_SQL: &str = r#"
+DROP VIEW IF EXISTS public.sandbox_active_sessions;
+DROP VIEW IF EXISTS public.sandbox_session_stats;
+
+CREATE VIEW public.sandbox_active_sessions AS
+SELECT
+    s.id,
+    s.tenant_id,
+    s.created_by,
+    s.status,
+    s.started_at,
+    s.expires_at,
+    s.terminated_at,
+    s.termination_reason,
+    s.tee_context_id,
+    s.security_policy,
+    s.metadata,
+    s.created_at,
+    s.updated_at,
+    s.credential_id,
+    s.original_intent,
+    s.active_operation_id,
+    s.active_operation_started_at,
+    s.last_error_summary,
+    COALESCE(stats.operation_count, 0) AS operation_count,
+    stats.last_operation_at
+FROM public.sandbox_sessions s
+LEFT JOIN (
+    SELECT
+        o.session_id,
+        COUNT(o.id) AS operation_count,
+        MAX(o.started_at) AS last_operation_at
+    FROM public.sandbox_operations o
+    GROUP BY o.session_id
+) stats ON stats.session_id = s.id
+WHERE s.status IN ('active', 'ready', 'executing');
+
+COMMENT ON VIEW public.sandbox_active_sessions IS '活跃沙箱会话视图 - 包含操作统计信息';
+
+CREATE VIEW public.sandbox_session_stats AS
+SELECT
+    s.id AS session_id,
+    s.tenant_id,
+    s.status,
+    COUNT(o.id) AS total_operations,
+    COUNT(o.id) FILTER (WHERE o.status = 'completed') AS completed_operations,
+    COUNT(o.id) FILTER (WHERE o.status = 'failed') AS failed_operations,
+    AVG(o.execution_duration_ms) FILTER (WHERE o.status = 'completed') AS avg_execution_time_ms,
+    MAX(o.started_at) AS last_operation_at
+FROM public.sandbox_sessions s
+LEFT JOIN public.sandbox_operations o ON s.id = o.session_id
+GROUP BY s.id, s.tenant_id, s.status;
+
+COMMENT ON VIEW public.sandbox_session_stats IS '沙箱会话统计视图 - 包含操作统计信息';
 "#;
 
 const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../scripts/init-database.sql"),
     PUBLIC_VERSIONING_AND_AUDIT_SQL,
+    PUBLIC_COMPATIBILITY_VIEW_RESET_SQL,
     include_str!("../../../migrations/20260317000001_create_sandbox_tables.sql"),
     include_str!("../../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"),
     include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),
     include_str!("../../../migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql"),
     include_str!("../../../migrations/20260413102000_add_api_token_credential_ids.sql"),
+    include_str!(
+        "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
+    ),
+    include_str!("../../../migrations/20260421093000_fix_sandbox_session_status_check.sql"),
+    PUBLIC_SANDBOX_VIEW_REFRESH_SQL,
+];
+
+const SANDBOX_BASELINE_SCRIPTS: &[&str] = &[
+    include_str!("../../../migrations/20260317000001_create_sandbox_tables.sql"),
+    include_str!("../../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"),
+    include_str!(
+        "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
+    ),
+    include_str!("../../../migrations/20260421093000_fix_sandbox_session_status_check.sql"),
 ];
 
 const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
     ("credentials", &["version"]),
     ("audit_logs", &["event_category", "metadata"]),
-    ("sandbox_sessions", &["credential_id", "original_intent"]),
+    (
+        "sandbox_sessions",
+        &[
+            "credential_id",
+            "original_intent",
+            "active_operation_id",
+            "active_operation_started_at",
+            "last_error_summary",
+        ],
+    ),
     (
         "api_tokens",
         &[
@@ -129,6 +226,17 @@ const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
         ],
     ),
 ];
+
+const SANDBOX_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[(
+    "sandbox_sessions",
+    &[
+        "credential_id",
+        "original_intent",
+        "active_operation_id",
+        "active_operation_started_at",
+        "last_error_summary",
+    ],
+)];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RequiredSchemaKind {
@@ -234,13 +342,29 @@ async fn collect_missing_tables(
 
     for required in required_sets {
         let existing = fetch_existing_tables(pool, &required.schema_name).await?;
-        let missing_tables = diff_required_tables(&existing, required.required_tables);
+        let mut missing_tables = diff_required_tables(&existing, required.required_tables);
         let missing_columns = match required.kind {
             RequiredSchemaKind::Public => {
                 let existing_columns = fetch_existing_columns(pool, &required.schema_name).await?;
                 diff_required_columns(&existing_columns, PUBLIC_REQUIRED_COLUMNS)
             }
-            RequiredSchemaKind::Fixed | RequiredSchemaKind::Tenant => Vec::new(),
+            RequiredSchemaKind::Fixed => {
+                if !fixed_schema_has_sandbox_objects(&existing) {
+                    Vec::new()
+                } else {
+                    missing_tables.extend(diff_required_tables(
+                        &existing,
+                        FIXED_SCHEMA_SANDBOX_REQUIRED_TABLES,
+                    ));
+                    missing_tables.sort();
+                    missing_tables.dedup();
+
+                    let existing_columns =
+                        fetch_existing_columns(pool, &required.schema_name).await?;
+                    diff_required_columns(&existing_columns, SANDBOX_REQUIRED_COLUMNS)
+                }
+            }
+            RequiredSchemaKind::Tenant => Vec::new(),
         };
 
         if !missing_tables.is_empty() || !missing_columns.is_empty() {
@@ -254,6 +378,12 @@ async fn collect_missing_tables(
     }
 
     Ok(reports)
+}
+
+fn fixed_schema_has_sandbox_objects(existing_tables: &HashSet<String>) -> bool {
+    FIXED_SCHEMA_SANDBOX_OBJECTS
+        .iter()
+        .any(|table_name| existing_tables.contains(*table_name))
 }
 
 async fn fetch_existing_tables(
@@ -371,11 +501,33 @@ async fn repair_missing_tables(
 }
 
 async fn ensure_public_schema_baseline(pool: &PgPool) -> Result<(), DatabaseError> {
-    for script in PUBLIC_BASELINE_SCRIPTS {
-        execute_pg_raw_sql_pool(pool, script)
-            .await
-            .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    sqlx::query("SET search_path TO public")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    let apply_result = async {
+        for script in PUBLIC_BASELINE_SCRIPTS {
+            execute_pg_raw_sql_conn(&mut conn, script)
+                .await
+                .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+        }
+        Ok::<(), DatabaseError>(())
     }
+    .await;
+
+    let reset_result = sqlx::query("RESET search_path")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()));
+
+    apply_result?;
+    reset_result?;
     Ok(())
 }
 
@@ -387,7 +539,128 @@ async fn ensure_fixed_schema_baseline(
     PostgresAuditStorageAdapter::ensure_table(pool, schema_name)
         .await
         .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    ensure_fixed_schema_sandbox_compatibility(pool, schema_name).await?;
     Ok(())
+}
+
+async fn ensure_fixed_schema_sandbox_compatibility(
+    pool: &PgPool,
+    schema_name: &str,
+) -> Result<(), DatabaseError> {
+    let existing_tables = fetch_existing_tables(pool, schema_name).await?;
+    if !fixed_schema_has_sandbox_objects(&existing_tables) {
+        return Ok(());
+    }
+
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    let set_search_path_sql = format!("SET search_path TO \"{schema_name}\", public");
+
+    sqlx::query(&set_search_path_sql)
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    let apply_result = async {
+        let compatibility_reset = build_schema_sandbox_view_reset_sql(schema_name);
+        execute_pg_raw_sql_conn(&mut conn, &compatibility_reset)
+            .await
+            .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+        for script in SANDBOX_BASELINE_SCRIPTS {
+            execute_pg_raw_sql_conn(&mut conn, script)
+                .await
+                .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+        }
+
+        let view_refresh = build_schema_sandbox_view_refresh_sql(schema_name);
+        execute_pg_raw_sql_conn(&mut conn, &view_refresh)
+            .await
+            .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+        Ok::<(), DatabaseError>(())
+    }
+    .await;
+
+    let reset_result = sqlx::query("RESET search_path")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()));
+
+    apply_result?;
+    reset_result?;
+    Ok(())
+}
+
+fn build_schema_sandbox_view_reset_sql(schema_name: &str) -> String {
+    format!(
+        r#"
+DROP VIEW IF EXISTS "{schema_name}".sandbox_active_sessions;
+DROP VIEW IF EXISTS "{schema_name}".sandbox_session_stats;
+"#
+    )
+}
+
+fn build_schema_sandbox_view_refresh_sql(schema_name: &str) -> String {
+    format!(
+        r#"
+DROP VIEW IF EXISTS "{schema_name}".sandbox_active_sessions;
+DROP VIEW IF EXISTS "{schema_name}".sandbox_session_stats;
+
+CREATE VIEW "{schema_name}".sandbox_active_sessions AS
+SELECT
+    s.id,
+    s.tenant_id,
+    s.created_by,
+    s.status,
+    s.started_at,
+    s.expires_at,
+    s.terminated_at,
+    s.termination_reason,
+    s.tee_context_id,
+    s.security_policy,
+    s.metadata,
+    s.created_at,
+    s.updated_at,
+    s.credential_id,
+    s.original_intent,
+    s.active_operation_id,
+    s.active_operation_started_at,
+    s.last_error_summary,
+    COALESCE(stats.operation_count, 0) AS operation_count,
+    stats.last_operation_at
+FROM "{schema_name}".sandbox_sessions s
+LEFT JOIN (
+    SELECT
+        o.session_id,
+        COUNT(o.id) AS operation_count,
+        MAX(o.started_at) AS last_operation_at
+    FROM "{schema_name}".sandbox_operations o
+    GROUP BY o.session_id
+) stats ON stats.session_id = s.id
+WHERE s.status IN ('active', 'ready', 'executing');
+
+COMMENT ON VIEW "{schema_name}".sandbox_active_sessions IS '活跃沙箱会话视图 - 包含操作统计信息';
+
+CREATE VIEW "{schema_name}".sandbox_session_stats AS
+SELECT
+    s.id AS session_id,
+    s.tenant_id,
+    s.status,
+    COUNT(o.id) AS total_operations,
+    COUNT(o.id) FILTER (WHERE o.status = 'completed') AS completed_operations,
+    COUNT(o.id) FILTER (WHERE o.status = 'failed') AS failed_operations,
+    AVG(o.execution_duration_ms) FILTER (WHERE o.status = 'completed') AS avg_execution_time_ms,
+    MAX(o.started_at) AS last_operation_at
+FROM "{schema_name}".sandbox_sessions s
+LEFT JOIN "{schema_name}".sandbox_operations o ON s.id = o.session_id
+GROUP BY s.id, s.tenant_id, s.status;
+
+COMMENT ON VIEW "{schema_name}".sandbox_session_stats IS '沙箱会话统计视图 - 包含操作统计信息';
+"#
+    )
 }
 
 async fn ensure_tenant_schema_baseline(

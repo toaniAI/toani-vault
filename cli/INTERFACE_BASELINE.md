@@ -73,10 +73,12 @@ API base path: `/api/v1`.
 - Token service: `create/stats`
 - Sandbox service: `get operation` and `stats`
 
-## 3) Old Rust CLI Coverage Snapshot
+## 3) Current npm CLI Coverage Snapshot
 
 ### Command groups
 
+- `login`
+- `doctor`
 - `config`
 - `credentials`
 - `sandbox`
@@ -84,14 +86,14 @@ API base path: `/api/v1`.
 ### Known drift
 
 - CLI surface drift:
-  - Current npm CLI exposes `config`, read-only `credentials` (`list`, `get`), `sandbox`, plus global flags/version
+  - Current npm CLI exposes `login`, `doctor`, `config`, read-only `credentials` (`list`, `get`), `sandbox`, plus global flags/version
   - Historical docs still referenced broader unshipped `auth`, mutating `credentials`, `tokens`, and `audit` groups
 - Sandbox terminate naming drift:
   - Real close-session route is `DELETE /sandbox/sessions/:id`
   - Some historical constants still referenced `/sandbox/sessions/:id/terminate`
   - Screenshot is not exposed by the current backend sandbox router
 - Auth status/login behavior drift:
-  - Old CLI probes credentials list instead of using auth session/me endpoints
+  - Current `login` / `doctor` validation is based on `GET /sandbox/stats`, not `auth/session` or `auth/me`
 
 ## 4) Migration Rules
 

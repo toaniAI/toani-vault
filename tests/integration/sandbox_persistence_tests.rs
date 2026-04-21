@@ -29,11 +29,14 @@ async fn ensure_sandbox_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
             created_by UUID NOT NULL,
             credential_id UUID,
             original_intent TEXT,
-            status VARCHAR(32) NOT NULL DEFAULT 'active',
+            status VARCHAR(32) NOT NULL DEFAULT 'ready',
             started_at TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ NOT NULL,
             terminated_at TIMESTAMPTZ,
             termination_reason TEXT,
+            active_operation_id UUID,
+            active_operation_started_at TIMESTAMPTZ,
+            last_error_summary TEXT,
             tee_context_id VARCHAR(128),
             metadata JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -116,6 +119,18 @@ async fn test_sandbox_repository_persists_across_restart_and_reconciles_orphans(
     .await
     .expect("create operation should persist");
 
+    repo.mark_session_operation_started(session_id, operation_id, chrono::Utc::now())
+        .await
+        .expect("mark executing should persist");
+    let executing = repo
+        .get_session_by_id(tenant_id, session_id)
+        .await
+        .expect("query executing session should succeed")
+        .expect("executing session should exist");
+    assert_eq!(executing.status, "executing");
+    assert_eq!(executing.active_operation_id, Some(operation_id));
+    assert!(executing.active_operation_started_at.is_some());
+
     repo.complete_operation(CompleteSandboxOperationRecord {
         operation_id,
         status: "completed",
@@ -126,6 +141,9 @@ async fn test_sandbox_repository_persists_across_restart_and_reconciles_orphans(
     })
     .await
     .expect("complete operation should persist");
+    repo.mark_session_operation_finished(session_id, Some("navigate failed".to_string()))
+        .await
+        .expect("mark ready should persist");
 
     // Simulate process restart by re-creating repository from same pool.
     let repo_after_restart = PostgresSandboxRepository::new(pool.clone());
@@ -136,6 +154,12 @@ async fn test_sandbox_repository_persists_across_restart_and_reconciles_orphans(
         .expect("session should exist after restart");
     assert_eq!(loaded_session.tenant_id, tenant_id);
     assert_eq!(loaded_session.credential_id, credential_id);
+    assert_eq!(loaded_session.status, "ready");
+    assert_eq!(loaded_session.active_operation_id, None);
+    assert_eq!(
+        loaded_session.last_error_summary.as_deref(),
+        Some("navigate failed")
+    );
 
     let loaded_operation = repo_after_restart
         .get_operation_by_id(tenant_id, operation_id)
@@ -158,7 +182,7 @@ async fn test_sandbox_repository_persists_across_restart_and_reconciles_orphans(
     assert_eq!(paused.status, "paused");
 
     repo_after_restart
-        .update_session_status(session_id, "active")
+        .update_session_status(session_id, "ready")
         .await
         .expect("resume should persist");
 

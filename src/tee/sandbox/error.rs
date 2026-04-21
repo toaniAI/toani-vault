@@ -2,6 +2,7 @@
 
 use std::fmt;
 use thiserror::Error;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// 沙箱通用错误
@@ -212,6 +213,14 @@ pub enum ReviewError {
 }
 
 impl SandboxError {
+    const RECOVERABLE_RESOURCE_PATTERNS: [&'static str; 5] = [
+        "EAGAIN",
+        "SystemResources",
+        "No space left on device",
+        "uv_thread_create",
+        "Failed to reserve virtual memory for CodeRange",
+    ];
+
     /// 创建配置错误
     pub fn config(msg: impl Into<String>) -> Self {
         SandboxError::Config(msg.into())
@@ -230,6 +239,18 @@ impl SandboxError {
     /// 检查是否为资源不足错误
     pub fn is_resource_exhausted(&self) -> bool {
         matches!(self, SandboxError::ResourceExhausted { .. })
+    }
+
+    /// 检查是否为可恢复的资源错误
+    pub fn is_recoverable_resource_failure(&self) -> bool {
+        if self.is_resource_exhausted() {
+            return true;
+        }
+
+        let message = self.to_string();
+        Self::RECOVERABLE_RESOURCE_PATTERNS
+            .iter()
+            .any(|pattern| message.contains(pattern))
     }
 }
 
@@ -254,6 +275,18 @@ impl SessionError {
             session_id,
             current: current.to_string(),
             expected: expected.to_string(),
+        }
+    }
+
+    pub fn busy_with_operation(
+        session_id: Uuid,
+        operation_id: Uuid,
+        started_at: OffsetDateTime,
+    ) -> Self {
+        SessionError::InvalidState {
+            session_id,
+            current: format!("executing (operation_id: {operation_id}, started_at: {started_at})"),
+            expected: "ready or paused".to_string(),
         }
     }
 
@@ -350,12 +383,35 @@ mod tests {
         let err = SandboxError::config("invalid config");
         assert!(matches!(err, SandboxError::Config(_)));
         assert!(!err.is_timeout());
+        assert!(!err.is_recoverable_resource_failure());
 
         let timeout_err = SandboxError::Timeout {
             operation: "start".to_string(),
         };
         assert!(timeout_err.is_timeout());
         assert_eq!(timeout_err.http_status_code(), 504);
+
+        let resource_err = SandboxError::ResourceExhausted {
+            resource: "pids".to_string(),
+        };
+        assert!(resource_err.is_recoverable_resource_failure());
+
+        for message in [
+            "spawn /usr/local/bin/lightpanda EAGAIN",
+            "lightpanda failed with SystemResources",
+            "No space left on device while creating cgroup",
+            "uv_thread_create failed",
+            "Failed to reserve virtual memory for CodeRange",
+        ] {
+            let err = SandboxError::Other(message.to_string());
+            assert!(
+                err.is_recoverable_resource_failure(),
+                "expected recoverable resource failure for {message}"
+            );
+        }
+
+        let dom_err = SandboxError::Other("selector not found".to_string());
+        assert!(!dom_err.is_recoverable_resource_failure());
     }
 
     #[test]

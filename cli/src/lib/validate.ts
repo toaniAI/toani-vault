@@ -26,12 +26,87 @@ export type ValidationReason =
   | "network"
   | "unexpected_status";
 
+export type ReachabilityReason =
+  | "dns"
+  | "refused"
+  | "timeout"
+  | "network";
+
 export interface ValidationResult {
   ok: boolean;
   status: number;
   reason?: ValidationReason;
   body?: Record<string, unknown> | null;
   error?: unknown;
+}
+
+export interface ReachabilityResult {
+  ok: boolean;
+  status: number;
+  url: string;
+  reason?: ReachabilityReason;
+  error?: unknown;
+}
+
+function classifyFetchError(error: unknown): {
+  reason: ReachabilityReason;
+  error: unknown;
+} {
+  const candidate = error as {
+    name?: string;
+    code?: string;
+    cause?: { code?: string };
+  };
+  const code = candidate.cause?.code ?? candidate.code;
+
+  if (candidate.name === "TimeoutError" || code === "ABORT_ERR") {
+    return { reason: "timeout", error };
+  }
+  if (code === "ENOTFOUND") {
+    return { reason: "dns", error };
+  }
+  if (code === "ECONNREFUSED") {
+    return { reason: "refused", error };
+  }
+
+  return { reason: "network", error };
+}
+
+export async function checkBaseUrlReachability(
+  baseUrl: string,
+): Promise<ReachabilityResult> {
+  const candidates = [
+    new URL("/api/v1/health", baseUrl).toString(),
+    new URL("/health", baseUrl).toString(),
+  ];
+  let lastError: ReachabilityResult | null = null;
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(8_000),
+      });
+      return { ok: true, status: response.status, url };
+    } catch (error) {
+      const classified = classifyFetchError(error);
+      lastError = {
+        ok: false,
+        status: 0,
+        url,
+        reason: classified.reason,
+        error: classified.error,
+      };
+    }
+  }
+
+  return (
+    lastError ?? {
+      ok: false,
+      status: 0,
+      url: candidates[0],
+      reason: "network",
+    }
+  );
 }
 
 export function isPasetoToken(value: string | undefined | null): boolean {
@@ -87,23 +162,12 @@ export async function validateToken(
       reason: "unexpected_status",
     };
   } catch (error) {
-    const candidate = error as {
-      name?: string;
-      code?: string;
-      cause?: { code?: string };
+    const classified = classifyFetchError(error);
+    return {
+      ok: false,
+      status: 0,
+      reason: classified.reason,
+      error: classified.error,
     };
-    const code = candidate.cause?.code ?? candidate.code;
-
-    if (candidate.name === "TimeoutError" || code === "ABORT_ERR") {
-      return { ok: false, status: 0, reason: "timeout", error };
-    }
-    if (code === "ENOTFOUND") {
-      return { ok: false, status: 0, reason: "dns", error };
-    }
-    if (code === "ECONNREFUSED") {
-      return { ok: false, status: 0, reason: "refused", error };
-    }
-
-    return { ok: false, status: 0, reason: "network", error };
   }
 }

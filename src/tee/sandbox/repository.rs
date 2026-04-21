@@ -45,6 +45,9 @@ pub struct SandboxSessionRecord {
     pub expires_at: DateTime<Utc>,
     pub terminated_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
+    pub active_operation_id: Option<Uuid>,
+    pub active_operation_started_at: Option<DateTime<Utc>>,
+    pub last_error_summary: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +87,19 @@ pub trait SandboxRepository: Send + Sync {
         &self,
         session_id: SessionId,
         status: &'static str,
+    ) -> Result<(), SandboxError>;
+
+    async fn mark_session_operation_started(
+        &self,
+        session_id: SessionId,
+        operation_id: Uuid,
+        started_at: DateTime<Utc>,
+    ) -> Result<(), SandboxError>;
+
+    async fn mark_session_operation_finished(
+        &self,
+        session_id: SessionId,
+        last_error_summary: Option<String>,
     ) -> Result<(), SandboxError>;
 
     async fn create_operation(&self, record: NewSandboxOperationRecord)
@@ -196,7 +212,7 @@ impl SandboxRepository for PostgresSandboxRepository {
                 tee_context_id,
                 metadata
             )
-            VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, 'ready', $6, $7, $8, $9)
             "#,
         )
         .bind(Uuid::from(record.session_id))
@@ -227,9 +243,11 @@ impl SandboxRepository for PostgresSandboxRepository {
             SET status = $2,
                 terminated_at = COALESCE(terminated_at, $3),
                 termination_reason = $4,
+                active_operation_id = NULL,
+                active_operation_started_at = NULL,
                 updated_at = NOW()
             WHERE id = $1
-              AND status IN ('active', 'paused')
+              AND status IN ('ready', 'executing', 'paused')
             "#,
         )
         .bind(Uuid::from(session_id))
@@ -251,9 +269,17 @@ impl SandboxRepository for PostgresSandboxRepository {
             r#"
             UPDATE sandbox_sessions
             SET status = $2,
+                active_operation_id = CASE
+                    WHEN $2 = 'executing' THEN active_operation_id
+                    ELSE NULL
+                END,
+                active_operation_started_at = CASE
+                    WHEN $2 = 'executing' THEN active_operation_started_at
+                    ELSE NULL
+                END,
                 updated_at = NOW()
             WHERE id = $1
-              AND status IN ('active', 'paused')
+              AND status IN ('ready', 'executing', 'paused')
             "#,
         )
         .bind(Uuid::from(session_id))
@@ -261,6 +287,58 @@ impl SandboxRepository for PostgresSandboxRepository {
         .execute(&self.pool)
         .await
         .map_err(|error| SandboxError::Pool(format!("更新沙箱会话状态失败: {error}")))?;
+        Ok(())
+    }
+
+    async fn mark_session_operation_started(
+        &self,
+        session_id: SessionId,
+        operation_id: Uuid,
+        started_at: DateTime<Utc>,
+    ) -> Result<(), SandboxError> {
+        sqlx::query(
+            r#"
+            UPDATE sandbox_sessions
+            SET status = 'executing',
+                active_operation_id = $2,
+                active_operation_started_at = $3,
+                last_error_summary = NULL,
+                updated_at = NOW()
+            WHERE id = $1
+              AND status IN ('ready', 'paused')
+            "#,
+        )
+        .bind(Uuid::from(session_id))
+        .bind(operation_id)
+        .bind(started_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| SandboxError::Pool(format!("标记沙箱会话执行状态失败: {error}")))?;
+        Ok(())
+    }
+
+    async fn mark_session_operation_finished(
+        &self,
+        session_id: SessionId,
+        last_error_summary: Option<String>,
+    ) -> Result<(), SandboxError> {
+        sqlx::query(
+            r#"
+            UPDATE sandbox_sessions
+            SET status = 'ready',
+                active_operation_id = NULL,
+                active_operation_started_at = NULL,
+                last_error_summary = $2,
+                updated_at = NOW()
+            WHERE id = $1
+              AND status = 'executing'
+            "#,
+        )
+        .bind(Uuid::from(session_id))
+        .bind(last_error_summary)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| SandboxError::Pool(format!("结束沙箱会话执行状态失败: {error}")))?;
         Ok(())
     }
 
@@ -335,8 +413,10 @@ impl SandboxRepository for PostgresSandboxRepository {
             SET status = 'expired',
                 terminated_at = $1,
                 termination_reason = $2,
+                active_operation_id = NULL,
+                active_operation_started_at = NULL,
                 updated_at = NOW()
-            WHERE status = 'active'
+            WHERE status IN ('active', 'ready', 'executing')
             "#,
         )
         .bind(now)
@@ -363,6 +443,9 @@ impl SandboxRepository for PostgresSandboxRepository {
                    expires_at,
                    terminated_at,
                    updated_at,
+                   active_operation_id,
+                   active_operation_started_at,
+                   last_error_summary,
                    tee_context_id,
                    metadata
             FROM sandbox_sessions
@@ -413,6 +496,9 @@ impl SandboxRepository for PostgresSandboxRepository {
                 updated_at: row.try_get("updated_at").map_err(|error| {
                     SandboxError::Pool(format!("读取会话更新时间失败: {error}"))
                 })?,
+                active_operation_id: row.try_get("active_operation_id").ok(),
+                active_operation_started_at: row.try_get("active_operation_started_at").ok(),
+                last_error_summary: row.try_get("last_error_summary").ok(),
             });
         }
         Ok(records)
@@ -435,6 +521,9 @@ impl SandboxRepository for PostgresSandboxRepository {
                    expires_at,
                    terminated_at,
                    updated_at,
+                   active_operation_id,
+                   active_operation_started_at,
+                   last_error_summary,
                    tee_context_id,
                    metadata
             FROM sandbox_sessions
@@ -486,6 +575,9 @@ impl SandboxRepository for PostgresSandboxRepository {
             updated_at: row
                 .try_get("updated_at")
                 .map_err(|error| SandboxError::Pool(format!("读取会话更新时间失败: {error}")))?,
+            active_operation_id: row.try_get("active_operation_id").ok(),
+            active_operation_started_at: row.try_get("active_operation_started_at").ok(),
+            last_error_summary: row.try_get("last_error_summary").ok(),
         }))
     }
 

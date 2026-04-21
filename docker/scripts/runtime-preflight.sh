@@ -109,6 +109,11 @@ ensure_nsjail_userns_prerequisites() {
     if ! "$nsjail_binary" --mode o \
         --uid_mapping "${inside_uid}:${outside_uid}:${uid_count}" \
         --gid_mapping "${inside_gid}:${outside_gid}:${gid_count}" \
+        --bindmount_ro /dev/null:/dev/null \
+        --bindmount_ro /bin:/bin \
+        --bindmount_ro /lib:/lib \
+        --bindmount_ro /lib64:/lib64 \
+        --bindmount_ro /usr:/usr \
         -- /bin/sh -c 'id >/dev/null && echo NSJAIL_USERNS_OK' >"$smoke_output_file" 2>&1; then
         cat "$smoke_output_file" >&2
         rm -f "$smoke_output_file"

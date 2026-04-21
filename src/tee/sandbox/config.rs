@@ -63,6 +63,10 @@ impl SandboxConfig {
             }
         }
 
+        if let Some(max_pids) = env_positive_u64("CREDBRIDGE_SANDBOX_MAX_PIDS") {
+            config.resource_limits.max_pids = max_pids;
+        }
+
         config
     }
 }
@@ -95,6 +99,15 @@ fn env_bool(name: &str) -> Option<bool> {
         "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF" => Some(false),
         _ => None,
     })
+}
+
+fn env_positive_u64(name: &str) -> Option<u64> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
 }
 
 fn default_true() -> bool {
@@ -402,6 +415,8 @@ pub struct NsjailConfig {
     pub env: HashMap<String, String>,
     /// 为 browser runtime 使用单独的放宽 seccomp 策略，允许 node/playwright/chromium 启动。
     pub disable_seccomp_for_browser_runtime: bool,
+    /// 是否为当前 jail 启用 user namespace 隔离。
+    pub enable_user_namespace: bool,
     /// UID 映射
     pub uid_map: UidMap,
     /// GID 映射
@@ -416,6 +431,7 @@ impl Default for NsjailConfig {
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
             disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
             uid_map: UidMap::default(),
             gid_map: GidMap::default(),
         }
@@ -490,7 +506,7 @@ impl NsjailConfig {
         if !ns.uts {
             args.push("--disable_clone_newuts".to_string());
         }
-        if !ns.user {
+        if !ns.user || !self.enable_user_namespace {
             args.push("--disable_clone_newuser".to_string());
         }
 
@@ -538,18 +554,20 @@ impl NsjailConfig {
             args.push(format!("{key}={value}"));
         }
 
-        // UID/GID mapping
-        args.push("--uid_mapping".to_string());
-        args.push(format!(
-            "{}:{}:{}",
-            self.uid_map.inside_uid, self.uid_map.outside_uid, self.uid_map.count
-        ));
+        if self.enable_user_namespace {
+            // UID/GID mapping only applies when user namespace isolation is enabled.
+            args.push("--uid_mapping".to_string());
+            args.push(format!(
+                "{}:{}:{}",
+                self.uid_map.inside_uid, self.uid_map.outside_uid, self.uid_map.count
+            ));
 
-        args.push("--gid_mapping".to_string());
-        args.push(format!(
-            "{}:{}:{}",
-            self.gid_map.inside_gid, self.gid_map.outside_gid, self.gid_map.count
-        ));
+            args.push("--gid_mapping".to_string());
+            args.push(format!(
+                "{}:{}:{}",
+                self.gid_map.inside_gid, self.gid_map.outside_gid, self.gid_map.count
+            ));
+        }
 
         // Command
         args.push("--".to_string());
@@ -610,6 +628,12 @@ impl NsjailConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn test_default_sandbox_config() {
@@ -690,6 +714,20 @@ mod tests {
     }
 
     #[test]
+    fn test_nsjail_config_disables_userns_when_requested() {
+        let config = NsjailConfig {
+            enable_user_namespace: false,
+            ..NsjailConfig::default()
+        };
+
+        let args = config.to_args();
+
+        assert!(args.contains(&"--disable_clone_newuser".to_string()));
+        assert!(!args.contains(&"--uid_mapping".to_string()));
+        assert!(!args.contains(&"--gid_mapping".to_string()));
+    }
+
+    #[test]
     fn test_nsjail_config_defaults_to_non_root_inside_uid_gid() {
         let config = NsjailConfig::default();
         let args = config.to_args();
@@ -760,6 +798,7 @@ mod tests {
 
     #[test]
     fn test_from_env_prefers_nsjail_path_override() {
+        let _guard = env_lock().lock().expect("env lock");
         unsafe {
             std::env::set_var("NSJAIL_PATH", "/custom/nsjail");
         }
@@ -774,6 +813,7 @@ mod tests {
 
     #[test]
     fn test_from_env_reads_cgroup_overrides() {
+        let _guard = env_lock().lock().expect("env lock");
         unsafe {
             std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED", "false");
             std::env::set_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED", "true");
@@ -792,6 +832,42 @@ mod tests {
             std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ENABLED");
             std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_REQUIRED");
             std::env::remove_var("CREDBRIDGE_SANDBOX_CGROUP_ROOT");
+        }
+    }
+
+    #[test]
+    fn test_from_env_reads_max_pids_override() {
+        let _guard = env_lock().lock().expect("env lock");
+        unsafe {
+            std::env::set_var("CREDBRIDGE_SANDBOX_MAX_PIDS", "200");
+        }
+
+        let config = SandboxConfig::from_env();
+        assert_eq!(config.resource_limits.max_pids, 200);
+
+        unsafe {
+            std::env::remove_var("CREDBRIDGE_SANDBOX_MAX_PIDS");
+        }
+    }
+
+    #[test]
+    fn test_from_env_invalid_max_pids_falls_back_to_default() {
+        let _guard = env_lock().lock().expect("env lock");
+        for value in ["", "0", "abc"] {
+            unsafe {
+                std::env::set_var("CREDBRIDGE_SANDBOX_MAX_PIDS", value);
+            }
+
+            let config = SandboxConfig::from_env();
+            assert_eq!(
+                config.resource_limits.max_pids,
+                ResourceLimits::default().max_pids,
+                "unexpected max_pids for override {value:?}"
+            );
+        }
+
+        unsafe {
+            std::env::remove_var("CREDBRIDGE_SANDBOX_MAX_PIDS");
         }
     }
 }

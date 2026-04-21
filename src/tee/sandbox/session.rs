@@ -49,6 +49,49 @@ pub trait SandboxSession: Send + Sync {
     fn is_expired(&self) -> bool;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveredSandboxResourceKind {
+    WarmInstance,
+    ActiveSession,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveredSandboxResource {
+    pub kind: RecoveredSandboxResourceKind,
+    pub sandbox_id: crate::tee::sandbox::types::SandboxId,
+    pub session_id: Option<SessionId>,
+}
+
+#[async_trait]
+pub trait SandboxResourceRecovery: Send + Sync {
+    async fn recover_sandbox_resources(
+        &self,
+        current_session_id: SessionId,
+    ) -> Result<Option<RecoveredSandboxResource>, SandboxError>;
+}
+
+#[async_trait]
+trait SandboxOperationExecutor: Send + Sync {
+    async fn execute(
+        &self,
+        session: &ActiveNsjailSession,
+        operation: &OperationRequest,
+    ) -> Result<SandboxExecutionOutput, SandboxError>;
+}
+
+struct DefaultSandboxOperationExecutor;
+
+#[async_trait]
+impl SandboxOperationExecutor for DefaultSandboxOperationExecutor {
+    async fn execute(
+        &self,
+        session: &ActiveNsjailSession,
+        operation: &OperationRequest,
+    ) -> Result<SandboxExecutionOutput, SandboxError> {
+        session.execute_in_sandbox(operation).await
+    }
+}
+
 #[derive(Clone)]
 pub struct ActiveNsjailSession {
     pub id: SessionId,
@@ -64,6 +107,8 @@ pub struct ActiveNsjailSession {
     browser_runtime: Arc<RwLock<Option<SandboxBrowserRuntime>>>,
     credential_cache: Arc<RwLock<Option<Arc<SessionCredentialMaterial>>>>,
     sensitive_selectors: Arc<RwLock<HashSet<String>>>,
+    resource_recovery: Option<Arc<dyn SandboxResourceRecovery>>,
+    operation_executor: Arc<dyn SandboxOperationExecutor>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +147,7 @@ const DEFAULT_DOM_EXPORT_MAX_BYTES: u64 = 262_144;
 const DEFAULT_BOOTSTRAP_PAGE_WAIT_TIMEOUT_MS: u64 = 30_000;
 const EXECUTE_SCRIPT_BINDINGS_ERROR: &str =
     "invalid_request: execute_script bindings must be plain strings";
+const MAX_RESOURCE_RECOVERY_RETRIES: usize = 2;
 
 impl ActiveNsjailSession {
     pub fn new(id: SessionId, context: SessionContext, sandbox: NsjailSandbox) -> Self {
@@ -140,6 +186,8 @@ impl ActiveNsjailSession {
             browser_runtime: Arc::new(RwLock::new(None)),
             credential_cache: Arc::new(RwLock::new(None)),
             sensitive_selectors: Arc::new(RwLock::new(HashSet::new())),
+            resource_recovery: None,
+            operation_executor: Arc::new(DefaultSandboxOperationExecutor),
         }
     }
 
@@ -171,9 +219,40 @@ impl ActiveNsjailSession {
         self.operation_reviewer = Some(reviewer);
     }
 
+    pub fn set_resource_recovery(&mut self, recovery: Arc<dyn SandboxResourceRecovery>) {
+        self.resource_recovery = Some(recovery);
+    }
+
+    #[cfg(test)]
+    fn set_operation_executor(&mut self, executor: Arc<dyn SandboxOperationExecutor>) {
+        self.operation_executor = executor;
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn set_status_for_test(&self, status: SessionStatus) {
+        *self.status.write().await = status;
+    }
+
+    pub async fn is_executing(&self) -> bool {
+        *self.status.read().await == SessionStatus::Executing
+    }
+
+    pub async fn last_activity_at(&self) -> OffsetDateTime {
+        self.context.last_activity().await
+    }
+
     async fn can_execute(&self) -> Result<(), SessionError> {
         let status = *self.status.read().await;
         if !status.can_execute() {
+            if status == SessionStatus::Executing
+                && let Some(record) = self.current_executing_operation().await
+            {
+                return Err(SessionError::busy_with_operation(
+                    self.id.into(),
+                    record.operation_id,
+                    record.started_at,
+                ));
+            }
             return Err(SessionError::invalid_state(
                 self.id.into(),
                 status,
@@ -211,6 +290,16 @@ impl ActiveNsjailSession {
 
     pub async fn get_operation_history(&self) -> Vec<OperationRecord> {
         self.operation_history.read().await.clone()
+    }
+
+    async fn current_executing_operation(&self) -> Option<OperationRecord> {
+        self.operation_history
+            .read()
+            .await
+            .iter()
+            .rev()
+            .find(|record| record.status == OperationStatus::Executing)
+            .cloned()
     }
 
     async fn shutdown_runtime(&self) {
@@ -306,6 +395,264 @@ impl ActiveNsjailSession {
         }
 
         Ok(())
+    }
+
+    async fn execute_with_resource_retries(
+        &self,
+        operation: &OperationRequest,
+    ) -> Result<SandboxExecutionOutput, SandboxError> {
+        let mut retry_count = 0;
+
+        loop {
+            match self.operation_executor.execute(self, operation).await {
+                Ok(output) => return Ok(output),
+                Err(error)
+                    if error.is_recoverable_resource_failure()
+                        && retry_count < MAX_RESOURCE_RECOVERY_RETRIES =>
+                {
+                    let Some(recovery) = &self.resource_recovery else {
+                        return Err(error);
+                    };
+
+                    self.shutdown_runtime().await;
+
+                    let Some(recovered) = recovery.recover_sandbox_resources(self.id).await? else {
+                        return Err(error);
+                    };
+
+                    retry_count += 1;
+                    warn!(
+                        session_id = %self.id,
+                        operation_id = %operation.operation_id,
+                        retry = retry_count,
+                        original_error = %error,
+                        recovered_kind = ?recovered.kind,
+                        recovered_sandbox_id = %recovered.sandbox_id,
+                        recovered_session_id = ?recovered.session_id,
+                        "Recovered sandbox resources after operation failure; retrying"
+                    );
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    async fn execute_operation_internal(
+        &self,
+        operation: OperationRequest,
+        validate_session: bool,
+    ) -> Result<ExecutionResult, SandboxError> {
+        if validate_session {
+            self.can_execute().await.map_err(SandboxError::Session)?;
+        }
+
+        *self.status.write().await = SessionStatus::Executing;
+        self.touch().await;
+
+        info!(
+            "Executing operation {} ({}) in session {}",
+            operation.operation_id, operation.operation_type, self.id
+        );
+
+        let start_time = OffsetDateTime::now_utc();
+        self.add_operation_record(OperationRecord {
+            operation_id: operation.operation_id,
+            operation_type: operation.operation_type.to_string(),
+            status: OperationStatus::Executing,
+            started_at: start_time,
+            completed_at: None,
+            execution_time_ms: None,
+        })
+        .await;
+
+        if let Some(repository) = &self.repository {
+            if let Err(error) = repository
+                .mark_session_operation_started(
+                    self.context.session_id,
+                    operation.operation_id,
+                    to_chrono_utc(start_time),
+                )
+                .await
+            {
+                *self.status.write().await = SessionStatus::Ready;
+                return Err(error);
+            }
+            if let Err(error) = repository
+                .create_operation(NewSandboxOperationRecord {
+                    operation_id: operation.operation_id,
+                    session_id: self.context.session_id,
+                    tenant_id: self.context.tenant_id,
+                    credential_id: self.context.credential_id,
+                    operation_type: operation.operation_type.to_string(),
+                    input_params: Self::sanitized_operation_parameters(
+                        operation.operation_type,
+                        &operation.parameters,
+                    ),
+                    started_at: to_chrono_utc(start_time),
+                })
+                .await
+            {
+                let _ = repository
+                    .mark_session_operation_finished(
+                        self.context.session_id,
+                        Some(error.to_string()),
+                    )
+                    .await;
+                *self.status.write().await = SessionStatus::Ready;
+                return Err(error);
+            }
+        }
+
+        if let Some(ref reviewer) = self.operation_reviewer {
+            let review_context = ReviewContext::new(
+                self.context.session_id.0,
+                self.context.tenant_id,
+                self.context.user_id,
+                self.context.credential_id,
+                &self.context.original_intent,
+            )
+            .with_operation_type(operation.operation_type.to_string())
+            .with_description(&operation.description);
+
+            match reviewer.review_operation(&review_context, &operation).await {
+                Ok(review_result) => match review_result.suggested_action {
+                    SuggestedAction::Proceed | SuggestedAction::LogAndProceed => {}
+                    _ => {
+                        *self.status.write().await = SessionStatus::Ready;
+                        let reason = review_result.reason;
+                        if let Some(repository) = &self.repository {
+                            repository
+                                .complete_operation(CompleteSandboxOperationRecord {
+                                    operation_id: operation.operation_id,
+                                    status: "cancelled",
+                                    output_result: None,
+                                    error_message: Some(reason.clone()),
+                                    completed_at: chrono::Utc::now(),
+                                    execution_duration_ms: 0,
+                                })
+                                .await?;
+                            repository
+                                .mark_session_operation_finished(
+                                    self.context.session_id,
+                                    Some(reason.clone()),
+                                )
+                                .await?;
+                        }
+                        return Err(SessionError::OperationRejected { reason }.into());
+                    }
+                },
+                Err(error) if reviewer.is_strict_mode() => {
+                    *self.status.write().await = SessionStatus::Ready;
+                    if let Some(repository) = &self.repository {
+                        let reason = format!("AI review failed: {error}");
+                        let _ = repository
+                            .mark_session_operation_finished(
+                                self.context.session_id,
+                                Some(reason.clone()),
+                            )
+                            .await;
+                    }
+                    return Err(SessionError::OperationRejected {
+                        reason: format!("AI review failed: {error}"),
+                    }
+                    .into());
+                }
+                Err(error) => {
+                    warn!(
+                        "AI review failed for operation {}: {}",
+                        operation.operation_id, error
+                    );
+                }
+            }
+        }
+
+        let result = self
+            .build_execution_result(
+                self.execute_with_resource_retries(&operation).await,
+                start_time,
+            )
+            .await;
+
+        let mut persistence_error = None;
+        if let Some(repository) = &self.repository {
+            if let Err(error) = repository
+                .complete_operation(CompleteSandboxOperationRecord {
+                    operation_id: operation.operation_id,
+                    status: if result.success {
+                        "completed"
+                    } else {
+                        "failed"
+                    },
+                    output_result: Self::sanitized_operation_output(
+                        operation.operation_type,
+                        result.data.as_ref(),
+                    ),
+                    error_message: result.error.clone(),
+                    completed_at: chrono::Utc::now(),
+                    execution_duration_ms: i32::try_from(result.execution_time_ms)
+                        .unwrap_or(i32::MAX),
+                })
+                .await
+            {
+                persistence_error = Some(error);
+            } else if let Err(error) = repository
+                .mark_session_operation_finished(self.context.session_id, result.error.clone())
+                .await
+            {
+                persistence_error = Some(error);
+            }
+        }
+
+        *self.status.write().await = SessionStatus::Ready;
+        if let Some(error) = persistence_error {
+            return Err(error);
+        }
+        Ok(result)
+    }
+
+    async fn build_execution_result(
+        &self,
+        operation_result: Result<SandboxExecutionOutput, SandboxError>,
+        start_time: OffsetDateTime,
+    ) -> ExecutionResult {
+        let execution_time_ms =
+            (OffsetDateTime::now_utc() - start_time).whole_milliseconds() as u64;
+        let record_status = if operation_result.is_ok() {
+            OperationStatus::Completed
+        } else {
+            OperationStatus::Failed
+        };
+
+        if let Some(record) = self.operation_history.write().await.last_mut() {
+            record.status = record_status;
+            record.completed_at = Some(OffsetDateTime::now_utc());
+            record.execution_time_ms = Some(execution_time_ms);
+        }
+
+        match operation_result {
+            Ok(output) => ExecutionResult {
+                success: true,
+                data: output.data,
+                error: None,
+                execution_time_ms,
+                audit_log: vec![],
+            },
+            Err(error) => ExecutionResult {
+                success: false,
+                data: None,
+                error: Some(error.to_string()),
+                execution_time_ms,
+                audit_log: vec![],
+            },
+        }
+    }
+
+    #[cfg(test)]
+    async fn execute_operation_for_test(
+        &self,
+        operation: OperationRequest,
+    ) -> Result<ExecutionResult, SandboxError> {
+        self.execute_operation_internal(operation, false).await
     }
 
     fn required_string(
@@ -1004,149 +1351,7 @@ impl SandboxSession for ActiveNsjailSession {
         &self,
         operation: OperationRequest,
     ) -> Result<ExecutionResult, SandboxError> {
-        self.can_execute().await.map_err(SandboxError::Session)?;
-        *self.status.write().await = SessionStatus::Executing;
-        self.touch().await;
-
-        info!(
-            "Executing operation {} ({}) in session {}",
-            operation.operation_id, operation.operation_type, self.id
-        );
-
-        let start_time = OffsetDateTime::now_utc();
-        self.add_operation_record(OperationRecord {
-            operation_id: operation.operation_id,
-            operation_type: operation.operation_type.to_string(),
-            status: OperationStatus::Executing,
-            started_at: start_time,
-            completed_at: None,
-            execution_time_ms: None,
-        })
-        .await;
-
-        if let Some(repository) = &self.repository {
-            repository
-                .create_operation(NewSandboxOperationRecord {
-                    operation_id: operation.operation_id,
-                    session_id: self.context.session_id,
-                    tenant_id: self.context.tenant_id,
-                    credential_id: self.context.credential_id,
-                    operation_type: operation.operation_type.to_string(),
-                    input_params: Self::sanitized_operation_parameters(
-                        operation.operation_type,
-                        &operation.parameters,
-                    ),
-                    started_at: to_chrono_utc(start_time),
-                })
-                .await?;
-        }
-
-        if let Some(ref reviewer) = self.operation_reviewer {
-            let review_context = ReviewContext::new(
-                self.context.session_id.0,
-                self.context.tenant_id,
-                self.context.user_id,
-                self.context.credential_id,
-                &self.context.original_intent,
-            )
-            .with_operation_type(operation.operation_type.to_string())
-            .with_description(&operation.description);
-
-            match reviewer.review_operation(&review_context, &operation).await {
-                Ok(review_result) => match review_result.suggested_action {
-                    SuggestedAction::Proceed | SuggestedAction::LogAndProceed => {}
-                    _ => {
-                        *self.status.write().await = SessionStatus::Ready;
-                        let reason = review_result.reason;
-                        if let Some(repository) = &self.repository {
-                            repository
-                                .complete_operation(CompleteSandboxOperationRecord {
-                                    operation_id: operation.operation_id,
-                                    status: "cancelled",
-                                    output_result: None,
-                                    error_message: Some(reason.clone()),
-                                    completed_at: chrono::Utc::now(),
-                                    execution_duration_ms: 0,
-                                })
-                                .await?;
-                        }
-                        return Err(SessionError::OperationRejected { reason }.into());
-                    }
-                },
-                Err(error) if reviewer.is_strict_mode() => {
-                    *self.status.write().await = SessionStatus::Ready;
-                    return Err(SessionError::OperationRejected {
-                        reason: format!("AI review failed: {error}"),
-                    }
-                    .into());
-                }
-                Err(error) => {
-                    warn!(
-                        "AI review failed for operation {}: {}",
-                        operation.operation_id, error
-                    );
-                }
-            }
-        }
-
-        let result = match self.execute_in_sandbox(&operation).await {
-            Ok(output) => {
-                let execution_time_ms =
-                    (OffsetDateTime::now_utc() - start_time).whole_milliseconds() as u64;
-                if let Some(record) = self.operation_history.write().await.last_mut() {
-                    record.status = OperationStatus::Completed;
-                    record.completed_at = Some(OffsetDateTime::now_utc());
-                    record.execution_time_ms = Some(execution_time_ms);
-                }
-                ExecutionResult {
-                    success: true,
-                    data: output.data,
-                    error: None,
-                    execution_time_ms,
-                    audit_log: vec![],
-                }
-            }
-            Err(error) => {
-                let execution_time_ms =
-                    (OffsetDateTime::now_utc() - start_time).whole_milliseconds() as u64;
-                if let Some(record) = self.operation_history.write().await.last_mut() {
-                    record.status = OperationStatus::Failed;
-                    record.completed_at = Some(OffsetDateTime::now_utc());
-                    record.execution_time_ms = Some(execution_time_ms);
-                }
-                ExecutionResult {
-                    success: false,
-                    data: None,
-                    error: Some(error.to_string()),
-                    execution_time_ms,
-                    audit_log: vec![],
-                }
-            }
-        };
-
-        if let Some(repository) = &self.repository {
-            repository
-                .complete_operation(CompleteSandboxOperationRecord {
-                    operation_id: operation.operation_id,
-                    status: if result.success {
-                        "completed"
-                    } else {
-                        "failed"
-                    },
-                    output_result: Self::sanitized_operation_output(
-                        operation.operation_type,
-                        result.data.as_ref(),
-                    ),
-                    error_message: result.error.clone(),
-                    completed_at: chrono::Utc::now(),
-                    execution_duration_ms: i32::try_from(result.execution_time_ms)
-                        .unwrap_or(i32::MAX),
-                })
-                .await?;
-        }
-
-        *self.status.write().await = SessionStatus::Ready;
-        Ok(result)
+        self.execute_operation_internal(operation, true).await
     }
 
     async fn pause(&self) -> Result<(), SandboxError> {
@@ -1434,10 +1639,18 @@ fn extract_supported_credential_fields(
 mod tests {
     use super::*;
     use crate::tee::sandbox::config::SandboxConfig;
+    use crate::tee::sandbox::repository::{
+        CompleteSandboxOperationRecord, NewSandboxOperationRecord, NewSandboxSessionRecord,
+        SandboxOperationRecord, SandboxRepository, SandboxSessionRecord,
+    };
     use crate::tee::sandbox::types::SandboxId;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
+        sync::Mutex as TokioMutex,
     };
 
     fn create_test_session() -> ActiveNsjailSession {
@@ -1447,6 +1660,7 @@ mod tests {
             cwd: std::path::PathBuf::from("/"),
             env: HashMap::new(),
             disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         });
@@ -1463,6 +1677,154 @@ mod tests {
         };
 
         ActiveNsjailSession::new(SessionId::new(), context, sandbox)
+    }
+
+    #[derive(Default)]
+    struct MockSessionRepository {
+        create_operation_calls: AtomicUsize,
+        complete_operation_calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl SandboxRepository for MockSessionRepository {
+        async fn create_session(
+            &self,
+            _record: NewSandboxSessionRecord,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_terminated(
+            &self,
+            _session_id: SessionId,
+            _status: &'static str,
+            _reason: Option<String>,
+            _terminated_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn update_session_status(
+            &self,
+            _session_id: SessionId,
+            _status: &'static str,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_started(
+            &self,
+            _session_id: SessionId,
+            _operation_id: Uuid,
+            _started_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_finished(
+            &self,
+            _session_id: SessionId,
+            _last_error_summary: Option<String>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn create_operation(
+            &self,
+            _record: NewSandboxOperationRecord,
+        ) -> Result<(), SandboxError> {
+            self.create_operation_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn complete_operation(
+            &self,
+            _record: CompleteSandboxOperationRecord,
+        ) -> Result<(), SandboxError> {
+            self.complete_operation_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn reconcile_orphaned_active_sessions(
+            &self,
+            _recovery_reason: &str,
+        ) -> Result<u64, SandboxError> {
+            Ok(0)
+        }
+
+        async fn list_sessions_by_tenant(
+            &self,
+            _tenant_id: Uuid,
+        ) -> Result<Vec<SandboxSessionRecord>, SandboxError> {
+            Ok(Vec::new())
+        }
+
+        async fn get_session_by_id(
+            &self,
+            _tenant_id: Uuid,
+            _session_id: SessionId,
+        ) -> Result<Option<SandboxSessionRecord>, SandboxError> {
+            Ok(None)
+        }
+
+        async fn get_operation_by_id(
+            &self,
+            _tenant_id: Uuid,
+            _operation_id: Uuid,
+        ) -> Result<Option<SandboxOperationRecord>, SandboxError> {
+            Ok(None)
+        }
+    }
+
+    #[derive(Default)]
+    struct MockRecoveryCoordinator {
+        calls: AtomicUsize,
+        results: TokioMutex<Vec<Option<RecoveredSandboxResource>>>,
+    }
+
+    #[async_trait]
+    impl SandboxResourceRecovery for MockRecoveryCoordinator {
+        async fn recover_sandbox_resources(
+            &self,
+            _current_session_id: SessionId,
+        ) -> Result<Option<RecoveredSandboxResource>, SandboxError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.results.lock().await.remove(0))
+        }
+    }
+
+    struct MockOperationExecutor {
+        attempts: AtomicUsize,
+        results: TokioMutex<Vec<Result<SandboxExecutionOutput, SandboxError>>>,
+    }
+
+    #[async_trait]
+    impl SandboxOperationExecutor for MockOperationExecutor {
+        async fn execute(
+            &self,
+            _session: &ActiveNsjailSession,
+            _operation: &OperationRequest,
+        ) -> Result<SandboxExecutionOutput, SandboxError> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            self.results.lock().await.remove(0)
+        }
+    }
+
+    fn create_test_operation() -> OperationRequest {
+        OperationRequest {
+            operation_id: Uuid::new_v4(),
+            operation_type: OperationType::HttpRequest,
+            description: "test operation".to_string(),
+            parameters: HashMap::from([
+                ("method".to_string(), Value::String("GET".to_string())),
+                (
+                    "url".to_string(),
+                    Value::String("http://127.0.0.1/test".to_string()),
+                ),
+            ]),
+            resolved_parameters: HashMap::new(),
+            created_at: OffsetDateTime::now_utc(),
+        }
     }
 
     #[test]
@@ -1961,6 +2323,111 @@ mod tests {
                 .contains("invalid_request: invalid url")
         );
         assert!(session.browser_runtime.read().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_retries_after_recoverable_resource_failure() {
+        let repository = Arc::new(MockSessionRepository::default());
+        let recovery = Arc::new(MockRecoveryCoordinator {
+            calls: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![Some(RecoveredSandboxResource {
+                kind: RecoveredSandboxResourceKind::WarmInstance,
+                sandbox_id: SandboxId::new(),
+                session_id: None,
+            })]),
+        });
+        let executor = Arc::new(MockOperationExecutor {
+            attempts: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![
+                Err(SandboxError::Other(
+                    "spawn /usr/local/bin/lightpanda EAGAIN".to_string(),
+                )),
+                Ok(SandboxExecutionOutput {
+                    data: Some(json!({ "ok": true })),
+                }),
+            ]),
+        });
+        let mut session = create_test_session();
+        session.repository = Some(repository.clone());
+        session.set_resource_recovery(recovery.clone());
+        session.set_operation_executor(executor.clone());
+
+        let result = session
+            .execute_operation_for_test(create_test_operation())
+            .await
+            .expect("operation execution should complete");
+
+        assert!(result.success);
+        assert_eq!(result.data, Some(json!({ "ok": true })));
+        assert_eq!(executor.attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(recovery.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repository.create_operation_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            repository.complete_operation_calls.load(Ordering::SeqCst),
+            1
+        );
+        let history = session.get_operation_history().await;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, OperationStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_stops_retry_when_recovery_reclaims_nothing() {
+        let recovery = Arc::new(MockRecoveryCoordinator {
+            calls: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![None]),
+        });
+        let executor = Arc::new(MockOperationExecutor {
+            attempts: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![Err(SandboxError::Other(
+                "lightpanda failed with SystemResources".to_string(),
+            ))]),
+        });
+        let mut session = create_test_session();
+        session.set_resource_recovery(recovery.clone());
+        session.set_operation_executor(executor.clone());
+
+        let result = session
+            .execute_operation_for_test(create_test_operation())
+            .await
+            .expect("operation execution should complete");
+
+        assert!(!result.success);
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("SystemResources")
+        );
+        assert_eq!(executor.attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(recovery.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_does_not_retry_non_resource_failures() {
+        let recovery = Arc::new(MockRecoveryCoordinator {
+            calls: AtomicUsize::new(0),
+            results: TokioMutex::new(Vec::new()),
+        });
+        let executor = Arc::new(MockOperationExecutor {
+            attempts: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![Err(SandboxError::Other(
+                "selector not found".to_string(),
+            ))]),
+        });
+        let mut session = create_test_session();
+        session.set_resource_recovery(recovery.clone());
+        session.set_operation_executor(executor.clone());
+
+        let result = session
+            .execute_operation_for_test(create_test_operation())
+            .await
+            .expect("operation execution should complete");
+
+        assert!(!result.success);
+        assert_eq!(executor.attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(recovery.calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]

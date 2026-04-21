@@ -60,7 +60,6 @@ async function automateTask() {
   const { sessionId } = await sdk.sandbox.createSession({
     serviceId: "schwab",
     credentialId: "cred-123",
-    startUrl: "https://www.schwab.com",
   });
 
   try {
@@ -180,7 +179,6 @@ console.log("Status:", session.status); // 'creating'
 const sessionWithConfig = await sdk.sandbox.createSession({
   serviceId: "schwab",
   credentialId: "cred-123",
-  startUrl: "https://www.schwab.com",
   viewportWidth: 1920,
   viewportHeight: 1080,
   userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",

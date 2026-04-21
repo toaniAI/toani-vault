@@ -5,6 +5,7 @@ const keychainMock = vi.hoisted(() => ({
   get: vi.fn(),
 }));
 const validateTokenMock = vi.hoisted(() => vi.fn());
+const checkBaseUrlReachabilityMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/lib/keychain.js", () => ({
   keychain: keychainMock,
@@ -15,6 +16,7 @@ vi.mock("../src/lib/validate.js", async (importOriginal) => {
     await importOriginal<typeof import("../src/lib/validate.js")>();
   return {
     ...actual,
+    checkBaseUrlReachability: checkBaseUrlReachabilityMock,
     validateToken: validateTokenMock,
   };
 });
@@ -34,6 +36,11 @@ describe("runDoctor", () => {
   beforeEach(() => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    checkBaseUrlReachabilityMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      url: "https://api.example.com/api/v1/health",
+    });
   });
 
   afterEach(() => {
@@ -100,5 +107,35 @@ describe("runDoctor", () => {
     expect(console.log).toHaveBeenCalledWith(
       expect.stringContaining("https://dashboard.toani.ai"),
     );
+  });
+
+  it("checks base URL reachability even without a token", async () => {
+    keychainMock.get.mockReturnValue(null);
+
+    await runDoctor(baseConfig, []);
+
+    expect(checkBaseUrlReachabilityMock).toHaveBeenCalledWith(
+      "https://api.example.com",
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("Base URL reachable"),
+    );
+  });
+
+  it("reports base URL connectivity failures and skips token validation", async () => {
+    keychainMock.get.mockReturnValue(`v4.local.${"c".repeat(120)}`);
+    checkBaseUrlReachabilityMock.mockResolvedValue({
+      ok: false,
+      status: 0,
+      url: "https://api.example.com/api/v1/health",
+      reason: "refused",
+    });
+
+    await runDoctor(baseConfig, []);
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("Connection refused"),
+    );
+    expect(validateTokenMock).not.toHaveBeenCalled();
   });
 });

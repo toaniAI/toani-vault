@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS sandbox_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     created_by UUID NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'active',
+    status VARCHAR(32) NOT NULL DEFAULT 'ready',
     started_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     terminated_at TIMESTAMPTZ,
@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS sandbox_sessions (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
 
     -- 约束
-    CONSTRAINT sandbox_sessions_status_check CHECK (status IN ('active', 'paused', 'terminated', 'expired')),
+    CONSTRAINT sandbox_sessions_status_check CHECK (
+        status IN ('active', 'ready', 'executing', 'paused', 'terminated', 'expired')
+    ),
     CONSTRAINT sandbox_sessions_expires_after_start CHECK (expires_at > started_at)
 );
 
@@ -43,7 +45,7 @@ CREATE TABLE IF NOT EXISTS sandbox_sessions (
 COMMENT ON TABLE sandbox_sessions IS '沙箱会话表 - 存储 TEE 沙箱执行环境的会话信息';
 COMMENT ON COLUMN sandbox_sessions.tenant_id IS '租户 ID';
 COMMENT ON COLUMN sandbox_sessions.created_by IS '创建者用户 ID';
-COMMENT ON COLUMN sandbox_sessions.status IS '会话状态: active(活跃), paused(暂停), terminated(终止), expired(过期)';
+COMMENT ON COLUMN sandbox_sessions.status IS '会话状态: ready(就绪), executing(执行中), paused(暂停), terminated(终止), expired(过期); active 为旧兼容状态';
 COMMENT ON COLUMN sandbox_sessions.started_at IS '会话开始时间';
 COMMENT ON COLUMN sandbox_sessions.expires_at IS '会话过期时间';
 COMMENT ON COLUMN sandbox_sessions.terminated_at IS '会话终止时间';
@@ -265,7 +267,7 @@ SELECT
     MAX(o.started_at) AS last_operation_at
 FROM sandbox_sessions s
 LEFT JOIN sandbox_operations o ON s.id = o.session_id
-WHERE s.status = 'active'
+WHERE s.status IN ('active', 'ready', 'executing')
 GROUP BY s.id;
 
 COMMENT ON VIEW sandbox_active_sessions IS '活跃沙箱会话视图 - 包含操作统计信息';

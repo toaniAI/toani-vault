@@ -4,11 +4,15 @@ use crate::crypto::hkdf::KeyHierarchy;
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     PoolStatus, SandboxHealth,
+    browser_runtime::SandboxBrowserRuntime,
     config::{MountConfig, MountType, NsjailConfig, SandboxConfig, SandboxPoolConfig},
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, WarmNsjailInstance},
     repository::{NewSandboxSessionRecord, SandboxRepository, metadata_to_json, to_chrono_utc},
-    session::{ActiveNsjailSession, SandboxSession},
+    session::{
+        ActiveNsjailSession, RecoveredSandboxResource, RecoveredSandboxResourceKind,
+        SandboxResourceRecovery, SandboxSession,
+    },
     types::{SandboxId, SessionContext, SessionId, SessionRequest},
 };
 use crate::vault::storage::CredentialVault;
@@ -18,6 +22,13 @@ use time::{Duration, OffsetDateTime};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
+
+#[derive(Clone)]
+struct PoolRecoveryHandle {
+    warm_instances: Arc<Mutex<VecDeque<WarmNsjailInstance>>>,
+    active_sessions: Arc<RwLock<HashMap<SessionId, ActiveNsjailSession>>>,
+    repository: Option<Arc<dyn SandboxRepository>>,
+}
 
 /// 沙箱池 trait
 #[async_trait::async_trait]
@@ -64,6 +75,8 @@ pub struct NsjailSandboxPool {
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
     /// 共享 TEE Enclave
     enclave: Option<SharedEnclave>,
+    /// browser runtime 自检失败摘要
+    browser_runtime_probe_error: Arc<RwLock<Option<String>>>,
 }
 
 impl NsjailSandboxPool {
@@ -102,7 +115,16 @@ impl NsjailSandboxPool {
             vault,
             key_hierarchy,
             enclave,
+            browser_runtime_probe_error: Arc::new(RwLock::new(None)),
         }
+    }
+
+    fn recovery_handle(&self) -> Arc<dyn SandboxResourceRecovery> {
+        Arc::new(PoolRecoveryHandle {
+            warm_instances: Arc::clone(&self.warm_instances),
+            active_sessions: Arc::clone(&self.active_sessions),
+            repository: self.repository.clone(),
+        })
     }
 
     /// 初始化池
@@ -138,6 +160,16 @@ impl NsjailSandboxPool {
                 );
             }
         }
+
+        let browser_runtime_probe_error =
+            self.run_browser_runtime_probe().await.err().map(|error| {
+                warn!(
+                    "Browser runtime probe failed during sandbox pool initialization: {}",
+                    error
+                );
+                error.to_string()
+            });
+        *self.browser_runtime_probe_error.write().await = browser_runtime_probe_error;
 
         *self.status.write().await = PoolStatus::Running;
         info!("NsjailSandboxPool initialized successfully");
@@ -237,9 +269,27 @@ impl NsjailSandboxPool {
             // session jail on the same relaxed browser policy so Lightpanda child
             // process creation is not killed by the base denylist.
             disable_seccomp_for_browser_runtime: true,
+            enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
+    }
+
+    async fn run_browser_runtime_probe(&self) -> Result<(), SandboxError> {
+        let mut sandbox = NsjailSandbox::new(self.create_nsjail_config());
+        sandbox.start().await?;
+
+        let work_dir = sandbox.working_dir();
+        let runtime = match SandboxBrowserRuntime::launch(work_dir, &sandbox).await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                let _ = sandbox.stop().await;
+                return Err(error);
+            }
+        };
+        runtime.close().await;
+        sandbox.stop().await?;
+        Ok(())
     }
 
     /// 创建会话上下文
@@ -472,6 +522,126 @@ impl NsjailSandboxPool {
     }
 }
 
+impl PoolRecoveryHandle {
+    async fn recover_oldest_warm_instance(
+        &self,
+    ) -> Result<Option<RecoveredSandboxResource>, SandboxError> {
+        let instance = self.warm_instances.lock().await.pop_front();
+        let Some(mut instance) = instance else {
+            return Ok(None);
+        };
+
+        if let Some(mut sandbox) = instance.sandbox.take()
+            && let Err(error) = sandbox.stop().await
+        {
+            warn!(
+                sandbox_id = %instance.info.instance_id,
+                "Failed to stop recovered warm sandbox: {}",
+                error
+            );
+        }
+
+        Ok(Some(RecoveredSandboxResource {
+            kind: RecoveredSandboxResourceKind::WarmInstance,
+            sandbox_id: instance.info.instance_id,
+            session_id: None,
+        }))
+    }
+
+    async fn recover_oldest_active_session(
+        &self,
+        current_session_id: SessionId,
+    ) -> Result<Option<RecoveredSandboxResource>, SandboxError> {
+        let session_candidates: Vec<(SessionId, ActiveNsjailSession)> = {
+            let sessions = self.active_sessions.read().await;
+            sessions
+                .iter()
+                .filter(|(session_id, _)| **session_id != current_session_id)
+                .map(|(session_id, session)| (*session_id, session.clone()))
+                .collect()
+        };
+
+        let mut ranked_candidates = Vec::new();
+        for (session_id, session) in session_candidates {
+            if session.is_executing().await {
+                continue;
+            }
+            ranked_candidates.push((session.last_activity_at().await, session_id));
+        }
+        ranked_candidates.sort_by_key(|(last_activity_at, _)| *last_activity_at);
+
+        for (_, session_id) in ranked_candidates {
+            let session = {
+                let mut sessions = self.active_sessions.write().await;
+                sessions.remove(&session_id)
+            };
+            let Some(session) = session else {
+                continue;
+            };
+
+            if session.is_executing().await {
+                self.active_sessions
+                    .write()
+                    .await
+                    .insert(session_id, session);
+                continue;
+            }
+
+            let sandbox_id = session.context().sandbox_id;
+            if let Some(mut sandbox) = session.take_sandbox().await {
+                if let Err(error) = sandbox.stop().await {
+                    warn!(
+                        session_id = %session_id,
+                        sandbox_id = %sandbox_id,
+                        "Failed to stop recovered active sandbox: {}",
+                        error
+                    );
+                }
+            } else if let Err(error) = session.close().await {
+                warn!(
+                    session_id = %session_id,
+                    sandbox_id = %sandbox_id,
+                    "Failed to close recovered active session: {}",
+                    error
+                );
+            }
+
+            if let Some(repository) = &self.repository {
+                repository
+                    .mark_session_terminated(
+                        session_id,
+                        "terminated",
+                        Some("resource_recovery_evicted_lru_session".to_string()),
+                        chrono::Utc::now(),
+                    )
+                    .await?;
+            }
+
+            return Ok(Some(RecoveredSandboxResource {
+                kind: RecoveredSandboxResourceKind::ActiveSession,
+                sandbox_id,
+                session_id: Some(session_id),
+            }));
+        }
+
+        Ok(None)
+    }
+}
+
+#[async_trait::async_trait]
+impl SandboxResourceRecovery for PoolRecoveryHandle {
+    async fn recover_sandbox_resources(
+        &self,
+        current_session_id: SessionId,
+    ) -> Result<Option<RecoveredSandboxResource>, SandboxError> {
+        if let Some(recovered) = self.recover_oldest_warm_instance().await? {
+            return Ok(Some(recovered));
+        }
+
+        self.recover_oldest_active_session(current_session_id).await
+    }
+}
+
 #[async_trait::async_trait]
 impl SandboxPool for NsjailSandboxPool {
     async fn acquire_session(
@@ -502,7 +672,7 @@ impl SandboxPool for NsjailSandboxPool {
         // 创建会话
         let session_id = SessionId::new();
         let context = self.create_session_context(&request, session_id, sandbox.id);
-        let session = ActiveNsjailSession::new_with_dependencies(
+        let mut session = ActiveNsjailSession::new_with_dependencies(
             session_id,
             context.clone(),
             sandbox,
@@ -511,6 +681,7 @@ impl SandboxPool for NsjailSandboxPool {
             self.key_hierarchy.clone(),
             self.enclave.clone(),
         );
+        session.set_resource_recovery(self.recovery_handle());
 
         if let Some(repository) = &self.repository {
             repository
@@ -641,9 +812,11 @@ impl SandboxPool for NsjailSandboxPool {
         }
 
         let process_health_issues = process_health_summaries.len();
+        let browser_runtime_probe_error = self.browser_runtime_probe_error.read().await.clone();
         let healthy = status == PoolStatus::Running
             && active_sessions < self.config.max_concurrent_sessions
-            && process_health_issues == 0;
+            && process_health_issues == 0
+            && browser_runtime_probe_error.is_none();
 
         let mut errors = Vec::new();
         if warm_instances < self.config.min_warm_instances {
@@ -653,6 +826,9 @@ impl SandboxPool for NsjailSandboxPool {
             ));
         }
         errors.extend(process_health_summaries.iter().cloned());
+        if let Some(probe_error) = &browser_runtime_probe_error {
+            errors.push(format!("browser runtime probe failed: {probe_error}"));
+        }
 
         SandboxHealth {
             pool_status: status,
@@ -664,6 +840,7 @@ impl SandboxPool for NsjailSandboxPool {
             } else {
                 Some(errors.join("; "))
             },
+            browser_runtime_probe_error,
             process_health_issues,
             process_health_summaries,
         }
@@ -728,10 +905,13 @@ mod tests {
         CompleteSandboxOperationRecord, NewSandboxOperationRecord, NewSandboxSessionRecord,
         SandboxOperationRecord, SandboxRepository, SandboxSessionRecord,
     };
+    use crate::tee::sandbox::types::{SandboxId, SessionStatus};
     use async_trait::async_trait;
     use chrono::Utc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use time::OffsetDateTime;
+    use tokio::sync::Mutex as TokioMutex;
     use uuid::Uuid;
 
     fn create_test_pool() -> NsjailSandboxPool {
@@ -742,6 +922,7 @@ mod tests {
     #[derive(Default)]
     struct MockSandboxRepository {
         reconcile_calls: AtomicUsize,
+        terminated_sessions: TokioMutex<Vec<SessionId>>,
     }
 
     #[async_trait]
@@ -755,11 +936,12 @@ mod tests {
 
         async fn mark_session_terminated(
             &self,
-            _session_id: SessionId,
+            session_id: SessionId,
             _status: &'static str,
             _reason: Option<String>,
             _terminated_at: chrono::DateTime<Utc>,
         ) -> Result<(), SandboxError> {
+            self.terminated_sessions.lock().await.push(session_id);
             Ok(())
         }
 
@@ -767,6 +949,23 @@ mod tests {
             &self,
             _session_id: SessionId,
             _status: &'static str,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_started(
+            &self,
+            _session_id: SessionId,
+            _operation_id: Uuid,
+            _started_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_finished(
+            &self,
+            _session_id: SessionId,
+            _last_error_summary: Option<String>,
         ) -> Result<(), SandboxError> {
             Ok(())
         }
@@ -823,12 +1022,40 @@ mod tests {
         assert_eq!(pool.config.max_warm_instances, 10);
     }
 
+    fn create_test_session_with_activity(last_activity_at: OffsetDateTime) -> ActiveNsjailSession {
+        let sandbox = NsjailSandbox::new(crate::tee::sandbox::config::NsjailConfig {
+            sandbox: SandboxConfig::default(),
+            command: vec!["sleep".to_string(), "60".to_string()],
+            cwd: std::path::PathBuf::from("/"),
+            env: Default::default(),
+            disable_seccomp_for_browser_runtime: false,
+            enable_user_namespace: true,
+            uid_map: Default::default(),
+            gid_map: Default::default(),
+        });
+        let session_id = SessionId::new();
+        let context = SessionContext {
+            session_id,
+            sandbox_id: SandboxId::new(),
+            tenant_id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            credential_id: Uuid::new_v4(),
+            original_intent: "test".to_string(),
+            created_at: last_activity_at,
+            expires_at: last_activity_at + Duration::minutes(30),
+            last_activity_at: Arc::new(RwLock::new(last_activity_at)),
+        };
+
+        ActiveNsjailSession::new(session_id, context, sandbox)
+    }
+
     #[test]
     fn test_pool_nsjail_config_uses_browser_runtime_seccomp_policy() {
         let pool = create_test_pool();
         let config = pool.create_nsjail_config();
 
         assert!(config.disable_seccomp_for_browser_runtime);
+        assert!(config.enable_user_namespace);
 
         let args = config.to_args();
         let seccomp_idx = args
@@ -885,5 +1112,108 @@ mod tests {
         assert_eq!(repository.reconcile_calls.load(Ordering::SeqCst), 1);
 
         pool.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_resource_recovery_prefers_oldest_warm_instance() {
+        let pool = create_test_pool();
+        let warm_sandbox_id = SandboxId::new();
+        let mut warm_instance = WarmNsjailInstance::new(warm_sandbox_id, 0);
+        warm_instance.sandbox = None;
+        pool.warm_instances.lock().await.push_back(warm_instance);
+
+        let session = create_test_session_with_activity(OffsetDateTime::now_utc());
+        let session_id = session.id;
+        pool.active_sessions
+            .write()
+            .await
+            .insert(session_id, session);
+
+        let recovered = pool
+            .recovery_handle()
+            .recover_sandbox_resources(SessionId::new())
+            .await
+            .expect("recovery should succeed")
+            .expect("warm instance should be reclaimed");
+
+        assert_eq!(recovered.kind, RecoveredSandboxResourceKind::WarmInstance);
+        assert_eq!(recovered.sandbox_id, warm_sandbox_id);
+        assert!(recovered.session_id.is_none());
+        assert!(pool.active_sessions.read().await.contains_key(&session_id));
+    }
+
+    #[tokio::test]
+    async fn test_resource_recovery_falls_back_to_oldest_idle_active_session() {
+        let repository = Arc::new(MockSandboxRepository::default());
+        let pool = NsjailSandboxPool::new_with_repository(
+            SandboxConfig::default(),
+            Some(repository.clone()),
+        );
+        let now = OffsetDateTime::now_utc();
+
+        let oldest = create_test_session_with_activity(now - Duration::minutes(10));
+        oldest.set_status_for_test(SessionStatus::Ready).await;
+        let oldest_id = oldest.id;
+        let oldest_sandbox_id = oldest.context().sandbox_id;
+
+        let newer = create_test_session_with_activity(now - Duration::minutes(1));
+        newer.set_status_for_test(SessionStatus::Paused).await;
+        let newer_id = newer.id;
+
+        let executing = create_test_session_with_activity(now - Duration::minutes(20));
+        executing
+            .set_status_for_test(SessionStatus::Executing)
+            .await;
+        let executing_id = executing.id;
+
+        let mut sessions = pool.active_sessions.write().await;
+        sessions.insert(oldest_id, oldest);
+        sessions.insert(newer_id, newer);
+        sessions.insert(executing_id, executing);
+        drop(sessions);
+
+        let recovered = pool
+            .recovery_handle()
+            .recover_sandbox_resources(SessionId::new())
+            .await
+            .expect("recovery should succeed")
+            .expect("active session should be reclaimed");
+
+        assert_eq!(recovered.kind, RecoveredSandboxResourceKind::ActiveSession);
+        assert_eq!(recovered.sandbox_id, oldest_sandbox_id);
+        assert_eq!(recovered.session_id, Some(oldest_id));
+        assert!(!pool.active_sessions.read().await.contains_key(&oldest_id));
+        assert!(pool.active_sessions.read().await.contains_key(&newer_id));
+        assert!(
+            pool.active_sessions
+                .read()
+                .await
+                .contains_key(&executing_id)
+        );
+        assert_eq!(
+            repository.terminated_sessions.lock().await.as_slice(),
+            &[oldest_id]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resource_recovery_skips_executing_active_sessions() {
+        let pool = create_test_pool();
+        let session = create_test_session_with_activity(OffsetDateTime::now_utc());
+        let session_id = session.id;
+        session.set_status_for_test(SessionStatus::Executing).await;
+        pool.active_sessions
+            .write()
+            .await
+            .insert(session_id, session);
+
+        let recovered = pool
+            .recovery_handle()
+            .recover_sandbox_resources(SessionId::new())
+            .await
+            .expect("recovery should succeed");
+
+        assert!(recovered.is_none());
+        assert!(pool.active_sessions.read().await.contains_key(&session_id));
     }
 }
