@@ -149,7 +149,7 @@ LEFT JOIN (
     FROM public.sandbox_operations o
     GROUP BY o.session_id
 ) stats ON stats.session_id = s.id
-WHERE s.status = 'active';
+WHERE s.status IN ('active', 'ready', 'executing');
 
 COMMENT ON VIEW public.sandbox_active_sessions IS '活跃沙箱会话视图 - 包含操作统计信息';
 
@@ -182,6 +182,7 @@ const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!(
         "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
     ),
+    include_str!("../../../migrations/20260421093000_fix_sandbox_session_status_check.sql"),
     PUBLIC_SANDBOX_VIEW_REFRESH_SQL,
 ];
 
@@ -191,6 +192,7 @@ const SANDBOX_BASELINE_SCRIPTS: &[&str] = &[
     include_str!(
         "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
     ),
+    include_str!("../../../migrations/20260421093000_fix_sandbox_session_status_check.sql"),
 ];
 
 const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
@@ -638,7 +640,7 @@ LEFT JOIN (
     FROM "{schema_name}".sandbox_operations o
     GROUP BY o.session_id
 ) stats ON stats.session_id = s.id
-WHERE s.status = 'active';
+WHERE s.status IN ('active', 'ready', 'executing');
 
 COMMENT ON VIEW "{schema_name}".sandbox_active_sessions IS '活跃沙箱会话视图 - 包含操作统计信息';
 

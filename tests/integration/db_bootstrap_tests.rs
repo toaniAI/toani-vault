@@ -124,6 +124,32 @@ async fn fetch_table_columns(
         .collect())
 }
 
+async fn fetch_check_constraint_definition(
+    pool: &PgPool,
+    schema_name: &str,
+    table_name: &str,
+    constraint_name: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        SELECT pg_get_constraintdef(c.oid) AS definition
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname = $1
+          AND t.relname = $2
+          AND c.conname = $3
+        "#,
+    )
+    .bind(schema_name)
+    .bind(table_name)
+    .bind(constraint_name)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|value| value.get::<String, _>("definition")))
+}
+
 fn assert_tables_present(existing_tables: &[String], required_tables: &[&str]) {
     for required_table in required_tables {
         assert!(
@@ -376,6 +402,24 @@ async fn startup_bootstrap_repairs_public_partial_migrations() {
     assert_columns_present(
         &sandbox_session_columns,
         &["credential_id", "original_intent"],
+    );
+
+    let sandbox_status_constraint = fetch_check_constraint_definition(
+        database_pool.pool(),
+        "public",
+        "sandbox_sessions",
+        "sandbox_sessions_status_check",
+    )
+    .await
+    .expect("should load sandbox session status constraint")
+    .expect("sandbox session status constraint should exist");
+    assert!(
+        sandbox_status_constraint.contains("'ready'")
+            && sandbox_status_constraint.contains("'executing'")
+            && sandbox_status_constraint.contains("'paused'")
+            && sandbox_status_constraint.contains("'terminated'")
+            && sandbox_status_constraint.contains("'expired'"),
+        "expected sandbox status constraint to allow runtime statuses, got {sandbox_status_constraint}"
     );
 
     database_pool.close().await;
