@@ -6,6 +6,7 @@ import type { CliConfig } from "../types/cli.js";
 import { getCliVersion } from "../index.js";
 import { keychain } from "../lib/keychain.js";
 import {
+  checkBaseUrlReachability,
   DEFAULT_API_BASE_URL,
   isPasetoToken,
   validateToken,
@@ -115,7 +116,50 @@ export async function runDoctor(
   row("ok", "Base URL", baseUrl);
   pass += 1;
 
-  if (token && isPasetoToken(token)) {
+  process.stdout.write(`  ${pc.dim("⏳")} Checking base URL... `);
+  const reachabilityStartedAt = Date.now();
+  const reachability = await checkBaseUrlReachability(baseUrl);
+  const reachabilityDuration = Date.now() - reachabilityStartedAt;
+  process.stdout.write(`\r${" ".repeat(60)}\r`);
+
+  if (reachability.ok) {
+    const detail =
+      reachability.status === 200
+        ? `${reachabilityDuration}ms`
+        : `${reachabilityDuration}ms (HTTP ${reachability.status})`;
+    const status = reachability.status === 200 ? "ok" : "warn";
+    row(status, "Base URL reachable", detail);
+    if (status === "ok") {
+      pass += 1;
+    } else {
+      warn += 1;
+    }
+  } else if (reachability.reason === "dns") {
+    row(
+      "err",
+      "Base URL reachable",
+      `DNS lookup failed for ${new URL(baseUrl).hostname}`,
+    );
+    fail += 1;
+  } else if (reachability.reason === "refused") {
+    row("err", "Base URL reachable", "Connection refused");
+    fail += 1;
+  } else if (reachability.reason === "timeout") {
+    row("err", "Base URL reachable", "Timeout (>8s)");
+    fail += 1;
+  } else {
+    const error = reachability.error as
+      | { cause?: { code?: string }; code?: string }
+      | undefined;
+    row(
+      "err",
+      "Base URL reachable",
+      `Network error: ${error?.cause?.code ?? error?.code ?? "unknown"} (VPN required?)`,
+    );
+    fail += 1;
+  }
+
+  if (token && isPasetoToken(token) && reachability.ok) {
     process.stdout.write(`  ${pc.dim("⏳")} Validating token... `);
     const startedAt = Date.now();
     const result = await validateToken(baseUrl, token);
@@ -162,6 +206,8 @@ export async function runDoctor(
       row("info", "Token valid", "Unexpected response");
       warn += 1;
     }
+  } else if (token && isPasetoToken(token) && !reachability.ok) {
+    row("info", "Token valid", "Skipped (base URL unreachable)");
   }
 
   console.log(`\n  ${pc.dim("─".repeat(60))}`);

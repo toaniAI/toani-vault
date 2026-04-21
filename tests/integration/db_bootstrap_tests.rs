@@ -498,6 +498,222 @@ async fn startup_bootstrap_repairs_public_schema_even_when_search_path_is_stale(
 }
 
 #[tokio::test]
+async fn startup_bootstrap_repairs_fixed_schema_legacy_sandbox_columns() {
+    let Some(base_database_url) = test_database_url() else {
+        eprintln!(
+            "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
+        );
+        return;
+    };
+    let Some(admin_database_url) = postgres_admin_url(&base_database_url) else {
+        eprintln!("skip db bootstrap integration test: unable to derive admin database url");
+        return;
+    };
+
+    let admin_pool = match PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&admin_database_url)
+        .await
+    {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect admin database: {error}");
+            return;
+        }
+    };
+
+    let database_name = format!(
+        "credbridge_bootstrap_fixed_sandbox_{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    if let Err(error) = create_temp_database(&admin_pool, &database_name).await {
+        eprintln!("skip db bootstrap integration test: cannot create temp database: {error}");
+        return;
+    }
+
+    let Some(temp_database_url) = temp_database_url(&base_database_url, &database_name) else {
+        eprintln!("skip db bootstrap integration test: cannot derive temp database url");
+        drop_temp_database(&admin_pool, &database_name).await;
+        return;
+    };
+
+    let fixed_schema = "credbridge_bootstrap_fixed_sandbox";
+    let original_fixed_schema = std::env::var("CREDBRIDGE_PG_SCHEMA").ok();
+    unsafe {
+        std::env::set_var("CREDBRIDGE_PG_SCHEMA", fixed_schema);
+    }
+
+    let config = DatabaseConfig {
+        url: temp_database_url.clone(),
+        max_connections: 5,
+        min_connections: 1,
+        connect_timeout: 10,
+        idle_timeout: 60,
+    };
+    let database_pool = match DatabasePool::new(config).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect temp database: {error}");
+            drop_temp_database(&admin_pool, &database_name).await;
+            return;
+        }
+    };
+
+    sqlx::query(&format!("CREATE SCHEMA \"{fixed_schema}\""))
+        .execute(database_pool.pool())
+        .await
+        .expect("should create fixed schema");
+
+    let mut conn = database_pool
+        .acquire()
+        .await
+        .expect("should acquire connection for fixed-schema bootstrap setup");
+    sqlx::raw_sql(&format!("SET search_path TO \"{fixed_schema}\", public;"))
+        .execute(&mut *conn)
+        .await
+        .expect("should set search_path to fixed schema");
+
+    sqlx::raw_sql(include_str!(
+        "../../migrations/20260317000001_create_sandbox_tables.sql"
+    ))
+    .execute(&mut *conn)
+    .await
+    .expect("should create legacy fixed-schema sandbox tables");
+    sqlx::raw_sql(include_str!(
+        "../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"
+    ))
+    .execute(&mut *conn)
+    .await
+    .expect("should add fixed-schema sandbox identity columns");
+    drop(conn);
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE "{fixed_schema}".credentials (
+            credential_id VARCHAR(64) PRIMARY KEY,
+            tenant_id VARCHAR(128) NOT NULL,
+            user_id_hash VARCHAR(128) NOT NULL,
+            service_id VARCHAR(64) NOT NULL,
+            credential_type VARCHAR(32) NOT NULL,
+            encrypted_payload JSONB NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ,
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            CONSTRAINT credentials_version_check CHECK (version >= 1)
+        )
+        "#
+    ))
+    .execute(database_pool.pool())
+    .await
+    .expect("should create fixed schema credential table");
+
+    sqlx::query(&format!(
+        r#"
+        ALTER TABLE "{fixed_schema}".sandbox_sessions
+        DROP COLUMN IF EXISTS active_operation_id,
+        DROP COLUMN IF EXISTS active_operation_started_at,
+        DROP COLUMN IF EXISTS last_error_summary
+        "#
+    ))
+    .execute(database_pool.pool())
+    .await
+    .expect("should remove latest sandbox session columns from fixed schema");
+
+    sqlx::query(&format!(
+        r#"
+        CREATE OR REPLACE VIEW "{fixed_schema}".sandbox_active_sessions AS
+        SELECT
+            s.id,
+            s.tenant_id,
+            s.created_by,
+            s.status,
+            s.started_at,
+            s.expires_at,
+            s.terminated_at,
+            s.termination_reason,
+            s.tee_context_id,
+            s.security_policy,
+            s.metadata,
+            s.created_at,
+            s.updated_at,
+            COUNT(o.id) AS operation_count,
+            MAX(o.started_at) AS last_operation_at
+        FROM "{fixed_schema}".sandbox_sessions s
+        LEFT JOIN "{fixed_schema}".sandbox_operations o ON s.id = o.session_id
+        WHERE s.status = 'active'
+        GROUP BY
+            s.id,
+            s.tenant_id,
+            s.created_by,
+            s.status,
+            s.started_at,
+            s.expires_at,
+            s.terminated_at,
+            s.termination_reason,
+            s.tee_context_id,
+            s.security_policy,
+            s.metadata,
+            s.created_at,
+            s.updated_at
+        "#
+    ))
+    .execute(database_pool.pool())
+    .await
+    .expect("should create legacy fixed-schema sandbox view shape");
+
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .expect("bootstrap should repair fixed schema sandbox compatibility columns");
+
+    let fixed_sandbox_session_columns =
+        fetch_table_columns(database_pool.pool(), fixed_schema, "sandbox_sessions")
+            .await
+            .expect("should list fixed-schema sandbox_sessions columns");
+    assert_columns_present(
+        &fixed_sandbox_session_columns,
+        &[
+            "credential_id",
+            "original_intent",
+            "active_operation_id",
+            "active_operation_started_at",
+            "last_error_summary",
+        ],
+    );
+
+    let fixed_sandbox_active_view_columns = fetch_table_columns(
+        database_pool.pool(),
+        fixed_schema,
+        "sandbox_active_sessions",
+    )
+    .await
+    .expect("should list fixed-schema sandbox_active_sessions view columns");
+    assert_columns_present(
+        &fixed_sandbox_active_view_columns,
+        &[
+            "credential_id",
+            "original_intent",
+            "active_operation_id",
+            "active_operation_started_at",
+            "last_error_summary",
+            "operation_count",
+            "last_operation_at",
+        ],
+    );
+
+    database_pool.close().await;
+
+    match original_fixed_schema {
+        Some(value) => unsafe { std::env::set_var("CREDBRIDGE_PG_SCHEMA", value) },
+        None => unsafe { std::env::remove_var("CREDBRIDGE_PG_SCHEMA") },
+    }
+
+    drop_temp_database(&admin_pool, &database_name).await;
+    admin_pool.close().await;
+}
+
+#[tokio::test]
 async fn startup_bootstrap_repairs_partial_migrations_with_legacy_sandbox_view_shape() {
     let Some(base_database_url) = test_database_url() else {
         eprintln!(
