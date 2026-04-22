@@ -1,7 +1,7 @@
 import { ToaniVaultSDK } from "../../../sdk-typescript/src/index.js";
 import type { CliConfig, ParsedOptions } from "../types/cli.js";
 import {
-  DASHBOARD_CREDENTIALS_URL,
+  DASHBOARD_LOGIN_URL,
   DASHBOARD_TOKENS_URL,
 } from "../lib/validate.js";
 import { fail } from "../output/print.js";
@@ -29,7 +29,7 @@ export function parseOptions(argv: string[]): ParsedOptions {
 function missingTokenMessage(config: CliConfig): string {
   return [
     "未检测到 CLI 可用的 API Token。",
-    `请先前往 Dashboard 凭证页；若尚未登录，页面会先引导你登录：${DASHBOARD_CREDENTIALS_URL}`,
+    `请先前往 Dashboard 注册或登录账号：${DASHBOARD_LOGIN_URL}`,
     `登录后到 Dashboard Tokens 页面创建或复制访问凭证：${DASHBOARD_TOKENS_URL}`,
     "推荐执行：toani login",
     `兼容方式：toani config init --url ${config.baseUrl} --token <BEARER_TOKEN>`,
