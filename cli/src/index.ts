@@ -34,6 +34,23 @@ export function getCliVersion(): string {
   return packageJson.version ?? "0.0.0";
 }
 
+export function formatCliVersion(version: string): string {
+  return `v${version}`;
+}
+
+export function resolveVersionOutputFormat(
+  runtimeOutput: OutputFormat,
+  argv: string[],
+): OutputFormat {
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--output") {
+      return ((argv[i + 1] as OutputFormat | undefined) ?? runtimeOutput);
+    }
+  }
+
+  return runtimeOutput;
+}
+
 function printHelp(): void {
   console.log(HELP_TEXT);
 }
@@ -141,10 +158,15 @@ async function main(): Promise<void> {
       return;
     case "--version":
     case "-v":
-      printResult(
-        { name: "@toani/vault-cli", version: getCliVersion() },
-        runtimeConfig.output,
-      );
+      {
+        const version = getCliVersion();
+        const output = resolveVersionOutputFormat(runtimeConfig.output, subArgs);
+        if (output === "json") {
+          printResult({ name: "@toani/vault-cli", version }, "json");
+        } else {
+          console.log(formatCliVersion(version));
+        }
+      }
       return;
     default:
       throw new Error(`Unknown command group: ${group}`);
