@@ -48,6 +48,10 @@ export interface ReachabilityResult {
   error?: unknown;
 }
 
+function isReachableHttpStatus(status: number): boolean {
+  return status !== 404;
+}
+
 function classifyFetchError(error: unknown): {
   reason: ReachabilityReason;
   error: unknown;
@@ -78,15 +82,21 @@ export async function checkBaseUrlReachability(
   const candidates = [
     new URL("/api/v1/health", baseUrl).toString(),
     new URL("/health", baseUrl).toString(),
+    new URL("/api/v1/sandbox/stats", baseUrl).toString(),
   ];
   let lastError: ReachabilityResult | null = null;
+  let lastHttpResponse: ReachabilityResult | null = null;
 
   for (const url of candidates) {
     try {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(8_000),
       });
-      return { ok: true, status: response.status, url };
+      const result = { ok: true, status: response.status, url };
+      if (isReachableHttpStatus(response.status)) {
+        return result;
+      }
+      lastHttpResponse = result;
     } catch (error) {
       const classified = classifyFetchError(error);
       lastError = {
@@ -100,6 +110,7 @@ export async function checkBaseUrlReachability(
   }
 
   return (
+    lastHttpResponse ??
     lastError ?? {
       ok: false,
       status: 0,

@@ -15,6 +15,20 @@ import { parseOptions } from "./common.js";
 
 const REQUIRED_NODE_MAJOR = 22;
 
+function summarizeProbeUrl(baseUrl: string, probeUrl: string): string {
+  try {
+    const base = new URL(baseUrl);
+    const probe = new URL(probeUrl);
+    if (base.origin === probe.origin) {
+      return probe.pathname || "/";
+    }
+  } catch {
+    return probeUrl;
+  }
+
+  return probeUrl;
+}
+
 function row(
   status: "ok" | "warn" | "err" | "info",
   label: string,
@@ -123,10 +137,11 @@ export async function runDoctor(
   process.stdout.write(`\r${" ".repeat(60)}\r`);
 
   if (reachability.ok) {
+    const probePath = summarizeProbeUrl(baseUrl, reachability.url);
     const detail =
       reachability.status === 200
-        ? `${reachabilityDuration}ms`
-        : `${reachabilityDuration}ms (HTTP ${reachability.status})`;
+        ? `${reachabilityDuration}ms via ${probePath}`
+        : `${reachabilityDuration}ms via ${probePath} (HTTP ${reachability.status})`;
     const status = reachability.status === 200 ? "ok" : "warn";
     row(status, "Base URL reachable", detail);
     if (status === "ok") {
