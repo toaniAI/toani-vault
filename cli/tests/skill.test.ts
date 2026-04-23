@@ -15,7 +15,7 @@ describe("CLI skill contract", () => {
   });
 
   it("does not advertise removed browser operation types as supported", () => {
-    const supportedSection = skillText.split("不要使用这些旧操作名")[0];
+    const supportedSection = skillText.split("Do not use these legacy operation names")[0];
 
     expect(supportedSection).not.toContain("- `get_attribute`");
     expect(supportedSection).not.toContain("- `screenshot`");
@@ -23,7 +23,7 @@ describe("CLI skill contract", () => {
 
   it("documents bootstrap as credential-safe and keeps credential use in fill", () => {
     expect(skillText).toContain("bootstrap-page");
-    expect(skillText).toContain("不消费凭证");
+    expect(skillText).toContain("does not consume credentials");
     expect(skillText).toContain("fill");
   });
 });

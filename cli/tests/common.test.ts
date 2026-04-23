@@ -23,16 +23,16 @@ describe("createSdk", () => {
     };
 
     expect(() => createSdk(config)).toThrowError(
-      /Dashboard 注册或登录账号：https:\/\/dashboard\.toani\.ai\/login/,
+      /First sign up or sign in through the Dashboard: https:\/\/dashboard\.toani\.ai\/login/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /Dashboard Tokens 页面创建或复制访问凭证：https:\/\/dashboard\.toani\.ai\/tokens/,
+      /create or copy an access token from the Dashboard Tokens page: https:\/\/dashboard\.toani\.ai\/tokens/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /推荐执行：toani login/,
+      /Recommended command: toani login/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /兼容方式：toani config init --url https:\/\/api\.example\.com --token <BEARER_TOKEN>/,
+      /Compatibility path: toani config init --url https:\/\/api\.example\.com --token <BEARER_TOKEN>/,
     );
   });
 });

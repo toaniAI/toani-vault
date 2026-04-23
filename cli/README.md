@@ -348,7 +348,7 @@ toani sandbox terminate <sessionId>
 
 ## Common Failures
 
-- `未检测到 CLI 可用的 API Token`
+- `No usable API token was found for the CLI`
   - Create or copy the token in the Dashboard UI, then run `toani config init --url <api-url> --token <BEARER_TOKEN>` or set `TOANI_VAULT_TOKEN`.
 
 - `missing required field: credential_id or service_id`
