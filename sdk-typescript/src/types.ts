@@ -444,6 +444,10 @@ export enum CredBridgeErrorCode {
   InvalidRequest = "invalid_request",
   /** 服务器内部错误 */
   InternalError = "internal_error",
+  /** Sandbox 会话不在当前 owner */
+  SandboxSessionNotLocal = "sandbox_session_not_local",
+  /** Sandbox owner 暂时不可用 */
+  SandboxOwnerUnavailable = "sandbox_owner_unavailable",
   /** Token 过期 */
   TokenExpired = "token_expired",
   /** Token 无效 */
@@ -514,6 +518,8 @@ export class CredBridgeError extends Error {
     return (
       this.isNetworkError() ||
       this.code === CredBridgeErrorCode.InternalError ||
+      this.code === CredBridgeErrorCode.SandboxSessionNotLocal ||
+      this.code === CredBridgeErrorCode.SandboxOwnerUnavailable ||
       this.statusCode === 429
     ); // Rate limited
   }

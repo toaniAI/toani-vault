@@ -22,6 +22,8 @@ envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: development
+  SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-go-owner"
+  SANDBOX_OWNER_PORT: "8080"
   CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK: "true"
   TEE_MODE: hardware
   TEE_ENCLAVE_PATH: /app/credbridge_enclave.signed.so
@@ -44,7 +46,15 @@ envs:
   CREDBRIDGE_NSJAIL_OUTSIDE_UID: "100000"
   CREDBRIDGE_NSJAIL_OUTSIDE_GID: "100000"
 
-o_envs: []
+o_envs:
+  - name: SANDBOX_OWNER_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
 
 enableNfsLogPvc: false
 consoleLogToFile: false

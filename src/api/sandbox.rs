@@ -14,6 +14,7 @@
 use crate::api::context::{ApiContext, RequestContext};
 use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
+use crate::api::sandbox_owner::{SandboxOwnerRecord, SandboxOwnerRegistry};
 use crate::api::websocket::handle_socket;
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
@@ -35,7 +36,7 @@ use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
     extract::{OriginalUri, Path, Query, State, WebSocketUpgrade},
-    http::StatusCode,
+    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -43,10 +44,16 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+const SANDBOX_FORWARD_HEADER: &str = "x-toani-internal-forward";
+const SANDBOX_FORWARD_VERSION: &str = "sandbox-owner-v1";
+const SANDBOX_OWNER_RETRY_AFTER_SECONDS: &str = "1";
+const SANDBOX_OWNER_REGISTRY_GRACE_SECS: i64 = 30;
 
 /// 沙箱 API 状态
 #[derive(Clone)]
@@ -63,8 +70,23 @@ pub struct SandboxState {
     pub key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
     /// 共享 TEE Enclave
     pub enclave: Option<SharedEnclave>,
+    /// 当前实例的 owner 标识
+    pub owner_id: String,
+    /// 当前实例对外声明的内部可达 URL
+    pub owner_base_url: String,
+    /// Redis-backed owner registry
+    pub owner_registry: Option<Arc<dyn SandboxOwnerRegistry>>,
+    /// backend-to-backend forward client
+    forwarding_client: reqwest::Client,
     /// 会话级凭证缓存
     credential_cache: Arc<RwLock<HashMap<Uuid, SessionCredentialMaterial>>>,
+}
+
+#[derive(Clone)]
+pub struct SandboxOwnerRuntime {
+    pub owner_id: String,
+    pub owner_base_url: String,
+    pub owner_registry: Option<Arc<dyn SandboxOwnerRegistry>>,
 }
 
 impl SandboxState {
@@ -75,6 +97,7 @@ impl SandboxState {
         vault: Option<Arc<CredentialVault>>,
         key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
         enclave: Option<SharedEnclave>,
+        owner_runtime: SandboxOwnerRuntime,
     ) -> Result<Self, SandboxError> {
         let repository: Option<Arc<dyn SandboxRepository>> = database_pool.map(|pool| {
             Arc::new(PostgresSandboxRepository::new(pool)) as Arc<dyn SandboxRepository>
@@ -97,6 +120,10 @@ impl SandboxState {
             vault,
             key_hierarchy,
             enclave,
+            owner_id: owner_runtime.owner_id,
+            owner_base_url: owner_runtime.owner_base_url,
+            owner_registry: owner_runtime.owner_registry,
+            forwarding_client: reqwest::Client::new(),
             credential_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -110,6 +137,10 @@ impl SandboxState {
             vault: None,
             key_hierarchy: None,
             enclave: None,
+            owner_id: "test-owner".to_string(),
+            owner_base_url: "http://127.0.0.1".to_string(),
+            owner_registry: None,
+            forwarding_client: reqwest::Client::new(),
             credential_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -128,6 +159,49 @@ impl SandboxState {
     async fn clear_cached_credential(&self, session_id: Uuid) {
         self.credential_cache.write().await.remove(&session_id);
     }
+
+    async fn register_session_owner(
+        &self,
+        session: &dyn SandboxSession,
+    ) -> Result<(), SandboxError> {
+        let Some(owner_registry) = &self.owner_registry else {
+            return Ok(());
+        };
+        let context = session.context();
+        let ttl_secs = (context.expires_at.unix_timestamp()
+            - OffsetDateTime::now_utc().unix_timestamp())
+        .max(1)
+            + SANDBOX_OWNER_REGISTRY_GRACE_SECS;
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: self.owner_id.clone(),
+                    base_url: self.owner_base_url.clone(),
+                    session_id: context.session_id.into(),
+                    tenant_id: context.tenant_id,
+                    expires_at: context.expires_at.unix_timestamp(),
+                },
+                Duration::from_secs(ttl_secs as u64),
+            )
+            .await
+    }
+
+    async fn lookup_session_owner(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Option<SandboxOwnerRecord>, SandboxError> {
+        let Some(owner_registry) = &self.owner_registry else {
+            return Ok(None);
+        };
+        owner_registry.get_owner(session_id).await
+    }
+
+    async fn delete_session_owner(&self, session_id: SessionId) -> Result<(), SandboxError> {
+        let Some(owner_registry) = &self.owner_registry else {
+            return Ok(());
+        };
+        owner_registry.delete_owner(session_id).await
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -139,7 +213,7 @@ struct SessionCredentialMaterial {
 // ==================== 请求/响应类型 ====================
 
 /// 创建会话请求
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CreateSessionRequest {
     /// 凭证 ID
     #[serde(default)]
@@ -242,7 +316,7 @@ pub struct SessionDetailResponse {
 }
 
 /// 执行操作请求
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ExecuteOperationRequest {
     /// 操作类型
     pub operation_type: String,
@@ -268,7 +342,7 @@ pub struct ExecuteOperationResponse {
 }
 
 /// DOM 导出请求
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct DomExportRequest {
     /// 根节点选择器
     #[serde(default = "default_dom_export_root_selector")]
@@ -345,7 +419,7 @@ fn default_true() -> bool {
 }
 
 /// 导出数据请求
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ExportDataRequest {
     /// 导出格式
     pub format: ExportFormat,
@@ -354,7 +428,7 @@ pub struct ExportDataRequest {
 }
 
 /// 导出格式
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Json,
@@ -415,6 +489,196 @@ pub struct SandboxStatsApiResponse {
     pub process_health_summaries: Vec<String>,
 }
 
+struct ForwardRequest<'a> {
+    method: &'a Method,
+    original_uri: &'a axum::http::Uri,
+    headers: &'a HeaderMap,
+    body: Option<Vec<u8>>,
+}
+
+async fn resolve_owner_bound_session(
+    state: &SandboxState,
+    token: &ValidatedToken,
+    session_id: SessionId,
+    forward_request: ForwardRequest<'_>,
+) -> Result<Arc<dyn SandboxSession>, Response> {
+    match state.pool.get_session(session_id).await {
+        Ok(session) => Ok(session),
+        Err(local_error) => {
+            let tenant_id = parse_uuid(&token.tenant_id);
+            let owner_record = match state.lookup_session_owner(session_id).await {
+                Ok(record) => record.filter(|record| record.tenant_id == tenant_id),
+                Err(error) => {
+                    warn!("Failed to resolve sandbox owner from registry: {error}");
+                    None
+                }
+            };
+
+            if let Some(owner_record) = owner_record {
+                if owner_record.owner_id == state.owner_id {
+                    return Err(sandbox_owner_retryable_response(
+                        ErrorCode::SandboxOwnerUnavailable,
+                        format!(
+                            "Sandbox session {} exists on the current owner but its runtime is unavailable",
+                            Uuid::from(session_id)
+                        ),
+                    ));
+                }
+
+                if is_forwarded_request(forward_request.headers) {
+                    return Err(sandbox_owner_retryable_response(
+                        ErrorCode::SandboxSessionNotLocal,
+                        format!(
+                            "Sandbox session {} could not be forwarded because the request was already forwarded once",
+                            Uuid::from(session_id)
+                        ),
+                    ));
+                }
+
+                return forward_owner_bound_request(state, owner_record, forward_request).await;
+            }
+
+            let Some(repository) = &state.repository else {
+                return Err(map_sandbox_error(local_error));
+            };
+
+            match repository.get_session_by_id(tenant_id, session_id).await {
+                Ok(Some(_)) => Err(sandbox_owner_retryable_response(
+                    ErrorCode::SandboxOwnerUnavailable,
+                    format!(
+                        "Sandbox session {} exists but no runtime owner is currently registered",
+                        Uuid::from(session_id)
+                    ),
+                )),
+                Ok(None) => Err(map_sandbox_error(local_error)),
+                Err(error) => {
+                    warn!("Failed to confirm sandbox session ownership from repository: {error}");
+                    Err(sandbox_owner_retryable_response(
+                        ErrorCode::SandboxOwnerUnavailable,
+                        format!(
+                            "Sandbox session {} could not be resolved because owner state is temporarily unavailable",
+                            Uuid::from(session_id)
+                        ),
+                    ))
+                }
+            }
+        }
+    }
+}
+
+async fn forward_owner_bound_request(
+    state: &SandboxState,
+    owner_record: SandboxOwnerRecord,
+    request: ForwardRequest<'_>,
+) -> Result<Arc<dyn SandboxSession>, Response> {
+    let path_and_query = request
+        .original_uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| request.original_uri.path());
+    let forward_url = format!(
+        "{}{}",
+        owner_record.base_url.trim_end_matches('/'),
+        path_and_query
+    );
+    let mut forwarded_headers = copy_forward_headers(request.headers);
+    forwarded_headers.insert(
+        HeaderName::from_static(SANDBOX_FORWARD_HEADER),
+        HeaderValue::from_static(SANDBOX_FORWARD_VERSION),
+    );
+
+    let mut builder = state
+        .forwarding_client
+        .request(request.method.clone(), &forward_url)
+        .headers(forwarded_headers);
+    if let Some(body) = request.body {
+        builder = builder.body(body);
+    }
+
+    let response = builder.send().await.map_err(|error| {
+        sandbox_owner_retryable_response(
+            ErrorCode::SandboxOwnerUnavailable,
+            format!(
+                "Sandbox owner {} is temporarily unreachable: {error}",
+                owner_record.owner_id
+            ),
+        )
+    })?;
+
+    Err(convert_forwarded_response(response).await)
+}
+
+fn copy_forward_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
+    let mut forwarded = reqwest::header::HeaderMap::new();
+    for (name, value) in headers {
+        if should_strip_forward_header(name.as_str()) {
+            continue;
+        }
+        if let Ok(header_name) = reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes())
+            && let Ok(header_value) = reqwest::header::HeaderValue::from_bytes(value.as_bytes())
+        {
+            forwarded.append(header_name, header_value);
+        }
+    }
+    forwarded
+}
+
+fn should_strip_forward_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "connection"
+            | "host"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+            | "content-length"
+    )
+}
+
+fn is_forwarded_request(headers: &HeaderMap) -> bool {
+    headers
+        .get(SANDBOX_FORWARD_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == SANDBOX_FORWARD_VERSION)
+}
+
+async fn convert_forwarded_response(response: reqwest::Response) -> Response {
+    let status = response.status();
+    let response_headers = response.headers().clone();
+    let body = response.bytes().await.unwrap_or_default();
+    let mut builder = Response::builder().status(status);
+    if let Some(headers) = builder.headers_mut() {
+        for (name, value) in &response_headers {
+            if should_strip_forward_header(name.as_str()) {
+                continue;
+            }
+            headers.insert(name, value.clone());
+        }
+    }
+    builder
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|error| {
+            error!("Failed to build forwarded sandbox response: {error}");
+            sandbox_owner_retryable_response(
+                ErrorCode::SandboxOwnerUnavailable,
+                "Failed to materialize forwarded sandbox response",
+            )
+        })
+}
+
+fn sandbox_owner_retryable_response(code: ErrorCode, message: impl Into<String>) -> Response {
+    let mut response = ApiErrorResponse::new(code, message).into_response();
+    response.headers_mut().insert(
+        axum::http::header::RETRY_AFTER,
+        HeaderValue::from_static(SANDBOX_OWNER_RETRY_AFTER_SECONDS),
+    );
+    response
+}
+
 // ==================== Handler 实现 ====================
 
 /// POST /api/v1/sandbox/sessions - 创建会话
@@ -460,6 +724,19 @@ pub async fn create_session(
     // 获取会话
     match state.pool.acquire_session(session_request).await {
         Ok(session) => {
+            if let Err(error) = state.register_session_owner(session.as_ref()).await {
+                error!("Failed to register sandbox owner for new session: {error}");
+                if let Err(release_error) = state.pool.release_session(session.id()).await {
+                    error!(
+                        "Failed to release sandbox session after owner registry failure: {release_error}"
+                    );
+                }
+                return sandbox_owner_retryable_response(
+                    ErrorCode::SandboxOwnerUnavailable,
+                    "Sandbox session was created locally but owner routing could not be initialized",
+                );
+            }
+
             let context = session.context();
             let response = CreateSessionResponse {
                 session_id: context.session_id.into(),
@@ -681,6 +958,9 @@ pub async fn get_session(
 /// POST /api/v1/sandbox/sessions/:id/execute - 执行操作
 pub async fn execute_operation(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
     Json(request): Json<ExecuteOperationRequest>,
@@ -699,11 +979,30 @@ pub async fn execute_operation(
     };
 
     let session_id = SessionId::from(id);
-
-    // 获取会话
-    let session = match state.pool.get_session(session_id).await {
-        Ok(s) => s,
-        Err(e) => return map_sandbox_error(e).into_response(),
+    let request_body = match serde_json::to_vec(&request) {
+        Ok(body) => body,
+        Err(error) => {
+            return ApiErrorResponse::internal_error(format!(
+                "failed to serialize sandbox execute request for forwarding: {error}"
+            ))
+            .into_response();
+        }
+    };
+    let session = match resolve_owner_bound_session(
+        &state,
+        &token,
+        session_id,
+        ForwardRequest {
+            method: &method,
+            original_uri: &original_uri,
+            headers: &headers,
+            body: Some(request_body),
+        },
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(response) => return response,
     };
 
     // 解析操作类型
@@ -774,6 +1073,9 @@ pub async fn execute_operation(
 /// POST /api/v1/sandbox/sessions/:id/pause - 暂停会话
 pub async fn pause_session(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
 ) -> Response {
@@ -791,29 +1093,42 @@ pub async fn pause_session(
     };
 
     let session_id = SessionId::from(id);
-
-    match state.pool.get_session(session_id).await {
-        Ok(session) => match session.pause().await {
-            Ok(_) => {
-                if let Some(repository) = &state.repository
-                    && let Err(error) = repository.update_session_status(session_id, "paused").await
-                {
-                    error!(
-                        "Failed to persist paused status for session {}: {}",
-                        session_id, error
-                    );
-                    return map_sandbox_error(error).into_response();
-                }
-                let response = SessionActionResponse {
-                    session_id: id,
-                    success: true,
-                    status: "paused".to_string(),
-                    message: "Session paused successfully".to_string(),
-                };
-                Json(ApiSuccessResponse::new(response)).into_response()
-            }
-            Err(e) => map_sandbox_error(e).into_response(),
+    let session = match resolve_owner_bound_session(
+        &state,
+        &token,
+        session_id,
+        ForwardRequest {
+            method: &method,
+            original_uri: &original_uri,
+            headers: &headers,
+            body: None,
         },
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
+
+    match session.pause().await {
+        Ok(_) => {
+            if let Some(repository) = &state.repository
+                && let Err(error) = repository.update_session_status(session_id, "paused").await
+            {
+                error!(
+                    "Failed to persist paused status for session {}: {}",
+                    session_id, error
+                );
+                return map_sandbox_error(error).into_response();
+            }
+            let response = SessionActionResponse {
+                session_id: id,
+                success: true,
+                status: "paused".to_string(),
+                message: "Session paused successfully".to_string(),
+            };
+            Json(ApiSuccessResponse::new(response)).into_response()
+        }
         Err(e) => map_sandbox_error(e).into_response(),
     }
 }
@@ -821,6 +1136,9 @@ pub async fn pause_session(
 /// POST /api/v1/sandbox/sessions/:id/resume - 恢复会话
 pub async fn resume_session(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
 ) -> Response {
@@ -838,29 +1156,42 @@ pub async fn resume_session(
     };
 
     let session_id = SessionId::from(id);
-
-    match state.pool.get_session(session_id).await {
-        Ok(session) => match session.resume().await {
-            Ok(_) => {
-                if let Some(repository) = &state.repository
-                    && let Err(error) = repository.update_session_status(session_id, "ready").await
-                {
-                    error!(
-                        "Failed to persist active status for session {}: {}",
-                        session_id, error
-                    );
-                    return map_sandbox_error(error).into_response();
-                }
-                let response = SessionActionResponse {
-                    session_id: id,
-                    success: true,
-                    status: "ready".to_string(),
-                    message: "Session resumed successfully".to_string(),
-                };
-                Json(ApiSuccessResponse::new(response)).into_response()
-            }
-            Err(e) => map_sandbox_error(e).into_response(),
+    let session = match resolve_owner_bound_session(
+        &state,
+        &token,
+        session_id,
+        ForwardRequest {
+            method: &method,
+            original_uri: &original_uri,
+            headers: &headers,
+            body: None,
         },
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
+
+    match session.resume().await {
+        Ok(_) => {
+            if let Some(repository) = &state.repository
+                && let Err(error) = repository.update_session_status(session_id, "ready").await
+            {
+                error!(
+                    "Failed to persist active status for session {}: {}",
+                    session_id, error
+                );
+                return map_sandbox_error(error).into_response();
+            }
+            let response = SessionActionResponse {
+                session_id: id,
+                success: true,
+                status: "ready".to_string(),
+                message: "Session resumed successfully".to_string(),
+            };
+            Json(ApiSuccessResponse::new(response)).into_response()
+        }
         Err(e) => map_sandbox_error(e).into_response(),
     }
 }
@@ -868,6 +1199,9 @@ pub async fn resume_session(
 /// DELETE /api/v1/sandbox/sessions/:id - 关闭会话
 pub async fn close_session(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
 ) -> Response {
@@ -885,10 +1219,32 @@ pub async fn close_session(
     };
 
     let session_id = SessionId::from(id);
+    match resolve_owner_bound_session(
+        &state,
+        &token,
+        session_id,
+        ForwardRequest {
+            method: &method,
+            original_uri: &original_uri,
+            headers: &headers,
+            body: None,
+        },
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(response) => return response,
+    }
 
     match state.pool.release_session(session_id).await {
         Ok(_) => {
             state.clear_cached_credential(id).await;
+            if let Err(error) = state.delete_session_owner(session_id).await {
+                warn!(
+                    "Failed to delete sandbox owner mapping for closed session {}: {}",
+                    session_id, error
+                );
+            }
             let response = SessionActionResponse {
                 session_id: id,
                 success: true,
@@ -904,6 +1260,9 @@ pub async fn close_session(
 /// POST /api/v1/sandbox/sessions/:id/dom-export - 导出 DOM
 pub async fn dom_export(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
     Json(request): Json<DomExportRequest>,
@@ -922,11 +1281,30 @@ pub async fn dom_export(
     };
 
     let session_id = SessionId::from(id);
-
-    // 获取会话
-    let session = match state.pool.get_session(session_id).await {
-        Ok(s) => s,
-        Err(e) => return map_sandbox_error(e).into_response(),
+    let request_body = match serde_json::to_vec(&request) {
+        Ok(body) => body,
+        Err(error) => {
+            return ApiErrorResponse::internal_error(format!(
+                "failed to serialize DOM export request for forwarding: {error}"
+            ))
+            .into_response();
+        }
+    };
+    let session = match resolve_owner_bound_session(
+        &state,
+        &token,
+        session_id,
+        ForwardRequest {
+            method: &method,
+            original_uri: &original_uri,
+            headers: &headers,
+            body: Some(request_body),
+        },
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(response) => return response,
     };
 
     let operation_type = OperationType::DomExport;
@@ -1019,6 +1397,9 @@ pub async fn dom_export(
 /// POST /api/v1/sandbox/sessions/:id/export - 导出数据
 pub async fn export_data(
     State(state): State<SandboxState>,
+    OriginalUri(original_uri): OriginalUri,
+    method: Method,
+    headers: HeaderMap,
     Extension(token): Extension<ValidatedToken>,
     Path(id_str): Path<String>,
     Json(request): Json<ExportDataRequest>,
@@ -1037,11 +1418,30 @@ pub async fn export_data(
     };
 
     let session_id = SessionId::from(id);
-
-    // 获取会话
-    let session = match state.pool.get_session(session_id).await {
-        Ok(s) => s,
-        Err(e) => return map_sandbox_error(e).into_response(),
+    let request_body = match serde_json::to_vec(&request) {
+        Ok(body) => body,
+        Err(error) => {
+            return ApiErrorResponse::internal_error(format!(
+                "failed to serialize export request for forwarding: {error}"
+            ))
+            .into_response();
+        }
+    };
+    let session = match resolve_owner_bound_session(
+        &state,
+        &token,
+        session_id,
+        ForwardRequest {
+            method: &method,
+            original_uri: &original_uri,
+            headers: &headers,
+            body: Some(request_body),
+        },
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(response) => return response,
     };
 
     // 构建导出操作参数
@@ -2237,18 +2637,25 @@ async fn websocket_upgrade(
 mod tests {
     use super::*;
     use crate::api::middleware::{TokenScope, tests::create_mock_token};
+    use crate::api::sandbox_owner::{SandboxOwnerRecord, SandboxOwnerRegistry};
     use crate::tee::sandbox::error::SessionError;
-    use crate::tee::sandbox::{SessionId, repository::SandboxOperationRecord};
+    use crate::tee::sandbox::{
+        SessionId,
+        repository::{SandboxOperationRecord, SandboxSessionRecord},
+    };
     use crate::vault::models::{CreateCredentialRequest, EncryptedPayload, ServiceId};
     use crate::vault::storage::CredentialVault;
     use async_trait::async_trait;
     use axum::{
         body::{Body, to_bytes},
-        http::Request,
+        http::{HeaderMap, HeaderValue, Request},
+        routing::post,
     };
-    use chrono::Utc;
+    use chrono::{Duration as ChronoDuration, Utc};
     use serde_json::Value;
     use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
     use tower::ServiceExt;
     use uuid::Uuid;
 
@@ -2323,6 +2730,245 @@ mod tests {
                 expires_at: OffsetDateTime::now_utc() + time::Duration::minutes(5),
                 last_activity_at: Arc::new(RwLock::new(OffsetDateTime::now_utc())),
             },
+        }
+    }
+
+    #[derive(Default)]
+    struct InMemoryOwnerRegistry {
+        records: Arc<RwLock<HashMap<Uuid, SandboxOwnerRecord>>>,
+    }
+
+    #[async_trait]
+    impl SandboxOwnerRegistry for InMemoryOwnerRegistry {
+        async fn register_owner(
+            &self,
+            record: SandboxOwnerRecord,
+            _ttl: Duration,
+        ) -> Result<(), SandboxError> {
+            self.records.write().await.insert(record.session_id, record);
+            Ok(())
+        }
+
+        async fn get_owner(
+            &self,
+            session_id: SessionId,
+        ) -> Result<Option<SandboxOwnerRecord>, SandboxError> {
+            Ok(self
+                .records
+                .read()
+                .await
+                .get(&Uuid::from(session_id))
+                .cloned())
+        }
+
+        async fn delete_owner(&self, session_id: SessionId) -> Result<(), SandboxError> {
+            self.records.write().await.remove(&Uuid::from(session_id));
+            Ok(())
+        }
+    }
+
+    struct OwnerRoutingPool {
+        session: Option<Arc<dyn SandboxSession>>,
+        release_calls: Arc<RwLock<Vec<SessionId>>>,
+    }
+
+    impl OwnerRoutingPool {
+        fn missing() -> Self {
+            Self {
+                session: None,
+                release_calls: Arc::new(RwLock::new(Vec::new())),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl SandboxPool for OwnerRoutingPool {
+        async fn acquire_session(
+            &self,
+            _request: SessionRequest,
+        ) -> Result<Arc<dyn SandboxSession>, SandboxError> {
+            self.session.clone().ok_or_else(|| {
+                SessionError::CreationFailed {
+                    reason: "test pool cannot create sessions".to_string(),
+                }
+                .into()
+            })
+        }
+
+        async fn release_session(&self, session_id: SessionId) -> Result<(), SandboxError> {
+            self.release_calls.write().await.push(session_id);
+            if self.session.is_some() {
+                Ok(())
+            } else {
+                Err(SessionError::not_found(session_id.into()).into())
+            }
+        }
+
+        async fn get_session(
+            &self,
+            session_id: SessionId,
+        ) -> Result<Arc<dyn SandboxSession>, SandboxError> {
+            self.session
+                .clone()
+                .ok_or_else(|| SessionError::not_found(session_id.into()).into())
+        }
+
+        async fn health(&self) -> crate::tee::sandbox::SandboxHealth {
+            crate::tee::sandbox::SandboxHealth {
+                pool_status: crate::tee::sandbox::PoolStatus::Running,
+                active_sessions: usize::from(self.session.is_some()),
+                warm_instances: 0,
+                healthy: true,
+                error: None,
+                browser_runtime_probe_error: None,
+                process_health_issues: 0,
+                process_health_summaries: Vec::new(),
+            }
+        }
+
+        async fn shutdown(&self) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Default)]
+    struct OwnerRoutingRepository {
+        session_record: Option<SandboxSessionRecord>,
+    }
+
+    #[async_trait]
+    impl crate::tee::sandbox::repository::SandboxRepository for OwnerRoutingRepository {
+        async fn create_session(
+            &self,
+            _record: crate::tee::sandbox::repository::NewSandboxSessionRecord,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_terminated(
+            &self,
+            _session_id: SessionId,
+            _status: &'static str,
+            _reason: Option<String>,
+            _terminated_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn update_session_status(
+            &self,
+            _session_id: SessionId,
+            _status: &'static str,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_started(
+            &self,
+            _session_id: SessionId,
+            _operation_id: Uuid,
+            _started_at: chrono::DateTime<Utc>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn mark_session_operation_finished(
+            &self,
+            _session_id: SessionId,
+            _last_error_summary: Option<String>,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn create_operation(
+            &self,
+            _record: crate::tee::sandbox::repository::NewSandboxOperationRecord,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn complete_operation(
+            &self,
+            _record: crate::tee::sandbox::repository::CompleteSandboxOperationRecord,
+        ) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
+        async fn reconcile_orphaned_active_sessions(
+            &self,
+            _recovery_reason: &str,
+        ) -> Result<u64, SandboxError> {
+            Ok(0)
+        }
+
+        async fn list_sessions_by_tenant(
+            &self,
+            _tenant_id: Uuid,
+        ) -> Result<Vec<SandboxSessionRecord>, SandboxError> {
+            Ok(self.session_record.clone().into_iter().collect())
+        }
+
+        async fn get_session_by_id(
+            &self,
+            tenant_id: Uuid,
+            session_id: SessionId,
+        ) -> Result<Option<SandboxSessionRecord>, SandboxError> {
+            Ok(self
+                .session_record
+                .clone()
+                .filter(|record| record.tenant_id == tenant_id && record.session_id == session_id))
+        }
+
+        async fn get_operation_by_id(
+            &self,
+            _tenant_id: Uuid,
+            _operation_id: Uuid,
+        ) -> Result<Option<SandboxOperationRecord>, SandboxError> {
+            Ok(None)
+        }
+    }
+
+    fn make_owner_routing_state(
+        pool: Arc<dyn SandboxPool>,
+        repository: Option<Arc<dyn crate::tee::sandbox::repository::SandboxRepository>>,
+        owner_registry: Option<Arc<dyn SandboxOwnerRegistry>>,
+    ) -> SandboxState {
+        SandboxState {
+            pool,
+            config: SandboxConfig::default(),
+            repository,
+            vault: None,
+            key_hierarchy: None,
+            enclave: None,
+            owner_id: "owner-a".to_string(),
+            owner_base_url: "http://127.0.0.1".to_string(),
+            owner_registry,
+            forwarding_client: reqwest::Client::new(),
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    fn make_session_record(session_id: SessionId, tenant_id: Uuid) -> SandboxSessionRecord {
+        let now = Utc::now();
+        SandboxSessionRecord {
+            session_id,
+            sandbox_id: Uuid::new_v4(),
+            tenant_id,
+            created_by: Uuid::new_v4(),
+            credential_id: Uuid::new_v4(),
+            original_intent: "owner routing".to_string(),
+            status: "ready".to_string(),
+            started_at: now,
+            expires_at: now + ChronoDuration::minutes(5),
+            terminated_at: None,
+            updated_at: now,
+            active_operation_id: None,
+            active_operation_started_at: None,
+            last_error_summary: None,
         }
     }
 
@@ -2968,6 +3614,242 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_register_session_owner_stores_mapping() {
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool {
+            session: None,
+            release_calls: Arc::new(RwLock::new(Vec::new())),
+        });
+        let state = make_owner_routing_state(pool, None, Some(owner_registry.clone()));
+        let session = create_stub_session();
+
+        state
+            .register_session_owner(&session)
+            .await
+            .expect("owner mapping should be stored");
+
+        let stored = owner_registry
+            .get_owner(session.id())
+            .await
+            .expect("registry lookup should succeed")
+            .expect("owner mapping should exist");
+        assert_eq!(stored.owner_id, "owner-a");
+        assert_eq!(stored.base_url, "http://127.0.0.1");
+        assert_eq!(stored.session_id, Uuid::from(session.id()));
+        assert_eq!(stored.tenant_id, session.context.tenant_id);
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_returns_retryable_503_when_owner_missing_but_db_record_exists()
+    {
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool::missing());
+        let repository: Arc<dyn crate::tee::sandbox::repository::SandboxRepository> =
+            Arc::new(OwnerRoutingRepository {
+                session_record: Some(make_session_record(session_id, tenant_id)),
+            });
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        let state = make_owner_routing_state(pool, Some(repository), Some(owner_registry));
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![TokenScope::SandboxExecute],
+        );
+        let app = axum::Router::new().nest(
+            "/api/v1",
+            sandbox_routes().layer(Extension(token)).with_state(state),
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/sandbox/sessions/{}/execute",
+                        Uuid::from(session_id)
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "operation_type": "click",
+                            "description": "click",
+                            "parameters": { "selector": "#submit" }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get(axum::http::header::RETRY_AFTER),
+            Some(&HeaderValue::from_static("1"))
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "sandbox_owner_unavailable");
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_forwards_to_registered_owner() {
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let owner_addr = listener.local_addr().unwrap();
+        let owner_handler = post(|headers: HeaderMap| async move {
+            Json(serde_json::json!({
+                "success": true,
+                "data": {
+                    "operation_id": Uuid::new_v4(),
+                    "success": true,
+                    "data": {
+                        "saw_authorization": headers.contains_key(axum::http::header::AUTHORIZATION),
+                        "saw_forward_header": headers
+                            .get(SANDBOX_FORWARD_HEADER)
+                            .and_then(|value| value.to_str().ok())
+                            .is_some_and(|value| value == SANDBOX_FORWARD_VERSION),
+                    },
+                    "execution_time_ms": 1
+                }
+            }))
+        });
+        let owner_server = axum::Router::new()
+            .route("/sandbox/sessions/:id/execute", owner_handler.clone())
+            .route("/api/v1/sandbox/sessions/:id/execute", owner_handler);
+        let owner_task = tokio::spawn(async move {
+            axum::serve(listener, owner_server)
+                .await
+                .expect("owner server should run");
+        });
+
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-b".to_string(),
+                    base_url: format!("http://{owner_addr}"),
+                    session_id: Uuid::from(session_id),
+                    tenant_id,
+                    expires_at: (OffsetDateTime::now_utc() + time::Duration::minutes(5))
+                        .unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool::missing());
+        let state = make_owner_routing_state(pool, None, Some(owner_registry));
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![TokenScope::SandboxExecute],
+        );
+        let app = sandbox_routes().layer(Extension(token)).with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/sandbox/sessions/{}/execute",
+                        Uuid::from(session_id)
+                    ))
+                    .header("authorization", "Bearer test-token")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "operation_type": "click",
+                            "description": "click",
+                            "parameters": { "selector": "#submit" }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        owner_task.abort();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["success"], true);
+        assert_eq!(payload["data"]["data"]["saw_authorization"], true);
+        assert_eq!(payload["data"]["data"]["saw_forward_header"], true);
+    }
+
+    #[tokio::test]
+    async fn test_forward_loop_header_returns_session_not_local_retryable_error() {
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-b".to_string(),
+                    base_url: "http://127.0.0.1:65535".to_string(),
+                    session_id: Uuid::from(session_id),
+                    tenant_id,
+                    expires_at: (OffsetDateTime::now_utc() + time::Duration::minutes(5))
+                        .unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool::missing());
+        let state = make_owner_routing_state(pool, None, Some(owner_registry));
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![TokenScope::SandboxExecute],
+        );
+        let app = sandbox_routes().layer(Extension(token)).with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/sandbox/sessions/{}/execute",
+                        Uuid::from(session_id)
+                    ))
+                    .header(SANDBOX_FORWARD_HEADER, SANDBOX_FORWARD_VERSION)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "operation_type": "click",
+                            "description": "click",
+                            "parameters": { "selector": "#submit" }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.headers().get(axum::http::header::RETRY_AFTER),
+            Some(&HeaderValue::from_static("1"))
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "sandbox_session_not_local");
+    }
+
     // ==================== ListSessionsQuery status 校验测试 ====================
 
     #[test]
@@ -3073,15 +3955,7 @@ mod tests {
         // 注意：兜底处理器不依赖状态，因此使用空状态即可测试路由匹配
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let app = sandbox_routes().with_state(state);
 
         let request = Request::builder()
@@ -3109,15 +3983,7 @@ mod tests {
         // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let app = sandbox_routes().with_state(state);
 
         let request = Request::builder()
@@ -3145,15 +4011,7 @@ mod tests {
         // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let app = sandbox_routes().with_state(state);
 
         let request = Request::builder()
@@ -3183,15 +4041,7 @@ mod tests {
         // 而不是被框架拦截返回 405 Method Not Allowed
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let app = sandbox_routes().with_state(state);
 
         // 测试不带尾随斜杠
@@ -3226,15 +4076,7 @@ mod tests {
 
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let app =
             NormalizePathLayer::trim_trailing_slash().layer(sandbox_routes().with_state(state));
 
@@ -3287,15 +4129,7 @@ mod tests {
         // 400 + {"error":"invalid_request"}，且不会进入会话关闭逻辑
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
         let app = sandbox_routes()
             .layer(axum::Extension(token))
@@ -3368,15 +4202,7 @@ mod tests {
         // 400 + {"error":"invalid_request"}，且不会进入会话查询逻辑
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxRead]);
         let app = sandbox_routes()
             .layer(axum::Extension(token))
@@ -3423,15 +4249,7 @@ mod tests {
 
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxRead]);
         let app = sandbox_routes()
             .layer(axum::Extension(token))
@@ -3471,15 +4289,7 @@ mod tests {
 
         let config = SandboxConfig::default();
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState {
-            pool,
-            config,
-            repository: None,
-            vault: None,
-            key_hierarchy: None,
-            enclave: None,
-            credential_cache: Arc::new(RwLock::new(HashMap::new())),
-        };
+        let state = SandboxState::new_with_pool(pool, config);
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxRead]);
         let app = sandbox_routes()
             .layer(axum::Extension(token))

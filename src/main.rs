@@ -51,7 +51,8 @@ use vault_service::api::{
     middleware::auth_middleware,
     notifications::notifications_routes,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
-    sandbox::{SandboxState, sandbox_routes},
+    sandbox::{SandboxOwnerRuntime, SandboxState, sandbox_routes},
+    sandbox_owner::RedisSandboxOwnerRegistry,
     service_account_routes,
     tenant::{TenantApiState, tenant_routes},
     token_blacklist::{TokenStore, create_redis_token_store},
@@ -640,7 +641,7 @@ async fn build_credential_vault(
 
 /// 初始化沙箱状态
 async fn initialize_sandbox_state(
-    _config: &ServerConfig,
+    config: &ServerConfig,
     database_pool: Option<sqlx::PgPool>,
     vault: Option<Arc<CredentialVault>>,
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
@@ -650,11 +651,53 @@ async fn initialize_sandbox_state(
 
     let database_pool = database_pool
         .ok_or_else(|| std::io::Error::other("沙箱持久化要求 DATABASE_URL，内存回退已禁用"))?;
+    let redis_url = env::var("REDIS_URL").map_err(|_| {
+        std::io::Error::other("sandbox owner routing 要求 REDIS_URL，内存回退已禁用")
+    })?;
+    let owner_id = env::var("SANDBOX_OWNER_ID")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("HOSTNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| format!("sandbox-owner-{}", std::process::id()));
+    let owner_base_url = env::var("SANDBOX_OWNER_BASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| {
+            if config.environment == Environment::Production {
+                String::new()
+            } else {
+                format!("http://127.0.0.1:{}", config.port)
+            }
+        });
+    if config.environment == Environment::Production && owner_base_url.is_empty() {
+        return Err(std::io::Error::other(
+            "production sandbox owner routing requires SANDBOX_OWNER_BASE_URL",
+        )
+        .into());
+    }
+    let owner_registry = Arc::new(RedisSandboxOwnerRegistry::new(&redis_url).map_err(|error| {
+        std::io::Error::other(format!("sandbox owner registry init failed: {error}"))
+    })?);
 
     let config = SandboxConfig::from_env();
-    let state = SandboxState::new(config, Some(database_pool), vault, key_hierarchy, enclave)
-        .await
-        .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
+    let state = SandboxState::new(
+        config,
+        Some(database_pool),
+        vault,
+        key_hierarchy,
+        enclave,
+        SandboxOwnerRuntime {
+            owner_id,
+            owner_base_url,
+            owner_registry: Some(owner_registry),
+        },
+    )
+    .await
+    .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 
     Ok(state)
 }

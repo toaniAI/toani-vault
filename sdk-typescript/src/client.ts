@@ -50,6 +50,10 @@ function parseErrorCode(
       unauthorized: CredBridgeErrorCode.Unauthorized,
       forbidden: CredBridgeErrorCode.Forbidden,
       internal_error: CredBridgeErrorCode.InternalError,
+      sandbox_session_not_local:
+        CredBridgeErrorCode.SandboxSessionNotLocal,
+      sandbox_owner_unavailable:
+        CredBridgeErrorCode.SandboxOwnerUnavailable,
       token_expired: CredBridgeErrorCode.TokenExpired,
       invalid_token: CredBridgeErrorCode.InvalidToken,
       token_revoked: CredBridgeErrorCode.TokenRevoked,

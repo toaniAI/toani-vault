@@ -11,6 +11,33 @@ fail() {
     exit 1
 }
 
+configure_sandbox_owner_routing() {
+    owner_id="${SANDBOX_OWNER_ID:-${HOSTNAME:-}}"
+    if [ -z "$owner_id" ]; then
+        fail "unable to derive SANDBOX_OWNER_ID; set SANDBOX_OWNER_ID or ensure HOSTNAME is present"
+    fi
+    export SANDBOX_OWNER_ID="$owner_id"
+    log "effective SANDBOX_OWNER_ID=$SANDBOX_OWNER_ID"
+
+    if [ -n "${SANDBOX_OWNER_BASE_URL:-}" ]; then
+        log "using preconfigured SANDBOX_OWNER_BASE_URL=$SANDBOX_OWNER_BASE_URL"
+        return 0
+    fi
+
+    owner_service="${SANDBOX_OWNER_HEADLESS_SERVICE:-}"
+    owner_namespace="${SANDBOX_OWNER_NAMESPACE:-${POD_NAMESPACE:-}}"
+    owner_scheme="${SANDBOX_OWNER_SCHEME:-http}"
+    owner_port="${SANDBOX_OWNER_PORT:-${CREDBRIDGE_PORT:-8080}}"
+
+    if [ -z "$owner_service" ] || [ -z "$owner_namespace" ]; then
+        log "sandbox owner DNS config is incomplete; leaving SANDBOX_OWNER_BASE_URL unset"
+        return 0
+    fi
+
+    export SANDBOX_OWNER_BASE_URL="${owner_scheme}://${owner_id}.${owner_service}.${owner_namespace}.svc.cluster.local:${owner_port}"
+    log "derived SANDBOX_OWNER_BASE_URL=$SANDBOX_OWNER_BASE_URL"
+}
+
 find_existing_path() {
     for path in "$@"; do
         if [ -n "$path" ] && [ -e "$path" ]; then
@@ -358,6 +385,7 @@ EOF
     log "wrote SGX QCNL config to $config_path"
 }
 
+configure_sandbox_owner_routing
 ensure_browser_runtime_prerequisites
 ensure_nsjail_userns_prerequisites
 

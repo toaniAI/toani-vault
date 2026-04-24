@@ -1,0 +1,17 @@
+Phase 1 baseline
+Timestamp (UTC): 2026-04-24T07:28:55Z
+Target: https://dev-credbridge.bitkinetic.com/
+
+Observed:
+- HTTP status: 200
+- Content-Type: text/html
+- Title: Toani Vault
+
+Raw header excerpt:
+HTTP/2 200
+date: Fri, 24 Apr 2026 07:28:55 GMT
+content-type: text/html
+content-length: 467
+last-modified: Mon, 20 Apr 2026 05:56:19 GMT
+etag: "69e5c003-1d3"
+accept-ranges: bytes

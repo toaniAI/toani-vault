@@ -22,6 +22,8 @@ envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: production
+  SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-go-owner"
+  SANDBOX_OWNER_PORT: "8080"
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: info
   DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
@@ -32,7 +34,15 @@ envs:
   PRIVY_APP_ID: "cmniaifov006t0cl1af6l5xqs"
   PRIVY_APP_SECRET: "privy_app_secret_51xduL8UX9MyuZDEizgyhhh9MXsAQsZbW5n9T1xBTdrT1fgcYDqK64Yv4Cnefyhirjx94sctJPzNyAFqyVJ2GH73"
 
-o_envs: []
+o_envs:
+  - name: SANDBOX_OWNER_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
 
 enableNfsLogPvc: false
 consoleLogToFile: false

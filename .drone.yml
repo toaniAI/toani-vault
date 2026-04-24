@@ -374,6 +374,7 @@ steps:
           } > .drone-runtime.values.yaml
         '
       - helm upgrade --install credbridge dn/go -f .values.yaml -f .drone-runtime.values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - sh scripts/apply-sandbox-owner-headless-service.sh zkme-dev credbridge-go credbridge-go-owner 8080 http
       - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -451,6 +452,7 @@ steps:
           } > .drone-runtime.values.yaml
         '
       - helm upgrade --install credbridge dn/go -f .test.values.yaml -f .drone-runtime.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - sh scripts/apply-sandbox-owner-headless-service.sh zkme-test credbridge-go credbridge-go-owner 8080 http
       - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -503,6 +505,21 @@ steps:
       - 'sed -i "s/version:.*/version: $CHART_VERSION/" Chart.yaml'
       - helm package .
       - helm push credbridge-$CHART_VERSION.tgz oci://hub.bitkinetic.com/zkme/charts
+    when:
+      ref:
+        - refs/tags/*
+
+  - name: verify-prod-chart-owner-routing
+    image: alpine/helm:latest
+    pull: if-not-exists
+    depends_on:
+      - helm chart push prod
+    commands:
+      - cd config/chart
+      - helm template credbridge . -f values.yaml -f values/values-prod.yaml > /tmp/credbridge-prod-chart.yaml
+      - grep -q "name: credbridge-owner" /tmp/credbridge-prod-chart.yaml
+      - grep -q "clusterIP: None" /tmp/credbridge-prod-chart.yaml
+      - grep -q "publishNotReadyAddresses: true" /tmp/credbridge-prod-chart.yaml
     when:
       ref:
         - refs/tags/*
