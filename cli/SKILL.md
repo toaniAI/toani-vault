@@ -14,16 +14,16 @@ Provide agents with an immediately executable `toani` usage guide, with special 
 
 ## Core Mental Model
 
-1. `toani` 是 CLI，不是 SDK 伪代码。
-2. `sandbox` 是 CredBridge 后端提供的远端 TEE 浏览器会话，不是本地浏览器，也不是 agent 自己的运行时节点。
-3. 页面操作通过 `toani sandbox create-session`、`toani sandbox bootstrap-page` 和 `toani sandbox execute` 组合完成。
-4. `http_request` 是后端直连 HTTP，不会启动远端浏览器；它支持在嵌套 headers/body 里解析 credential reference，并可用 `prefix` / `suffix` 做固定字符串包装（如 `Bearer `）。
-5. Rocket Loader 一类页面要先显式执行 `bootstrap-page`，再 `wait` / `fill` / `click`。
-6. 需要页面状态时，在任何 credential-backed `fill` 之前可用 `execute_script` 勘察 DOM；一旦做过 `{"$credential":"..."}` 形式的 `fill`，后续优先用 `get-session`、`get-operation`、`export-dom`、`get_text`。
-7. 完成后要 `terminate`，不要留下长期活跃会话。
-8. Dashboard / UI 仍是凭证和 token 的创建入口；CLI 目前只开放凭证元数据读取，不负责创建、更新、删除或解密凭证。
-9. `login` 是当前首选接入路径；`config init --token` 只作为兼容入口保留。
-10. token 当前优先存到 OS Keychain，而不是默认写进 `~/.toani/config.json`。
+1. `toani` is a CLI, not SDK pseudocode.
+2. `sandbox` is a remote TEE browser session provided by the CredBridge backend, not a local browser and not the agent's own runtime node.
+3. Page operations are composed through `toani sandbox create-session`, `toani sandbox bootstrap-page`, and `toani sandbox execute`.
+4. `http_request` is a backend-side direct HTTP operation and does not start the remote browser; it can resolve credential references inside nested headers/body values and supports fixed `prefix` / `suffix` wrappers such as `Bearer `.
+5. Rocket Loader-style pages should run `bootstrap-page` explicitly before `wait` / `fill` / `click`.
+6. If you need page state, inspect the DOM with `execute_script` before any credential-backed `fill`; once a `fill` uses `{"$credential":"..."}`, prefer `get-session`, `get-operation`, `export-dom`, and `get_text` afterward.
+7. Always `terminate` the session when finished; do not leave long-lived active sessions behind.
+8. The Dashboard / UI remains the source of truth for creating credentials and tokens; the CLI currently exposes only credential metadata reads and does not create, update, delete, or decrypt credentials.
+9. `login` is the current preferred entry path; `config init --token` is retained only as a compatibility path.
+10. Tokens now prefer OS Keychain storage instead of being written to `~/.toani/config.json` by default.
 
 ## Current Supported Surface
 
@@ -253,18 +253,18 @@ When calling `execute --operation-type dom_export`, use the backend field names:
 - `extra_sensitive_selectors`
 - `max_bytes`
 
-## 快速自检清单
+## Quick Self-Check Checklist
 
-开始 `toani sandbox` 自动化前，先过一遍：
+Before starting `toani sandbox` automation, verify these points:
 
-- 填凭证字段时，`fill.value` 必须是对象 `{"$credential":"username"}` / `{"$credential":"password"}`，不要写成字符串 `"$credential.username"`
-- Rocket Loader 页面先 `navigate`，再 `sandbox bootstrap-page --mode rocket_loader`，不要给 `bootstrap-page` 传 `--params`
-- 需要用 `execute_script` 勘察 DOM、按钮文案或 selector 时，必须在任何 credential-backed `fill` 之前做完
-- 一旦当前 session 做过 `{"$credential":"..."}` 形式的 `fill`，不要再调用 `execute_script`；改用 `export-dom`、`get_text`、`get-session`
-- 不要尝试从 CLI、DOM 或脚本里回显凭证明文；CLI 只返回元数据，DOM 导出会脱敏
-- 任意 session 用完后都要 `toani sandbox terminate <sessionId>`
+- When filling credential-backed fields, `fill.value` must be an object such as `{"$credential":"username"}` / `{"$credential":"password"}`, not a string like `"$credential.username"`
+- For Rocket Loader pages, run `navigate` first, then `sandbox bootstrap-page --mode rocket_loader`; do not pass `--params` to `bootstrap-page`
+- If you need `execute_script` to inspect the DOM, button text, or selectors, complete that work before any credential-backed `fill`
+- Once the current session has executed a `fill` using `{"$credential":"..."}`, do not call `execute_script` again; use `export-dom`, `get_text`, or `get-session` instead
+- Do not attempt to echo plaintext credentials from the CLI, the DOM, or scripts; the CLI returns metadata only and DOM exports are redacted
+- Every session should end with `toani sandbox terminate <sessionId>`
 
-## 标准调用流程
+## Standard Call Sequence
 
 When the user wants to "open a page in the TEE browser and operate on it", use this order:
 
@@ -273,14 +273,14 @@ When the user wants to "open a page in the TEE browser and operate on it", use t
 3. If you need a credential ID, first query and confirm it with `toani credentials list` / `get`
 4. `toani sandbox create-session ...`
 5. `toani sandbox execute <sessionId> --operation-type navigate ...`
-6. 如果是 Rocket Loader / bundle 未启动页面，显式执行 `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...`
-   页面兼容性一般、依赖晚挂载事件时，优先加 `--replay-lifecycle-events true`
-7. 如需勘察 DOM 或定位 selector，在这里完成 `toani sandbox execute <sessionId> --operation-type execute_script ...`
+6. If the page is Rocket Loader based or the bundle has not started, explicitly run `toani sandbox bootstrap-page <sessionId> --mode rocket_loader ...`
+   For partially compatible pages or pages that depend on late-mounted lifecycle events, prefer adding `--replay-lifecycle-events true`
+7. If you need to inspect the DOM or locate selectors, do it here with `toani sandbox execute <sessionId> --operation-type execute_script ...`
 8. `toani sandbox execute <sessionId> --operation-type wait ...`
 9. `toani sandbox execute <sessionId> --operation-type fill|click ...`
-10. 如有异步返回，再 `toani sandbox get-operation <operationId>`
-11. 需要确认状态时，优先 `toani sandbox get-session <sessionId>`、`export-dom`、`get_text`
-12. 完成后 `toani sandbox terminate <sessionId>`
+10. If the operation completes asynchronously, follow up with `toani sandbox get-operation <operationId>`
+11. When you need to confirm state, prefer `toani sandbox get-session <sessionId>`, `export-dom`, or `get_text`
+12. Finish with `toani sandbox terminate <sessionId>`
 
 Do not skip `create-session`.
 
@@ -313,15 +313,15 @@ toani sandbox execute <sessionId> \
   --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'
 ```
 
-注意：
+Notes:
 
-- `{"$credential":"password"}` 这种对象形式才会触发后端在 TEE 内消费凭证字段
-- `"$credential.password"` 这种字符串形式会被当普通文本填进去，通常不会报错，但也不会真正消费凭证
-- 判断是否生效时，优先看返回里的 `"sensitive": true|false`
-  - `"sensitive": true` 表示凭证绑定已生效
-  - `"sensitive": false` 通常表示你传的是普通字符串，不是 credential object
+- Only the object form `{"$credential":"password"}` triggers backend-side credential consumption inside the TEE
+- The string form `"$credential.password"` is treated as plain text input; it usually does not error, but it does not consume the credential
+- To confirm whether it worked, inspect the returned `"sensitive": true|false`
+- `"sensitive": true` means credential binding was applied
+- `"sensitive": false` usually means you passed a plain string instead of a credential object
 
-### `bootstrap-page` 的受控注入语义
+### Controlled Injection Semantics of `bootstrap-page`
 
 This subcommand exists specifically to explicitly replay the controlled bundle startup after Lightpanda opens a Rocket Loader page:
 
@@ -339,7 +339,7 @@ Recommended login chain:
 
 1. `navigate`
 2. `bootstrap-page`
-3. 如需勘察 DOM，在这里完成 `execute_script`
+3. If you need to inspect the DOM, do the `execute_script` step here
 4. `wait`
 5. `fill`
 6. `click`
@@ -358,11 +358,11 @@ toani sandbox bootstrap-page <sessionId> \
 
 This is the most important current semantic rule:
 
-- `bindings` 只允许普通字符串
-- `bindings` 不支持 `{"$credential":"..."}`
-- secret 不允许进入 `execute_script` 的脚本上下文
-- 一旦当前 session 做过任何 credential-backed `fill`，后端会禁用后续 `execute_script`
-- 触发 `execute_script is disabled after credential-backed fills` 后，当前 session 无法恢复，只能 `terminate` 后重建
+- `bindings` only allows plain strings
+- `bindings` does not support `{"$credential":"..."}`
+- Secrets must not enter the script context of `execute_script`
+- Once the current session has performed any credential-backed `fill`, the backend disables later `execute_script` calls
+- After `execute_script is disabled after credential-backed fills` is triggered, that session cannot be recovered; terminate it and create a new one
 
 Correct example:
 
@@ -386,24 +386,24 @@ Expected result:
 - the error text explains that `execute_script.bindings` only accepts plain strings
 - no plaintext secret should appear in the result or in the error
 
-登录态验证建议：
+Recommended ways to validate logged-in state:
 
-- 不要在 credential-backed `fill` 之后用 `execute_script` 读取 `input.value` 或页面状态
-- 改用 `toani sandbox export-dom <sessionId> --format text --root-selector body`
-- 或 `toani sandbox execute <sessionId> --operation-type get_text --params '{"selector":"body"}'`
-- 或 `toani sandbox get-session <sessionId>` / `toani sandbox get-operation <operationId>`
+- Do not use `execute_script` after a credential-backed `fill` to read `input.value` or page state
+- Use `toani sandbox export-dom <sessionId> --format text --root-selector body` instead
+- Or use `toani sandbox execute <sessionId> --operation-type get_text --params '{"selector":"body"}'`
+- Or use `toani sandbox get-session <sessionId>` / `toani sandbox get-operation <operationId>`
 
-## 明文 secret 的能力边界
+## Plaintext Secret Capability Boundary
 
-不要尝试通过 CLI、脚本或 DOM 导出凭证明文。当前真实边界是：
+Do not try to export plaintext credentials through the CLI, scripts, or the DOM. The current hard boundary is:
 
-- `toani credentials list` / `get` 只返回元数据，不返回 `username` / `password` 明文
-- 不要假设存在 `--reveal`、`--verbose`、`--schema` 一类开关能导出 secret
-- `execute_script` 无法在 credential-backed `fill` 后读取输入框真实值
-- `export-dom` 会对敏感字段脱敏
-- 正确的验证方式是在 TEE 里完整跑登录链路，看页面是否进入登录后状态
+- `toani credentials list` / `get` returns metadata only, not plaintext `username` / `password`
+- Do not assume flags such as `--reveal`, `--verbose`, or `--schema` can export secrets
+- `execute_script` cannot read the real input value after a credential-backed `fill`
+- `export-dom` redacts sensitive fields
+- The correct verification method is to run the full login flow inside the TEE and check whether the page reaches the post-login state
 
-## 常用示例列表
+## Common Example List
 
 ### Example 1: Initialize configuration
 
@@ -606,7 +606,7 @@ toani sandbox execute <sessionId> \
   --operation-type wait \
   --params '{"selector":"input[name=email]","timeout_ms":15000}'
 
-# 如需勘察 DOM，请在这里做 execute_script；不要放到 credential-backed fill 之后
+# If you need to inspect the DOM, do the execute_script step here; do not place it after credential-backed fills
 
 toani sandbox execute <sessionId> \
   --operation-type fill \
@@ -632,11 +632,11 @@ When validating secret-backed login, prefer this order:
 5. `toani sandbox execute <sessionId> --operation-type navigate --params '{"url":"https://test-web.zk.me/login"}'`
 6. `toani sandbox bootstrap-page <sessionId> --mode rocket_loader --replay-lifecycle-events true --wait-selector 'input[name=email]' --wait-timeout-ms 15000`
 7. `toani sandbox execute <sessionId> --operation-type wait --params '{"selector":"input[name=email]","timeout_ms":15000}'`
-8. 如需勘察 selector / DOM，在这里执行 `toani sandbox execute <sessionId> --operation-type execute_script ...`
+8. If you need to inspect selectors or the DOM, do it here with `toani sandbox execute <sessionId> --operation-type execute_script ...`
 9. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=email]","value":{"$credential":"username"}}'`
 10. `toani sandbox execute <sessionId> --operation-type fill --params '{"selector":"input[name=password]","value":{"$credential":"password"}}'`
 11. `toani sandbox execute <sessionId> --operation-type click --params '{"selector":"button[type=submit]"}'`
-12. `toani sandbox get-session <sessionId>` 或 `toani sandbox export-dom <sessionId> --format text --root-selector body`
+12. `toani sandbox get-session <sessionId>` or `toani sandbox export-dom <sessionId> --format text --root-selector body`
 13. `toani sandbox terminate <sessionId>`
 
 ### Example 20: End the session
@@ -702,14 +702,14 @@ These are all incorrect:
 - Error: `execute_script.bindings` received `{"$credential":"..."}`
   - Fix: move secret consumption to a controlled top-level field such as `fill.value`; script bindings must contain only plain strings
 
-- 错误：`execute_script is disabled after credential-backed fills`
-  - 修复：这不是临时失败，而是当前 session 进入保护态。终止当前 session，重建一个新 session，并把所有 `execute_script` 勘察步骤前移到任何 `{"$credential":"..."}` 形式的 `fill` 之前
+- Error: `execute_script is disabled after credential-backed fills`
+  - Fix: this is not a temporary failure; the current session has entered a protected state. Terminate it, create a new session, and move every `execute_script` inspection step before any `fill` that uses `{"$credential":"..."}`
 
-- 错误：`fill` 没报错但登录表单仍判定无效
-  - 修复：检查 `fill.value` 是否误写成 `"$credential.username"` 这种字符串；正确写法是 `{"$credential":"username"}`。同时检查返回里的 `"sensitive"` 是否为 `true`
+- Error: `fill` did not error but the login form still treats the submission as invalid
+  - Fix: check whether `fill.value` was mistakenly written as a string like `"$credential.username"`; the correct form is `{"$credential":"username"}`. Also verify that the returned `"sensitive"` value is `true`
 
-- 错误：`bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported`
-  - 修复：改用 `--script-selectors`、`--include-plain-scripts`、`--replay-lifecycle-events`、`--wait-selector`、`--wait-timeout-ms` 这些受控字段
+- Error: `bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported`
+  - Fix: use the controlled fields `--script-selectors`, `--include-plain-scripts`, `--replay-lifecycle-events`, `--wait-selector`, and `--wait-timeout-ms` instead
 
 - Error: `bootstrap_failed: selector_not_found: ...`
   - Fix: inspect `discovered_scripts`, `reinjected_scripts`, `ready_state_before_scan`, `ready_state_after_injection`, `ready_state`, `body_present`, `matched_selectors`, `sample_script_descriptors`, and `selector_exists_at_failure`. For partially compatible pages, try `--replay-lifecycle-events true` first. If `discovered_scripts=0`, use `matched_selectors` / `sample_script_descriptors` to determine whether selectors missed or `include_plain_scripts` blocked normal scripts
@@ -717,8 +717,8 @@ These are all incorrect:
 - Error: browser runtime errors mentioning `browser runtime closed without response`, `lightpanda`, `puppeteer-core`, `CDP`, or `nsjail`
   - Fix: this is a remote Lightpanda runtime or isolation-policy issue, not a local CLI browser problem. Preserve the `operationId`, run `toani sandbox get-operation <operationId>`, and hand the session, operation, base URL, and error details to the backend team
 
-- 错误：401 / 403
-  - 修复：先确认 token 是否来自 Dashboard UI，再检查 `--token`、环境变量、Keychain 和 legacy `~/.toani/config.json` 的覆盖顺序；如果连错环境，再核对 `--base-url`
+- Error: 401 / 403
+  - Fix: first confirm the token came from the Dashboard UI, then check the precedence order across `--token`, environment variables, Keychain, and legacy `~/.toani/config.json`; if you are pointed at the wrong environment, recheck `--base-url`
 
 - Local config path: `~/.toani/config.json`
 - New tokens are no longer written to the config file by default, but historical files may still contain legacy tokens
