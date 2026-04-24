@@ -269,6 +269,40 @@ describe("SandboxService", () => {
       );
     });
 
+    it("应该透传带 prefix 的 http_request 凭证引用", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        operationId: "op-http-auth",
+        status: OperationStatus.Success,
+        result: null,
+        executionTimeMs: 95,
+      });
+
+      await service.executeOperation("session-123", {
+        operationType: OperationType.HttpRequest,
+        method: "POST",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        headers: {
+          Authorization: { $credential: "api_key", prefix: "Bearer " },
+          "Content-Type": "application/json",
+        },
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/sandbox/sessions/session-123/execute",
+        expect.objectContaining({
+          parameters: expect.objectContaining({
+            method: "POST",
+            url: "https://openrouter.ai/api/v1/chat/completions",
+            headers: {
+              Authorization: { $credential: "api_key", prefix: "Bearer " },
+              "Content-Type": "application/json",
+            },
+          }),
+        }),
+        undefined,
+      );
+    });
+
     it("应该传递纯字符串脚本绑定", async () => {
       vi.spyOn(client, "post").mockResolvedValue({
         operationId: "op-script",

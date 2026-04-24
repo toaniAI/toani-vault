@@ -1384,11 +1384,9 @@ fn is_credential_reference_value(value: &serde_json::Value) -> bool {
     let serde_json::Value::Object(map) = value else {
         return false;
     };
-    map.len() == 1
-        && map
-            .get("$credential")
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|field| !field.trim().is_empty())
+    map.get("$credential")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|field| !field.trim().is_empty())
 }
 
 fn redact_nested_strings(value: &mut serde_json::Value) {
@@ -1423,7 +1421,7 @@ async fn resolve_parameter_value(
     operation_type: &OperationType,
     value: &serde_json::Value,
 ) -> Result<(serde_json::Value, serde_json::Value), Response> {
-    if let Some(field) = parse_credential_reference(value)? {
+    if let Some(reference) = parse_credential_reference(value)? {
         if matches!(
             operation_type,
             OperationType::BootstrapPage | OperationType::ExecuteScript
@@ -1444,13 +1442,25 @@ async fn resolve_parameter_value(
             .await
             .map_err(|error| map_sandbox_error(error).into_response())?;
 
-        let resolved = material.values.get(field).cloned().ok_or_else(|| {
-            ApiErrorResponse::invalid_request(format!(
-                "unsupported credential field reference: {field} for {}",
-                material.credential_type.as_str()
-            ))
-            .into_response()
-        })?;
+        let resolved = material
+            .values
+            .get(reference.field.as_str())
+            .cloned()
+            .ok_or_else(|| {
+                ApiErrorResponse::invalid_request(format!(
+                    "unsupported credential field reference: {} for {}",
+                    reference.field,
+                    material.credential_type.as_str()
+                ))
+                .into_response()
+            })?;
+
+        let resolved = format!(
+            "{}{}{}",
+            reference.prefix.as_deref().unwrap_or_default(),
+            resolved,
+            reference.suffix.as_deref().unwrap_or_default()
+        );
 
         return Ok((value.clone(), serde_json::Value::String(resolved)));
     }
@@ -1498,8 +1508,17 @@ async fn resolve_parameter_value(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CredentialReference {
+    field: String,
+    prefix: Option<String>,
+    suffix: Option<String>,
+}
+
 #[allow(clippy::result_large_err)]
-fn parse_credential_reference(value: &serde_json::Value) -> Result<Option<&str>, Response> {
+fn parse_credential_reference(
+    value: &serde_json::Value,
+) -> Result<Option<CredentialReference>, Response> {
     let serde_json::Value::Object(map) = value else {
         return Ok(None);
     };
@@ -1508,11 +1527,13 @@ fn parse_credential_reference(value: &serde_json::Value) -> Result<Option<&str>,
         return Ok(None);
     };
 
-    if map.len() != 1 {
-        return Err(ApiErrorResponse::invalid_request(
-            "credential reference objects may only contain the $credential key",
-        )
-        .into_response());
+    for key in map.keys() {
+        if !matches!(key.as_str(), "$credential" | "prefix" | "suffix") {
+            return Err(ApiErrorResponse::invalid_request(
+                "credential reference objects may only contain $credential, prefix, and suffix",
+            )
+            .into_response());
+        }
     }
 
     let Some(field) = reference_value.as_str() else {
@@ -1523,13 +1544,39 @@ fn parse_credential_reference(value: &serde_json::Value) -> Result<Option<&str>,
     };
 
     if field.trim().is_empty() {
-        Err(
-            ApiErrorResponse::invalid_request("credential reference field must not be empty")
-                .into_response(),
+        return Err(ApiErrorResponse::invalid_request(
+            "credential reference field must not be empty",
         )
-    } else {
-        Ok(Some(field))
+        .into_response());
     }
+
+    let prefix = match map.get("prefix") {
+        Some(serde_json::Value::String(prefix)) => Some(prefix.clone()),
+        Some(_) => {
+            return Err(ApiErrorResponse::invalid_request(
+                "credential reference prefix must be a string",
+            )
+            .into_response());
+        }
+        None => None,
+    };
+
+    let suffix = match map.get("suffix") {
+        Some(serde_json::Value::String(suffix)) => Some(suffix.clone()),
+        Some(_) => {
+            return Err(ApiErrorResponse::invalid_request(
+                "credential reference suffix must be a string",
+            )
+            .into_response());
+        }
+        None => None,
+    };
+
+    Ok(Some(CredentialReference {
+        field: field.to_string(),
+        prefix,
+        suffix,
+    }))
 }
 
 async fn load_session_credential_material(
@@ -1617,11 +1664,14 @@ fn extract_supported_credential_fields(
             let value = object
                 .get("api_key")
                 .or_else(|| object.get("key"))
+                .or_else(|| object.get("apiKey"))
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| {
                     SandboxError::Other("credential plaintext missing api_key".to_string())
                 })?;
-            values.insert("api_key".to_string(), value.to_string());
+            for field in ["api_key", "key", "apiKey"] {
+                values.insert(field.to_string(), value.to_string());
+            }
         }
         CredentialType::SessionCookie => {
             let value = object
@@ -2643,10 +2693,32 @@ mod tests {
             let value = serde_json::json!({ "$credential": field });
             assert_eq!(
                 parse_credential_reference(&value).unwrap(),
-                Some(field),
+                Some(CredentialReference {
+                    field: field.to_string(),
+                    prefix: None,
+                    suffix: None,
+                }),
                 "field {field} should be accepted"
             );
         }
+    }
+
+    #[test]
+    fn test_parse_credential_reference_accepts_prefix_and_suffix() {
+        let value = serde_json::json!({
+            "$credential": "api_key",
+            "prefix": "Bearer ",
+            "suffix": "#tenant-a",
+        });
+
+        assert_eq!(
+            parse_credential_reference(&value).unwrap(),
+            Some(CredentialReference {
+                field: "api_key".to_string(),
+                prefix: Some("Bearer ".to_string()),
+                suffix: Some("#tenant-a".to_string()),
+            })
+        );
     }
 
     #[tokio::test]
@@ -2654,6 +2726,34 @@ mod tests {
         let response = parse_credential_reference(&serde_json::json!({ "$credential": "" }))
             .expect_err("empty field should fail");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_parse_credential_reference_rejects_unknown_wrapper_key() {
+        let response = parse_credential_reference(&serde_json::json!({
+            "$credential": "api_key",
+            "template": "Bearer ${secret}",
+        }))
+        .expect_err("unknown wrapper key should fail");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_parse_credential_reference_rejects_non_string_prefix_or_suffix() {
+        let prefix_response = parse_credential_reference(&serde_json::json!({
+            "$credential": "api_key",
+            "prefix": 123,
+        }))
+        .expect_err("non-string prefix should fail");
+        assert_eq!(prefix_response.status(), StatusCode::BAD_REQUEST);
+
+        let suffix_response = parse_credential_reference(&serde_json::json!({
+            "$credential": "api_key",
+            "suffix": false,
+        }))
+        .expect_err("non-string suffix should fail");
+        assert_eq!(suffix_response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -2682,6 +2782,42 @@ mod tests {
             body["message"],
             "execute_script does not accept credential references"
         );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_parameter_value_wraps_http_request_authorization_from_api_key_alias() {
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState::new_with_pool(pool, config);
+        let session = create_stub_session();
+        state
+            .store_cached_credential(
+                session.id.into(),
+                SessionCredentialMaterial {
+                    credential_type: CredentialType::ApiKey,
+                    values: HashMap::from([
+                        ("api_key".to_string(), "sk_live_123".to_string()),
+                        ("key".to_string(), "sk_live_123".to_string()),
+                        ("apiKey".to_string(), "sk_live_123".to_string()),
+                    ]),
+                },
+            )
+            .await;
+
+        let (audit_value, resolved_value) = resolve_parameter_value(
+            &state,
+            &session,
+            &OperationType::HttpRequest,
+            &serde_json::json!({ "$credential": "apiKey", "prefix": "Bearer " }),
+        )
+        .await
+        .expect("http_request should resolve prefixed api key");
+
+        assert_eq!(
+            audit_value,
+            serde_json::json!({ "$credential": "apiKey", "prefix": "Bearer " })
+        );
+        assert_eq!(resolved_value, serde_json::json!("Bearer sk_live_123"));
     }
 
     #[tokio::test]
@@ -2788,7 +2924,34 @@ mod tests {
             values.get("api_key").map(String::as_str),
             Some("sk_live_123")
         );
+        assert_eq!(values.get("key").map(String::as_str), Some("sk_live_123"));
+        assert_eq!(
+            values.get("apiKey").map(String::as_str),
+            Some("sk_live_123")
+        );
         assert_eq!(values.get("ignored").map(String::as_str), Some("x"));
+    }
+
+    #[test]
+    fn test_extract_supported_credential_fields_accepts_legacy_api_key_alias_payload() {
+        let values = extract_supported_credential_fields(
+            CredentialType::ApiKey,
+            &serde_json::json!({ "apiKey": "sk_live_legacy" }),
+        )
+        .expect("legacy apiKey payload should be supported");
+
+        assert_eq!(
+            values.get("api_key").map(String::as_str),
+            Some("sk_live_legacy")
+        );
+        assert_eq!(
+            values.get("key").map(String::as_str),
+            Some("sk_live_legacy")
+        );
+        assert_eq!(
+            values.get("apiKey").map(String::as_str),
+            Some("sk_live_legacy")
+        );
     }
 
     #[test]

@@ -1589,9 +1589,29 @@ fn extract_supported_credential_fields(
         )
     })?;
     let mut values = HashMap::new();
+    if credential_type == CredentialType::ApiKey {
+        let api_key = ["api_key", "key", "apiKey"]
+            .into_iter()
+            .find_map(|field| object.get(field))
+            .and_then(|value| match value {
+                Value::String(text) => Some(text.clone()),
+                Value::Number(number) => Some(number.to_string()),
+                Value::Bool(boolean) => Some(boolean.to_string()),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                SandboxError::Other(
+                    "invalid_request: delegated credential payload missing api_key".to_string(),
+                )
+            })?;
+        for field in ["api_key", "key", "apiKey"] {
+            values.insert(field.to_string(), Zeroizing::new(api_key.clone()));
+        }
+        return Ok(values);
+    }
+
     let allowed_fields: &[&str] = match credential_type {
         CredentialType::UsernamePassword => &["username", "password"],
-        CredentialType::ApiKey => &["api_key"],
         CredentialType::SessionCookie => &["cookie", "name"],
         CredentialType::OAuthRefresh => &["refresh_token", "refreshToken"],
         _ => {
@@ -1915,6 +1935,36 @@ mod tests {
         assert_eq!(
             values.get("api_key").map(|value| value.as_str()),
             Some("sk_live_123")
+        );
+        assert_eq!(
+            values.get("key").map(|value| value.as_str()),
+            Some("sk_live_123")
+        );
+        assert_eq!(
+            values.get("apiKey").map(|value| value.as_str()),
+            Some("sk_live_123")
+        );
+    }
+
+    #[test]
+    fn test_extract_supported_credential_fields_supports_legacy_api_key_aliases() {
+        let values = extract_supported_credential_fields(
+            CredentialType::ApiKey,
+            &json!({ "apiKey": "sk_live_legacy" }),
+        )
+        .expect("legacy api key field should be supported");
+
+        assert_eq!(
+            values.get("api_key").map(|value| value.as_str()),
+            Some("sk_live_legacy")
+        );
+        assert_eq!(
+            values.get("key").map(|value| value.as_str()),
+            Some("sk_live_legacy")
+        );
+        assert_eq!(
+            values.get("apiKey").map(|value| value.as_str()),
+            Some("sk_live_legacy")
         );
     }
 
