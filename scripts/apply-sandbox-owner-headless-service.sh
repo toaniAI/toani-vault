@@ -25,7 +25,8 @@ spec:
   clusterIP: None
   publishNotReadyAddresses: true
   selector:
-${selector_yaml}  ports:
+${selector_yaml}
+  ports:
     - name: http
       port: ${PORT}
       targetPort: ${TARGET_PORT}
