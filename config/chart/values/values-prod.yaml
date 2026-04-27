@@ -1,6 +1,7 @@
 # Environment-specific configuration
 environment: prod
 namespace: zkme-pd
+cluster: "hk"
 
 # Project configuration
 project:

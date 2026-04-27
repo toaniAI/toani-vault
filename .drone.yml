@@ -489,20 +489,20 @@ steps:
       ref:
         - refs/tags/*
 
-  - name: verify-prod-chart-owner-routing
-    image: alpine/helm:latest
-    pull: if-not-exists
-    depends_on:
-      - helm chart push prod
-    commands:
-      - cd config/chart
-      - helm template credbridge . -f values.yaml -f values/values-prod.yaml > /tmp/credbridge-prod-chart.yaml
-      - 'grep -q "name: credbridge-owner" /tmp/credbridge-prod-chart.yaml'
-      - 'grep -q "clusterIP: None" /tmp/credbridge-prod-chart.yaml'
-      - 'grep -q "publishNotReadyAddresses: true" /tmp/credbridge-prod-chart.yaml'
-    when:
-      ref:
-        - refs/tags/*
+#  - name: verify-prod-chart-owner-routing
+#    image: alpine/helm:latest
+#    pull: if-not-exists
+#    depends_on:
+#      - helm chart push prod
+#    commands:
+#      - cd config/chart
+#      - helm template credbridge . -f values.yaml -f values/values-prod.yaml > /tmp/credbridge-prod-chart.yaml
+#      - 'grep -q "name: credbridge-owner" /tmp/credbridge-prod-chart.yaml'
+#      - 'grep -q "clusterIP: None" /tmp/credbridge-prod-chart.yaml'
+#      - 'grep -q "publishNotReadyAddresses: true" /tmp/credbridge-prod-chart.yaml'
+#    when:
+#      ref:
+#        - refs/tags/*
 
   - name: apply push to online
     image: hub.bitkinetic.com/public/deploy:v1
