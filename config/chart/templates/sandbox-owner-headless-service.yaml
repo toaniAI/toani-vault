@@ -1,0 +1,25 @@
+{{- if .Values.sandboxOwnerRouting.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.sandboxOwnerRouting.headlessServiceName }}
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "credbridge.labels" . | nindent 4 }}
+spec:
+  clusterIP: None˚
+  publishNotReadyAddresses: {{ .Values.sandboxOwnerRouting.publishNotReadyAddresses }}
+  selector:
+    {{- if .Values.sandboxOwnerRouting.selectorLabels }}
+    {{- toYaml .Values.sandboxOwnerRouting.selectorLabels | nindent 4 }}
+    {{- else }}
+    {{- include "credbridge.selectorLabels" . | nindent 4 }}
+    project.name: {{ .Values.project.name }}
+    project.server: {{ .Values.project.server }}
+    {{- end }}
+  ports:
+    - name: {{ .Values.sandboxOwnerRouting.portName | quote }}
+      port: {{ .Values.sandboxOwnerRouting.port }}
+      targetPort: {{ .Values.sandboxOwnerRouting.targetPort | quote }}
+      protocol: TCP
+{{- end }}
