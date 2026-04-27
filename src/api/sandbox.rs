@@ -42,7 +42,7 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -1034,6 +1034,11 @@ pub async fn execute_operation(
         &resolved_parameters,
         &mut audit_parameters,
     );
+    let sensitive_output_values = collect_http_sensitive_output_values(
+        &operation_type,
+        &request.parameters,
+        &resolved_parameters,
+    );
 
     // 构建操作请求
     let operation = OperationRequest {
@@ -1042,6 +1047,7 @@ pub async fn execute_operation(
         description: request.description,
         parameters: audit_parameters,
         resolved_parameters,
+        sensitive_output_values,
         created_at: OffsetDateTime::now_utc(),
     };
 
@@ -1360,6 +1366,7 @@ pub async fn dom_export(
         description: "DOM export".to_string(),
         parameters: audit_parameters,
         resolved_parameters,
+        sensitive_output_values: Vec::new(),
         created_at: OffsetDateTime::now_utc(),
     };
 
@@ -1468,6 +1475,7 @@ pub async fn export_data(
         description: "Export data".to_string(),
         parameters,
         resolved_parameters: HashMap::new(),
+        sensitive_output_values: Vec::new(),
         created_at: OffsetDateTime::now_utc(),
     };
 
@@ -1630,6 +1638,108 @@ async fn resolve_operation_parameters(
     }
 
     Ok((audit_parameters, resolved_parameters))
+}
+
+fn collect_http_sensitive_output_values(
+    operation_type: &OperationType,
+    original_parameters: &HashMap<String, serde_json::Value>,
+    resolved_parameters: &HashMap<String, serde_json::Value>,
+) -> Vec<String> {
+    if *operation_type != OperationType::HttpRequest {
+        return Vec::new();
+    }
+
+    let mut values = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (key, original_value) in original_parameters {
+        collect_http_sensitive_output_value(
+            key,
+            Some(original_value),
+            resolved_parameters.get(key),
+            &mut values,
+            &mut seen,
+        );
+    }
+
+    values
+}
+
+fn collect_http_sensitive_output_value(
+    key: &str,
+    original_value: Option<&serde_json::Value>,
+    resolved_value: Option<&serde_json::Value>,
+    values: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    let sensitive_key = is_sensitive_http_key(key);
+
+    if let Some(resolved_text) = resolved_value.and_then(serde_json::Value::as_str) {
+        if sensitive_key {
+            push_sensitive_output_value(resolved_text, values, seen);
+        }
+
+        if let Some(reference) =
+            original_value.and_then(|value| parse_credential_reference(value).ok().flatten())
+        {
+            push_sensitive_output_value(resolved_text, values, seen);
+
+            let stripped = resolved_text
+                .strip_prefix(reference.prefix.as_deref().unwrap_or_default())
+                .unwrap_or(resolved_text)
+                .strip_suffix(reference.suffix.as_deref().unwrap_or_default())
+                .unwrap_or(resolved_text)
+                .trim();
+            push_sensitive_output_value(stripped, values, seen);
+        }
+    }
+
+    match (original_value, resolved_value) {
+        (
+            Some(serde_json::Value::Object(original_map)),
+            Some(serde_json::Value::Object(resolved_map)),
+        ) => {
+            for (nested_key, nested_original) in original_map {
+                collect_http_sensitive_output_value(
+                    nested_key,
+                    Some(nested_original),
+                    resolved_map.get(nested_key),
+                    values,
+                    seen,
+                );
+            }
+        }
+        (
+            Some(serde_json::Value::Array(original_items)),
+            Some(serde_json::Value::Array(resolved_items)),
+        ) => {
+            for (index, nested_original) in original_items.iter().enumerate() {
+                collect_http_sensitive_output_value(
+                    key,
+                    Some(nested_original),
+                    resolved_items.get(index),
+                    values,
+                    seen,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_sensitive_output_value(
+    candidate: &str,
+    values: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    if seen.insert(trimmed.to_string()) {
+        values.push(trimmed.to_string());
+    }
 }
 
 fn redact_persisted_parameters(
@@ -3087,6 +3197,74 @@ mod tests {
             persisted_parameters["body"]["profile"]["visible"],
             serde_json::json!("ok")
         );
+    }
+
+    #[test]
+    fn test_collect_http_sensitive_output_values_tracks_resolved_and_bare_credentials() {
+        let original_parameters = HashMap::from([
+            (
+                "headers".to_string(),
+                serde_json::json!({
+                    "X-Cred": { "$credential": "api_key" },
+                    "Authorization": { "$credential": "api_key", "prefix": "Bearer " }
+                }),
+            ),
+            (
+                "body".to_string(),
+                serde_json::json!({
+                    "profile": {
+                        "secret": "visible-in-request"
+                    }
+                }),
+            ),
+        ]);
+        let resolved_parameters = HashMap::from([
+            (
+                "headers".to_string(),
+                serde_json::json!({
+                    "X-Cred": "sk_live_123",
+                    "Authorization": "Bearer sk_live_123"
+                }),
+            ),
+            (
+                "body".to_string(),
+                serde_json::json!({
+                    "profile": {
+                        "secret": "body-secret"
+                    }
+                }),
+            ),
+        ]);
+
+        let sensitive_values = collect_http_sensitive_output_values(
+            &OperationType::HttpRequest,
+            &original_parameters,
+            &resolved_parameters,
+        );
+
+        assert!(sensitive_values.contains(&"sk_live_123".to_string()));
+        assert!(sensitive_values.contains(&"Bearer sk_live_123".to_string()));
+        assert!(sensitive_values.contains(&"body-secret".to_string()));
+    }
+
+    #[test]
+    fn test_collect_http_sensitive_output_values_ignores_non_sensitive_plain_fields() {
+        let original_parameters = HashMap::from([(
+            "headers".to_string(),
+            serde_json::json!({
+                "X-Trace": "trace-id",
+                "X-User": "alice"
+            }),
+        )]);
+        let resolved_parameters = original_parameters.clone();
+
+        let sensitive_values = collect_http_sensitive_output_values(
+            &OperationType::HttpRequest,
+            &original_parameters,
+            &resolved_parameters,
+        );
+
+        assert!(sensitive_values.is_empty());
     }
 
     #[test]

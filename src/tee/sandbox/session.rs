@@ -568,6 +568,7 @@ impl ActiveNsjailSession {
 
         let result = self
             .build_execution_result(
+                &operation,
                 self.execute_with_resource_retries(&operation).await,
                 start_time,
             )
@@ -586,6 +587,7 @@ impl ActiveNsjailSession {
                     output_result: Self::sanitized_operation_output(
                         operation.operation_type,
                         result.data.as_ref(),
+                        &operation.sensitive_output_values,
                     ),
                     error_message: result.error.clone(),
                     completed_at: chrono::Utc::now(),
@@ -612,6 +614,7 @@ impl ActiveNsjailSession {
 
     async fn build_execution_result(
         &self,
+        operation: &OperationRequest,
         operation_result: Result<SandboxExecutionOutput, SandboxError>,
         start_time: OffsetDateTime,
     ) -> ExecutionResult {
@@ -632,7 +635,11 @@ impl ActiveNsjailSession {
         match operation_result {
             Ok(output) => ExecutionResult {
                 success: true,
-                data: output.data,
+                data: Self::sanitized_operation_output(
+                    operation.operation_type,
+                    output.data.as_ref(),
+                    &operation.sensitive_output_values,
+                ),
                 error: None,
                 execution_time_ms,
                 audit_log: vec![],
@@ -815,6 +822,7 @@ impl ActiveNsjailSession {
     fn sanitized_operation_output(
         operation_type: OperationType,
         data: Option<&Value>,
+        sensitive_output_values: &[String],
     ) -> Option<Value> {
         match operation_type {
             OperationType::BootstrapPage => data.map(|value| {
@@ -832,8 +840,95 @@ impl ActiveNsjailSession {
                     "wait_satisfied": wait_satisfied,
                 })
             }),
+            OperationType::HttpRequest => {
+                data.map(|value| Self::redact_http_response_value(value, sensitive_output_values))
+            }
             _ => data.cloned(),
         }
+    }
+
+    fn redact_http_response_value(value: &Value, sensitive_output_values: &[String]) -> Value {
+        match value {
+            Value::Object(map) => Value::Object(
+                map.iter()
+                    .map(|(key, nested)| {
+                        (
+                            key.clone(),
+                            Self::redact_http_response_value(nested, sensitive_output_values),
+                        )
+                    })
+                    .collect(),
+            ),
+            Value::Array(items) => Value::Array(
+                items
+                    .iter()
+                    .map(|item| Self::redact_http_response_value(item, sensitive_output_values))
+                    .collect(),
+            ),
+            Value::String(text) => Value::String(Self::redact_http_response_text(
+                text,
+                sensitive_output_values,
+            )),
+            _ => value.clone(),
+        }
+    }
+
+    fn redact_http_response_text(text: &str, sensitive_output_values: &[String]) -> String {
+        for sensitive in sensitive_output_values {
+            if text == sensitive {
+                return "[REDACTED]".to_string();
+            }
+        }
+
+        let mut redacted = text.to_string();
+        for sensitive in sensitive_output_values {
+            redacted = if sensitive.len() >= "[REDACTED]".len() {
+                redacted.replace(sensitive, "[REDACTED]")
+            } else {
+                Self::replace_sensitive_with_boundaries(&redacted, sensitive)
+            };
+        }
+
+        redacted
+    }
+
+    fn replace_sensitive_with_boundaries(text: &str, sensitive: &str) -> String {
+        if sensitive.is_empty() {
+            return text.to_string();
+        }
+
+        let mut redacted = String::with_capacity(text.len());
+        let mut last_end = 0usize;
+
+        for (start, matched) in text.match_indices(sensitive) {
+            let end = start + matched.len();
+            if !Self::is_sensitive_match_boundary(text, start, end) {
+                continue;
+            }
+
+            redacted.push_str(&text[last_end..start]);
+            redacted.push_str("[REDACTED]");
+            last_end = end;
+        }
+
+        if last_end == 0 {
+            return text.to_string();
+        }
+
+        redacted.push_str(&text[last_end..]);
+        redacted
+    }
+
+    fn is_sensitive_match_boundary(text: &str, start: usize, end: usize) -> bool {
+        let previous = text[..start].chars().next_back();
+        let next = text[end..].chars().next();
+
+        previous.is_none_or(Self::is_sensitive_boundary_char)
+            && next.is_none_or(Self::is_sensitive_boundary_char)
+    }
+
+    fn is_sensitive_boundary_char(ch: char) -> bool {
+        !(ch.is_ascii_alphanumeric() || ch == '_')
     }
 
     fn required_http_method(parameters: &HashMap<String, Value>) -> Result<Method, SandboxError> {
@@ -1843,6 +1938,7 @@ mod tests {
                 ),
             ]),
             resolved_parameters: HashMap::new(),
+            sensitive_output_values: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
         }
     }
@@ -2212,6 +2308,7 @@ mod tests {
                     "mode": "rocket_loader"
                 }
             })),
+            &[],
         )
         .expect("bootstrap_page output should be summarized");
 
@@ -2219,6 +2316,65 @@ mod tests {
         assert_eq!(output["wait_satisfied"], true);
         assert!(output.get("final_url").is_none());
         assert!(output.get("diagnostics").is_none());
+    }
+
+    #[test]
+    fn test_sanitized_operation_output_redacts_http_request_response_values() {
+        let output = ActiveNsjailSession::sanitized_operation_output(
+            OperationType::HttpRequest,
+            Some(&json!({
+                "headers": {
+                    "X-Cred": "sk_live_123"
+                },
+                "body": {
+                    "token": "sk_live_123",
+                    "nested": [
+                        "prefix sk_live_123 suffix",
+                        { "secret": "Bearer sk_live_123" }
+                    ]
+                }
+            })),
+            &["sk_live_123".to_string(), "Bearer sk_live_123".to_string()],
+        )
+        .expect("http_request output should be redacted");
+
+        assert_eq!(output["headers"]["X-Cred"], "[REDACTED]");
+        assert_eq!(output["body"]["token"], "[REDACTED]");
+        assert_eq!(output["body"]["nested"][0], "prefix [REDACTED] suffix");
+        assert_eq!(output["body"]["nested"][1]["secret"], "[REDACTED]");
+    }
+
+    #[test]
+    fn test_sanitized_operation_output_redacts_short_http_secrets_with_boundaries() {
+        let output = ActiveNsjailSession::sanitized_operation_output(
+            OperationType::HttpRequest,
+            Some(&json!({
+                "body": {
+                    "otp_query": "code=12345",
+                    "otp_bearer": "Bearer 12345",
+                    "embedded_word": "abc12345def"
+                }
+            })),
+            &["12345".to_string()],
+        )
+        .expect("http_request output should be redacted");
+
+        assert_eq!(output["body"]["otp_query"], "code=[REDACTED]");
+        assert_eq!(output["body"]["otp_bearer"], "Bearer [REDACTED]");
+        assert_eq!(output["body"]["embedded_word"], "abc12345def");
+    }
+
+    #[test]
+    fn test_sanitized_operation_output_leaves_non_http_request_data_untouched() {
+        let original = json!({ "text": "prefix sk_live_123 suffix" });
+        let output = ActiveNsjailSession::sanitized_operation_output(
+            OperationType::GetText,
+            Some(&original),
+            &["sk_live_123".to_string()],
+        )
+        .expect("non-http output should stay intact");
+
+        assert_eq!(output, original);
     }
 
     async fn spawn_test_http_server(body: String, content_type: &str) -> Option<String> {
@@ -2264,6 +2420,7 @@ mod tests {
                 ("url".to_string(), Value::String(url.clone())),
             ]),
             resolved_parameters: HashMap::new(),
+            sensitive_output_values: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
         };
 
@@ -2296,6 +2453,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_execute_operation_redacts_http_request_result_before_return() {
+        let executor = Arc::new(MockOperationExecutor {
+            attempts: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![Ok(SandboxExecutionOutput {
+                data: Some(json!({
+                    "headers": {
+                        "X-Cred": "sk_live_123"
+                    },
+                    "body": {
+                        "message": "Bearer sk_live_123",
+                        "nested": ["before sk_live_123 after"]
+                    }
+                })),
+            })]),
+        });
+        let mut session = create_test_session();
+        session.operation_executor = executor;
+
+        let mut operation = create_test_operation();
+        operation.sensitive_output_values =
+            vec!["sk_live_123".to_string(), "Bearer sk_live_123".to_string()];
+
+        let result = session
+            .execute_operation_for_test(operation)
+            .await
+            .expect("http_request operation should succeed");
+
+        assert_eq!(
+            result.data.as_ref().unwrap()["headers"]["X-Cred"],
+            "[REDACTED]"
+        );
+        assert_eq!(
+            result.data.as_ref().unwrap()["body"]["message"],
+            "[REDACTED]"
+        );
+        assert_eq!(
+            result.data.as_ref().unwrap()["body"]["nested"][0],
+            "before [REDACTED] after"
+        );
+    }
+
+    #[tokio::test]
     async fn test_http_request_rejects_missing_method() {
         let session = create_test_session();
         let operation = OperationRequest {
@@ -2307,6 +2506,7 @@ mod tests {
                 Value::String("http://127.0.0.1".to_string()),
             )]),
             resolved_parameters: HashMap::new(),
+            sensitive_output_values: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
         };
 
@@ -2339,6 +2539,7 @@ mod tests {
                 ),
             ]),
             resolved_parameters: HashMap::new(),
+            sensitive_output_values: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
         };
         let invalid_url = OperationRequest {
@@ -2350,6 +2551,7 @@ mod tests {
                 ("url".to_string(), Value::String("://bad url".to_string())),
             ]),
             resolved_parameters: HashMap::new(),
+            sensitive_output_values: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
         };
 

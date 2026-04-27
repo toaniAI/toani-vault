@@ -333,6 +333,7 @@ pub fn create_operation_request(op_type: OperationType, description: &str) -> Op
         description: description.to_string(),
         parameters: HashMap::new(),
         resolved_parameters: HashMap::new(),
+        sensitive_output_values: Vec::new(),
         created_at: OffsetDateTime::now_utc(),
     }
 }
@@ -349,6 +350,7 @@ pub fn create_operation_request_with_params(
         description: description.to_string(),
         parameters: params,
         resolved_parameters: HashMap::new(),
+        sensitive_output_values: Vec::new(),
         created_at: OffsetDateTime::now_utc(),
     }
 }

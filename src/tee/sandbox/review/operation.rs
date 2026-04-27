@@ -462,6 +462,7 @@ mod tests {
             description: description.to_string(),
             parameters: HashMap::new(),
             resolved_parameters: HashMap::new(),
+            sensitive_output_values: Vec::new(),
             created_at: OffsetDateTime::now_utc(),
         }
     }

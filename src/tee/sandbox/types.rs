@@ -318,6 +318,8 @@ pub struct OperationRequest {
     pub parameters: HashMap<String, serde_json::Value>,
     /// 运行时解析后的参数
     pub resolved_parameters: HashMap<String, serde_json::Value>,
+    /// 本次请求中解析出的敏感响应候选值
+    pub sensitive_output_values: Vec<String>,
     /// 创建时间
     pub created_at: OffsetDateTime,
 }
