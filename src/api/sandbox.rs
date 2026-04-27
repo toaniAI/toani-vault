@@ -3042,10 +3042,11 @@ mod tests {
         }
     }
 
-    fn make_owner_routing_state(
+    fn make_owner_routing_state_with_base_url(
         pool: Arc<dyn SandboxPool>,
         repository: Option<Arc<dyn crate::tee::sandbox::repository::SandboxRepository>>,
         owner_registry: Option<Arc<dyn SandboxOwnerRegistry>>,
+        owner_base_url: &str,
     ) -> SandboxState {
         SandboxState {
             pool,
@@ -3055,11 +3056,19 @@ mod tests {
             key_hierarchy: None,
             enclave: None,
             owner_id: "owner-a".to_string(),
-            owner_base_url: "http://127.0.0.1".to_string(),
+            owner_base_url: owner_base_url.to_string(),
             owner_registry,
             forwarding_client: reqwest::Client::new(),
             credential_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    fn make_owner_routing_state(
+        pool: Arc<dyn SandboxPool>,
+        repository: Option<Arc<dyn crate::tee::sandbox::repository::SandboxRepository>>,
+        owner_registry: Option<Arc<dyn SandboxOwnerRegistry>>,
+    ) -> SandboxState {
+        make_owner_routing_state_with_base_url(pool, repository, owner_registry, "http://127.0.0.1")
     }
 
     fn make_session_record(session_id: SessionId, tenant_id: Uuid) -> SandboxSessionRecord {
@@ -3816,6 +3825,34 @@ mod tests {
         assert_eq!(stored.base_url, "http://127.0.0.1");
         assert_eq!(stored.session_id, Uuid::from(session.id()));
         assert_eq!(stored.tenant_id, session.context.tenant_id);
+    }
+
+    #[tokio::test]
+    async fn test_register_session_owner_stores_pod_ip_base_url_mapping() {
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool {
+            session: None,
+            release_calls: Arc::new(RwLock::new(Vec::new())),
+        });
+        let state = make_owner_routing_state_with_base_url(
+            pool,
+            None,
+            Some(owner_registry.clone()),
+            "http://10.1.2.3:9090",
+        );
+        let session = create_stub_session();
+
+        state
+            .register_session_owner(&session)
+            .await
+            .expect("owner mapping should be stored");
+
+        let stored = owner_registry
+            .get_owner(session.id())
+            .await
+            .expect("registry lookup should succeed")
+            .expect("owner mapping should exist");
+        assert_eq!(stored.base_url, "http://10.1.2.3:9090");
     }
 
     #[tokio::test]
