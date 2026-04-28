@@ -1,6 +1,6 @@
 {
   "name": "@toani/vault-cli",
-  "version": "0.0.16",
+  "version": "0.0.20",
   "description": "Toani Vault CLI",
   "type": "module",
   "bin": {

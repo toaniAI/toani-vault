@@ -132,9 +132,9 @@ export class CredentialsService {
       requestOptions?: RequestOptions;
     },
   ): Promise<CreateCredentialResponse> {
-    const plaintextData: Record<string, string> = { apiKey };
+    const plaintextData: Record<string, string> = { api_key: apiKey };
     if (apiSecret) {
-      plaintextData.apiSecret = apiSecret;
+      plaintextData.api_secret = apiSecret;
     }
 
     return this.create(

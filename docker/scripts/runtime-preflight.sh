@@ -11,6 +11,47 @@ fail() {
     exit 1
 }
 
+configure_sandbox_owner_routing() {
+    owner_id="${SANDBOX_OWNER_ID:-${HOSTNAME:-}}"
+    if [ -z "$owner_id" ]; then
+        fail "unable to derive SANDBOX_OWNER_ID; set SANDBOX_OWNER_ID or ensure HOSTNAME is present"
+    fi
+    export SANDBOX_OWNER_ID="$owner_id"
+    log "effective SANDBOX_OWNER_ID=$SANDBOX_OWNER_ID"
+
+    owner_scheme="${SANDBOX_OWNER_SCHEME:-http}"
+    owner_port="${SANDBOX_OWNER_PORT:-${CREDBRIDGE_PORT:-8080}}"
+    pod_ip_base_url=""
+    if [ -n "${POD_IP:-}" ]; then
+        pod_ip_base_url="${owner_scheme}://${POD_IP}:${owner_port}"
+    fi
+
+    if [ -n "${SANDBOX_OWNER_BASE_URL:-}" ]; then
+        if [ -n "$pod_ip_base_url" ] && [ "$SANDBOX_OWNER_BASE_URL" != "$pod_ip_base_url" ]; then
+            log "WARNING: SANDBOX_OWNER_BASE_URL overrides POD_IP-derived owner URL ($pod_ip_base_url)"
+        fi
+        log "resolved SANDBOX_OWNER_BASE_URL source=explicit_env value=$SANDBOX_OWNER_BASE_URL"
+        return 0
+    fi
+
+    owner_service="${SANDBOX_OWNER_HEADLESS_SERVICE:-}"
+    owner_namespace="${SANDBOX_OWNER_NAMESPACE:-${POD_NAMESPACE:-}}"
+
+    if [ -n "$pod_ip_base_url" ]; then
+        export SANDBOX_OWNER_BASE_URL="$pod_ip_base_url"
+        log "resolved SANDBOX_OWNER_BASE_URL source=pod_ip value=$SANDBOX_OWNER_BASE_URL"
+        return 0
+    fi
+
+    if [ -z "$owner_service" ] || [ -z "$owner_namespace" ]; then
+        log "sandbox owner DNS config is incomplete; leaving SANDBOX_OWNER_BASE_URL unset"
+        return 0
+    fi
+
+    export SANDBOX_OWNER_BASE_URL="${owner_scheme}://${owner_id}.${owner_service}.${owner_namespace}.svc.cluster.local:${owner_port}"
+    log "resolved SANDBOX_OWNER_BASE_URL source=headless_dns_fallback value=$SANDBOX_OWNER_BASE_URL"
+}
+
 find_existing_path() {
     for path in "$@"; do
         if [ -n "$path" ] && [ -e "$path" ]; then
@@ -358,6 +399,7 @@ EOF
     log "wrote SGX QCNL config to $config_path"
 }
 
+configure_sandbox_owner_routing
 ensure_browser_runtime_prerequisites
 ensure_nsjail_userns_prerequisites
 

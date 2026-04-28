@@ -1,0 +1,6 @@
+{
+  "disableSessionStartHook": false,
+  "disableStopHook": false,
+  "disableUserPromptSubmitHook": false,
+  "disableLogging": true
+}

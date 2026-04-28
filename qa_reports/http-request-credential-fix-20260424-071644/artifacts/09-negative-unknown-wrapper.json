@@ -1,0 +1,1 @@
+{"error":"invalid_request","i18n":{"key":"errors.api.invalid_request"},"locale":"zh-CN","message":"credential reference objects may only contain $credential, prefix, and suffix","success":false}

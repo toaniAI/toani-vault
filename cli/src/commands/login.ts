@@ -34,7 +34,6 @@ import {
 import {
   DASHBOARD_BASE_URL,
   DASHBOARD_CREDENTIALS_URL,
-  DASHBOARD_LOGIN_URL,
   DASHBOARD_TOKENS_URL,
   DEFAULT_API_BASE_URL,
   isPasetoToken,
@@ -738,13 +737,13 @@ export async function runLogin(
   }
 
   if (accountState === "no") {
-    log.step("Opening sign-up page in your browser...");
-    log.info(pc.dim(`  → ${DASHBOARD_LOGIN_URL}`));
-    await open(DASHBOARD_LOGIN_URL);
+    log.step("Opening Dashboard in your browser...");
+    log.info(pc.dim(`  → ${DASHBOARD_CREDENTIALS_URL}`));
+    await open(DASHBOARD_CREDENTIALS_URL);
     await sleep(800);
 
     note(
-      `${pc.bold("In the browser:")}\n  ${pc.cyan("1.")} Enter your email\n  ${pc.cyan("2.")} Check inbox for OTP from privy.io  ${pc.cyan("(takes ~30s)")}\n  ${pc.cyan("3.")} Paste the 6-digit code\n  ${pc.cyan("4.")} ${pc.cyan("(First time only)")} Set Display Name → Complete Setup\n\n${pc.yellow("When you're done →")} come back here and press ${pc.green("Enter")} to continue.`,
+      `${pc.bold("In the browser:")}\n  ${pc.cyan("1.")} If you're not signed in yet, enter your email\n  ${pc.cyan("2.")} Check inbox for OTP from privy.io  ${pc.cyan("(takes ~30s)")}\n  ${pc.cyan("3.")} Paste the 6-digit code\n  ${pc.cyan("4.")} ${pc.cyan("(First time only)")} Set Display Name → Complete Setup\n  ${pc.cyan("5.")} Once signed in, continue on the ${pc.green("Credentials")} page\n\n${pc.yellow("When you're done →")} come back here and press ${pc.green("Enter")} to continue.`,
       pc.cyan("Step 1 of 3 — Sign in / Sign up"),
       { format: (value) => value },
     );

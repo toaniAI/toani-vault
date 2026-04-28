@@ -28,11 +28,11 @@ export function parseOptions(argv: string[]): ParsedOptions {
 
 function missingTokenMessage(config: CliConfig): string {
   return [
-    "未检测到 CLI 可用的 API Token。",
-    `请先前往 Dashboard 注册或登录账号：${DASHBOARD_LOGIN_URL}`,
-    `登录后到 Dashboard Tokens 页面创建或复制访问凭证：${DASHBOARD_TOKENS_URL}`,
-    "推荐执行：toani login",
-    `兼容方式：toani config init --url ${config.baseUrl} --token <BEARER_TOKEN>`,
+    "No usable API token was found for the CLI.",
+    `First sign up or sign in through the Dashboard: ${DASHBOARD_LOGIN_URL}`,
+    `After signing in, create or copy an access token from the Dashboard Tokens page: ${DASHBOARD_TOKENS_URL}`,
+    "Recommended command: toani login",
+    `Compatibility path: toani config init --url ${config.baseUrl} --token <BEARER_TOKEN>`,
   ].join("\n");
 }
 

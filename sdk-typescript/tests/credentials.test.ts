@@ -150,8 +150,8 @@ describe("CredentialsService", () => {
           service_id: "stripe",
           credential_type: CredentialType.ApiKey,
           plaintext_data: {
-            apiKey: "sk_live_...",
-            apiSecret: "secret_key",
+            api_key: "sk_live_...",
+            api_secret: "secret_key",
           },
           expires_at: undefined,
         },
@@ -175,7 +175,7 @@ describe("CredentialsService", () => {
           service_id: "openai",
           credential_type: CredentialType.ApiKey,
           plaintext_data: {
-            apiKey: "sk-...",
+            api_key: "sk-...",
           },
           expires_at: undefined,
         },

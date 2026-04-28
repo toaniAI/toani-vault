@@ -62,6 +62,11 @@ require_grep 'install -m 0755 /root/.cache/lightpanda-node/lightpanda "$LIGHTPAN
 require_grep '"$LIGHTPANDA_BINARY_PATH" version' "$RUNTIME_DOCKERFILE"
 
 require_grep "ensure_nsjail_userns_prerequisites" "$RUNTIME_PREFLIGHT"
+require_grep 'pod_ip_base_url="${owner_scheme}://${POD_IP}:${owner_port}"' "$RUNTIME_PREFLIGHT"
+require_grep "source=explicit_env" "$RUNTIME_PREFLIGHT"
+require_grep "source=pod_ip" "$RUNTIME_PREFLIGHT"
+require_grep "source=headless_dns_fallback" "$RUNTIME_PREFLIGHT"
+require_grep "overrides POD_IP-derived owner URL" "$RUNTIME_PREFLIGHT"
 require_grep "require_subid_entry /etc/subuid" "$RUNTIME_PREFLIGHT"
 require_grep "require_subid_entry /etc/subgid" "$RUNTIME_PREFLIGHT"
 require_grep "CREDBRIDGE_SKIP_NSJAIL_PREFLIGHT" "$RUNTIME_PREFLIGHT"

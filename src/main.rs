@@ -51,7 +51,8 @@ use vault_service::api::{
     middleware::auth_middleware,
     notifications::notifications_routes,
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
-    sandbox::{SandboxState, sandbox_routes},
+    sandbox::{SandboxOwnerRuntime, SandboxState, sandbox_routes},
+    sandbox_owner::RedisSandboxOwnerRegistry,
     service_account_routes,
     tenant::{TenantApiState, tenant_routes},
     token_blacklist::{TokenStore, create_redis_token_store},
@@ -70,6 +71,23 @@ use vault_service::tenant::{
 use vault_service::vault::backend::VaultStorageBackend;
 use vault_service::vault::postgres::PostgresStorageBackend;
 use vault_service::vault::storage::CredentialVault;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SandboxOwnerBaseUrlSource {
+    ExplicitEnv,
+    PodIp,
+    HeadlessDnsFallback,
+}
+
+impl SandboxOwnerBaseUrlSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            SandboxOwnerBaseUrlSource::ExplicitEnv => "explicit_env",
+            SandboxOwnerBaseUrlSource::PodIp => "pod_ip",
+            SandboxOwnerBaseUrlSource::HeadlessDnsFallback => "headless_dns_fallback",
+        }
+    }
+}
 
 /// API root response
 #[derive(Debug, Serialize)]
@@ -178,6 +196,62 @@ impl StorageBackendKind {
 
 fn env_var_present(name: &str) -> bool {
     env::var_os(name).is_some_and(|value| !value.is_empty())
+}
+
+fn non_empty_env(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn sandbox_owner_port() -> u16 {
+    non_empty_env("SANDBOX_OWNER_PORT")
+        .or_else(|| non_empty_env("CREDBRIDGE_PORT"))
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(8080)
+}
+
+fn resolve_sandbox_owner_base_url(owner_id: &str) -> Option<(String, SandboxOwnerBaseUrlSource)> {
+    let explicit_base_url = non_empty_env("SANDBOX_OWNER_BASE_URL");
+    let pod_ip = non_empty_env("POD_IP");
+    let owner_port = sandbox_owner_port();
+    let owner_scheme = non_empty_env("SANDBOX_OWNER_SCHEME").unwrap_or_else(|| "http".to_string());
+
+    if let Some(explicit_base_url) = explicit_base_url {
+        if let Some(pod_ip) = pod_ip.as_deref() {
+            let pod_ip_base_url = format!("{owner_scheme}://{pod_ip}:{owner_port}");
+            if pod_ip_base_url != explicit_base_url {
+                warn!(
+                    explicit_base_url = %explicit_base_url,
+                    pod_ip_base_url = %pod_ip_base_url,
+                    "SANDBOX_OWNER_BASE_URL overrides POD_IP-derived sandbox owner base URL"
+                );
+            }
+        }
+        return Some((explicit_base_url, SandboxOwnerBaseUrlSource::ExplicitEnv));
+    }
+
+    if let Some(pod_ip) = pod_ip {
+        return Some((
+            format!("{owner_scheme}://{pod_ip}:{owner_port}"),
+            SandboxOwnerBaseUrlSource::PodIp,
+        ));
+    }
+
+    let owner_service = non_empty_env("SANDBOX_OWNER_HEADLESS_SERVICE");
+    let owner_namespace =
+        non_empty_env("SANDBOX_OWNER_NAMESPACE").or_else(|| non_empty_env("POD_NAMESPACE"));
+
+    match (owner_service, owner_namespace) {
+        (Some(owner_service), Some(owner_namespace)) => Some((
+            format!(
+                "{owner_scheme}://{owner_id}.{owner_service}.{owner_namespace}.svc.cluster.local:{owner_port}"
+            ),
+            SandboxOwnerBaseUrlSource::HeadlessDnsFallback,
+        )),
+        _ => None,
+    }
 }
 
 fn resolve_auto_storage_backend(
@@ -640,7 +714,7 @@ async fn build_credential_vault(
 
 /// 初始化沙箱状态
 async fn initialize_sandbox_state(
-    _config: &ServerConfig,
+    config: &ServerConfig,
     database_pool: Option<sqlx::PgPool>,
     vault: Option<Arc<CredentialVault>>,
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
@@ -650,11 +724,53 @@ async fn initialize_sandbox_state(
 
     let database_pool = database_pool
         .ok_or_else(|| std::io::Error::other("沙箱持久化要求 DATABASE_URL，内存回退已禁用"))?;
+    let redis_url = env::var("REDIS_URL").map_err(|_| {
+        std::io::Error::other("sandbox owner routing 要求 REDIS_URL，内存回退已禁用")
+    })?;
+    let owner_id = env::var("SANDBOX_OWNER_ID")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("HOSTNAME")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| format!("sandbox-owner-{}", std::process::id()));
+    let owner_base_url =
+        if let Some((resolved_base_url, source)) = resolve_sandbox_owner_base_url(&owner_id) {
+            info!(
+                owner_base_url = %resolved_base_url,
+                source = source.as_str(),
+                "resolved sandbox owner base URL"
+            );
+            resolved_base_url
+        } else if config.environment == Environment::Production {
+            return Err(std::io::Error::other(
+                "production sandbox owner routing requires SANDBOX_OWNER_BASE_URL",
+            )
+            .into());
+        } else {
+            format!("http://127.0.0.1:{}", config.port)
+        };
+    let owner_registry = Arc::new(RedisSandboxOwnerRegistry::new(&redis_url).map_err(|error| {
+        std::io::Error::other(format!("sandbox owner registry init failed: {error}"))
+    })?);
 
     let config = SandboxConfig::from_env();
-    let state = SandboxState::new(config, Some(database_pool), vault, key_hierarchy, enclave)
-        .await
-        .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
+    let state = SandboxState::new(
+        config,
+        Some(database_pool),
+        vault,
+        key_hierarchy,
+        enclave,
+        SandboxOwnerRuntime {
+            owner_id,
+            owner_base_url,
+            owner_registry: Some(owner_registry),
+        },
+    )
+    .await
+    .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 
     Ok(state)
 }
@@ -1193,8 +1309,58 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{StorageBackendKind, render_metrics, resolve_auto_storage_backend};
+    use super::{
+        SandboxOwnerBaseUrlSource, StorageBackendKind, render_metrics,
+        resolve_auto_storage_backend, resolve_sandbox_owner_base_url,
+    };
+    use std::{
+        io,
+        sync::{Arc, Mutex, OnceLock},
+    };
     use vault_service::tee::{SelfCheckItem, StartupReadiness};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock poisoned")
+    }
+
+    #[derive(Clone, Default)]
+    struct SharedLogBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl SharedLogBuffer {
+        fn contents(&self) -> String {
+            String::from_utf8(self.0.lock().expect("log buffer poisoned").clone())
+                .expect("logs should be utf-8")
+        }
+    }
+
+    struct SharedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for SharedLogWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .expect("log buffer poisoned")
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogBuffer {
+        type Writer = SharedLogWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            SharedLogWriter(self.0.clone())
+        }
+    }
 
     #[test]
     fn auto_backend_prefers_postgres_when_database_url_exists() {
@@ -1233,5 +1399,120 @@ mod tests {
         assert!(metrics.contains("credbridge_ready{status=\"failed\"} 0"));
         assert!(metrics.contains("credbridge_attestation_quote_valid{} 0"));
         assert!(metrics.contains("credbridge_enclave_running{} 1"));
+    }
+
+    #[test]
+    fn sandbox_owner_base_url_prefers_explicit_env() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var(
+                "SANDBOX_OWNER_BASE_URL",
+                "https://owner.example.internal:8443",
+            );
+            std::env::set_var("POD_IP", "10.0.0.8");
+            std::env::set_var("SANDBOX_OWNER_PORT", "8081");
+            std::env::remove_var("SANDBOX_OWNER_HEADLESS_SERVICE");
+            std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
+            std::env::remove_var("POD_NAMESPACE");
+            std::env::remove_var("SANDBOX_OWNER_SCHEME");
+        }
+
+        let resolved = resolve_sandbox_owner_base_url("owner-a").expect("base URL should resolve");
+
+        assert_eq!(resolved.0, "https://owner.example.internal:8443");
+        assert_eq!(resolved.1, SandboxOwnerBaseUrlSource::ExplicitEnv);
+    }
+
+    #[test]
+    fn sandbox_owner_base_url_uses_pod_ip_when_explicit_is_missing() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("SANDBOX_OWNER_BASE_URL");
+            std::env::set_var("POD_IP", "10.1.2.3");
+            std::env::set_var("SANDBOX_OWNER_PORT", "9090");
+            std::env::remove_var("SANDBOX_OWNER_HEADLESS_SERVICE");
+            std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
+            std::env::remove_var("POD_NAMESPACE");
+            std::env::remove_var("SANDBOX_OWNER_SCHEME");
+        }
+
+        let resolved = resolve_sandbox_owner_base_url("owner-a").expect("base URL should resolve");
+
+        assert_eq!(resolved.0, "http://10.1.2.3:9090");
+        assert_eq!(resolved.1, SandboxOwnerBaseUrlSource::PodIp);
+    }
+
+    #[test]
+    fn sandbox_owner_base_url_falls_back_to_headless_dns() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("SANDBOX_OWNER_BASE_URL");
+            std::env::remove_var("POD_IP");
+            std::env::set_var("SANDBOX_OWNER_HEADLESS_SERVICE", "credbridge-owner");
+            std::env::set_var("POD_NAMESPACE", "zkme-dev");
+            std::env::set_var("CREDBRIDGE_PORT", "8080");
+            std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
+            std::env::remove_var("SANDBOX_OWNER_PORT");
+            std::env::remove_var("SANDBOX_OWNER_SCHEME");
+        }
+
+        let resolved = resolve_sandbox_owner_base_url("owner-a").expect("base URL should resolve");
+
+        assert_eq!(
+            resolved.0,
+            "http://owner-a.credbridge-owner.zkme-dev.svc.cluster.local:8080"
+        );
+        assert_eq!(resolved.1, SandboxOwnerBaseUrlSource::HeadlessDnsFallback);
+    }
+
+    #[test]
+    fn sandbox_owner_base_url_is_absent_when_no_resolution_inputs_exist() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("SANDBOX_OWNER_BASE_URL");
+            std::env::remove_var("POD_IP");
+            std::env::remove_var("SANDBOX_OWNER_HEADLESS_SERVICE");
+            std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
+            std::env::remove_var("POD_NAMESPACE");
+            std::env::remove_var("SANDBOX_OWNER_PORT");
+            std::env::remove_var("CREDBRIDGE_PORT");
+            std::env::remove_var("SANDBOX_OWNER_SCHEME");
+        }
+
+        assert!(resolve_sandbox_owner_base_url("owner-a").is_none());
+    }
+
+    #[test]
+    fn sandbox_owner_base_url_warns_when_explicit_overrides_pod_ip() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var(
+                "SANDBOX_OWNER_BASE_URL",
+                "http://owner.example.internal:8080",
+            );
+            std::env::set_var("POD_IP", "10.9.8.7");
+            std::env::set_var("SANDBOX_OWNER_PORT", "8080");
+            std::env::remove_var("SANDBOX_OWNER_HEADLESS_SERVICE");
+            std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
+            std::env::remove_var("POD_NAMESPACE");
+            std::env::remove_var("SANDBOX_OWNER_SCHEME");
+        }
+
+        let logs = SharedLogBuffer::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_ansi(false)
+            .without_time()
+            .finish();
+
+        let resolved = tracing::subscriber::with_default(subscriber, || {
+            resolve_sandbox_owner_base_url("owner-a").expect("base URL should resolve")
+        });
+
+        assert_eq!(resolved.1, SandboxOwnerBaseUrlSource::ExplicitEnv);
+        assert!(
+            logs.contents()
+                .contains("SANDBOX_OWNER_BASE_URL overrides POD_IP-derived sandbox owner base URL")
+        );
     }
 }

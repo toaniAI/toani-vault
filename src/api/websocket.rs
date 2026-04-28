@@ -426,6 +426,7 @@ async fn handle_message(
                 description: description.clone(),
                 parameters,
                 resolved_parameters: HashMap::new(),
+                sensitive_output_values: Vec::new(),
                 created_at: time::OffsetDateTime::now_utc(),
             };
 

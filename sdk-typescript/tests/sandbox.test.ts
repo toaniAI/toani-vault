@@ -2,7 +2,7 @@
  * CredBridge SDK Sandbox 服务测试
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SandboxService } from "../src/sandbox.js";
 import { CredBridgeClient } from "../src/client.js";
 import {
@@ -28,6 +28,11 @@ describe("SandboxService", () => {
     });
     service = new SandboxService(client);
     vi.resetAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe("创建会话", () => {
@@ -142,6 +147,59 @@ describe("SandboxService", () => {
   });
 
   describe("获取单个会话", () => {
+    it("应该在 sandbox_owner_unavailable 503 时依赖客户端重试", async () => {
+      vi.useFakeTimers();
+
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          headers: new Map([["content-type", "application/json"]]),
+          json: async () => ({
+            success: false,
+            error: {
+              code: "sandbox_owner_unavailable",
+              message: "Owner is warming up",
+            },
+            meta: {
+              requestId: "req_owner_1",
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Map([["content-type", "application/json"]]),
+          json: async () => ({
+            success: true,
+            data: {
+              sessionId: "session-123",
+              status: SessionStatus.Ready,
+              serviceId: "schwab",
+              createdAt: "1704067200",
+            },
+            meta: {
+              requestId: "req_owner_2",
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        } as unknown as Response);
+
+      global.fetch = mockFetch;
+
+      const request = service.getSession("session-123");
+
+      await vi.runAllTimersAsync();
+
+      await expect(request).resolves.toMatchObject({
+        sessionId: "session-123",
+        status: SessionStatus.Ready,
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
     it("应该获取会话详情", async () => {
       const mockResponse = {
         sessionId: "session-123",
@@ -264,6 +322,40 @@ describe("SandboxService", () => {
             selector: "#api-key",
             value: { $credential: "api_key" },
           },
+        }),
+        undefined,
+      );
+    });
+
+    it("应该透传带 prefix 的 http_request 凭证引用", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        operationId: "op-http-auth",
+        status: OperationStatus.Success,
+        result: null,
+        executionTimeMs: 95,
+      });
+
+      await service.executeOperation("session-123", {
+        operationType: OperationType.HttpRequest,
+        method: "POST",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        headers: {
+          Authorization: { $credential: "api_key", prefix: "Bearer " },
+          "Content-Type": "application/json",
+        },
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/sandbox/sessions/session-123/execute",
+        expect.objectContaining({
+          parameters: expect.objectContaining({
+            method: "POST",
+            url: "https://openrouter.ai/api/v1/chat/completions",
+            headers: {
+              Authorization: { $credential: "api_key", prefix: "Bearer " },
+              "Content-Type": "application/json",
+            },
+          }),
         }),
         undefined,
       );

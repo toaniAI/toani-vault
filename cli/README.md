@@ -250,6 +250,9 @@ toani sandbox terminate <sessionId>
 - When `bootstrap-page` times out on `--wait-selector`, the backend error includes URL, title, script counts, matched selectors, sample script descriptors, and pre/post-injection `readyState` diagnostics to help isolate whether discovery, reinjection, or page mount failed.
 - `fill` remains the controlled secret sink. Its top-level `value` field may be either a plain
   string or a credential reference such as `{"$credential":"password"}`.
+- `http_request` may resolve credential references inside nested headers/body values. When a remote
+  API expects fixed framing, use `prefix` / `suffix`, for example
+  `{"$credential":"api_key","prefix":"Bearer "}`.
 - `execute_script` may still receive `bindings`, but every binding value must be a plain string.
   Do not pass credential references in `execute_script.bindings`.
 - When `execute_script.bindings` contains `{"$credential":"..."}`, the backend rejects the request
@@ -311,6 +314,23 @@ toani sandbox execute <sessionId> \
   --operation-type execute_script \
   --params '{"script":"return document.querySelector(bindings.selector)?.textContent?.trim() ?? null","bindings":{"selector":"h1"}}'
 
+# Backend-side direct HTTP request with credential-backed Authorization
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"POST",
+    "url":"https://openrouter.ai/api/v1/chat/completions",
+    "headers":{
+      "Authorization":{"$credential":"api_key","prefix":"Bearer "},
+      "Content-Type":"application/json"
+    },
+    "body":{
+      "model":"openai/gpt-4o-mini",
+      "messages":[{"role":"user","content":"ping"}]
+    },
+    "timeout_ms":10000
+  }'
+
 # Invalid: execute_script bindings cannot resolve credentials
 toani sandbox execute <sessionId> \
   --operation-type execute_script \
@@ -348,7 +368,7 @@ toani sandbox terminate <sessionId>
 
 ## Common Failures
 
-- `未检测到 CLI 可用的 API Token`
+- `No usable API token was found for the CLI`
   - Create or copy the token in the Dashboard UI, then run `toani config init --url <api-url> --token <BEARER_TOKEN>` or set `TOANI_VAULT_TOKEN`.
 
 - `missing required field: credential_id or service_id`

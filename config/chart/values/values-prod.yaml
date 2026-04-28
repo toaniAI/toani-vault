@@ -1,8 +1,31 @@
 # Environment-specific configuration
 environment: prod
 namespace: zkme-pd
+cluster: "hk"
 
 # Project configuration
 project:
   name: zkme              # 项目名称
   server: credbridge             # 服务名称
+
+sandboxOwnerRouting:
+  enabled: true
+  headlessServiceName: "credbridge-owner"
+  portName: "http"
+  port: 8080
+  targetPort: "http"
+  publishNotReadyAddresses: true
+
+envs:
+  SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-owner"
+  SANDBOX_OWNER_PORT: "8080"
+
+o_envs:
+  - name: SANDBOX_OWNER_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace

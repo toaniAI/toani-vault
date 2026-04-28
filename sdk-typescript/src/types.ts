@@ -444,6 +444,10 @@ export enum CredBridgeErrorCode {
   InvalidRequest = "invalid_request",
   /** 服务器内部错误 */
   InternalError = "internal_error",
+  /** Sandbox 会话不在当前 owner */
+  SandboxSessionNotLocal = "sandbox_session_not_local",
+  /** Sandbox owner 暂时不可用 */
+  SandboxOwnerUnavailable = "sandbox_owner_unavailable",
   /** Token 过期 */
   TokenExpired = "token_expired",
   /** Token 无效 */
@@ -514,6 +518,8 @@ export class CredBridgeError extends Error {
     return (
       this.isNetworkError() ||
       this.code === CredBridgeErrorCode.InternalError ||
+      this.code === CredBridgeErrorCode.SandboxSessionNotLocal ||
+      this.code === CredBridgeErrorCode.SandboxOwnerUnavailable ||
       this.statusCode === 429
     ); // Rate limited
   }
@@ -939,6 +945,10 @@ export type SandboxCredentialField = string;
 export interface SandboxCredentialReference {
   /** Credential field name resolved by controlled host operations such as `fill` */
   $credential: SandboxCredentialField;
+  /** Optional string prepended after the backend resolves the secret value. */
+  prefix?: string;
+  /** Optional string appended after the backend resolves the secret value. */
+  suffix?: string;
 }
 
 /** Plain string bindings passed into `execute_script` */
@@ -978,13 +988,13 @@ export interface ExecuteOperationRequest {
   parameters?: Record<string, unknown>;
   /** 选择器（CSS选择器或XPath） */
   selector?: string;
-  /** 输入值。`fill` 等受控宿主操作支持 credential 引用。 */
+  /** 输入值。`fill` 等受控宿主操作支持 credential 引用和固定 prefix/suffix 包装。 */
   value?: string | SandboxCredentialReference;
   /** URL（用于导航操作） */
   url?: string;
   /** HTTP 方法 */
   method?: string;
-  /** HTTP 请求头 */
+  /** HTTP 请求头。`http_request` 支持 credential 引用和固定 prefix/suffix 包装。 */
   headers?: Record<string, string | SandboxCredentialReference>;
   /** HTTP 请求体 */
   body?: unknown;

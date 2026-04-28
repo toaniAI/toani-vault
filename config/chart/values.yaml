@@ -55,10 +55,38 @@ configProcessor:
   # 是否启用配置处理器
   enabled: true
 
+# Sandbox owner routing
+sandboxOwnerRouting:
+  enabled: true
+  headlessServiceName: "credbridge-owner"
+  portName: "http"
+  port: 8080
+  targetPort: "http"
+  publishNotReadyAddresses: true
+  scheme: "http"
+  # Optional explicit selector labels for the workload behind the owner headless service.
+  # Leave empty to fall back to the chart selector labels.
+  selectorLabels: {}
+
+# Runtime environment values consumed by the deployment chart that uses this values bundle.
+envs:
+  SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-owner"
+  SANDBOX_OWNER_PORT: "8080"
+
+# Raw env entries for charts that support direct Pod fieldRef injection.
+o_envs:
+  - name: SANDBOX_OWNER_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+
 
 # ================================================
 # 注意: 以上是必须保留的，不要删除。以下是应用配置，自由发挥。对应configmap的配置。
 # ================================================
 # External services configuration templates
 # Actual values will be injected from Vault via External Secrets
-

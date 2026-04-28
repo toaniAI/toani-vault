@@ -71,6 +71,10 @@ pub enum ErrorCode {
     InternalError,
     /// 服务暂不可用
     ServiceUnavailable,
+    /// 沙箱会话不在当前实例
+    SandboxSessionNotLocal,
+    /// 沙箱 owner 暂不可用
+    SandboxOwnerUnavailable,
     /// 验证失败
     VerificationFailed,
     /// 加密/解密错误
@@ -93,6 +97,8 @@ impl ErrorCode {
             ErrorCode::RateLimited => "rate_limited",
             ErrorCode::InternalError => "internal_error",
             ErrorCode::ServiceUnavailable => "service_unavailable",
+            ErrorCode::SandboxSessionNotLocal => "sandbox_session_not_local",
+            ErrorCode::SandboxOwnerUnavailable => "sandbox_owner_unavailable",
             ErrorCode::VerificationFailed => "verification_failed",
             ErrorCode::CryptoError => "crypto_error",
             ErrorCode::TenantIsolation => "tenant_isolation",
@@ -112,6 +118,8 @@ impl ErrorCode {
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             ErrorCode::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            ErrorCode::SandboxSessionNotLocal => StatusCode::SERVICE_UNAVAILABLE,
+            ErrorCode::SandboxOwnerUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             ErrorCode::VerificationFailed => StatusCode::BAD_REQUEST,
             ErrorCode::CryptoError => StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::TenantIsolation => StatusCode::FORBIDDEN,
@@ -266,6 +274,8 @@ impl ErrorCode {
             "rate_limited" => Some(ErrorCode::RateLimited),
             "internal_error" => Some(ErrorCode::InternalError),
             "service_unavailable" => Some(ErrorCode::ServiceUnavailable),
+            "sandbox_session_not_local" => Some(ErrorCode::SandboxSessionNotLocal),
+            "sandbox_owner_unavailable" => Some(ErrorCode::SandboxOwnerUnavailable),
             "verification_failed" => Some(ErrorCode::VerificationFailed),
             "crypto_error" => Some(ErrorCode::CryptoError),
             "tenant_isolation" => Some(ErrorCode::TenantIsolation),

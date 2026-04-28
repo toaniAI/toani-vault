@@ -374,6 +374,7 @@ steps:
           } > .drone-runtime.values.yaml
         '
       - helm upgrade --install credbridge dn/go -f .values.yaml -f .drone-runtime.values.yaml -n zkme-dev --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - sh scripts/apply-sandbox-owner-headless-service.sh zkme-dev credbridge-go credbridge-go-owner 8080 http
       - kubectl -n zkme-dev rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -385,28 +386,8 @@ steps:
     depends_on:
       - deploy-dev
     commands:
-      - |
-        apk add --no-cache curl jq
-        commit_message=$(printf "%s" "${DRONE_COMMIT_MESSAGE:-}" | tr "\r\n" "  ")
-
-        text=$(cat <<EOF
-        部署
-        CredBridge dev 部署成功
-        仓库: ${DRONE_REPO}
-        分支: ${DRONE_BRANCH}
-        构建号: ${DRONE_BUILD_NUMBER}
-        提交: ${DRONE_COMMIT_SHA}
-        提交说明: ${commit_message}
-        链接: ${DRONE_BUILD_LINK}
-        EOF
-        )
-
-        jq -Rn \
-          --arg text "$text" \
-          '{msg_type:"text",content:{text:$text}}' \
-          | curl -fsSL -X POST -H "Content-Type: application/json" \
-              --data-binary @- \
-              https://open.larksuite.com/open-apis/bot/v2/hook/7c903754-0db9-46bc-a363-03184c024bdb
+      - apk add --no-cache curl jq
+      - sh scripts/notify-lark-deploy-dev.sh
     when:
       ref:
         - refs/heads/branch_dev
@@ -451,6 +432,7 @@ steps:
           } > .drone-runtime.values.yaml
         '
       - helm upgrade --install credbridge dn/go -f .test.values.yaml -f .drone-runtime.values.yaml -n zkme-test --set image.tag=alpha-${DRONE_BUILD_NUMBER}
+      - sh scripts/apply-sandbox-owner-headless-service.sh zkme-test credbridge-go credbridge-go-owner 8080 http
       - kubectl -n zkme-test rollout status deployment/credbridge-go --timeout=600s
     when:
       ref:
@@ -506,6 +488,21 @@ steps:
     when:
       ref:
         - refs/tags/*
+
+#  - name: verify-prod-chart-owner-routing
+#    image: alpine/helm:latest
+#    pull: if-not-exists
+#    depends_on:
+#      - helm chart push prod
+#    commands:
+#      - cd config/chart
+#      - helm template credbridge . -f values.yaml -f values/values-prod.yaml > /tmp/credbridge-prod-chart.yaml
+#      - 'grep -q "name: credbridge-owner" /tmp/credbridge-prod-chart.yaml'
+#      - 'grep -q "clusterIP: None" /tmp/credbridge-prod-chart.yaml'
+#      - 'grep -q "publishNotReadyAddresses: true" /tmp/credbridge-prod-chart.yaml'
+#    when:
+#      ref:
+#        - refs/tags/*
 
   - name: apply push to online
     image: hub.bitkinetic.com/public/deploy:v1

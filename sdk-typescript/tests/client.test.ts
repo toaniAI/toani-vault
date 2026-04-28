@@ -20,6 +20,7 @@ describe("CredBridgeClient", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -347,6 +348,57 @@ describe("CredBridgeClient", () => {
   });
 
   describe("重试逻辑", () => {
+    it("应该在 sandbox_session_not_local 503 时重试", async () => {
+      vi.useFakeTimers();
+
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          headers: new Map([["content-type", "application/json"]]),
+          json: async () => ({
+            success: false,
+            error: {
+              code: "sandbox_session_not_local",
+              message: "Sandbox session lives on another owner",
+            },
+            meta: {
+              requestId: "req_retry_1",
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Map([["content-type", "application/json"]]),
+          json: async () => ({
+            success: true,
+            data: { sessionId: "session-123" },
+            meta: {
+              requestId: "req_retry_2",
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        } as unknown as Response);
+
+      global.fetch = mockFetch;
+
+      const client = new CredBridgeClient({
+        baseUrl: mockBaseUrl,
+        token: mockToken,
+        maxRetries: 3,
+      });
+
+      const request = client.get("/sandbox/sessions/session-123");
+
+      await vi.runAllTimersAsync();
+
+      await expect(request).resolves.toEqual({ sessionId: "session-123" });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
     it("应该在可重试错误时进行重试", async () => {
       const mockFetch = vi
         .fn()
@@ -374,6 +426,46 @@ describe("CredBridgeClient", () => {
       expect(result).toEqual({ id: "123" });
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
+
+    it.each([
+      [400, "invalid_request", CredBridgeErrorCode.InvalidRequest],
+      [401, "unauthorized", CredBridgeErrorCode.Unauthorized],
+      [404, "not_found", CredBridgeErrorCode.NotFound],
+    ])(
+      "应该在非路由错误 %s/%s 时不重试",
+      async (status, errorCode, expectedCode) => {
+        const mockFetch = vi.fn().mockResolvedValue({
+          ok: false,
+          status,
+          headers: new Map([["content-type", "application/json"]]),
+          json: async () => ({
+            success: false,
+            error: {
+              code: errorCode,
+              message: `Request failed with ${errorCode}`,
+            },
+            meta: {
+              requestId: "req_no_retry",
+              timestamp: new Date().toISOString(),
+            },
+          }),
+        } as unknown as Response);
+
+        global.fetch = mockFetch;
+
+        const client = new CredBridgeClient({
+          baseUrl: mockBaseUrl,
+          token: mockToken,
+          maxRetries: 3,
+        });
+
+        await expect(client.get("/sandbox/sessions/session-123")).rejects.toMatchObject({
+          code: expectedCode,
+          statusCode: status,
+        });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it("应该在 skipRetry 时跳过重试", async () => {
       const mockFetch = vi
@@ -446,6 +538,13 @@ describe("CredBridgeClient", () => {
         "Not found",
       );
       expect(notFoundError.isRetryable()).toBe(false);
+
+      const sandboxRoutingError = new CredBridgeError(
+        CredBridgeErrorCode.SandboxSessionNotLocal,
+        "Retry against sandbox owner",
+        503,
+      );
+      expect(sandboxRoutingError.isRetryable()).toBe(true);
     });
 
     it("isAuthError 应该正确判断", () => {
