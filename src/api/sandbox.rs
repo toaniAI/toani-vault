@@ -202,6 +202,15 @@ impl SandboxState {
         };
         owner_registry.delete_owner(session_id).await
     }
+
+    pub async fn delete_current_owner_mappings(&self) -> Result<usize, SandboxError> {
+        let Some(owner_registry) = &self.owner_registry else {
+            return Ok(0);
+        };
+        owner_registry
+            .delete_owners_for_owner_id(&self.owner_id)
+            .await
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -513,18 +522,30 @@ async fn resolve_owner_bound_session(
                     None
                 }
             };
+            let owner_record = if let Some(owner_record) = owner_record {
+                if owner_record.owner_id == state.owner_id {
+                    warn!(
+                        session_id = %Uuid::from(session_id),
+                        owner_id = %state.owner_id,
+                        "Sandbox session owner mapping points to current owner but no local runtime exists; deleting stale mapping"
+                    );
+                    if let Err(error) = state.delete_session_owner(session_id).await {
+                        warn!(
+                            session_id = %Uuid::from(session_id),
+                            owner_id = %state.owner_id,
+                            "Failed to delete stale local sandbox owner mapping: {}",
+                            error
+                        );
+                    }
+                    None
+                } else {
+                    Some(owner_record)
+                }
+            } else {
+                None
+            };
 
             if let Some(owner_record) = owner_record {
-                if owner_record.owner_id == state.owner_id {
-                    return Err(sandbox_owner_retryable_response(
-                        ErrorCode::SandboxOwnerUnavailable,
-                        format!(
-                            "Sandbox session {} exists on the current owner but its runtime is unavailable",
-                            Uuid::from(session_id)
-                        ),
-                    ));
-                }
-
                 if is_forwarded_request(forward_request.headers) {
                     return Err(sandbox_owner_retryable_response(
                         ErrorCode::SandboxSessionNotLocal,
@@ -2535,7 +2556,7 @@ fn map_sandbox_error(error: SandboxError) -> Response {
         },
         SandboxError::Security(e) => (ErrorCode::Forbidden, e.to_string(), StatusCode::FORBIDDEN),
         SandboxError::Timeout { .. } => (
-            ErrorCode::ServiceUnavailable,
+            ErrorCode::SandboxOperationTimeout,
             error.to_string(),
             StatusCode::GATEWAY_TIMEOUT,
         ),
@@ -2874,6 +2895,13 @@ mod tests {
         async fn delete_owner(&self, session_id: SessionId) -> Result<(), SandboxError> {
             self.records.write().await.remove(&Uuid::from(session_id));
             Ok(())
+        }
+
+        async fn delete_owners_for_owner_id(&self, owner_id: &str) -> Result<usize, SandboxError> {
+            let mut records = self.records.write().await;
+            let before = records.len();
+            records.retain(|_, record| record.owner_id != owner_id);
+            Ok(before - records.len())
         }
     }
 
@@ -3856,6 +3884,116 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_delete_current_owner_mappings_only_removes_current_owner_records() {
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool::missing());
+        let state = make_owner_routing_state(pool, None, Some(owner_registry.clone()));
+        let current_session = create_stub_session();
+        let foreign_session = create_stub_session();
+
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-a".to_string(),
+                    base_url: "http://127.0.0.1".to_string(),
+                    session_id: Uuid::from(current_session.id()),
+                    tenant_id: current_session.context.tenant_id,
+                    expires_at: current_session.context.expires_at.unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-b".to_string(),
+                    base_url: "http://127.0.0.2".to_string(),
+                    session_id: Uuid::from(foreign_session.id()),
+                    tenant_id: foreign_session.context.tenant_id,
+                    expires_at: foreign_session.context.expires_at.unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+
+        let deleted = state.delete_current_owner_mappings().await.unwrap();
+
+        assert_eq!(deleted, 1);
+        assert!(
+            owner_registry
+                .get_owner(current_session.id())
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            owner_registry
+                .get_owner(foreign_session.id())
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_close_session_deletes_owner_mapping_after_release() {
+        let session = create_stub_session();
+        let session_id = session.id();
+        let tenant_id = session.context.tenant_id;
+        let user_id = session.context.user_id;
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-a".to_string(),
+                    base_url: "http://127.0.0.1".to_string(),
+                    session_id: Uuid::from(session_id),
+                    tenant_id,
+                    expires_at: session.context.expires_at.unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+
+        let release_calls = Arc::new(RwLock::new(Vec::new()));
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool {
+            session: Some(Arc::new(session)),
+            release_calls: release_calls.clone(),
+        });
+        let state = make_owner_routing_state(pool, None, Some(owner_registry.clone()));
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![TokenScope::SandboxWrite],
+        );
+        let app = sandbox_routes().layer(Extension(token)).with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/sandbox/sessions/{}", Uuid::from(session_id)))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(release_calls.read().await.as_slice(), &[session_id]);
+        assert!(
+            owner_registry
+                .get_owner(session_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
     async fn test_execute_operation_returns_retryable_503_when_owner_missing_but_db_record_exists()
     {
         let tenant_id = Uuid::new_v4();
@@ -3909,6 +4047,74 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let payload: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["error"], "sandbox_owner_unavailable");
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_clears_stale_local_owner_mapping_before_retryable_response() {
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool::missing());
+        let repository: Arc<dyn crate::tee::sandbox::repository::SandboxRepository> =
+            Arc::new(OwnerRoutingRepository {
+                session_record: Some(make_session_record(session_id, tenant_id)),
+            });
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-a".to_string(),
+                    base_url: "http://127.0.0.1".to_string(),
+                    session_id: Uuid::from(session_id),
+                    tenant_id,
+                    expires_at: (OffsetDateTime::now_utc() + time::Duration::minutes(5))
+                        .unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+        let state = make_owner_routing_state(pool, Some(repository), Some(owner_registry.clone()));
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![TokenScope::SandboxExecute],
+        );
+        let app = axum::Router::new().nest(
+            "/api/v1",
+            sandbox_routes().layer(Extension(token)).with_state(state),
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/sandbox/sessions/{}/execute",
+                        Uuid::from(session_id)
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "operation_type": "click",
+                            "description": "click",
+                            "parameters": { "selector": "#submit" }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(
+            owner_registry
+                .get_owner(session_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

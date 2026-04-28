@@ -71,6 +71,8 @@ pub enum ErrorCode {
     InternalError,
     /// 服务暂不可用
     ServiceUnavailable,
+    /// 沙箱操作超时
+    SandboxOperationTimeout,
     /// 沙箱会话不在当前实例
     SandboxSessionNotLocal,
     /// 沙箱 owner 暂不可用
@@ -97,6 +99,7 @@ impl ErrorCode {
             ErrorCode::RateLimited => "rate_limited",
             ErrorCode::InternalError => "internal_error",
             ErrorCode::ServiceUnavailable => "service_unavailable",
+            ErrorCode::SandboxOperationTimeout => "sandbox_operation_timeout",
             ErrorCode::SandboxSessionNotLocal => "sandbox_session_not_local",
             ErrorCode::SandboxOwnerUnavailable => "sandbox_owner_unavailable",
             ErrorCode::VerificationFailed => "verification_failed",
@@ -118,6 +121,7 @@ impl ErrorCode {
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             ErrorCode::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::ServiceUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            ErrorCode::SandboxOperationTimeout => StatusCode::GATEWAY_TIMEOUT,
             ErrorCode::SandboxSessionNotLocal => StatusCode::SERVICE_UNAVAILABLE,
             ErrorCode::SandboxOwnerUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             ErrorCode::VerificationFailed => StatusCode::BAD_REQUEST,
@@ -274,6 +278,7 @@ impl ErrorCode {
             "rate_limited" => Some(ErrorCode::RateLimited),
             "internal_error" => Some(ErrorCode::InternalError),
             "service_unavailable" => Some(ErrorCode::ServiceUnavailable),
+            "sandbox_operation_timeout" => Some(ErrorCode::SandboxOperationTimeout),
             "sandbox_session_not_local" => Some(ErrorCode::SandboxSessionNotLocal),
             "sandbox_owner_unavailable" => Some(ErrorCode::SandboxOwnerUnavailable),
             "verification_failed" => Some(ErrorCode::VerificationFailed),
@@ -357,6 +362,10 @@ mod tests {
             ErrorCode::CredentialNotFound.to_string(),
             "credential_not_found"
         );
+        assert_eq!(
+            ErrorCode::SandboxOperationTimeout.to_string(),
+            "sandbox_operation_timeout"
+        );
         assert_eq!(ErrorCode::InternalError.to_string(), "internal_error");
     }
 
@@ -377,6 +386,10 @@ mod tests {
             StatusCode::NOT_FOUND
         );
         assert_eq!(
+            ErrorCode::SandboxOperationTimeout.http_status(),
+            StatusCode::GATEWAY_TIMEOUT
+        );
+        assert_eq!(
             ErrorCode::InternalError.http_status(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
@@ -395,6 +408,10 @@ mod tests {
         assert_eq!(
             ErrorCode::from_string("credential_not_found"),
             Some(ErrorCode::CredentialNotFound)
+        );
+        assert_eq!(
+            ErrorCode::from_string("sandbox_operation_timeout"),
+            Some(ErrorCode::SandboxOperationTimeout)
         );
         assert_eq!(ErrorCode::from_string("unknown"), None);
     }

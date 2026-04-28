@@ -88,7 +88,15 @@ docker-compose logs -f vault-service
 
 # 健康检查
 curl http://localhost:8080/health
+# 就绪检查
+curl http://localhost:8080/ready
 ```
+
+健康检查约定：
+
+- `/health` 是 liveness 端点。容器级 `HEALTHCHECK` 默认探测它，期望进程活着即可返回 `200`。
+- `/ready` 是 readiness 端点。服务在 `draining`、sandbox pool 不健康或启动链未就绪时会返回 `503`。
+- `docker/scripts/healthcheck.sh` 默认不再把磁盘/内存阈值视为容器不健康；只有显式设置 `HEALTH_CHECK_RESOURCES=true` 时才启用资源检查。
 
 ## 服务清单
 
@@ -112,6 +120,9 @@ curl http://localhost:8080/health
 | `VAULT_SERVICE_PORT` | 8080        | 服务端口     |
 | `VAULT_SERVICE_ENV`  | development | 环境类型     |
 | `RUST_LOG`           | debug       | 日志级别     |
+| `HEALTH_ENDPOINT`    | /health     | 容器 healthcheck 目标端点 |
+| `HEALTH_TIMEOUT`     | 3           | 容器 healthcheck HTTP 超时（秒） |
+| `HEALTH_CHECK_RESOURCES` | false   | 是否将磁盘/内存阈值纳入容器健康判定 |
 
 ### 数据库配置
 

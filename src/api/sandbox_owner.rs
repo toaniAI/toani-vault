@@ -30,6 +30,8 @@ pub trait SandboxOwnerRegistry: Send + Sync {
     ) -> Result<Option<SandboxOwnerRecord>, SandboxError>;
 
     async fn delete_owner(&self, session_id: SessionId) -> Result<(), SandboxError>;
+
+    async fn delete_owners_for_owner_id(&self, owner_id: &str) -> Result<usize, SandboxError>;
 }
 
 #[derive(Clone)]
@@ -141,6 +143,57 @@ impl SandboxOwnerRegistry for RedisSandboxOwnerRegistry {
                 ))
             })?;
         Ok(())
+    }
+
+    async fn delete_owners_for_owner_id(&self, owner_id: &str) -> Result<usize, SandboxError> {
+        let mut connection = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| {
+                SandboxError::Other(format!(
+                    "failed to connect to sandbox owner registry: {error}"
+                ))
+            })?;
+        let keys: Vec<String> = connection
+            .keys(format!("{OWNER_KEY_PREFIX}:*"))
+            .await
+            .map_err(|error| {
+                SandboxError::Other(format!(
+                    "failed to enumerate sandbox owner mappings for owner {owner_id}: {error}"
+                ))
+            })?;
+
+        let mut keys_to_delete = Vec::new();
+        for key in keys {
+            let payload: Option<String> = connection.get(&key).await.map_err(|error| {
+                SandboxError::Other(format!(
+                    "failed to inspect sandbox owner mapping {key} for owner {owner_id}: {error}"
+                ))
+            })?;
+            let Some(payload) = payload else {
+                continue;
+            };
+            let record = serde_json::from_str::<SandboxOwnerRecord>(&payload).map_err(|error| {
+                SandboxError::Serialization(format!(
+                    "failed to deserialize sandbox owner mapping {key} for owner {owner_id}: {error}"
+                ))
+            })?;
+            if record.owner_id == owner_id {
+                keys_to_delete.push(key);
+            }
+        }
+
+        if keys_to_delete.is_empty() {
+            return Ok(0);
+        }
+
+        let deleted: usize = connection.del(keys_to_delete).await.map_err(|error| {
+            SandboxError::Other(format!(
+                "failed to delete sandbox owner mappings for owner {owner_id}: {error}"
+            ))
+        })?;
+        Ok(deleted)
     }
 }
 

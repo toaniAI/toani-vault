@@ -105,10 +105,18 @@ pub struct ActiveNsjailSession {
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
     enclave: Option<SharedEnclave>,
     browser_runtime: Arc<RwLock<Option<SandboxBrowserRuntime>>>,
+    browser_runtime_used: Arc<RwLock<bool>>,
+    browser_runtime_tainted: Arc<RwLock<bool>>,
     credential_cache: Arc<RwLock<Option<Arc<SessionCredentialMaterial>>>>,
     sensitive_selectors: Arc<RwLock<HashSet<String>>>,
     resource_recovery: Option<Arc<dyn SandboxResourceRecovery>>,
     operation_executor: Arc<dyn SandboxOperationExecutor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxReusePolicy {
+    RecycleToWarmPool,
+    DestroyAfterUse,
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +192,8 @@ impl ActiveNsjailSession {
             key_hierarchy,
             enclave,
             browser_runtime: Arc::new(RwLock::new(None)),
+            browser_runtime_used: Arc::new(RwLock::new(false)),
+            browser_runtime_tainted: Arc::new(RwLock::new(false)),
             credential_cache: Arc::new(RwLock::new(None)),
             sensitive_selectors: Arc::new(RwLock::new(HashSet::new())),
             resource_recovery: None,
@@ -194,6 +204,14 @@ impl ActiveNsjailSession {
     pub async fn take_sandbox(&self) -> Option<NsjailSandbox> {
         self.shutdown_runtime().await;
         self.sandbox.write().await.take()
+    }
+
+    pub async fn sandbox_reuse_policy(&self) -> SandboxReusePolicy {
+        if *self.browser_runtime_tainted.read().await {
+            SandboxReusePolicy::DestroyAfterUse
+        } else {
+            SandboxReusePolicy::RecycleToWarmPool
+        }
     }
 
     pub async fn sandbox_process_health(&self) -> Option<SandboxProcessHealth> {
@@ -304,7 +322,14 @@ impl ActiveNsjailSession {
 
     async fn shutdown_runtime(&self) {
         if let Some(runtime) = self.browser_runtime.write().await.take() {
-            runtime.close().await;
+            if let Err(error) = runtime.close().await {
+                warn!(
+                    session_id = %self.id,
+                    "Failed to close browser runtime cleanly: {}",
+                    error
+                );
+                self.mark_browser_runtime_tainted().await;
+            }
         }
         *self.credential_cache.write().await = None;
         self.sensitive_selectors.write().await.clear();
@@ -328,8 +353,13 @@ impl ActiveNsjailSession {
         let mut guard = self.browser_runtime.write().await;
         if guard.is_none() {
             *guard = Some(runtime.clone());
+            *self.browser_runtime_used.write().await = true;
         }
         Ok(guard.as_ref().cloned().unwrap_or(runtime))
+    }
+
+    async fn mark_browser_runtime_tainted(&self) {
+        *self.browser_runtime_tainted.write().await = true;
     }
 
     async fn credential_material(&self) -> Result<Arc<SessionCredentialMaterial>, SandboxError> {
@@ -410,6 +440,10 @@ impl ActiveNsjailSession {
                     if error.is_recoverable_resource_failure()
                         && retry_count < MAX_RESOURCE_RECOVERY_RETRIES =>
                 {
+                    if error.is_timeout() || matches!(error, SandboxError::Process(_)) {
+                        self.mark_browser_runtime_tainted().await;
+                        self.shutdown_runtime().await;
+                    }
                     let Some(recovery) = &self.resource_recovery else {
                         return Err(error);
                     };
@@ -432,7 +466,13 @@ impl ActiveNsjailSession {
                         "Recovered sandbox resources after operation failure; retrying"
                     );
                 }
-                Err(error) => return Err(error),
+                Err(error) => {
+                    if error.is_timeout() || matches!(error, SandboxError::Process(_)) {
+                        self.mark_browser_runtime_tainted().await;
+                        self.shutdown_runtime().await;
+                    }
+                    return Err(error);
+                }
             }
         }
     }
@@ -1798,6 +1838,23 @@ mod tests {
     struct MockSessionRepository {
         create_operation_calls: AtomicUsize,
         complete_operation_calls: AtomicUsize,
+    }
+
+    #[tokio::test]
+    async fn test_tainted_runtime_disables_warm_pool_reuse() {
+        let session = create_test_session();
+
+        assert_eq!(
+            session.sandbox_reuse_policy().await,
+            SandboxReusePolicy::RecycleToWarmPool
+        );
+
+        session.mark_browser_runtime_tainted().await;
+
+        assert_eq!(
+            session.sandbox_reuse_policy().await,
+            SandboxReusePolicy::DestroyAfterUse
+        );
     }
 
     #[async_trait]

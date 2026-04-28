@@ -60,6 +60,8 @@ services:
 
       # 加密配置
       - ENCRYPTION_KEY_PATH=/app/config/keys
+      - HEALTH_ENDPOINT=/health
+      - HEALTH_TIMEOUT=3
 
     volumes:
       - vault_data:/app/data
@@ -90,8 +92,8 @@ services:
       - seccomp:unconfined
     healthcheck:
       test: ["CMD-SHELL", "/app/healthcheck.sh"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 3s
       retries: 3
       start_period: 60s
     logging:

@@ -24,6 +24,7 @@ use serde_json::json;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::signal;
 use tokio::sync::RwLock;
 use tower::Layer;
 use tower_http::cors::{Any, CorsLayer};
@@ -319,7 +320,35 @@ struct AppState {
     rate_limit_state: RateLimitState,
     attestation_state: Option<Arc<AttestationState>>,
     sandbox_state: SandboxState,
+    lifecycle: Arc<RwLock<LifecycleState>>,
     startup_checks: Vec<SelfCheckItem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LifecycleState {
+    Starting,
+    Ready,
+    Draining,
+    Shutdown,
+}
+
+impl LifecycleState {
+    fn as_check(self) -> SelfCheckItem {
+        match self {
+            LifecycleState::Starting => {
+                SelfCheckItem::degraded("lifecycle", "service startup is still in progress")
+            }
+            LifecycleState::Ready => SelfCheckItem::ready("lifecycle"),
+            LifecycleState::Draining => SelfCheckItem::degraded("lifecycle", "service is draining"),
+            LifecycleState::Shutdown => {
+                SelfCheckItem::failed("lifecycle", "service shutdown is in progress")
+            }
+        }
+    }
+
+    fn is_live(self) -> bool {
+        !matches!(self, LifecycleState::Shutdown)
+    }
 }
 
 #[tokio::main]
@@ -362,6 +391,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 初始化应用状态
     let app_state = initialize_app_state(&config).await?;
+    {
+        let mut lifecycle = app_state.lifecycle.write().await;
+        *lifecycle = LifecycleState::Ready;
+    }
+    let shutdown_state = app_state.clone();
 
     // 构建路由
     let router = build_router(app_state, &config);
@@ -394,9 +428,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("");
 
     // 启动服务器
-    axum::serve(listener, ServiceExt::<Request>::into_make_service(app)).await?;
+    axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
+        .with_graceful_shutdown(shutdown_signal(shutdown_state))
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal(state: AppState) {
+    let ctrl_c = async {
+        let _ = signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sigterm) = signal::unix::signal(signal::unix::SignalKind::terminate()) {
+            sigterm.recv().await;
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+
+    {
+        let mut lifecycle = state.lifecycle.write().await;
+        *lifecycle = LifecycleState::Draining;
+    }
+    info!("Received shutdown signal; entering draining state");
+
+    match state.sandbox_state.delete_current_owner_mappings().await {
+        Ok(deleted) => info!(
+            deleted_owner_mappings = deleted,
+            owner_id = %state.sandbox_state.owner_id,
+            "Removed current owner sandbox mappings before shutdown"
+        ),
+        Err(error) => warn!(
+            owner_id = %state.sandbox_state.owner_id,
+            "Failed to remove current owner sandbox mappings during shutdown: {}",
+            error
+        ),
+    }
+
+    if let Err(error) = state.sandbox_state.pool.shutdown().await {
+        warn!("Failed to shutdown sandbox pool gracefully: {}", error);
+    }
+    {
+        let mut enclave = state.credential_state.enclave.lock().await;
+        if let Err(error) = enclave.shutdown() {
+            warn!("Failed to shutdown enclave gracefully: {}", error);
+        }
+    }
+
+    {
+        let mut lifecycle = state.lifecycle.write().await;
+        *lifecycle = LifecycleState::Shutdown;
+    }
 }
 
 /// 初始化日志系统
@@ -679,13 +770,13 @@ async fn initialize_app_state(
         rate_limit_state,
         attestation_state,
         sandbox_state,
+        lifecycle: Arc::new(RwLock::new(LifecycleState::Starting)),
         startup_checks: vec![
             SelfCheckItem::ready("vault"),
             SelfCheckItem::ready("audit_log"),
             SelfCheckItem::ready("auth"),
             SelfCheckItem::ready("tenant"),
             SelfCheckItem::ready("rate_limit"),
-            SelfCheckItem::ready("sandbox"),
         ],
     })
 }
@@ -772,6 +863,20 @@ async fn initialize_sandbox_state(
     .await
     .map_err(|e| format!("沙箱初始化失败: {e:?}"))?;
 
+    match state.delete_current_owner_mappings().await {
+        Ok(deleted) if deleted > 0 => warn!(
+            deleted_owner_mappings = deleted,
+            owner_id = %state.owner_id,
+            "Removed stale sandbox owner mappings for current owner during startup recovery"
+        ),
+        Ok(_) => {}
+        Err(error) => warn!(
+            owner_id = %state.owner_id,
+            "Failed to remove stale sandbox owner mappings during startup recovery: {}",
+            error
+        ),
+    }
+
     Ok(state)
 }
 
@@ -794,7 +899,7 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
         .nest(API_BASE_PATH, api_routes)
         // 健康检查路由
         .route("/health", get(health_check))
-        .route("/ready", get(health_check_detail))
+        .route("/ready", get(readiness_check))
         .route("/health/detail", get(health_check_detail))
         // Prometheus 指标端点
         .route("/metrics", get(metrics_handler))
@@ -1045,6 +1150,7 @@ struct RuntimeOverview {
 }
 
 async fn build_runtime_overview(state: &AppState) -> RuntimeOverview {
+    let lifecycle = *state.lifecycle.read().await;
     let enclave_check = {
         let enclave = state.credential_state.enclave.lock().await;
         if enclave.is_running() {
@@ -1071,11 +1177,26 @@ async fn build_runtime_overview(state: &AppState) -> RuntimeOverview {
             )
         };
 
+    let sandbox_health = state.sandbox_state.pool.health().await;
+    let sandbox_check = if sandbox_health.healthy {
+        SelfCheckItem::ready("sandbox")
+    } else {
+        let detail = sandbox_health
+            .error
+            .clone()
+            .or_else(|| sandbox_health.process_health_summaries.first().cloned())
+            .unwrap_or_else(|| "sandbox pool reported unhealthy state".to_string());
+        SelfCheckItem::failed("sandbox", detail)
+    };
+
     let mut checks = state.startup_checks.clone();
+    checks.push(lifecycle.as_check());
     checks.push(enclave_check.clone());
     checks.push(attestation_check);
+    checks.push(sandbox_check);
 
-    let readiness = StartupReadiness::from_checks(checks);
+    let mut readiness = StartupReadiness::from_checks(checks);
+    readiness.live = lifecycle.is_live();
 
     RuntimeOverview {
         vault_status: component_status(&readiness, "vault"),
@@ -1198,8 +1319,12 @@ async fn health_check(Extension(state): Extension<AppState>) -> impl IntoRespons
     let overview = build_runtime_overview(&state).await;
 
     let response = HealthResponse {
-        status: "alive".to_string(),
-        ready: overview.readiness.ready,
+        status: if overview.readiness.live {
+            "alive".to_string()
+        } else {
+            "shutdown".to_string()
+        },
+        ready: overview.readiness.live,
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp,
     };
@@ -1229,8 +1354,8 @@ async fn metrics_handler(Extension(state): Extension<AppState>) -> impl IntoResp
     )
 }
 
-/// 详细健康检查处理器
-async fn health_check_detail(Extension(state): Extension<AppState>) -> impl IntoResponse {
+/// 就绪检查处理器
+async fn readiness_check(Extension(state): Extension<AppState>) -> impl IntoResponse {
     let timestamp = current_timestamp();
     let overview = build_runtime_overview(&state).await;
 
@@ -1255,6 +1380,11 @@ async fn health_check_detail(Extension(state): Extension<AppState>) -> impl Into
     };
 
     (status_code, Json(response))
+}
+
+/// 详细健康检查处理器
+async fn health_check_detail(Extension(state): Extension<AppState>) -> impl IntoResponse {
+    readiness_check(Extension(state)).await
 }
 
 // 开发模式演示函数（可选）
@@ -1310,7 +1440,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        SandboxOwnerBaseUrlSource, StorageBackendKind, render_metrics,
+        LifecycleState, SandboxOwnerBaseUrlSource, StorageBackendKind, render_metrics,
         resolve_auto_storage_backend, resolve_sandbox_owner_base_url,
     };
     use std::{
@@ -1399,6 +1529,32 @@ mod tests {
         assert!(metrics.contains("credbridge_ready{status=\"failed\"} 0"));
         assert!(metrics.contains("credbridge_attestation_quote_valid{} 0"));
         assert!(metrics.contains("credbridge_enclave_running{} 1"));
+    }
+
+    #[test]
+    fn lifecycle_state_maps_to_expected_readiness_checks() {
+        let starting = LifecycleState::Starting.as_check();
+        let draining = LifecycleState::Draining.as_check();
+        let shutdown = LifecycleState::Shutdown.as_check();
+
+        assert_eq!(starting.component, "lifecycle");
+        assert_eq!(
+            starting.status,
+            vault_service::tee::SelfCheckStatus::Degraded
+        );
+        assert_eq!(
+            draining.status,
+            vault_service::tee::SelfCheckStatus::Degraded
+        );
+        assert_eq!(shutdown.status, vault_service::tee::SelfCheckStatus::Failed);
+    }
+
+    #[test]
+    fn lifecycle_state_marks_only_shutdown_as_not_live() {
+        assert!(LifecycleState::Starting.is_live());
+        assert!(LifecycleState::Ready.is_live());
+        assert!(LifecycleState::Draining.is_live());
+        assert!(!LifecycleState::Shutdown.is_live());
     }
 
     #[test]

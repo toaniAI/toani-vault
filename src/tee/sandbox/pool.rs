@@ -11,7 +11,7 @@ use crate::tee::sandbox::{
     repository::{NewSandboxSessionRecord, SandboxRepository, metadata_to_json, to_chrono_utc},
     session::{
         ActiveNsjailSession, RecoveredSandboxResource, RecoveredSandboxResourceKind,
-        SandboxResourceRecovery, SandboxSession,
+        SandboxResourceRecovery, SandboxReusePolicy, SandboxSession,
     },
     types::{SandboxId, SessionContext, SessionId, SessionRequest},
 };
@@ -287,7 +287,7 @@ impl NsjailSandboxPool {
                 return Err(error);
             }
         };
-        runtime.close().await;
+        let _ = runtime.close().await;
         sandbox.stop().await?;
         Ok(())
     }
@@ -722,7 +722,8 @@ impl SandboxPool for NsjailSandboxPool {
             .ok_or_else(|| SessionError::not_found(session_id.into()))?;
 
         // 尝试提取 sandbox
-        if let Some(sandbox) = session.take_sandbox().await {
+        let reuse_policy = session.sandbox_reuse_policy().await;
+        if let Some(mut sandbox) = session.take_sandbox().await {
             // session 已经从 map 中移除，不需要再修改状态
             drop(sessions); // 释放锁
 
@@ -737,8 +738,16 @@ impl SandboxPool for NsjailSandboxPool {
                     .await?;
             }
 
-            // 尝试回收
-            if let Err(e) = self.recycle_sandbox(sandbox).await {
+            if reuse_policy == SandboxReusePolicy::DestroyAfterUse {
+                info!(
+                    session_id = %session_id,
+                    sandbox_id = %sandbox.id,
+                    "Destroying sandbox instead of recycling because browser runtime was tainted"
+                );
+                if let Err(error) = sandbox.stop().await {
+                    warn!("Failed to stop tainted sandbox {}: {}", sandbox.id, error);
+                }
+            } else if let Err(e) = self.recycle_sandbox(sandbox).await {
                 warn!("Failed to recycle sandbox: {}", e);
             }
         } else {

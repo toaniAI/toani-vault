@@ -83,6 +83,8 @@ services:
       - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_REQUESTS_PER_SECOND=100
       - RATE_LIMIT_BURST_SIZE=150
+      - HEALTH_ENDPOINT=/health
+      - HEALTH_TIMEOUT=3
 
     # 生产环境端口映射（使用反向代理）
     ports:
@@ -115,9 +117,9 @@ services:
     # 健康检查（更严格）
     healthcheck:
       test: ["/app/healthcheck.sh"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
+      interval: 10s
+      timeout: 3s
+      retries: 3
       start_period: 120s
 
     # 日志配置

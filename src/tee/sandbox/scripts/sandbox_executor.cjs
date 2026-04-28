@@ -1113,6 +1113,24 @@ async function executeOperation(operationType, parameters) {
   throw new Error('operation failed after browser page reset');
 }
 
+function isOperationTimeoutError(error, message) {
+  const name = typeof error?.name === 'string' ? error.name.toLowerCase() : '';
+  const text = message.toLowerCase();
+  return (
+    name.includes('timeout') ||
+    /\btimed out\b/.test(text) ||
+    /\btimeout\b/.test(text)
+  );
+}
+
+function classifyRuntimeError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (isOperationTimeoutError(error, message)) {
+    return { code: 'timeout', message };
+  }
+  return { code: 'runtime_error', message };
+}
+
 const rl = readline.createInterface({
   input: process.stdin,
   crlfDelay: Infinity,
@@ -1144,8 +1162,8 @@ rl.on('line', async line => {
 
     reply({ ok: false, error: `unsupported message type: ${message.type}` });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    reply({ ok: false, error: message });
+    const runtimeError = classifyRuntimeError(error);
+    reply({ ok: false, error: runtimeError.message, error_code: runtimeError.code });
   }
 });
 

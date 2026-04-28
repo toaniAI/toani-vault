@@ -9,10 +9,12 @@ use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
 const SANDBOX_NODE_BINARY_ENV: &str = "CREDBRIDGE_SANDBOX_NODE_BINARY";
@@ -24,6 +26,8 @@ const NODE_BINARY_CANDIDATES: &[&str] = &["/usr/bin/node", "/usr/local/bin/node"
 const NODE_PATH_CANDIDATES: &[&str] = &["/opt/credbridge-browser-runtime/node_modules"];
 const LIGHTPANDA_BINARY_PATH_CANDIDATES: &[&str] = &["/usr/local/bin/lightpanda"];
 const DEV_NULL_PATH: &str = "/dev/null";
+const BROWSER_RUNTIME_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+const BROWSER_RUNTIME_KILL_TIMEOUT: Duration = Duration::from_secs(3);
 const SYSTEM_RUNTIME_MOUNT_CANDIDATES: &[&str] = &[
     "/etc/resolv.conf",
     "/etc/hosts",
@@ -402,19 +406,40 @@ impl SandboxBrowserRuntime {
         .map(|response| response.get("data").cloned().unwrap_or(Value::Null))
     }
 
-    pub async fn close(&self) {
-        let _ = self
-            .send(json!({
+    pub async fn close(&self) -> Result<(), SandboxError> {
+        let close_result = match timeout(
+            BROWSER_RUNTIME_CLOSE_TIMEOUT,
+            self.send(json!({
                 "type": "execute",
                 "operationType": "close_runtime",
                 "parameters": {},
-            }))
-            .await;
+            })),
+        )
+        .await
+        {
+            Ok(result) => result.map(|_| ()),
+            Err(_) => Err(SandboxError::Timeout {
+                operation: "close_runtime".to_string(),
+            }),
+        };
 
         let mut process = self.inner.lock().await;
-        if let Some(mut child) = process.child.take() {
+        let Some(mut child) = process.child.take() else {
+            return close_result;
+        };
+
+        let wait_result = timeout(BROWSER_RUNTIME_KILL_TIMEOUT, async {
             let _ = child.start_kill();
-            let _ = child.wait().await;
+            child.wait().await.map_err(SandboxError::Io)
+        })
+        .await;
+
+        match wait_result {
+            Ok(Ok(_)) => close_result,
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(SandboxError::Timeout {
+                operation: "kill_browser_runtime".to_string(),
+            }),
         }
     }
 
@@ -486,13 +511,7 @@ impl SandboxBrowserRuntime {
                     .unwrap_or("browser runtime error"),
                 "browser runtime returned error response"
             );
-            return Err(SandboxError::Other(
-                response
-                    .get("error")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("browser runtime error")
-                    .to_string(),
-            ));
+            return Err(map_runtime_error(operation_type, &response));
         }
 
         debug!(
@@ -504,6 +523,42 @@ impl SandboxBrowserRuntime {
 
         Ok(response)
     }
+}
+
+fn map_runtime_error(operation_type: &str, response: &Value) -> SandboxError {
+    let message = response
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("browser runtime error")
+        .to_string();
+    let error_code = response
+        .get("error_code")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    if error_code == "timeout" || browser_runtime_error_is_timeout(&message) {
+        return SandboxError::Timeout {
+            operation: browser_runtime_operation_label(operation_type),
+        };
+    }
+
+    SandboxError::Other(message)
+}
+
+fn browser_runtime_operation_label(operation_type: &str) -> String {
+    if operation_type.trim().is_empty() {
+        "browser_runtime_operation".to_string()
+    } else {
+        operation_type.to_string()
+    }
+}
+
+fn browser_runtime_error_is_timeout(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains(" timed out")
+        || lower.starts_with("timeout ")
+        || lower.contains(" timeout ")
+        || lower.ends_with(" timeout")
 }
 
 async fn browser_runtime_io_error(
@@ -764,5 +819,39 @@ mod tests {
             detail,
             "browser runtime failed to read response (status: exit status: 1): nsjail: bad uid map"
         );
+    }
+
+    #[test]
+    fn test_map_runtime_error_classifies_timeout_response() {
+        let error = map_runtime_error(
+            "navigate",
+            &json!({
+                "ok": false,
+                "error": "Navigation timeout of 30000 ms exceeded",
+                "error_code": "timeout",
+            }),
+        );
+
+        assert!(matches!(
+            error,
+            SandboxError::Timeout { operation } if operation == "navigate"
+        ));
+    }
+
+    #[test]
+    fn test_map_runtime_error_preserves_non_timeout_message() {
+        let error = map_runtime_error(
+            "click",
+            &json!({
+                "ok": false,
+                "error": "selector_not_found: #missing",
+                "error_code": "runtime_error",
+            }),
+        );
+
+        assert!(matches!(
+            error,
+            SandboxError::Other(message) if message == "selector_not_found: #missing"
+        ));
     }
 }

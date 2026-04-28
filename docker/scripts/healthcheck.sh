@@ -9,8 +9,9 @@ set -e
 # 配置
 HEALTH_PORT="${VAULT_SERVICE_PORT:-8080}"
 HEALTH_HOST="${VAULT_SERVICE_HOST:-localhost}"
-HEALTH_ENDPOINT="${HEALTH_ENDPOINT:-/ready}"
+HEALTH_ENDPOINT="${HEALTH_ENDPOINT:-/health}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-5}"
+HEALTH_CHECK_RESOURCES="${HEALTH_CHECK_RESOURCES:-false}"
 
 # 日志函数（兼容 sh）
 log_debug() {
@@ -134,12 +135,14 @@ main() {
         failed=$((failed + 1))
     fi
 
-    if ! check_disk_space; then
-        failed=$((failed + 1))
-    fi
+    if [ "$HEALTH_CHECK_RESOURCES" = "true" ]; then
+        if ! check_disk_space; then
+            failed=$((failed + 1))
+        fi
 
-    if ! check_memory; then
-        failed=$((failed + 1))
+        if ! check_memory; then
+            failed=$((failed + 1))
+        fi
     fi
 
     # 结果
