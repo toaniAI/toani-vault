@@ -396,6 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         *lifecycle = LifecycleState::Ready;
     }
     let shutdown_state = app_state.clone();
+    let cleanup_state = app_state.clone();
 
     // 构建路由
     let router = build_router(app_state, &config);
@@ -428,9 +429,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("");
 
     // 启动服务器
-    axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
+    let serve_result = axum::serve(listener, ServiceExt::<Request>::into_make_service(app))
         .with_graceful_shutdown(shutdown_signal(shutdown_state))
-        .await?;
+        .await;
+
+    finalize_shutdown(cleanup_state).await;
+
+    serve_result?;
 
     Ok(())
 }
@@ -460,16 +465,18 @@ async fn shutdown_signal(state: AppState) {
         *lifecycle = LifecycleState::Draining;
     }
     info!("Received shutdown signal; entering draining state");
+}
 
+async fn finalize_shutdown(state: AppState) {
     match state.sandbox_state.delete_current_owner_mappings().await {
         Ok(deleted) => info!(
             deleted_owner_mappings = deleted,
             owner_id = %state.sandbox_state.owner_id,
-            "Removed current owner sandbox mappings before shutdown"
+            "Removed current owner sandbox mappings after request draining completed"
         ),
         Err(error) => warn!(
             owner_id = %state.sandbox_state.owner_id,
-            "Failed to remove current owner sandbox mappings during shutdown: {}",
+            "Failed to remove current owner sandbox mappings after request draining: {}",
             error
         ),
     }

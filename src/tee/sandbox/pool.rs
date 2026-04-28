@@ -721,9 +721,10 @@ impl SandboxPool for NsjailSandboxPool {
             .remove(&session_id)
             .ok_or_else(|| SessionError::not_found(session_id.into()))?;
 
-        // 尝试提取 sandbox
-        let reuse_policy = session.sandbox_reuse_policy().await;
+        // 尝试提取 sandbox。reuse policy 必须在 shutdown_runtime 之后读取，
+        // 否则 runtime 关闭失败时新增的 taint 状态会被提前快照而丢失。
         if let Some(mut sandbox) = session.take_sandbox().await {
+            let reuse_policy = session.sandbox_reuse_policy().await;
             // session 已经从 map 中移除，不需要再修改状态
             drop(sessions); // 释放锁
 

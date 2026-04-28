@@ -514,6 +514,13 @@ async fn resolve_owner_bound_session(
     match state.pool.get_session(session_id).await {
         Ok(session) => Ok(session),
         Err(local_error) => {
+            if !matches!(
+                &local_error,
+                SandboxError::Session(crate::tee::sandbox::error::SessionError::NotFound { .. })
+            ) {
+                return Err(map_sandbox_error(local_error));
+            }
+
             let tenant_id = parse_uuid(&token.tenant_id);
             let owner_record = match state.lookup_session_owner(session_id).await {
                 Ok(record) => record.filter(|record| record.tenant_id == tenant_id),
@@ -2946,9 +2953,16 @@ mod tests {
             &self,
             session_id: SessionId,
         ) -> Result<Arc<dyn SandboxSession>, SandboxError> {
-            self.session
+            let session = self
+                .session
                 .clone()
-                .ok_or_else(|| SessionError::not_found(session_id.into()).into())
+                .ok_or_else(|| SessionError::not_found(session_id.into()))?;
+
+            if session.context().is_expired() {
+                return Err(SessionError::expired(session_id.into()).into());
+            }
+
+            Ok(session)
         }
 
         async fn health(&self) -> crate::tee::sandbox::SandboxHealth {
@@ -4114,6 +4128,75 @@ mod tests {
                 .await
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_operation_preserves_local_expired_error_and_owner_mapping() {
+        let mut session = create_stub_session();
+        session.context.expires_at = OffsetDateTime::now_utc() - time::Duration::minutes(1);
+        let session_id = session.id();
+        let tenant_id = session.context.tenant_id;
+        let user_id = session.context.user_id;
+        let owner_registry = Arc::new(InMemoryOwnerRegistry::default());
+        owner_registry
+            .register_owner(
+                SandboxOwnerRecord {
+                    owner_id: "owner-a".to_string(),
+                    base_url: "http://127.0.0.1".to_string(),
+                    session_id: Uuid::from(session_id),
+                    tenant_id,
+                    expires_at: session.context.expires_at.unix_timestamp(),
+                },
+                Duration::from_secs(60),
+            )
+            .await
+            .unwrap();
+
+        let pool: Arc<dyn SandboxPool> = Arc::new(OwnerRoutingPool {
+            session: Some(Arc::new(session)),
+            release_calls: Arc::new(RwLock::new(Vec::new())),
+        });
+        let state = make_owner_routing_state(pool, None, Some(owner_registry.clone()));
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![TokenScope::SandboxExecute],
+        );
+        let app = axum::Router::new().nest(
+            "/api/v1",
+            sandbox_routes().layer(Extension(token)).with_state(state),
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/sandbox/sessions/{}/execute",
+                        Uuid::from(session_id)
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "operation_type": "click",
+                            "description": "click",
+                            "parameters": { "selector": "#submit" }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(
+            owner_registry
+                .get_owner(session_id)
+                .await
+                .unwrap()
+                .is_some()
         );
     }
 
