@@ -24,6 +24,7 @@ envs:
   CREDBRIDGE_ENV: production
   SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-go-owner"
   SANDBOX_OWNER_PORT: "8080"
+  TEE_MODE: hardware
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: info
   DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
@@ -62,14 +63,28 @@ healths:
       path: /health
     initialDelaySeconds: 10
     periodSeconds: 10
+    timeoutSeconds: 2
     failureThreshold: 3
   readinessProbe:
     httpGet:
       port: http
-      path: /health
+      path: /ready
     initialDelaySeconds: 5
     periodSeconds: 5
+    timeoutSeconds: 2
     failureThreshold: 3
+
+# Explicit workload lifecycle settings. The upstream dn/go chart owns the
+# Deployment; scripts/apply-sandbox-owner-headless-service.sh patches these
+# fields after helm upgrade when the chart version does not render them.
+terminationGracePeriodSeconds: 45
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - sleep 20
 
 resources:
   limits:
