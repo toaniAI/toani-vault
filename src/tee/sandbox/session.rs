@@ -2739,6 +2739,29 @@ mod tests {
         assert_eq!(recovery.calls.load(Ordering::SeqCst), 0);
     }
 
+    #[tokio::test]
+    async fn test_execute_operation_timeout_resets_session_status() {
+        let executor = Arc::new(MockOperationExecutor {
+            attempts: AtomicUsize::new(0),
+            results: TokioMutex::new(vec![Err(SandboxError::Timeout {
+                operation: "navigate".to_string(),
+            })]),
+        });
+        let mut session = create_test_session();
+        session.set_operation_executor(executor);
+
+        let result = session
+            .execute_operation_for_test(create_test_operation())
+            .await
+            .expect("operation timeout should be recorded as a failed result");
+
+        assert!(!result.success);
+        assert!(matches!(session.status().await, SessionStatus::Ready));
+        let history = session.get_operation_history().await;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, OperationStatus::Failed);
+    }
+
     #[test]
     fn test_session_creation() {
         let session = create_test_session();

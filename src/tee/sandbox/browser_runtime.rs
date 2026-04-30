@@ -28,6 +28,7 @@ const LIGHTPANDA_BINARY_PATH_CANDIDATES: &[&str] = &["/usr/local/bin/lightpanda"
 const DEV_NULL_PATH: &str = "/dev/null";
 const BROWSER_RUNTIME_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const BROWSER_RUNTIME_KILL_TIMEOUT: Duration = Duration::from_secs(3);
+const BROWSER_RUNTIME_RPC_TIMEOUT: Duration = Duration::from_secs(45);
 const SYSTEM_RUNTIME_MOUNT_CANDIDATES: &[&str] = &[
     "/etc/resolv.conf",
     "/etc/hosts",
@@ -444,6 +445,15 @@ impl SandboxBrowserRuntime {
     }
 
     async fn send(&self, message: Value) -> Result<Value, SandboxError> {
+        self.send_with_timeout(message, BROWSER_RUNTIME_RPC_TIMEOUT)
+            .await
+    }
+
+    async fn send_with_timeout(
+        &self,
+        message: Value,
+        timeout_duration: Duration,
+    ) -> Result<Value, SandboxError> {
         let mut process = self.inner.lock().await;
         let message_type = message
             .get("type")
@@ -457,22 +467,33 @@ impl SandboxBrowserRuntime {
         let serialized = serde_json::to_string(&message).map_err(|error| {
             SandboxError::Serialization(format!("failed to encode browser message: {error}"))
         })?;
-        if let Err(error) = process.stdin.write_all(serialized.as_bytes()).await {
-            return Err(browser_runtime_io_error("write request", &mut process, error).await);
-        }
-        if let Err(error) = process.stdin.write_all(b"\n").await {
-            return Err(
-                browser_runtime_io_error("write request terminator", &mut process, error).await,
-            );
-        }
-        if let Err(error) = process.stdin.flush().await {
-            return Err(browser_runtime_io_error("flush request", &mut process, error).await);
-        }
-
-        let mut line = String::new();
-        if let Err(error) = process.stdout.read_line(&mut line).await {
-            return Err(browser_runtime_io_error("read response", &mut process, error).await);
-        }
+        let request_label = browser_runtime_request_label(message_type, operation_type);
+        let line = match timeout(
+            timeout_duration,
+            exchange_browser_runtime_message(&mut process, &serialized),
+        )
+        .await
+        {
+            Ok(result) => result?,
+            Err(_) => {
+                let exit_detail = terminate_browser_runtime_process(
+                    &mut process,
+                    &format!("timed out during {request_label}"),
+                )
+                .await;
+                warn!(
+                    message_type,
+                    operation_type,
+                    timeout_ms = timeout_duration.as_millis(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    exit_detail = exit_detail.as_deref().unwrap_or(""),
+                    "browser runtime request timed out"
+                );
+                return Err(SandboxError::Timeout {
+                    operation: request_label,
+                });
+            }
+        };
         debug!(
             message_type,
             operation_type,
@@ -525,6 +546,28 @@ impl SandboxBrowserRuntime {
     }
 }
 
+async fn exchange_browser_runtime_message(
+    process: &mut BrowserRuntimeProcess,
+    serialized: &str,
+) -> Result<String, SandboxError> {
+    if let Err(error) = process.stdin.write_all(serialized.as_bytes()).await {
+        return Err(browser_runtime_io_error("write request", process, error).await);
+    }
+    if let Err(error) = process.stdin.write_all(b"\n").await {
+        return Err(browser_runtime_io_error("write request terminator", process, error).await);
+    }
+    if let Err(error) = process.stdin.flush().await {
+        return Err(browser_runtime_io_error("flush request", process, error).await);
+    }
+
+    let mut line = String::new();
+    if let Err(error) = process.stdout.read_line(&mut line).await {
+        return Err(browser_runtime_io_error("read response", process, error).await);
+    }
+
+    Ok(line)
+}
+
 fn map_runtime_error(operation_type: &str, response: &Value) -> SandboxError {
     let message = response
         .get("error")
@@ -543,6 +586,16 @@ fn map_runtime_error(operation_type: &str, response: &Value) -> SandboxError {
     }
 
     SandboxError::Other(message)
+}
+
+fn browser_runtime_request_label(message_type: &str, operation_type: &str) -> String {
+    if !operation_type.trim().is_empty() {
+        operation_type.to_string()
+    } else if !message_type.trim().is_empty() {
+        format!("browser_runtime_{}", message_type.trim())
+    } else {
+        "browser_runtime_operation".to_string()
+    }
 }
 
 fn browser_runtime_operation_label(operation_type: &str) -> String {
@@ -579,6 +632,28 @@ async fn browser_runtime_io_error(
     }
 
     SandboxError::Io(error)
+}
+
+async fn terminate_browser_runtime_process(
+    process: &mut BrowserRuntimeProcess,
+    context: &str,
+) -> Option<String> {
+    let mut child = process.child.take()?;
+    let _ = child.start_kill();
+
+    match timeout(BROWSER_RUNTIME_KILL_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) => Some(browser_runtime_exit_detail(context, status, "")),
+        Ok(Err(error)) => Some(format!(
+            "browser runtime {context}: failed to wait for process exit: {error}"
+        )),
+        Err(_) => {
+            spawn_child_reaper(child, "browser runtime timeout reaper".to_string(), true);
+            Some(format!(
+                "browser runtime {context}: process did not exit within {} ms",
+                BROWSER_RUNTIME_KILL_TIMEOUT.as_millis()
+            ))
+        }
+    }
 }
 
 impl Drop for BrowserRuntimeProcess {
@@ -747,6 +822,39 @@ fn push_read_only_bind_mount(mounts: &mut Vec<MountConfig>, path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Stdio;
+
+    async fn spawn_test_runtime(command: &str) -> SandboxBrowserRuntime {
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("test runtime should spawn");
+        let stdin = child
+            .stdin
+            .take()
+            .expect("test runtime should expose stdin");
+        let stdout = child
+            .stdout
+            .take()
+            .expect("test runtime should expose stdout");
+        let stderr = child
+            .stderr
+            .take()
+            .expect("test runtime should expose stderr");
+
+        SandboxBrowserRuntime {
+            inner: Arc::new(Mutex::new(BrowserRuntimeProcess {
+                child: Some(child),
+                stdin,
+                stderr: BufReader::new(stderr),
+                stdout: BufReader::new(stdout),
+            })),
+        }
+    }
 
     #[test]
     fn test_browser_runtime_mounts_include_runtime_paths() {
@@ -853,5 +961,42 @@ mod tests {
             error,
             SandboxError::Other(message) if message == "selector_not_found: #missing"
         ));
+    }
+
+    #[test]
+    fn test_browser_runtime_request_label_uses_message_type_when_operation_is_empty() {
+        assert_eq!(
+            browser_runtime_request_label("init", ""),
+            "browser_runtime_init"
+        );
+        assert_eq!(
+            browser_runtime_request_label("", ""),
+            "browser_runtime_operation"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_send_timeout_kills_runtime_process_and_returns_timeout() {
+        let runtime = spawn_test_runtime("while IFS= read -r _line; do sleep 60; done").await;
+
+        let error = runtime
+            .send_with_timeout(
+                json!({
+                    "type": "init",
+                    "profileDir": "/tmp/test-profile",
+                }),
+                Duration::from_millis(50),
+            )
+            .await
+            .expect_err("timed out runtime request should fail");
+
+        assert!(matches!(
+            error,
+            SandboxError::Timeout { operation } if operation == "browser_runtime_init"
+        ));
+        assert!(
+            runtime.inner.lock().await.child.is_none(),
+            "timed out runtime process should be reaped so the session can rebuild a fresh runtime"
+        );
     }
 }
