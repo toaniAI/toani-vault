@@ -431,10 +431,7 @@ async fn list_tokens_handler(
         .await
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
 
-    let items = items
-        .into_iter()
-        .map(map_token_metadata)
-        .collect();
+    let items = items.into_iter().map(map_token_metadata).collect();
 
     Ok(Json(ListTokensResponse::new(
         items,
@@ -1377,8 +1374,13 @@ mod tests {
 
     #[test]
     fn empty_token_list_serializes_to_empty_page() {
-        let payload = serde_json::to_value(ListTokensResponse::new(Vec::<TokenMetadataResponse>::new(), 1, 20, 0))
-            .expect("empty token list should serialize");
+        let payload = serde_json::to_value(ListTokensResponse::new(
+            Vec::<TokenMetadataResponse>::new(),
+            1,
+            20,
+            0,
+        ))
+        .expect("empty token list should serialize");
         let list = payload["items"]
             .as_array()
             .expect("empty token list payload must contain items");

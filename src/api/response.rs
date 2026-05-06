@@ -316,7 +316,11 @@ pub struct PaginatedResponse<T> {
 impl<T> PaginatedResponse<T> {
     /// 根据分页元数据构建响应
     pub fn new(items: Vec<T>, page: usize, page_size: usize, total: usize) -> Self {
-        let total_pages = if total == 0 { 0 } else { total.div_ceil(page_size) };
+        let total_pages = if total == 0 {
+            0
+        } else {
+            total.div_ceil(page_size)
+        };
 
         Self {
             items,
