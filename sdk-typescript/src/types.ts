@@ -157,12 +157,7 @@ export interface CredentialMetadata {
 }
 
 /** 凭证列表响应 */
-export interface ListCredentialsResponse {
-  /** 凭证列表 */
-  credentials: CredentialMetadata[];
-  /** 总数 */
-  total: number;
-}
+export type ListCredentialsResponse = PaginatedResponse<CredentialMetadata>;
 
 /** 凭证详情响应 */
 export interface GetCredentialResponse {
@@ -240,6 +235,24 @@ export interface CredentialFilter {
   includeDeleted?: boolean;
   /** 仅返回未过期的凭证 */
   onlyValid?: boolean;
+  /** 页码（从 1 开始） */
+  page?: number;
+  /** 每页数量 */
+  pageSize?: number;
+}
+
+/** 通用分页响应 */
+export interface PaginatedResponse<T> {
+  /** 当前页数据 */
+  items: T[];
+  /** 当前页码 */
+  page: number;
+  /** 每页数量 */
+  pageSize: number;
+  /** 总数 */
+  total: number;
+  /** 总页数 */
+  totalPages: number;
 }
 
 // ============================================================================
@@ -391,6 +404,9 @@ export interface TokenMetadata {
   createdAt: string;
   lastUsedAt?: string;
 }
+
+/** Token 列表响应 */
+export type ListTokensResponse = PaginatedResponse<TokenMetadata>;
 
 /** Service Account 状态 */
 export type ServiceAccountStatus = "active" | "disabled" | "deleted";

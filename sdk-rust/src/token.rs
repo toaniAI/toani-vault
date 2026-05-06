@@ -31,8 +31,8 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        ApiTokenMetadata, CreateAccessTokenResponse, CreateTokenRequest, CreateTokenResponse,
-        CredBridgeError, CredBridgeErrorCode, ListTokensResponse, RequestOptions, Result,
+        CreateAccessTokenResponse, CreateTokenRequest, CreateTokenResponse, CredBridgeError,
+        CredBridgeErrorCode, ListTokensResponse, RequestOptions, Result,
         RevokeTokenResponse, TokenInfo, TokenScope, TokenStatsResponse,
     },
 };
@@ -307,8 +307,7 @@ impl TokenManager {
 
     /// 列出 token
     pub async fn list(&self, options: Option<RequestOptions>) -> Result<ListTokensResponse> {
-        let items: Vec<ApiTokenMetadata> = self.client.get_with_options("/tokens", options).await?;
-        Ok(ListTokensResponse { tokens: items })
+        self.client.get_with_options("/tokens", options).await
     }
 
     /// 获取指定 token 元数据

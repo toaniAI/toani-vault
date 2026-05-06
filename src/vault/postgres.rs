@@ -479,6 +479,84 @@ impl StorageBackend for PostgresStorageBackend {
         Ok(CredentialQueryResult { credentials, total })
     }
 
+    fn query_paginated(
+        &self,
+        tenant_id: &TenantId,
+        user_id: &UserId,
+        filter: &CredentialFilter,
+        page: usize,
+        page_size: usize,
+    ) -> Result<CredentialQueryResult, VaultError> {
+        let base_where = r#"
+            FROM {schema}.credentials
+            WHERE tenant_id = $1
+              AND user_id_hash = $2
+              AND ($3 OR is_deleted = FALSE)
+              AND (NOT $4 OR expires_at IS NULL OR expires_at > NOW())
+              AND ($5::VARCHAR IS NULL OR service_id = $5)
+              AND ($6::VARCHAR IS NULL OR credential_type = $6)
+        "#;
+        let count_sql = format!(
+            "SELECT COUNT(*) {}",
+            base_where.replace("{schema}", &self.schema)
+        );
+        let query_sql = format!(
+            r#"
+            SELECT * {}
+            ORDER BY created_at DESC
+            LIMIT $7 OFFSET $8
+            "#,
+            base_where.replace("{schema}", &self.schema)
+        );
+
+        let service_id = filter.service_id.as_ref().map(|id| id.as_str().to_string());
+        let credential_type = filter
+            .credential_type
+            .as_ref()
+            .map(|kind| kind.as_str().to_string());
+        let offset = page.saturating_sub(1) * page_size;
+
+        let (total, rows) = self
+            .block_on(async {
+                let total: i64 = sqlx::query_scalar(&count_sql)
+                    .bind(tenant_id.as_str())
+                    .bind(user_id.hash())
+                    .bind(filter.include_deleted)
+                    .bind(filter.only_valid)
+                    .bind(service_id.clone())
+                    .bind(credential_type.clone())
+                    .fetch_one(self.db.pool())
+                    .await
+                    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+                let rows = sqlx::query(&query_sql)
+                    .bind(tenant_id.as_str())
+                    .bind(user_id.hash())
+                    .bind(filter.include_deleted)
+                    .bind(filter.only_valid)
+                    .bind(service_id)
+                    .bind(credential_type)
+                    .bind(page_size as i64)
+                    .bind(offset as i64)
+                    .fetch_all(self.db.pool())
+                    .await
+                    .map_err(|e| DatabaseError::QueryFailed(e.to_string()))?;
+
+                Ok::<_, DatabaseError>((total, rows))
+            })
+            .map_err(|e| VaultError::StorageError(e.to_string()))?;
+
+        let mut credentials = Vec::with_capacity(rows.len());
+        for row in rows {
+            credentials.push(Self::entry_from_row(&row)?.metadata());
+        }
+
+        Ok(CredentialQueryResult {
+            credentials,
+            total: total as usize,
+        })
+    }
+
     fn delete(&self, credential_id: &CredentialId) -> Result<bool, VaultError> {
         let sql = format!(
             "UPDATE {}.credentials SET is_deleted = TRUE, updated_at = NOW() WHERE credential_id = $1",

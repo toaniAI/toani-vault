@@ -223,7 +223,7 @@ export class CredentialsService {
   public async list(
     filter?: CredentialFilter,
     options?: RequestOptions,
-  ): Promise<{ credentials: CredentialMetadata[]; total: number }> {
+  ): Promise<ListCredentialsResponse> {
     // 构建查询参数
     const queryParams = new URLSearchParams();
     if (filter?.serviceId) {
@@ -238,15 +238,17 @@ export class CredentialsService {
     if (filter?.onlyValid !== undefined) {
       queryParams.append("only_valid", String(filter.onlyValid));
     }
+    if (filter?.page !== undefined) {
+      queryParams.append("page", String(filter.page));
+    }
+    if (filter?.pageSize !== undefined) {
+      queryParams.append("page_size", String(filter.pageSize));
+    }
 
     const queryString = queryParams.toString();
     const path = queryString ? `/credentials?${queryString}` : "/credentials";
 
-    const response = await this.client.get<ListCredentialsResponse>(
-      path,
-      options,
-    );
-    return { credentials: response.credentials, total: response.total };
+    return this.client.get<ListCredentialsResponse>(path, options);
   }
 
   /**
@@ -344,7 +346,7 @@ export class CredentialsService {
   public async getByService(
     serviceId: string,
     options?: RequestOptions,
-  ): Promise<{ credentials: CredentialMetadata[]; total: number }> {
+  ): Promise<ListCredentialsResponse> {
     return this.list({ serviceId }, options);
   }
 
@@ -363,7 +365,7 @@ export class CredentialsService {
   public async getByType(
     credentialType: CredentialType,
     options?: RequestOptions,
-  ): Promise<{ credentials: CredentialMetadata[]; total: number }> {
+  ): Promise<ListCredentialsResponse> {
     return this.list({ credentialType }, options);
   }
 

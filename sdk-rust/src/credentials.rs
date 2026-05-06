@@ -293,14 +293,15 @@ impl CredentialsService {
     /// # )?);
     /// # let credentials = CredentialsService::new(client);
     /// // 获取所有凭证
-    /// let (credential_list, total) = credentials.list(None, None).await?;
+    /// let response = credentials.list(None, None).await?;
     ///
     /// // 按服务 ID 过滤
     /// let filter = CredentialFilter {
     ///     service_id: Some("schwab".to_string()),
     ///     ..Default::default()
     /// };
-    /// let (filtered_list, _) = credentials.list(Some(filter), None).await?;
+    /// let response = credentials.list(Some(filter), None).await?;
+    /// println!("Current page: {}", response.page);
     /// # Ok(())
     /// # }
     /// ```
@@ -308,7 +309,7 @@ impl CredentialsService {
         &self,
         filter: Option<CredentialFilter>,
         options: Option<RequestOptions>,
-    ) -> Result<(Vec<CredentialMetadata>, u32)> {
+    ) -> Result<ListCredentialsResponse> {
         // 构建查询参数
         let mut query_params: Vec<(String, String)> = Vec::new();
 
@@ -325,6 +326,12 @@ impl CredentialsService {
             if let Some(only_valid) = filter.only_valid {
                 query_params.push(("only_valid".to_string(), only_valid.to_string()));
             }
+            if let Some(page) = filter.page {
+                query_params.push(("page".to_string(), page.to_string()));
+            }
+            if let Some(page_size) = filter.page_size {
+                query_params.push(("page_size".to_string(), page_size.to_string()));
+            }
         }
 
         // 构建路径
@@ -340,10 +347,7 @@ impl CredentialsService {
 
         debug!(path = %path, "Listing credentials");
 
-        let response: ListCredentialsResponse =
-            self.client.get_with_options(&path, options).await?;
-
-        Ok((response.credentials, response.total))
+        self.client.get_with_options(&path, options).await
     }
 
     /// 获取单个凭证详情

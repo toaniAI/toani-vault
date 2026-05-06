@@ -223,8 +223,8 @@ impl ToaniVaultSDK {
     /// )?;
     ///
     /// // 列出所有凭证
-    /// let (credentials, total) = sdk.credentials().list(None, None).await?;
-    /// println!("Total credentials: {}", total);
+    /// let response = sdk.credentials().list(None, None).await?;
+    /// println!("Total credentials: {}", response.total);
     /// # Ok(())
     /// # }
     /// ```

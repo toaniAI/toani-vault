@@ -17,6 +17,8 @@ import {
   type CreateTokenResponse,
   type TokenInfo,
   type RequestOptions,
+  type ListTokensResponse,
+  type PaginationParams,
   type TokenMetadata,
   type TokenRevokeByIdResponse,
   type TokenStatsResponse,
@@ -47,6 +49,9 @@ interface TokenStatsResponseApi {
 }
 
 interface TokenMetadataApi {
+  token_kind?: string;
+  token_name?: string | null;
+  token_prefix?: string | null;
   token_id: string;
   token_type: string;
   subject_type: string;
@@ -56,11 +61,25 @@ interface TokenMetadataApi {
   session_id?: string | null;
   membership_id?: string | null;
   display_name?: string | null;
+  description?: string | null;
   granted_scopes: string[];
+  credential_ids?: string[];
+  issued_membership_role_snapshot?: string | null;
+  permission_source?: string | null;
+  created_via?: string | null;
+  revoked_reason?: string | null;
   expires_at: string;
   revoked_at?: string | null;
   created_at: string;
   last_used_at?: string | null;
+}
+
+interface TokenListResponseApi {
+  items: TokenMetadataApi[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 }
 
 function mapTokenMetadata(value: TokenMetadataApi): TokenMetadata {
@@ -244,12 +263,34 @@ export class TokenManager {
     };
   }
 
-  public async list(options?: RequestOptions): Promise<TokenMetadata[]> {
-    const response = await this.client.get<TokenMetadataApi[]>(
-      "/tokens",
-      options,
-    );
-    return response.map(mapTokenMetadata);
+  public async list(
+    paginationOrOptions?: PaginationParams | RequestOptions,
+    maybeOptions?: RequestOptions,
+  ): Promise<ListTokensResponse> {
+    const pagination =
+      paginationOrOptions &&
+      ("page" in paginationOrOptions || "pageSize" in paginationOrOptions)
+        ? paginationOrOptions
+        : undefined;
+    const options = pagination ? maybeOptions : (paginationOrOptions as RequestOptions | undefined);
+
+    const queryParams = new URLSearchParams();
+    if (pagination?.page !== undefined) {
+      queryParams.append("page", String(pagination.page));
+    }
+    if (pagination?.pageSize !== undefined) {
+      queryParams.append("page_size", String(pagination.pageSize));
+    }
+    const path = queryParams.size > 0 ? `/tokens?${queryParams.toString()}` : "/tokens";
+
+    const response = await this.client.get<TokenListResponseApi>(path, options);
+    return {
+      items: response.items.map(mapTokenMetadata),
+      page: response.page,
+      pageSize: response.page_size,
+      total: response.total,
+      totalPages: response.total_pages,
+    };
   }
 
   public async get(

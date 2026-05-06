@@ -445,6 +445,51 @@ async fn test_list_credentials() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+#[tokio::test]
+async fn test_list_credentials_applies_real_pagination() {
+    let state = setup_test_state().await;
+
+    for service_id in ["service-a", "service-b", "service-c"] {
+        state
+            .vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new("tenant_123"),
+                    user_id: UserId::new("user_456"),
+                    service_id: ServiceId::new(service_id),
+                    credential_type: CredentialType::ApiKey,
+                    expires_at: None,
+                },
+                create_test_payload(),
+            )
+            .unwrap();
+    }
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?page=2&page_size=1")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let credentials = json["items"].as_array().unwrap();
+
+    assert_eq!(json["page"].as_u64(), Some(2));
+    assert_eq!(json["page_size"].as_u64(), Some(1));
+    assert_eq!(json["total"].as_u64(), Some(3));
+    assert_eq!(json["total_pages"].as_u64(), Some(3));
+    assert_eq!(credentials.len(), 1);
+}
+
 /// 测试获取凭证列表时保留已过期但未删除的凭证
 #[tokio::test]
 async fn test_list_credentials_includes_expired_entries() {
@@ -488,9 +533,12 @@ async fn test_list_credentials_includes_expired_entries() {
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let credentials = json["credentials"].as_array().unwrap();
+    let credentials = json["items"].as_array().unwrap();
 
     assert_eq!(json["total"].as_u64(), Some(1));
+    assert_eq!(json["page"].as_u64(), Some(1));
+    assert_eq!(json["page_size"].as_u64(), Some(20));
+    assert_eq!(json["total_pages"].as_u64(), Some(1));
     assert_eq!(credentials.len(), 1);
     assert_eq!(
         credentials[0]["credential_id"].as_str(),
@@ -562,7 +610,7 @@ async fn test_list_credentials_filters_by_service_id() {
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let credentials = json["credentials"].as_array().unwrap();
+    let credentials = json["items"].as_array().unwrap();
 
     assert_eq!(json["total"].as_u64(), Some(1));
     assert_eq!(credentials.len(), 1);
@@ -624,7 +672,7 @@ async fn test_list_credentials_filters_by_credential_type() {
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let credentials = json["credentials"].as_array().unwrap();
+    let credentials = json["items"].as_array().unwrap();
 
     assert_eq!(json["total"].as_u64(), Some(1));
     assert_eq!(credentials.len(), 1);
@@ -691,7 +739,7 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
         .await
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let credentials = json["credentials"].as_array().unwrap();
+    let credentials = json["items"].as_array().unwrap();
 
     assert_eq!(json["total"].as_u64(), Some(1));
     assert_eq!(credentials.len(), 1);

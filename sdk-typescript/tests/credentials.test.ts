@@ -340,7 +340,7 @@ describe("CredentialsService", () => {
   describe("获取凭证列表", () => {
     it("应该获取凭证列表", async () => {
       const mockResponse = {
-        credentials: [
+        items: [
           {
             credentialId: "cred-1",
             credentialType: "username_password",
@@ -360,22 +360,29 @@ describe("CredentialsService", () => {
             isDeleted: false,
           },
         ],
+        page: 1,
+        pageSize: 20,
         total: 2,
+        totalPages: 1,
       };
 
       vi.spyOn(client, "get").mockResolvedValue(mockResponse);
 
       const result = await service.list();
 
-      expect(result.credentials).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
+      expect(result.page).toBe(1);
       expect(result.total).toBe(2);
       expect(client.get).toHaveBeenCalledWith("/credentials", undefined);
     });
 
     it("应该支持过滤条件", async () => {
       vi.spyOn(client, "get").mockResolvedValue({
-        credentials: [],
+        items: [],
+        page: 1,
+        pageSize: 20,
         total: 0,
+        totalPages: 0,
       });
 
       await service.list({
@@ -393,8 +400,11 @@ describe("CredentialsService", () => {
 
     it("应该支持按服务过滤", async () => {
       vi.spyOn(client, "get").mockResolvedValue({
-        credentials: [],
+        items: [],
+        page: 1,
+        pageSize: 20,
         total: 0,
+        totalPages: 0,
       });
 
       await service.getByService("schwab");
@@ -407,8 +417,11 @@ describe("CredentialsService", () => {
 
     it("应该支持按类型过滤", async () => {
       vi.spyOn(client, "get").mockResolvedValue({
-        credentials: [],
+        items: [],
+        page: 1,
+        pageSize: 20,
         total: 0,
+        totalPages: 0,
       });
 
       await service.getByType(CredentialType.ApiKey);

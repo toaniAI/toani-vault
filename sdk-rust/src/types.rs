@@ -352,10 +352,18 @@ pub struct CredentialMetadata {
 /// 凭证列表响应
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListCredentialsResponse {
-    /// 凭证列表
-    pub credentials: Vec<CredentialMetadata>,
+    /// 当前页数据
+    pub items: Vec<CredentialMetadata>,
+    /// 当前页码
+    pub page: u32,
+    /// 每页数量
+    #[serde(rename = "page_size")]
+    pub page_size: u32,
     /// 总数
     pub total: u32,
+    /// 总页数
+    #[serde(rename = "total_pages")]
+    pub total_pages: u32,
 }
 
 /// 凭证详情响应
@@ -566,6 +574,10 @@ pub struct CredentialFilter {
     pub include_deleted: Option<bool>,
     /// 仅返回未过期的凭证
     pub only_valid: Option<bool>,
+    /// 页码（从 1 开始）
+    pub page: Option<u32>,
+    /// 每页数量
+    pub page_size: Option<u32>,
 }
 
 // ============================================================================
@@ -688,7 +700,13 @@ pub struct TokenListItem {
 /// Token 列表响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListTokensResponse {
-    pub tokens: Vec<ApiTokenMetadata>,
+    pub items: Vec<ApiTokenMetadata>,
+    pub page: u32,
+    #[serde(rename = "page_size")]
+    pub page_size: u32,
+    pub total: u32,
+    #[serde(rename = "total_pages")]
+    pub total_pages: u32,
 }
 
 /// API token 元数据

@@ -12,6 +12,7 @@ use crate::api::i18n::I18nMetadata;
 use crate::api::middleware::{
     AuthError, TokenScope, ValidatedToken, require_any_scope, require_scope,
 };
+use crate::api::response::PaginatedResponse;
 use crate::crypto::CredentialCryptoContext;
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::models::{
@@ -691,11 +692,7 @@ async fn encrypt_credential_in_tee(
 }
 
 /// 凭证列表响应
-#[derive(Debug, Serialize)]
-pub struct ListCredentialsResponse {
-    pub credentials: Vec<CredentialMetadata>,
-    pub total: usize,
-}
+pub type ListCredentialsResponse = PaginatedResponse<CredentialMetadata>;
 
 #[derive(Debug, Deserialize)]
 pub struct ListCredentialsQuery {
@@ -792,13 +789,15 @@ pub async fn list_credentials(
 
     let result = state
         .vault
-        .list_credentials(&tenant_id, &user_id, filter)
+        .list_credentials_paginated(&tenant_id, &user_id, filter, query.page, query.page_size)
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
 
-    Ok(Json(ListCredentialsResponse {
-        credentials: result.credentials,
-        total: result.total,
-    }))
+    Ok(Json(ListCredentialsResponse::new(
+        result.credentials,
+        query.page,
+        query.page_size,
+        result.total,
+    )))
 }
 
 /// 凭证详情响应

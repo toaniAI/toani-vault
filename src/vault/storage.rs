@@ -37,6 +37,30 @@ pub trait StorageBackend: Send + Sync {
         filter: &CredentialFilter,
     ) -> Result<CredentialQueryResult, VaultError>;
 
+    /// 按分页查询用户的凭证列表（仅元数据）
+    fn query_paginated(
+        &self,
+        tenant_id: &TenantId,
+        user_id: &UserId,
+        filter: &CredentialFilter,
+        page: usize,
+        page_size: usize,
+    ) -> Result<CredentialQueryResult, VaultError> {
+        let result = self.query(tenant_id, user_id, filter)?;
+        let offset = page.saturating_sub(1) * page_size;
+        let credentials = result
+            .credentials
+            .into_iter()
+            .skip(offset)
+            .take(page_size)
+            .collect();
+
+        Ok(CredentialQueryResult {
+            credentials,
+            total: result.total,
+        })
+    }
+
     /// 删除凭证（软删除）
     fn delete(&self, credential_id: &CredentialId) -> Result<bool, VaultError>;
 
@@ -591,6 +615,19 @@ impl CredentialVault {
         filter: CredentialFilter,
     ) -> Result<CredentialQueryResult, VaultError> {
         self.backend.query(tenant_id, user_id, &filter)
+    }
+
+    /// 分页查询用户的凭证列表（仅元数据）
+    pub fn list_credentials_paginated(
+        &self,
+        tenant_id: &TenantId,
+        user_id: &UserId,
+        filter: CredentialFilter,
+        page: usize,
+        page_size: usize,
+    ) -> Result<CredentialQueryResult, VaultError> {
+        self.backend
+            .query_paginated(tenant_id, user_id, &filter, page, page_size)
     }
 
     /// 删除凭证（软删除）

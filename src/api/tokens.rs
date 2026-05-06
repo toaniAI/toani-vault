@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     Extension, Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::{
     auth::AuthApiState,
     middleware::{TokenScope, ValidatedToken},
-    response::ApiErrorResponse,
+    response::{ApiErrorResponse, PaginatedResponse},
 };
 use crate::audit::{AuditAction, Outcome};
 use crate::auth::{ApiTokenMetadata, ApiTokenSubjectType, ApiTokenType};
@@ -77,6 +77,24 @@ pub struct TokenMetadataResponse {
     pub revoked_at: Option<String>,
     pub created_at: String,
     pub last_used_at: Option<String>,
+}
+
+pub type ListTokensResponse = PaginatedResponse<TokenMetadataResponse>;
+
+#[derive(Debug, Deserialize)]
+struct ListTokensQuery {
+    #[serde(default = "default_page")]
+    page: usize,
+    #[serde(default = "default_page_size")]
+    page_size: usize,
+}
+
+fn default_page() -> usize {
+    1
+}
+
+fn default_page_size() -> usize {
+    20
 }
 
 #[derive(Debug, Serialize)]
@@ -375,7 +393,17 @@ async fn revoke_token_handler(
 async fn list_tokens_handler(
     State(state): State<AuthApiState>,
     Extension(token): Extension<ValidatedToken>,
-) -> Result<Json<Vec<TokenMetadataResponse>>, ApiErrorResponse> {
+    Query(query): Query<ListTokensQuery>,
+) -> Result<Json<ListTokensResponse>, ApiErrorResponse> {
+    if query.page == 0 {
+        return Err(ApiErrorResponse::invalid_request("page must be >= 1"));
+    }
+    if query.page_size == 0 || query.page_size > 100 {
+        return Err(ApiErrorResponse::invalid_request(
+            "page_size must be between 1 and 100",
+        ));
+    }
+
     if !token.has_any_scope(&[
         TokenScope::TokensRead,
         TokenScope::Admin,
@@ -389,31 +417,31 @@ async fn list_tokens_handler(
     let tenant_id = parse_uuid_str(&token.tenant_id, "tenant_id")?;
     let subject_id = parse_uuid_str(&token.user_id, "user_id")?;
     let is_tenant_admin = token.has_any_scope(&[TokenScope::Admin, TokenScope::TenantAdmin]);
+    let subject_filter = if is_tenant_admin {
+        None
+    } else if token.is_service_account_subject() {
+        Some((ApiTokenSubjectType::ServiceAccount, subject_id))
+    } else {
+        Some((ApiTokenSubjectType::User, subject_id))
+    };
 
-    let items = state
+    let (items, total) = state
         .auth_service
-        .list_api_tokens(tenant_id)
+        .list_api_tokens_paginated(tenant_id, subject_filter, query.page, query.page_size)
         .await
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
 
     let items = items
         .into_iter()
-        .filter(|item| {
-            if is_tenant_admin {
-                return true;
-            }
-
-            match item.subject_type {
-                ApiTokenSubjectType::User => item.subject_id == subject_id,
-                ApiTokenSubjectType::ServiceAccount => {
-                    token.is_service_account_subject() && item.subject_id == subject_id
-                }
-            }
-        })
         .map(map_token_metadata)
         .collect();
 
-    Ok(Json(items))
+    Ok(Json(ListTokensResponse::new(
+        items,
+        query.page,
+        query.page_size,
+        total,
+    )))
 }
 
 async fn get_token_handler(
@@ -1265,9 +1293,49 @@ mod tests {
         assert_eq!(err.message, "Token metadata not found");
     }
 
-    // BUG-18195: /api/v1/tokens 响应契约应为顶层数组而不是 {data,total}
+    #[tokio::test]
+    async fn list_tokens_returns_paginated_response() {
+        let (state, _) = seed_test_state();
+        let response = list_tokens_handler(
+            State(state),
+            Extension(session_token(vec![TokenScope::TokensRead])),
+            Query(ListTokensQuery {
+                page: 1,
+                page_size: 20,
+            }),
+        )
+        .await
+        .expect("list tokens should succeed")
+        .0;
+
+        assert_eq!(response.page, 1);
+        assert_eq!(response.page_size, 20);
+        assert_eq!(response.total, 0);
+        assert_eq!(response.total_pages, 0);
+        assert!(response.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_tokens_page_zero_returns_400_invalid_request() {
+        let (state, _) = seed_test_state();
+        let result = list_tokens_handler(
+            State(state),
+            Extension(session_token(vec![TokenScope::TokensRead])),
+            Query(ListTokensQuery {
+                page: 0,
+                page_size: 20,
+            }),
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "invalid_request");
+        assert_eq!(err.message, "page must be >= 1");
+    }
+
     #[test]
-    fn token_list_response_serializes_as_top_level_array() {
+    fn token_list_response_serializes_as_paginated_object() {
         let item = TokenMetadataResponse {
             token_id: Uuid::new_v4().to_string(),
             token_kind: "user_access_token".to_string(),
@@ -1294,26 +1362,29 @@ mod tests {
             last_used_at: None,
         };
 
-        let payload =
-            serde_json::to_value(vec![item]).expect("token list payload should serialize");
-        let list = payload
+        let payload = serde_json::to_value(ListTokensResponse::new(vec![item], 1, 20, 1))
+            .expect("token list payload should serialize");
+
+        let items = payload["items"]
             .as_array()
-            .expect("token list payload must be a top-level array");
-        assert_eq!(list.len(), 1);
-        assert!(payload.get("data").is_none());
-        assert!(payload.get("total").is_none());
+            .expect("token list payload must include items");
+        assert_eq!(items.len(), 1);
+        assert_eq!(payload["page"].as_u64(), Some(1));
+        assert_eq!(payload["page_size"].as_u64(), Some(20));
+        assert_eq!(payload["total"].as_u64(), Some(1));
+        assert_eq!(payload["total_pages"].as_u64(), Some(1));
     }
 
     #[test]
-    fn empty_token_list_serializes_to_empty_array() {
-        let payload = serde_json::to_value(Vec::<TokenMetadataResponse>::new())
+    fn empty_token_list_serializes_to_empty_page() {
+        let payload = serde_json::to_value(ListTokensResponse::new(Vec::<TokenMetadataResponse>::new(), 1, 20, 0))
             .expect("empty token list should serialize");
-        let list = payload
+        let list = payload["items"]
             .as_array()
-            .expect("empty token list payload must be an array");
+            .expect("empty token list payload must contain items");
 
         assert!(list.is_empty());
-        assert!(payload.get("data").is_none());
-        assert!(payload.get("total").is_none());
+        assert_eq!(payload["total"].as_u64(), Some(0));
+        assert_eq!(payload["total_pages"].as_u64(), Some(0));
     }
 }

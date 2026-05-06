@@ -298,6 +298,36 @@ pub struct ApiSuccessResponse<T> {
     pub data: T,
 }
 
+/// 通用分页响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedResponse<T> {
+    /// 当前页数据
+    pub items: Vec<T>,
+    /// 当前页码（从 1 开始）
+    pub page: usize,
+    /// 每页数量
+    pub page_size: usize,
+    /// 总记录数
+    pub total: usize,
+    /// 总页数
+    pub total_pages: usize,
+}
+
+impl<T> PaginatedResponse<T> {
+    /// 根据分页元数据构建响应
+    pub fn new(items: Vec<T>, page: usize, page_size: usize, total: usize) -> Self {
+        let total_pages = if total == 0 { 0 } else { total.div_ceil(page_size) };
+
+        Self {
+            items,
+            page,
+            page_size,
+            total,
+            total_pages,
+        }
+    }
+}
+
 impl<T: Serialize> ApiSuccessResponse<T> {
     /// 创建新的成功响应
     pub fn new(data: T) -> Self {

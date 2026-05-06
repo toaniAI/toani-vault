@@ -17,9 +17,9 @@ use uuid::Uuid;
 
 use super::error::AuthError;
 use super::models::{
-    ApiTokenMetadata, AuthAuditLog, AuthEventType, AuthSession, CreateUserRequest,
-    ExternalIdentity, IdentityProvider, InvitationStatus, InviteeType, MembershipRole,
-    PrivyAuthResponse, ServiceAccount, TenantInvitation, TenantMembership, User,
+    ApiTokenMetadata, ApiTokenSubjectType, AuthAuditLog, AuthEventType, AuthSession,
+    CreateUserRequest, ExternalIdentity, IdentityProvider, InvitationStatus, InviteeType,
+    MembershipRole, PrivyAuthResponse, ServiceAccount, TenantInvitation, TenantMembership, User,
 };
 use crate::audit::AuditRecorder;
 use crate::auth::privy::JwksVerifier;
@@ -302,6 +302,25 @@ pub trait AuthService: Send + Sync {
     async fn list_api_tokens(&self, tenant_id: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
         let _ = tenant_id;
         Ok(Vec::new())
+    }
+
+    /// 分页列出租户内 API token 元数据。
+    async fn list_api_tokens_paginated(
+        &self,
+        tenant_id: Uuid,
+        subject_filter: Option<(ApiTokenSubjectType, Uuid)>,
+        page: usize,
+        page_size: usize,
+    ) -> Result<(Vec<ApiTokenMetadata>, usize), AuthError> {
+        let mut items = self.list_api_tokens(tenant_id).await?;
+        if let Some((subject_type, subject_id)) = subject_filter {
+            items.retain(|item| item.subject_type == subject_type && item.subject_id == subject_id);
+        }
+
+        let total = items.len();
+        let offset = page.saturating_sub(1) * page_size;
+        let items = items.into_iter().skip(offset).take(page_size).collect();
+        Ok((items, total))
     }
 
     /// 列出某个 service account 的 API token 元数据。
@@ -1160,6 +1179,65 @@ impl AuthServiceImpl {
         .map_err(AuthError::DatabaseError)?;
 
         Ok(rows)
+    }
+
+    async fn list_api_token_metadata_records_paginated(
+        &self,
+        tenant_id: Uuid,
+        subject_filter: Option<(ApiTokenSubjectType, Uuid)>,
+        page: usize,
+        page_size: usize,
+    ) -> Result<(Vec<ApiTokenMetadata>, usize), AuthError> {
+        let pool = self.require_pool()?;
+        let offset = page.saturating_sub(1) * page_size;
+        let (subject_id, subject_type) = match subject_filter {
+            Some((kind, id)) => (Some(id), Some(kind.as_str().to_string())),
+            None => (None, None),
+        };
+
+        let total: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM api_tokens
+            WHERE tenant_id = $1
+              AND ($2::uuid IS NULL OR subject_id = $2)
+              AND ($3::varchar IS NULL OR subject_type = $3)
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(subject_id)
+        .bind(subject_type.clone())
+        .fetch_one(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        let rows = sqlx::query_as::<_, ApiTokenMetadata>(
+            r#"
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                   session_id, membership_id, token_name, token_prefix, display_name, description,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
+                   issued_membership_role_snapshot, permission_source, created_via,
+                   revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
+                   expires_at, revoked_at, created_at, last_used_at
+            FROM api_tokens
+            WHERE tenant_id = $1
+              AND ($2::uuid IS NULL OR subject_id = $2)
+              AND ($3::varchar IS NULL OR subject_type = $3)
+            ORDER BY created_at DESC
+            LIMIT $4 OFFSET $5
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(subject_id)
+        .bind(subject_type)
+        .bind(page_size as i64)
+        .bind(offset as i64)
+        .fetch_all(pool)
+        .await
+        .map_err(AuthError::DatabaseError)?;
+
+        Ok((rows, total as usize))
     }
 
     async fn list_api_token_metadata_for_service_account(
@@ -2746,6 +2824,17 @@ impl AuthService for AuthServiceImpl {
 
     async fn list_api_tokens(&self, tenant_id: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
         self.list_api_token_metadata_records(tenant_id).await
+    }
+
+    async fn list_api_tokens_paginated(
+        &self,
+        tenant_id: Uuid,
+        subject_filter: Option<(ApiTokenSubjectType, Uuid)>,
+        page: usize,
+        page_size: usize,
+    ) -> Result<(Vec<ApiTokenMetadata>, usize), AuthError> {
+        self.list_api_token_metadata_records_paginated(tenant_id, subject_filter, page, page_size)
+            .await
     }
 
     async fn list_service_account_api_tokens(

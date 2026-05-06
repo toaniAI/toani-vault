@@ -160,7 +160,7 @@ async fn test_list_credentials() {
     let mock_server = MockServer::start().await;
 
     let expected_response = serde_json::json!({
-        "credentials": [
+        "items": [
             {
                 "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
                 "credential_type": "username_password",
@@ -171,7 +171,10 @@ async fn test_list_credentials() {
                 "is_deleted": false,
             }
         ],
+        "page": 1,
+        "page_size": 20,
         "total": 1,
+        "total_pages": 1,
     });
 
     Mock::given(method("GET"))
@@ -187,11 +190,12 @@ async fn test_list_credentials() {
     let result = credentials.list(None, None).await;
     assert!(result.is_ok());
 
-    let (cred_list, total) = result.unwrap();
-    assert_eq!(total, 1);
-    assert_eq!(cred_list.len(), 1);
+    let response = result.unwrap();
+    assert_eq!(response.total, 1);
+    assert_eq!(response.page, 1);
+    assert_eq!(response.items.len(), 1);
     assert_eq!(
-        cred_list[0].credential_id,
+        response.items[0].credential_id,
         "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c"
     );
 }
@@ -204,8 +208,11 @@ async fn test_list_credentials_with_filter() {
         .and(path("/api/v1/credentials"))
         .and(query_param("service_id", "schwab"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "credentials": [],
+            "items": [],
+            "page": 1,
+            "page_size": 20,
             "total": 0,
+            "total_pages": 0,
         })))
         .mount(&mock_server)
         .await;
@@ -478,8 +485,11 @@ async fn test_sdk_services() {
     Mock::given(method("GET"))
         .and(path("/api/v1/credentials"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "credentials": [],
+            "items": [],
+            "page": 1,
+            "page_size": 20,
             "total": 0,
+            "total_pages": 0,
         })))
         .mount(&mock_server)
         .await;
@@ -488,9 +498,9 @@ async fn test_sdk_services() {
     let sdk = ToaniVaultSDK::new(config).unwrap();
 
     // Test credentials service
-    let (credentials, total) = sdk.credentials().list(None, None).await.unwrap();
-    assert_eq!(total, 0);
-    assert!(credentials.is_empty());
+    let response = sdk.credentials().list(None, None).await.unwrap();
+    assert_eq!(response.total, 0);
+    assert!(response.items.is_empty());
 
     // Test token manager
     assert!(sdk.token().is_valid());
