@@ -23,6 +23,10 @@ use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     config::SandboxConfig,
     error::{SandboxError, SessionError},
+    http_template::{
+        HttpTemplateCredentialMaterial, extract_supported_http_credential_fields,
+        render_http_request_parameters,
+    },
     pool::{NsjailSandboxPool, SandboxPool},
     repository::{PostgresSandboxRepository, SandboxOperationRecord, SandboxRepository},
     session::SandboxSession,
@@ -217,6 +221,9 @@ impl SandboxState {
 struct SessionCredentialMaterial {
     credential_type: CredentialType,
     values: HashMap<String, String>,
+    provider: Option<crate::models::CredentialProvider>,
+    allowed_domains: Vec<String>,
+    custom_functions: Vec<crate::models::CredentialCustomFunction>,
 }
 
 // ==================== 请求/响应类型 ====================
@@ -1045,28 +1052,32 @@ pub async fn execute_operation(
         }
     };
 
-    let (mut audit_parameters, resolved_parameters) = match resolve_operation_parameters(
-        &state,
-        session.as_ref(),
-        &operation_type,
-        &request.parameters,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
+    let (mut audit_parameters, resolved_parameters, mut extra_sensitive_values) =
+        match resolve_operation_parameters(
+            &state,
+            session.as_ref(),
+            &operation_type,
+            &request.parameters,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
     redact_persisted_parameters(
         &operation_type,
         &request.parameters,
         &resolved_parameters,
         &mut audit_parameters,
     );
-    let sensitive_output_values = collect_http_sensitive_output_values(
+    let mut sensitive_output_values = collect_http_sensitive_output_values(
         &operation_type,
         &request.parameters,
         &resolved_parameters,
     );
+    sensitive_output_values.append(&mut extra_sensitive_values);
+    sensitive_output_values.sort();
+    sensitive_output_values.dedup();
 
     // 构建操作请求
     let operation = OperationRequest {
@@ -1374,7 +1385,7 @@ pub async fn dom_export(
         serde_json::Value::Number(request.max_bytes.into()),
     );
 
-    let (mut audit_parameters, resolved_parameters) =
+    let (mut audit_parameters, resolved_parameters, _) =
         match resolve_operation_parameters(&state, session.as_ref(), &operation_type, &parameters)
             .await
         {
@@ -1652,6 +1663,7 @@ async fn resolve_operation_parameters(
     (
         HashMap<String, serde_json::Value>,
         HashMap<String, serde_json::Value>,
+        Vec<String>,
     ),
     Response,
 > {
@@ -1665,7 +1677,32 @@ async fn resolve_operation_parameters(
         resolved_parameters.insert(key.clone(), resolved_value);
     }
 
-    Ok((audit_parameters, resolved_parameters))
+    let mut extra_sensitive_values = Vec::new();
+    if *operation_type == OperationType::HttpRequest {
+        let material = load_session_credential_material(state, session)
+            .await
+            .map_err(|error| map_sandbox_error(error).into_response())?;
+        let rendered = render_http_request_parameters(
+            &resolved_parameters,
+            &HttpTemplateCredentialMaterial {
+                credential_type: material.credential_type,
+                values: material.values.clone(),
+                provider: material.provider,
+                allowed_domains: material.allowed_domains.clone(),
+                custom_functions: material.custom_functions.clone(),
+            },
+        )
+        .await
+        .map_err(|error| map_sandbox_error(error).into_response())?;
+        resolved_parameters = rendered.parameters;
+        extra_sensitive_values = rendered.sensitive_values;
+    }
+
+    Ok((
+        audit_parameters,
+        resolved_parameters,
+        extra_sensitive_values,
+    ))
 }
 
 fn collect_http_sensitive_output_values(
@@ -1914,6 +1951,8 @@ fn is_sensitive_http_key(key: &str) -> bool {
         || normalized == "set-cookie"
         || normalized == "api_key"
         || normalized == "api-key"
+        || normalized == "signature"
+        || normalized == "ok-access-sign"
         || normalized == "secret"
         || normalized.contains("token")
 }
@@ -2168,101 +2207,23 @@ async fn decrypt_session_credential_material(
         serde_json::from_slice(&plaintext).map_err(|error| {
             SandboxError::Other(format!("credential plaintext is not valid JSON: {error}"))
         })?;
-    let values = extract_supported_credential_fields(entry.credential_type, &plaintext_data)?;
+    let values = extract_supported_http_credential_fields(entry.credential_type, &plaintext_data)?;
 
     Ok(SessionCredentialMaterial {
         credential_type: entry.credential_type,
         values,
+        provider: entry.provider,
+        allowed_domains: entry.allowed_domains.clone(),
+        custom_functions: entry.custom_functions.clone(),
     })
 }
 
+#[cfg(test)]
 fn extract_supported_credential_fields(
     credential_type: CredentialType,
     plaintext_data: &serde_json::Value,
 ) -> Result<HashMap<String, String>, SandboxError> {
-    let object = plaintext_data.as_object().ok_or_else(|| {
-        SandboxError::Other(
-            "credential plaintext must be a JSON object for delegated sandbox use".to_string(),
-        )
-    })?;
-    let mut values = HashMap::new();
-    match credential_type {
-        CredentialType::UsernamePassword => {
-            for field in ["username", "password"] {
-                let value = object
-                    .get(field)
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or_else(|| {
-                        SandboxError::Other(format!("credential plaintext missing {field}"))
-                    })?;
-                values.insert(field.to_string(), value.to_string());
-            }
-        }
-        CredentialType::ApiKey => {
-            let value = object
-                .get("api_key")
-                .or_else(|| object.get("key"))
-                .or_else(|| object.get("apiKey"))
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| {
-                    SandboxError::Other("credential plaintext missing api_key".to_string())
-                })?;
-            for field in ["api_key", "key", "apiKey"] {
-                values.insert(field.to_string(), value.to_string());
-            }
-        }
-        CredentialType::SessionCookie => {
-            let value = object
-                .get("cookie")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| {
-                    SandboxError::Other("credential plaintext missing cookie".to_string())
-                })?;
-            values.insert("cookie".to_string(), value.to_string());
-            if let Some(name) = object.get("name").and_then(serde_json::Value::as_str) {
-                values.insert("name".to_string(), name.to_string());
-            }
-        }
-        CredentialType::OAuthRefresh => {
-            let value = object
-                .get("refresh_token")
-                .or_else(|| object.get("refreshToken"))
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| {
-                    SandboxError::Other("credential plaintext missing refresh_token".to_string())
-                })?;
-            values.insert("refresh_token".to_string(), value.to_string());
-        }
-        _ => {}
-    }
-
-    for (key, value) in object {
-        match value {
-            serde_json::Value::String(raw) => {
-                values.entry(key.clone()).or_insert_with(|| raw.clone());
-            }
-            serde_json::Value::Number(number) => {
-                values
-                    .entry(key.clone())
-                    .or_insert_with(|| number.to_string());
-            }
-            serde_json::Value::Bool(boolean) => {
-                values
-                    .entry(key.clone())
-                    .or_insert_with(|| boolean.to_string());
-            }
-            _ => {}
-        }
-    }
-
-    if values.is_empty() {
-        return Err(SandboxError::Other(format!(
-            "sandbox credential delegation found no scalar fields for {}",
-            credential_type.as_str()
-        )));
-    }
-
-    Ok(values)
+    extract_supported_http_credential_fields(credential_type, plaintext_data)
 }
 
 async fn decrypt_vault_entry_in_sandbox(
@@ -3472,6 +3433,9 @@ mod tests {
                     service_id: ServiceId::new("svc-1"),
                     credential_type: crate::models::CredentialType::ApiKey,
                     expires_at: None,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
                 },
                 create_test_payload(),
             )
@@ -3497,6 +3461,9 @@ mod tests {
                     service_id: ServiceId::new("svc-1"),
                     credential_type: crate::models::CredentialType::ApiKey,
                     expires_at: Some(Utc::now().timestamp() as u64 - 3600),
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
                 },
                 create_test_payload(),
             )
@@ -3536,6 +3503,9 @@ mod tests {
                     service_id: ServiceId::new("svc-1"),
                     credential_type: crate::models::CredentialType::ApiKey,
                     expires_at: Some(Utc::now().timestamp() as u64 - 3600),
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
                 },
                 create_test_payload(),
             )
@@ -3675,6 +3645,9 @@ mod tests {
                         ("key".to_string(), "sk_live_123".to_string()),
                         ("apiKey".to_string(), "sk_live_123".to_string()),
                     ]),
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
                 },
             )
             .await;

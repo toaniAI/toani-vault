@@ -49,6 +49,35 @@ impl std::fmt::Display for CredentialType {
     }
 }
 
+/// 交易所 / 自定义 Provider
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialProvider {
+    Okx,
+    Binance,
+    Custom,
+}
+
+impl std::fmt::Display for CredentialProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            CredentialProvider::Okx => "okx",
+            CredentialProvider::Binance => "binance",
+            CredentialProvider::Custom => "custom",
+        };
+        write!(f, "{s}")
+    }
+}
+
+/// 自定义模板函数定义
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CredentialCustomFunction {
+    pub function_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_description: Option<String>,
+    pub function_body: String,
+}
+
 /// Token Scope 权限
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TokenScope {
@@ -239,6 +268,15 @@ pub struct CreateCredentialRequest {
     /// 明文凭证内容（将被加密）
     #[serde(rename = "plaintext_data")]
     pub plaintext_data: HashMap<String, serde_json::Value>,
+    /// Exchange / custom provider for API key credentials
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<CredentialProvider>,
+    /// Absolute-domain allowlist used by sandbox http_request
+    #[serde(rename = "allowed_domains", skip_serializing_if = "Option::is_none")]
+    pub allowed_domains: Option<Vec<String>>,
+    /// Custom TypeScript template helper functions
+    #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
     /// 过期时间（Unix 时间戳，可选）
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
@@ -259,6 +297,15 @@ pub struct CreateCredentialResponse {
     /// 创建时间
     #[serde(rename = "created_at")]
     pub created_at: String,
+    /// Provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<CredentialProvider>,
+    /// Domain allowlist
+    #[serde(rename = "allowed_domains", skip_serializing_if = "Option::is_none")]
+    pub allowed_domains: Option<Vec<String>>,
+    /// Custom functions
+    #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
     /// 过期时间
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
@@ -285,6 +332,15 @@ pub struct CredentialMetadata {
     /// 创建时间
     #[serde(rename = "created_at")]
     pub created_at: String,
+    /// Provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<CredentialProvider>,
+    /// Domain allowlist
+    #[serde(rename = "allowed_domains", skip_serializing_if = "Option::is_none")]
+    pub allowed_domains: Option<Vec<String>>,
+    /// Custom functions
+    #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
     /// 过期时间
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
@@ -317,6 +373,15 @@ pub struct GetCredentialResponse {
     /// 创建时间
     #[serde(rename = "created_at")]
     pub created_at: String,
+    /// Provider
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<CredentialProvider>,
+    /// Domain allowlist
+    #[serde(rename = "allowed_domains", skip_serializing_if = "Option::is_none")]
+    pub allowed_domains: Option<Vec<String>>,
+    /// Custom functions
+    #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
     /// 过期时间
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
@@ -372,6 +437,15 @@ pub struct UpdateCredentialRequest {
     /// 变更原因
     #[serde(rename = "change_reason", skip_serializing_if = "Option::is_none")]
     pub change_reason: Option<String>,
+    /// Provider（显式传 `Some(None)` 可清除）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<Option<CredentialProvider>>,
+    /// HTTP 请求白名单域名
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_domains: Option<Vec<String>>,
+    /// 自定义模板函数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
     /// 期望的版本号
     #[serde(rename = "expected_version", skip_serializing_if = "Option::is_none")]
     pub expected_version: Option<u32>,
@@ -397,6 +471,15 @@ pub struct UpdateCredentialResponse {
     /// 上一版本号
     #[serde(rename = "previous_version")]
     pub previous_version: u32,
+    /// Provider（okx / binance / custom）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<CredentialProvider>,
+    /// HTTP 请求白名单域名
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_domains: Vec<String>,
+    /// 自定义模板函数
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 /// 版本摘要

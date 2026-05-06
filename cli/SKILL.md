@@ -17,7 +17,7 @@ Provide agents with an immediately executable `toani` usage guide, with special 
 1. `toani` is a CLI, not SDK pseudocode.
 2. `sandbox` is a remote TEE browser session provided by the CredBridge backend, not a local browser and not the agent's own runtime node.
 3. Page operations are composed through `toani sandbox create-session`, `toani sandbox bootstrap-page`, and `toani sandbox execute`.
-4. `http_request` is a backend-side direct HTTP operation and does not start the remote browser; it can resolve credential references inside nested headers/body values and supports fixed `prefix` / `suffix` wrappers such as `Bearer `.
+4. `http_request` is a backend-side direct HTTP operation and does not start the remote browser; it can resolve credential references inside nested headers/body values, supports fixed `prefix` / `suffix` wrappers such as `Bearer `, and also supports exchange-style string templates like `${credential.api_key}` and `${functions.okx_sign()}` / `${functions.binance_sign()}`.
 5. Rocket Loader-style pages should run `bootstrap-page` explicitly before `wait` / `fill` / `click`.
 6. If you need page state, inspect the DOM with `execute_script` before any credential-backed `fill`; once a `fill` uses `{"$credential":"..."}`, prefer `get-session`, `get-operation`, `export-dom`, and `get_text` afterward.
 7. Always `terminate` the session when finished; do not leave long-lived active sessions behind.
@@ -178,6 +178,9 @@ Capability boundary:
 - does not return plaintext secrets
 - does not perform decryption
 - still requires the bearer token to include `credential:read`
+- when the backend metadata contains them, `provider`, `allowed_domains`, and `custom_functions`
+  are visible in `list` / `get`
+- the CLI still does not create or update those fields
 - if a request fails, first check token scope, base URL, and target environment
 
 ## Sandbox Command Table
@@ -239,6 +242,7 @@ Combine these as needed by operation type:
 - `milliseconds`
 - `duration_ms`
 - `method`
+- `query`
 - `headers`
 - `body`
 - `selectors`
@@ -253,6 +257,15 @@ When calling `execute --operation-type dom_export`, use the backend field names:
 - `extra_sensitive_selectors`
 - `max_bytes`
 
+For `execute --operation-type http_request`:
+
+- templates may appear in `url`, `query`, `headers`, and `body`
+- whitelist enforcement happens after template rendering against the final URL
+- `allowed_domains` supports exact hosts like `api.binance.com:443` and leading subdomain
+  wildcards like `*.okx.com:443`
+- wildcard entries do not match the apex domain, sibling lookalikes, or nested hostile suffixes
+- entries must not contain a path
+
 ## Quick Self-Check Checklist
 
 Before starting `toani sandbox` automation, verify these points:
@@ -263,6 +276,13 @@ Before starting `toani sandbox` automation, verify these points:
 - Once the current session has executed a `fill` using `{"$credential":"..."}`, do not call `execute_script` again; use `export-dom`, `get_text`, or `get-session` instead
 - Do not attempt to echo plaintext credentials from the CLI, the DOM, or scripts; the CLI returns metadata only and DOM exports are redacted
 - Every session should end with `toani sandbox terminate <sessionId>`
+
+For exchange REST calls, also verify these points:
+
+- the session is bound to the intended `credential_id`
+- the credential metadata already carries the correct `provider`
+- the credential metadata `allowed_domains` matches the final exchange host and port
+- any `custom_functions` used in templates return strings only
 
 ## Standard Call Sequence
 
@@ -320,6 +340,46 @@ Notes:
 - To confirm whether it worked, inspect the returned `"sensitive": true|false`
 - `"sensitive": true` means credential binding was applied
 - `"sensitive": false` usually means you passed a plain string instead of a credential object
+
+### Exchange `http_request` templates
+
+Use these minimal patterns for exchange REST calls:
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://www.okx.com/api/v5/account/balance",
+    "headers":{
+      "OK-ACCESS-KEY":"${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP":"${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE":"${credential.passphrase}",
+      "OK-ACCESS-SIGN":"${functions.okx_sign()}"
+    }
+  }'
+
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://api.binance.com/api/v3/account",
+    "query":{
+      "recvWindow":"${functions.recv_window()}",
+      "timestamp":"${functions.binance_timestamp()}",
+      "signature":"${functions.binance_sign()}"
+    },
+    "headers":{
+      "X-MBX-APIKEY":"${credential.api_key}"
+    }
+  }'
+```
+
+Custom function constraints:
+
+- `function_body` must `export default` a function that returns a string
+- runtime input includes `credential`, `provider`, `method`, `url`, `query`, `headers`, and `body`
+- `fetch`, `XMLHttpRequest`, `WebSocket`, and `process.env` are blocked
 
 ### Controlled Injection Semantics of `bootstrap-page`
 
@@ -558,6 +618,38 @@ toani sandbox execute <sessionId> \
       "messages":[{"role":"user","content":"ping"}]
     },
     "timeout_ms":10000
+  }'
+```
+
+### Example 14b: OKX private REST request with built-in template functions
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://www.okx.com/api/v5/account/balance",
+    "headers":{
+      "OK-ACCESS-KEY":"${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP":"${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE":"${credential.passphrase}",
+      "OK-ACCESS-SIGN":"${functions.okx_sign()}",
+      "Content-Type":"application/json"
+    }
+  }'
+```
+
+### Example 14c: Binance SIGNED REST request with built-in template functions
+
+```bash
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://api.binance.com/api/v3/account?timestamp=${functions.binance_timestamp()}&signature=${functions.binance_sign()}",
+    "headers":{
+      "X-MBX-APIKEY":"${credential.api_key}"
+    }
   }'
 ```
 

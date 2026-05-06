@@ -361,6 +361,52 @@ describe("SandboxService", () => {
       );
     });
 
+    it("应该透传 http_request 模板字符串", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        operationId: "op-http-template",
+        status: OperationStatus.Success,
+        result: null,
+        executionTimeMs: 105,
+      });
+
+      await service.executeOperation("session-123", {
+        operationType: OperationType.HttpRequest,
+        method: "GET",
+        url: "https://www.okx.com/api/v5/account/balance",
+        headers: {
+          "OK-ACCESS-KEY": "${credential.api_key}",
+          "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+          "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+          "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+        },
+        body: {
+          timestamp: "${functions.binance_timestamp()}",
+          signature: "${functions.binance_sign()}",
+        },
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/sandbox/sessions/session-123/execute",
+        expect.objectContaining({
+          parameters: expect.objectContaining({
+            method: "GET",
+            url: "https://www.okx.com/api/v5/account/balance",
+            headers: {
+              "OK-ACCESS-KEY": "${credential.api_key}",
+              "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+              "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+              "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+            },
+            body: {
+              timestamp: "${functions.binance_timestamp()}",
+              signature: "${functions.binance_sign()}",
+            },
+          }),
+        }),
+        undefined,
+      );
+    });
+
     it("应该传递纯字符串脚本绑定", async () => {
       vi.spyOn(client, "post").mockResolvedValue({
         operationId: "op-script",

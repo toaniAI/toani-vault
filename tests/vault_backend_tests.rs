@@ -8,6 +8,7 @@
 
 #[cfg(test)]
 mod vault_client_tests {
+    use vault_service::models::CredentialCustomFunction;
     use vault_service::vault::client::{VaultClientError, VaultConfig, VaultCredentialData};
 
     fn create_test_config() -> VaultConfig {
@@ -66,7 +67,7 @@ mod vault_client_tests {
 
     #[test]
     fn test_vault_credential_data_creation() {
-        let data = VaultCredentialData::new(
+        let mut data = VaultCredentialData::new(
             "cred_123".to_string(),
             "tenant_456".to_string(),
             "user_hash_xyz".to_string(),
@@ -81,6 +82,13 @@ mod vault_client_tests {
             "base64_nonce".to_string(),
             "base64_auth_tag".to_string(),
         );
+        data.provider = Some("okx".to_string());
+        data.allowed_domains = vec!["www.okx.com:443".to_string()];
+        data.custom_functions = vec![CredentialCustomFunction {
+            function_name: "normalize_symbol".to_string(),
+            function_description: None,
+            function_body: "export default function func() { return \"BTC-USDT\"; }".to_string(),
+        }];
 
         assert_eq!(data.credential_id, "cred_123");
         assert_eq!(data.tenant_id, "tenant_456");
@@ -90,12 +98,15 @@ mod vault_client_tests {
         assert_eq!(data.version, 2);
         assert_eq!(data.algorithm, "AES-256-GCM");
         assert_eq!(data.kdf, "HKDF-SHA-256");
+        assert_eq!(data.provider, Some("okx".to_string()));
+        assert_eq!(data.allowed_domains, vec!["www.okx.com:443".to_string()]);
+        assert_eq!(data.custom_functions.len(), 1);
         assert!(!data.is_deleted);
     }
 
     #[test]
     fn test_vault_credential_data_serialization() {
-        let data = VaultCredentialData::new(
+        let mut data = VaultCredentialData::new(
             "cred_123".to_string(),
             "tenant_456".to_string(),
             "user_hash".to_string(),
@@ -110,6 +121,13 @@ mod vault_client_tests {
             "base64_nonce".to_string(),
             "base64_auth_tag".to_string(),
         );
+        data.provider = Some("binance".to_string());
+        data.allowed_domains = vec!["api.binance.com:443".to_string()];
+        data.custom_functions = vec![CredentialCustomFunction {
+            function_name: "normalize_symbol".to_string(),
+            function_description: Some("binance formatter".to_string()),
+            function_body: "export default function func() { return \"BTCUSDT\"; }".to_string(),
+        }];
 
         // 序列化
         let json = data.to_json().expect("Failed to serialize");
@@ -125,6 +143,12 @@ mod vault_client_tests {
         assert_eq!(parsed.credential_id, data.credential_id);
         assert_eq!(parsed.tenant_id, data.tenant_id);
         assert_eq!(parsed.encrypted_payload, data.encrypted_payload);
+        assert_eq!(parsed.provider, Some("binance".to_string()));
+        assert_eq!(
+            parsed.allowed_domains,
+            vec!["api.binance.com:443".to_string()]
+        );
+        assert_eq!(parsed.custom_functions.len(), 1);
     }
 }
 

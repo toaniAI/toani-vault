@@ -13,6 +13,7 @@
 7. [多租户管理](#7-多租户管理)
 8. [自动刷新 Token](#8-自动刷新-token)
 9. [凭证轮换](#9-凭证轮换)
+10. [交易所模板请求](#10-交易所模板请求)
 
 ---
 
@@ -115,6 +116,127 @@ impl CredentialCreator {
         Ok(credential.credential_id)
     }
 }
+```
+
+---
+
+## 10. 交易所模板请求
+
+### 10.1 创建带 Provider 配置的凭证
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::{
+    CreateCredentialRequest, CredentialCustomFunction, CredentialProvider, CredentialType,
+};
+
+let mut plaintext_data = HashMap::new();
+plaintext_data.insert("api_key".to_string(), json!("okx-api-key"));
+plaintext_data.insert("secret_key".to_string(), json!("okx-secret-key"));
+plaintext_data.insert("passphrase".to_string(), json!("okx-passphrase"));
+
+let credential = sdk.credentials()
+    .create_with_request(
+        CreateCredentialRequest {
+            service_id: "okx-trading".to_string(),
+            credential_type: CredentialType::ApiKey,
+            plaintext_data,
+            expires_at: None,
+            provider: Some(CredentialProvider::Okx),
+            allowed_domains: vec![
+                "www.okx.com:443".to_string(),
+                "*.okx.com:443".to_string(),
+            ],
+            custom_functions: vec![CredentialCustomFunction {
+                function_name: "normalize_symbol".to_string(),
+                function_description: Some("Formats symbols for upstream templates".to_string()),
+                function_body: "export default function func(input) { return String(input).toUpperCase(); }".to_string(),
+            }],
+        },
+        None,
+    )
+    .await?;
+```
+
+### 10.2 OKX 查询余额
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::{
+    CreateSandboxSessionRequest, ExecuteSandboxOperationRequest, SandboxOperationType,
+};
+
+let session = sdk.sandbox().create_session(
+    CreateSandboxSessionRequest {
+        credential_id: credential.credential_id.clone(),
+        original_intent: "Query OKX account balance".to_string(),
+        metadata: None,
+    },
+    None,
+).await?;
+
+let request = ExecuteSandboxOperationRequest {
+    operation_type: SandboxOperationType::HttpRequest,
+    description: "GET OKX account balance".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://www.okx.com/api/v5/account/balance"),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "OK-ACCESS-KEY": "${credential.api_key}",
+                "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+                "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+                "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+            }),
+        ),
+    ]),
+};
+
+let response = sdk.sandbox()
+    .execute(&session.data.session_id, request, None)
+    .await?;
+
+println!("OKX response: {:?}", response.data.data);
+```
+
+### 10.3 Binance 查询账户
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::{ExecuteSandboxOperationRequest, SandboxOperationType};
+
+let request = ExecuteSandboxOperationRequest {
+    operation_type: SandboxOperationType::HttpRequest,
+    description: "GET Binance account information".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://api.binance.com/api/v3/account"),
+        ),
+        (
+            "query".to_string(),
+            json!({
+                "timestamp": "${functions.binance_timestamp()}",
+                "recvWindow": "5000",
+                "signature": "${functions.binance_sign()}",
+            }),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "X-MBX-APIKEY": "${credential.api_key}",
+            }),
+        ),
+    ]),
+};
 ```
 
 ### 1.2 凭证生命周期管理

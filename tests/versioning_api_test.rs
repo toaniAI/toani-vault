@@ -356,6 +356,7 @@ async fn test_rollback_missing_target_version_returns_404_not_found() {
             &vault_service::vault::models::UserId::new("user_18187"),
             create_test_payload(2),
             Some("prepare version history".to_string()),
+            None,
         )
         .expect("should create historical version");
 

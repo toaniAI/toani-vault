@@ -125,14 +125,14 @@ pub use types::{
     CreateCredentialRequest, CreateCredentialResponse, CreateSandboxSessionRequest,
     CreateSandboxSessionResponse, CreateServiceAccountRequest, CreateServiceAccountTokenRequest,
     CreateServiceAccountTokenResponse, CreateTokenResponse, CredBridgeConfig, CredBridgeError,
-    CredBridgeErrorCode, CredentialFilter, CredentialMetadata, CredentialType,
-    DecryptCredentialRequest, DecryptCredentialResponse, DeleteCredentialResponse,
-    ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse, GetCredentialResponse,
-    ListCredentialsResponse, ListTokensResponse, RequestOptions, Result,
+    CredBridgeErrorCode, CredentialCustomFunction, CredentialFilter, CredentialMetadata,
+    CredentialProvider, CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
+    DeleteCredentialResponse, ExecuteSandboxOperationRequest, ExecuteSandboxOperationResponse,
+    GetCredentialResponse, ListCredentialsResponse, ListTokensResponse, RequestOptions, Result,
     RollbackCredentialResponse, SandboxOperationDetail, SandboxSessionActionResponse,
     SandboxSessionDetail, SandboxSessionsResponse, SandboxStatsResponse, ServiceAccountInfo,
-    TokenInfo, TokenRefreshResult, TokenScope, TokenStatsResponse, UpdateCredentialResponse,
-    UpdateServiceAccountRequest, VersionDetail, VersionHistory,
+    TokenInfo, TokenRefreshResult, TokenScope, TokenStatsResponse, UpdateCredentialRequest,
+    UpdateCredentialResponse, UpdateServiceAccountRequest, VersionDetail, VersionHistory,
 };
 
 /// SDK 版本

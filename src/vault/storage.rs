@@ -7,7 +7,7 @@
 
 use super::models::*;
 use super::version::CredentialVersion;
-use crate::models::CredentialMetadata;
+use crate::models::{CredentialCustomFunction, CredentialMetadata, CredentialProvider};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -73,6 +73,13 @@ type TenantUserIndex = HashMap<String, HashMap<String, Vec<String>>>;
 /// 版本历史存储类型
 /// credential_id -> version -> CredentialVersion
 type VersionHistoryStore = HashMap<String, HashMap<u32, CredentialVersion>>;
+
+#[derive(Debug, Clone, Default)]
+pub struct CredentialConfigUpdate {
+    pub provider: Option<Option<CredentialProvider>>,
+    pub allowed_domains: Option<Vec<String>>,
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+}
 
 /// 内存存储实现（用于测试和开发）
 ///
@@ -451,13 +458,18 @@ impl CredentialVault {
         // 验证加密载荷格式
         encrypted_payload.validate()?;
 
-        let entry = VaultEntry::new(
+        let entry = VaultEntry::new_with_config(
             request.tenant_id,
             request.user_id,
             request.service_id,
             request.credential_type,
             encrypted_payload,
             request.expires_at,
+            CredentialTransportConfig {
+                provider: request.provider,
+                allowed_domains: request.allowed_domains,
+                custom_functions: request.custom_functions,
+            },
         );
 
         self.backend.store(&entry)?;
@@ -486,7 +498,7 @@ impl CredentialVault {
         // 验证加密载荷格式
         encrypted_payload.validate()?;
 
-        let entry = VaultEntry::with_credential_id(
+        let entry = VaultEntry::with_credential_id_and_config(
             credential_id,
             request.tenant_id,
             request.user_id,
@@ -494,6 +506,11 @@ impl CredentialVault {
             request.credential_type,
             encrypted_payload,
             request.expires_at,
+            CredentialTransportConfig {
+                provider: request.provider,
+                allowed_domains: request.allowed_domains,
+                custom_functions: request.custom_functions,
+            },
         );
 
         self.backend.store(&entry)?;
@@ -657,6 +674,7 @@ impl CredentialVault {
         user_id: &UserId,
         encrypted_payload: Option<EncryptedPayload>,
         expires_at: Option<Option<u64>>,
+        config_update: Option<CredentialConfigUpdate>,
     ) -> Result<VaultEntry, VaultError> {
         // 先获取现有条目验证权限
         let mut entry = self
@@ -676,6 +694,18 @@ impl CredentialVault {
         // 更新过期时间（如果提供）
         if let Some(exp) = expires_at {
             entry.expires_at = exp;
+        }
+
+        if let Some(config_update) = config_update {
+            if let Some(provider) = config_update.provider {
+                entry.provider = provider;
+            }
+            if let Some(allowed_domains) = config_update.allowed_domains {
+                entry.allowed_domains = allowed_domains;
+            }
+            if let Some(custom_functions) = config_update.custom_functions {
+                entry.custom_functions = custom_functions;
+            }
         }
 
         // 更新时间戳
@@ -705,6 +735,7 @@ impl CredentialVault {
         user_id: &UserId,
         encrypted_payload: EncryptedPayload,
         change_reason: Option<String>,
+        config_update: Option<CredentialConfigUpdate>,
     ) -> Result<UpdateResult, VaultError> {
         use super::version::CredentialVersion;
 
@@ -724,6 +755,11 @@ impl CredentialVault {
             credential_id.as_str().to_string(),
             entry.version,
             entry.encrypted_payload.clone(),
+            CredentialTransportConfig {
+                provider: entry.provider,
+                allowed_domains: entry.allowed_domains.clone(),
+                custom_functions: entry.custom_functions.clone(),
+            },
             change_reason.clone(),
             Some(user_id.hash().to_string()),
         );
@@ -732,6 +768,18 @@ impl CredentialVault {
         // 更新凭证内容
         encrypted_payload.validate()?;
         entry.encrypted_payload = encrypted_payload;
+
+        if let Some(config_update) = config_update {
+            if let Some(provider) = config_update.provider {
+                entry.provider = provider;
+            }
+            if let Some(allowed_domains) = config_update.allowed_domains {
+                entry.allowed_domains = allowed_domains;
+            }
+            if let Some(custom_functions) = config_update.custom_functions {
+                entry.custom_functions = custom_functions;
+            }
+        }
 
         // 增加版本号
         entry.increment_version();
@@ -808,6 +856,11 @@ impl CredentialVault {
             credential_id.as_str().to_string(),
             entry.version,
             entry.encrypted_payload.clone(),
+            CredentialTransportConfig {
+                provider: entry.provider,
+                allowed_domains: entry.allowed_domains.clone(),
+                custom_functions: entry.custom_functions.clone(),
+            },
             Some(format!("rollback: {reason}")),
             Some(user_id.hash().to_string()),
         );
@@ -816,6 +869,9 @@ impl CredentialVault {
 
         // 复制目标版本的加密载荷到当前凭证
         entry.encrypted_payload = target_record.encrypted_payload;
+        entry.provider = target_record.provider;
+        entry.allowed_domains = target_record.allowed_domains;
+        entry.custom_functions = target_record.custom_functions;
 
         // 增加版本号（回滚后创建新版本）
         entry.increment_version();
@@ -886,6 +942,9 @@ pub fn create_credential(
         service_id: ServiceId::new(service_id),
         credential_type,
         expires_at,
+        provider: None,
+        allowed_domains: Vec::new(),
+        custom_functions: Vec::new(),
     };
 
     vault.create_credential(request, encrypted_payload)
@@ -1104,6 +1163,9 @@ mod tests {
             service_id: ServiceId::new("schwab"),
             credential_type: CredentialType::UsernamePassword,
             expires_at: None,
+            provider: None,
+            allowed_domains: Vec::new(),
+            custom_functions: Vec::new(),
         };
 
         let entry = vault
@@ -1338,6 +1400,7 @@ mod tests {
                     vec![9, 8, 7, 6],
                 ),
                 Some("version bump".to_string()),
+                None,
             )
             .expect("version update should succeed");
 
@@ -1354,5 +1417,83 @@ mod tests {
             Err(other) => panic!("expected VersionNotFound, got: {other}"),
             Ok(_) => panic!("expected error for missing target version"),
         }
+    }
+
+    #[test]
+    fn rollback_restores_transport_configuration_snapshot() {
+        let vault = CredentialVault::new_in_memory();
+        let tenant_id = TenantId::new("tenant_transport");
+        let user_id = UserId::new("user_transport");
+        let request = CreateCredentialRequest {
+            tenant_id: tenant_id.clone(),
+            user_id: user_id.clone(),
+            service_id: ServiceId::new("okx-service"),
+            credential_type: CredentialType::ApiKey,
+            expires_at: None,
+            provider: Some(CredentialProvider::Okx),
+            allowed_domains: vec!["www.okx.com:443".to_string()],
+            custom_functions: vec![CredentialCustomFunction {
+                function_name: "normalize_symbol".to_string(),
+                function_description: None,
+                function_body: "export default function func() { return \"BTC-USDT\"; }"
+                    .to_string(),
+            }],
+        };
+        let created = vault
+            .create_credential(request, create_test_payload())
+            .expect("credential should be created");
+
+        vault
+            .update_credential_with_version(
+                &created.credential_id,
+                &tenant_id,
+                &user_id,
+                EncryptedPayload::new(
+                    constants::PROTOCOL_VERSION,
+                    constants::ALGORITHM_AES_256_GCM,
+                    constants::KDF_HKDF_SHA256,
+                    vec![3u8; constants::NONCE_LENGTH],
+                    vec![4u8; constants::AUTH_TAG_LENGTH],
+                    vec![5, 6, 7, 8],
+                ),
+                Some("switch provider".to_string()),
+                Some(CredentialConfigUpdate {
+                    provider: Some(Some(CredentialProvider::Binance)),
+                    allowed_domains: Some(vec!["api.binance.com:443".to_string()]),
+                    custom_functions: Some(vec![CredentialCustomFunction {
+                        function_name: "normalize_symbol".to_string(),
+                        function_description: Some("binance formatter".to_string()),
+                        function_body: "export default function func() { return \"BTCUSDT\"; }"
+                            .to_string(),
+                    }]),
+                }),
+            )
+            .expect("version update should succeed");
+
+        vault
+            .rollback_credential(
+                &created.credential_id,
+                &tenant_id,
+                &user_id,
+                1,
+                "restore original transport config",
+            )
+            .expect("rollback should succeed");
+
+        let restored = vault
+            .get_credential(&created.credential_id, &tenant_id, &user_id)
+            .expect("credential fetch should succeed")
+            .expect("credential should still exist");
+
+        assert_eq!(restored.provider, Some(CredentialProvider::Okx));
+        assert_eq!(
+            restored.allowed_domains,
+            vec!["www.okx.com:443".to_string()]
+        );
+        assert_eq!(restored.custom_functions.len(), 1);
+        assert_eq!(
+            restored.custom_functions[0].function_body,
+            "export default function func() { return \"BTC-USDT\"; }"
+        );
     }
 }

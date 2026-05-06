@@ -60,6 +60,9 @@ export class CredentialsService {
         service_id: request.serviceId,
         credential_type: request.credentialType,
         plaintext_data: request.plaintextData,
+        provider: request.provider,
+        allowed_domains: request.allowedDomains,
+        custom_functions: request.customFunctions,
         expires_at: request.expiresAt,
       },
       options,
@@ -109,7 +112,7 @@ export class CredentialsService {
    *
    * @param serviceId - 服务 ID
    * @param apiKey - API Key
-   * @param apiSecret - API Secret（可选）
+   * @param secretKey - API Secret / Secret Key（可选）
    * @param options - 可选参数
    * @returns 创建的凭证信息
    *
@@ -126,15 +129,23 @@ export class CredentialsService {
   public async createApiKey(
     serviceId: string,
     apiKey: string,
-    apiSecret?: string,
+    secretKey?: string,
     options?: {
       expiresAt?: number;
+      provider?: "okx" | "binance" | "custom";
+      allowedDomains?: string[];
+      customFunctions?: CreateCredentialRequest["customFunctions"];
+      passphrase?: string;
       requestOptions?: RequestOptions;
     },
   ): Promise<CreateCredentialResponse> {
     const plaintextData: Record<string, string> = { api_key: apiKey };
-    if (apiSecret) {
-      plaintextData.api_secret = apiSecret;
+    if (secretKey) {
+      plaintextData.secret_key = secretKey;
+      plaintextData.api_secret = secretKey;
+    }
+    if (options?.passphrase) {
+      plaintextData.passphrase = options.passphrase;
     }
 
     return this.create(
@@ -142,6 +153,9 @@ export class CredentialsService {
         serviceId,
         credentialType: CredentialType.ApiKey,
         plaintextData,
+        provider: options?.provider,
+        allowedDomains: options?.allowedDomains,
+        customFunctions: options?.customFunctions,
         expiresAt: options?.expiresAt,
       },
       options?.requestOptions,

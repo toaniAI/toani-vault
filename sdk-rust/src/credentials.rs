@@ -5,10 +5,11 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        CreateCredentialRequest, CreateCredentialResponse, CredentialFilter, CredentialMetadata,
-        CredentialType, DecryptCredentialRequest, DecryptCredentialResponse,
-        DeleteCredentialResponse, GetCredentialResponse, ListCredentialsResponse, RequestOptions,
-        Result, RollbackCredentialRequest, RollbackCredentialResponse, UpdateCredentialRequest,
+        CreateCredentialRequest, CreateCredentialResponse, CredentialCustomFunction,
+        CredentialFilter, CredentialMetadata, CredentialProvider, CredentialType,
+        DecryptCredentialRequest, DecryptCredentialResponse, DeleteCredentialResponse,
+        GetCredentialResponse, ListCredentialsResponse, RequestOptions, Result,
+        RollbackCredentialRequest, RollbackCredentialResponse, UpdateCredentialRequest,
         UpdateCredentialResponse, VersionDetail, VersionHistory,
     },
 };
@@ -60,21 +61,11 @@ impl CredentialsService {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn create(
+    pub async fn create_with_request(
         &self,
-        service_id: impl Into<String>,
-        credential_type: CredentialType,
-        plaintext_data: HashMap<String, Value>,
-        expires_at: Option<i64>,
+        request: CreateCredentialRequest,
         options: Option<RequestOptions>,
     ) -> Result<CreateCredentialResponse> {
-        let request = CreateCredentialRequest {
-            service_id: service_id.into(),
-            credential_type,
-            plaintext_data,
-            expires_at,
-        };
-
         debug!(
             service_id = %request.service_id,
             credential_type = %request.credential_type,
@@ -92,6 +83,26 @@ impl CredentialsService {
         );
 
         Ok(response)
+    }
+
+    pub async fn create(
+        &self,
+        service_id: impl Into<String>,
+        credential_type: CredentialType,
+        plaintext_data: HashMap<String, Value>,
+        expires_at: Option<i64>,
+        options: Option<RequestOptions>,
+    ) -> Result<CreateCredentialResponse> {
+        let request = CreateCredentialRequest {
+            service_id: service_id.into(),
+            credential_type,
+            plaintext_data,
+            expires_at,
+            provider: None,
+            allowed_domains: None,
+            custom_functions: None,
+        };
+        self.create_with_request(request, options).await
     }
 
     /// 创建用户名密码凭证（快捷方法）
@@ -177,7 +188,9 @@ impl CredentialsService {
         let mut plaintext_data = HashMap::new();
         plaintext_data.insert("api_key".to_string(), Value::String(api_key.into()));
         if let Some(secret) = api_secret {
-            plaintext_data.insert("api_secret".to_string(), Value::String(secret.into()));
+            let secret = secret.into();
+            plaintext_data.insert("secret_key".to_string(), Value::String(secret.clone()));
+            plaintext_data.insert("api_secret".to_string(), Value::String(secret));
         }
 
         self.create(
@@ -188,6 +201,35 @@ impl CredentialsService {
             options,
         )
         .await
+    }
+
+    /// 创建交易所 / 自定义 API Key 凭证（支持 provider、allowed_domains、custom_functions）
+    pub async fn create_exchange_api_key(
+        &self,
+        service_id: impl Into<String>,
+        api_key: impl Into<String>,
+        secret_key: impl Into<String>,
+        provider: CredentialProvider,
+        options: ExchangeApiKeyOptions,
+    ) -> Result<CreateCredentialResponse> {
+        let mut plaintext_data = HashMap::new();
+        plaintext_data.insert("api_key".to_string(), Value::String(api_key.into()));
+        plaintext_data.insert("secret_key".to_string(), Value::String(secret_key.into()));
+        if let Some(passphrase) = options.passphrase {
+            plaintext_data.insert("passphrase".to_string(), Value::String(passphrase));
+        }
+
+        let request = CreateCredentialRequest {
+            service_id: service_id.into(),
+            credential_type: CredentialType::ApiKey,
+            plaintext_data,
+            expires_at: options.expires_at,
+            provider: Some(provider),
+            allowed_domains: options.allowed_domains,
+            custom_functions: options.custom_functions,
+        };
+        self.create_with_request(request, options.request_options)
+            .await
     }
 
     /// 创建 OAuth 刷新令牌凭证（快捷方法）
@@ -433,6 +475,17 @@ impl CredentialsService {
     }
 
     /// 更新凭证并创建新版本
+    pub async fn update_with_request(
+        &self,
+        credential_id: impl AsRef<str>,
+        request: UpdateCredentialRequest,
+        options: Option<RequestOptions>,
+    ) -> Result<UpdateCredentialResponse> {
+        let path = format!("/credentials/{}", credential_id.as_ref());
+        self.client.put_with_options(&path, request, options).await
+    }
+
+    /// 更新凭证并创建新版本
     pub async fn update(
         &self,
         credential_id: impl AsRef<str>,
@@ -441,14 +494,16 @@ impl CredentialsService {
         expected_version: Option<u32>,
         options: Option<RequestOptions>,
     ) -> Result<UpdateCredentialResponse> {
-        let path = format!("/credentials/{}", credential_id.as_ref());
         let request = UpdateCredentialRequest {
             plaintext_data,
             change_reason,
+            provider: None,
+            allowed_domains: None,
+            custom_functions: None,
             expected_version,
         };
-
-        self.client.put_with_options(&path, request, options).await
+        self.update_with_request(credential_id, request, options)
+            .await
     }
 
     /// 查询版本历史
@@ -589,6 +644,15 @@ impl CredentialsService {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExchangeApiKeyOptions {
+    pub expires_at: Option<i64>,
+    pub passphrase: Option<String>,
+    pub allowed_domains: Option<Vec<String>>,
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+    pub request_options: Option<RequestOptions>,
 }
 
 #[cfg(test)]

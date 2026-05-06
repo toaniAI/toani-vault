@@ -7,6 +7,7 @@
 - [健康检查 API](#健康检查-api)
 - [认证](#认证)
 - [凭证管理 API](#凭证管理-api)
+- [Sandbox API](#sandbox-api)
 - [审计日志 API](#审计日志-api)
 - [错误处理](#错误处理)
 
@@ -145,6 +146,7 @@ Authorization: Bearer <paseto_v4_local_token>
 | `credential:read`    | 读取凭证元数据   |
 | `credential:decrypt` | 解密凭证获取明文 |
 | `credential:write`   | 创建/更新凭证    |
+| `sandbox:execute`    | 执行沙箱操作     |
 | `audit:read`         | 读取审计日志     |
 | `admin`              | 所有管理权限     |
 
@@ -164,27 +166,66 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ```json
 {
-  "service_id": "schwab",
-  "credential_type": "username_password",
+  "service_id": "okx_trading",
+  "credential_type": "api_key",
   "plaintext_data": {
-    "username": "user@example.com",
-    "password": "secret_password"
+    "api_key": "okx_api_key",
+    "secret_key": "okx_secret_key",
+    "passphrase": "okx_passphrase"
   },
-  "expires_at": 1893456000
+  "expires_at": 1893456000,
+  "provider": "okx",
+  "allowed_domains": ["www.okx.com:443", "*.okx.com:443"],
+  "custom_functions": [
+    {
+      "function_name": "recv_window",
+      "function_description": "Return a fixed recvWindow for exchange requests",
+      "function_body": "export default function main() { return \"5000\"; }"
+    }
+  ]
 }
 ```
+
+**请求字段说明**:
+
+| 字段               | 类型   | 必填 | 说明 |
+| ------------------ | ------ | ---- | ---- |
+| `service_id`       | string | 是   | 业务侧服务标识 |
+| `credential_type`  | string | 是   | 凭证类型。交易所 REST 模板常用 `api_key` |
+| `plaintext_data`   | object | 是   | 加密存储的敏感字段。OKX 常见字段为 `api_key`、`secret_key`、`passphrase`；Binance 常见字段为 `api_key`、`secret_key` |
+| `expires_at`       | u64    | 否   | 必须是未来时间的 Unix 秒时间戳 |
+| `provider`         | string | 否   | 仅支持 `okx`、`binance`、`custom` |
+| `allowed_domains`  | array  | 否   | `http_request` 最终 URL 的域名白名单；空数组表示不额外限制 |
+| `custom_functions` | array  | 否   | 模板函数列表。每项包含 `function_name`、可选 `function_description`、必填 `function_body` |
 
 **响应 (201 Created)**:
 
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "service_id": "schwab",
-  "credential_type": "username_password",
+  "service_id": "okx_trading",
+  "credential_type": "api_key",
   "created_at": "1709990400",
-  "expires_at": "1893456000"
+  "expires_at": "1893456000",
+  "provider": "okx",
+  "allowed_domains": ["www.okx.com:443", "*.okx.com:443"],
+  "custom_functions": [
+    {
+      "function_name": "recv_window",
+      "function_description": "Return a fixed recvWindow for exchange requests",
+      "function_body": "export default function main() { return \"5000\"; }"
+    }
+  ]
 }
 ```
+
+**白名单规则**:
+
+- 校验发生在模板渲染完成之后，按最终 URL 的 `host:port` 判断。
+- `allowed_domains` 条目可带或不带 scheme；未显式写端口时默认按 `443` 处理。
+- 仅支持前导子域通配，例如 `*.okx.com:443`。
+- `*.okx.com:443` 允许 `www.okx.com:443`，但不允许 `okx.com:443`、`evil-okx.com:443`、`www.okx.com.evil.com:443`。
+- 条目不能包含 path，例如 `https://www.okx.com/path` 会被拒绝。
 
 ---
 
@@ -212,13 +253,24 @@ Authorization: Bearer <paseto_v4_local_token>
   "credentials": [
     {
       "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-      "credential_type": "username_password",
+      "credential_type": "api_key",
       "user_id_hash": "aBcDeFg...",
-      "service_id": "schwab",
+      "service_id": "okx_trading",
       "tenant_id": "tenant_123",
       "created_at": "1709990400Z",
       "expires_at": "1893456000Z",
-      "is_deleted": false
+      "is_deleted": false,
+      "version": 1,
+      "status": "active",
+      "provider": "okx",
+      "allowed_domains": ["www.okx.com:443", "*.okx.com:443"],
+      "custom_functions": [
+        {
+          "function_name": "recv_window",
+          "function_description": "Return a fixed recvWindow for exchange requests",
+          "function_body": "export default function main() { return \"5000\"; }"
+        }
+      ]
     }
   ],
   "total": 1
@@ -246,22 +298,21 @@ Authorization: Bearer <paseto_v4_local_token>
 ```json
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "credential_type": "username_password",
-  "user_id_hash": "aBcDeFg...",
-  "service_id": "schwab",
-  "tenant_id": "tenant_123",
+  "service_id": "okx_trading",
+  "credential_type": "api_key",
   "created_at": "1709990400Z",
-  "updated_at": "1709990400Z",
   "expires_at": "1893456000Z",
   "is_deleted": false,
-  "encrypted_payload": {
-    "version": 2,
-    "algorithm": "AES-256-GCM",
-    "kdf": "HKDF-SHA-256",
-    "nonce": "base64_encoded_nonce",
-    "auth_tag": "base64_encoded_auth_tag",
-    "ciphertext": "base64_encoded_ciphertext"
-  }
+  "status": "active",
+  "provider": "okx",
+  "allowed_domains": ["www.okx.com:443", "*.okx.com:443"],
+  "custom_functions": [
+    {
+      "function_name": "recv_window",
+      "function_description": "Return a fixed recvWindow for exchange requests",
+      "function_body": "export default function main() { return \"5000\"; }"
+    }
+  ]
 }
 ```
 
@@ -269,7 +320,7 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ### 解密凭证
 
-解密指定凭证并返回明文数据。
+直接解密接口当前被禁用。请改为创建绑定凭证的 sandbox session，再通过受控 `fill` 或 `http_request` 在 TEE 内消费密钥。
 
 **Endpoint**: `POST /api/v1/credentials/:id/decrypt`
 
@@ -289,17 +340,12 @@ Authorization: Bearer <paseto_v4_local_token>
 }
 ```
 
-**响应 (200 OK)**:
+**响应 (403 Forbidden)**:
 
 ```json
 {
-  "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
-  "service_id": "schwab",
-  "credential_type": "username_password",
-  "plaintext_data": {
-    "username": "user@example.com",
-    "password": "secret_password"
-  }
+  "error": "forbidden",
+  "message": "Direct credential decryption is disabled; use sandbox execution instead"
 }
 ```
 
@@ -327,6 +373,93 @@ Authorization: Bearer <paseto_v4_local_token>
   "deleted": true
 }
 ```
+
+---
+
+## Sandbox API
+
+### 执行沙箱操作
+
+对已创建的 sandbox session 执行操作。交易所 REST API 调用使用 `operation_type=http_request`。
+
+**Endpoint**: `POST /api/v1/sandbox/sessions/:id/execute`
+
+**Scope**: `sandbox:execute`
+
+**路径参数**:
+
+| 参数 | 类型   | 说明 |
+| ---- | ------ | ---- |
+| `id` | string | sandbox 会话 ID |
+
+**请求体通用结构**:
+
+```json
+{
+  "operation_type": "http_request",
+  "description": "Fetch exchange data with credential-backed templates",
+  "parameters": {
+    "method": "GET",
+    "url": "https://www.okx.com/api/v5/account/balance",
+    "headers": {
+      "OK-ACCESS-KEY": "${credential.api_key}"
+    }
+  }
+}
+```
+
+**模板能力**:
+
+- `http_request` 支持在 `url`、`query`、`headers`、`body` 中渲染 `${credential.xxx}`。
+- 内置函数包括 `${functions.okx_timestamp()}`、`${functions.okx_sign()}`、`${functions.binance_timestamp()}`、`${functions.binance_sign()}`。
+- 自定义函数通过凭证上的 `custom_functions` 提供，必须返回字符串。
+- 模板渲染完成后才执行 `allowed_domains` 校验。
+
+**OKX 示例**:
+
+```json
+{
+  "operation_type": "http_request",
+  "description": "OKX balance request",
+  "parameters": {
+    "method": "GET",
+    "url": "https://www.okx.com/api/v5/account/balance",
+    "headers": {
+      "OK-ACCESS-KEY": "${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+      "OK-ACCESS-SIGN": "${functions.okx_sign()}"
+    }
+  }
+}
+```
+
+**Binance 示例**:
+
+```json
+{
+  "operation_type": "http_request",
+  "description": "Binance signed account request",
+  "parameters": {
+    "method": "GET",
+    "url": "https://api.binance.com/api/v3/account",
+    "query": {
+      "recvWindow": "${functions.recv_window()}",
+      "timestamp": "${functions.binance_timestamp()}",
+      "signature": "${functions.binance_sign()}"
+    },
+    "headers": {
+      "X-MBX-APIKEY": "${credential.api_key}"
+    }
+  }
+}
+```
+
+**自定义函数执行约束**:
+
+- `function_body` 必须 `export default` 一个返回字符串的函数。
+- 运行时可读取 `credential`、`provider`、`method`、`url`、`query`、`headers`、`body`。
+- `fetch`、`XMLHttpRequest`、`WebSocket`、`process.env` 在运行时被禁用。
 
 ---
 

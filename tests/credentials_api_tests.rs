@@ -190,6 +190,9 @@ async fn test_create_credential_rejects_past_expires_at() {
                     "password": "secret123"
                 }),
                 expires_at: Some(past_expires_at),
+                provider: None,
+                allowed_domains: None,
+                custom_functions: None,
             },
         )),
     )
@@ -258,6 +261,89 @@ async fn test_create_credential_rejects_invalid_credential_type() {
     );
 }
 
+#[tokio::test]
+async fn test_create_credential_rejects_invalid_provider() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "test_service",
+                "credential_type": "api_key",
+                "plaintext_data": {
+                    "api_key": "ak_test"
+                },
+                "provider": "invalid_provider_xyz"
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("unsupported provider")
+    );
+}
+
+#[tokio::test]
+async fn test_create_credential_rejects_invalid_allowed_domains() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "test_service",
+                "credential_type": "api_key",
+                "plaintext_data": {
+                    "api_key": "ak_test"
+                },
+                "provider": "okx",
+                "allowed_domains": ["https://www.okx.com/path"]
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("allowed_domains")
+    );
+}
+
 /// 测试获取凭证列表
 #[tokio::test]
 async fn test_list_credentials() {
@@ -295,6 +381,9 @@ async fn test_list_credentials_includes_expired_entries() {
                 service_id: ServiceId::new("expired_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -349,6 +438,9 @@ async fn test_list_credentials_filters_by_service_id() {
                 service_id: ServiceId::new("github-prod"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -363,6 +455,9 @@ async fn test_list_credentials_filters_by_service_id() {
                 service_id: ServiceId::new("aws-dev"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -405,6 +500,9 @@ async fn test_list_credentials_filters_by_credential_type() {
                 service_id: ServiceId::new("github-prod"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -419,6 +517,9 @@ async fn test_list_credentials_filters_by_credential_type() {
                 service_id: ServiceId::new("aws-dev"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -466,6 +567,9 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
                 service_id: ServiceId::new("expired-service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -480,6 +584,9 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
                 service_id: ServiceId::new("valid-service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -694,6 +801,9 @@ async fn test_decrypt_endpoint_is_disabled_for_expired_credentials_too() {
                 service_id: ServiceId::new("expired_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             EncryptedPayload::new(
                 constants::PROTOCOL_VERSION,
@@ -767,6 +877,9 @@ async fn test_decrypt_cross_tenant_credential_returns_forbidden() {
                 service_id: ServiceId::new("test_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )

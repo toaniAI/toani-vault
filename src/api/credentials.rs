@@ -14,13 +14,17 @@ use crate::api::middleware::{
 };
 use crate::crypto::CredentialCryptoContext;
 use crate::crypto::hkdf::KeyHierarchy;
-use crate::models::{CredentialMetadata, CredentialType};
+use crate::models::{
+    CredentialCustomFunction, CredentialMetadata, CredentialProvider, CredentialType,
+};
 use crate::tee::SharedEnclave;
+use crate::tee::sandbox::domain_policy::validate_allowed_domains;
+use crate::tee::sandbox::function_runtime::validate_custom_functions;
 use crate::vault::models::{
     CreateCredentialRequest, CredentialFilter, CredentialId, EncryptedPayload, ServiceId, TenantId,
     UserId, VaultError,
 };
-use crate::vault::storage::CredentialVault;
+use crate::vault::storage::{CredentialConfigUpdate, CredentialVault};
 use axum::{
     Extension, Json,
     extract::{Path, Query, State},
@@ -428,6 +432,22 @@ pub struct CreateCredentialApiRequest {
     pub plaintext_data: serde_json::Value,
     /// 过期时间（Unix 时间戳，可选）
     pub expires_at: Option<u64>,
+    /// Provider（okx / binance / custom）
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// HTTP 请求白名单域名
+    #[serde(default)]
+    pub allowed_domains: Option<Vec<String>>,
+    /// 自定义模板函数
+    #[serde(default)]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedCredentialConfig {
+    provider: Option<CredentialProvider>,
+    allowed_domains: Vec<String>,
+    custom_functions: Vec<CredentialCustomFunction>,
 }
 
 fn normalize_oauth_plaintext_data(
@@ -461,6 +481,9 @@ pub struct CreateCredentialResponse {
     pub credential_type: String,
     pub created_at: String,
     pub expires_at: Option<String>,
+    pub provider: Option<String>,
+    pub allowed_domains: Vec<String>,
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 #[allow(clippy::result_large_err)]
@@ -484,6 +507,42 @@ fn validate_expires_at(expires_at: Option<u64>) -> Result<(), ApiError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
+fn parse_credential_provider(provider: &str) -> Result<CredentialProvider, ApiError> {
+    match provider.trim() {
+        "okx" => Ok(CredentialProvider::Okx),
+        "binance" => Ok(CredentialProvider::Binance),
+        "custom" => Ok(CredentialProvider::Custom),
+        other => Err(ApiError::new(
+            "invalid_request",
+            format!("unsupported provider: {other}"),
+        )),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_create_credential_config(
+    provider: Option<String>,
+    allowed_domains: Option<Vec<String>>,
+    custom_functions: Option<Vec<CredentialCustomFunction>>,
+) -> Result<ParsedCredentialConfig, ApiError> {
+    let provider = provider
+        .map(|value| parse_credential_provider(&value))
+        .transpose()?;
+    let allowed_domains = allowed_domains.unwrap_or_default();
+    validate_allowed_domains(&allowed_domains)
+        .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
+    let custom_functions = custom_functions.unwrap_or_default();
+    validate_custom_functions(&custom_functions)
+        .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
+
+    Ok(ParsedCredentialConfig {
+        provider,
+        allowed_domains,
+        custom_functions,
+    })
+}
+
 /// POST /api/v1/credentials - 创建凭证
 pub async fn create_credential(
     State(state): State<AppState>,
@@ -498,6 +557,11 @@ pub async fn create_credential(
     require_scope(TokenScope::CredentialWrite)(&token).map_err(ApiError::from_auth_error)?;
 
     validate_expires_at(request.expires_at)?;
+    let credential_config = parse_create_credential_config(
+        request.provider.clone(),
+        request.allowed_domains.clone(),
+        request.custom_functions.clone(),
+    )?;
 
     // 解析并验证 credential_type，无效时返回 400 invalid_request
     let credential_type = parse_credential_type(&request.credential_type)?;
@@ -541,6 +605,9 @@ pub async fn create_credential(
         service_id: ServiceId::new(&request.service_id),
         credential_type,
         expires_at: request.expires_at,
+        provider: credential_config.provider,
+        allowed_domains: credential_config.allowed_domains,
+        custom_functions: credential_config.custom_functions,
     };
 
     // 存储凭证（使用预生成的 credential_id）
@@ -564,6 +631,9 @@ pub async fn create_credential(
         credential_type: entry.credential_type.as_str().to_string(),
         created_at: entry.created_at.to_string(),
         expires_at: entry.expires_at.map(|t| t.to_string()),
+        provider: entry.provider.map(|provider| provider.as_str().to_string()),
+        allowed_domains: entry.allowed_domains.clone(),
+        custom_functions: entry.custom_functions.clone(),
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -734,6 +804,9 @@ pub struct GetCredentialResponse {
     pub expires_at: Option<String>,
     pub is_deleted: bool,
     pub status: String,
+    pub provider: Option<String>,
+    pub allowed_domains: Vec<String>,
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 /// GET /api/v1/credentials/:id - 获取凭证详情
@@ -793,6 +866,11 @@ pub async fn get_credential(
         expires_at: metadata.expires_at,
         is_deleted: metadata.is_deleted,
         status,
+        provider: metadata
+            .provider
+            .map(|provider| provider.as_str().to_string()),
+        allowed_domains: metadata.allowed_domains,
+        custom_functions: metadata.custom_functions,
     }))
 }
 
@@ -880,6 +958,15 @@ pub struct UpdateCredentialApiRequest {
     pub plaintext_data: serde_json::Value,
     /// 变更原因（用于审计）
     pub change_reason: Option<String>,
+    /// Provider（显式传 null 可清除）
+    #[serde(default)]
+    pub provider: Option<Option<String>>,
+    /// HTTP 请求白名单域名
+    #[serde(default)]
+    pub allowed_domains: Option<Vec<String>>,
+    /// 自定义模板函数
+    #[serde(default)]
+    pub custom_functions: Option<Vec<CredentialCustomFunction>>,
 }
 
 /// 更新凭证响应
@@ -891,6 +978,9 @@ pub struct UpdateCredentialApiResponse {
     pub credential_type: String,
     pub updated_at: String,
     pub previous_version: u32,
+    pub provider: Option<String>,
+    pub allowed_domains: Vec<String>,
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 /// PUT /api/v1/credentials/:id - 更新凭证（创建新版本）
@@ -909,6 +999,26 @@ pub async fn update_credential(
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
+    let config_update = CredentialConfigUpdate {
+        provider: request
+            .provider
+            .map(|provider| {
+                provider
+                    .map(|value| parse_credential_provider(&value))
+                    .transpose()
+            })
+            .transpose()?,
+        allowed_domains: request.allowed_domains.clone(),
+        custom_functions: request.custom_functions.clone(),
+    };
+    if let Some(allowed_domains) = &config_update.allowed_domains {
+        validate_allowed_domains(allowed_domains)
+            .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
+    }
+    if let Some(custom_functions) = &config_update.custom_functions {
+        validate_custom_functions(custom_functions)
+            .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
+    }
 
     let tenant_id = TenantId::new(&token.tenant_id);
     let user_id = UserId::new(&token.user_id);
@@ -933,8 +1043,14 @@ pub async fn update_credential(
             &user_id,
             encrypted_payload,
             request.change_reason,
+            Some(config_update),
         )
         .map_err(vault_error_to_api_error)?;
+    let metadata = state
+        .vault
+        .get_credential_metadata(&credential_id, &tenant_id, &user_id)
+        .map_err(vault_error_to_api_error)?
+        .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
     Ok(Json(UpdateCredentialApiResponse {
         credential_id: id,
@@ -943,6 +1059,11 @@ pub async fn update_credential(
         credential_type: update_result.credential_type,
         updated_at: chrono::Utc::now().to_rfc3339(),
         previous_version: update_result.previous_version,
+        provider: metadata
+            .provider
+            .map(|provider| provider.as_str().to_string()),
+        allowed_domains: metadata.allowed_domains,
+        custom_functions: metadata.custom_functions,
     }))
 }
 
@@ -1144,5 +1265,27 @@ mod tests {
         assert_eq!(parsed.service_id, "api_tags_empty");
         assert_eq!(parsed.credential_type, "api_key");
         assert_eq!(parsed.plaintext_data, json!("k1"));
+    }
+
+    #[test]
+    fn test_parse_create_credential_config_rejects_invalid_provider() {
+        let error = parse_create_credential_config(Some("kraken".to_string()), None, None)
+            .expect_err("unsupported provider should be rejected");
+
+        assert_eq!(error.error, "invalid_request");
+        assert!(error.message.contains("unsupported provider"));
+    }
+
+    #[test]
+    fn test_parse_create_credential_config_rejects_invalid_allowed_domains() {
+        let error = parse_create_credential_config(
+            Some("okx".to_string()),
+            Some(vec!["https://www.okx.com/path".to_string()]),
+            None,
+        )
+        .expect_err("allowed_domains entries with paths should be rejected");
+
+        assert_eq!(error.error, "invalid_request");
+        assert!(error.message.contains("allowed_domains"));
     }
 }

@@ -21,7 +21,7 @@
 use super::client::{VaultClientError, VaultConfig, VaultCredentialData, VaultKvClient};
 use super::models::*;
 use super::version::CredentialVersion;
-use crate::models::CredentialMetadata;
+use crate::models::{CredentialMetadata, CredentialProvider};
 use crate::vault::storage::StorageBackend;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -137,6 +137,9 @@ impl VaultStorageBackend {
         } else {
             Some(entry.updated_at)
         };
+        data.provider = entry.provider.map(|provider| provider.as_str().to_string());
+        data.allowed_domains = entry.allowed_domains.clone();
+        data.custom_functions = entry.custom_functions.clone();
         Ok(data)
     }
 
@@ -144,8 +147,20 @@ impl VaultStorageBackend {
     fn data_to_entry(
         data: &VaultCredentialData,
         encrypted_payload: EncryptedPayload,
-    ) -> VaultEntry {
-        VaultEntry {
+    ) -> Result<VaultEntry, VaultBackendError> {
+        let provider = data
+            .provider
+            .as_deref()
+            .map(|value| match value {
+                "okx" => Ok(CredentialProvider::Okx),
+                "binance" => Ok(CredentialProvider::Binance),
+                "custom" => Ok(CredentialProvider::Custom),
+                other => Err(VaultBackendError::DeserializationError(format!(
+                    "unknown provider in Vault record: {other}"
+                ))),
+            })
+            .transpose()?;
+        Ok(VaultEntry {
             credential_id: CredentialId::from_string(data.credential_id.clone())
                 .unwrap_or_else(|_| CredentialId::new()),
             version: 1, // 新创建的凭证版本为 1
@@ -167,7 +182,10 @@ impl VaultStorageBackend {
             expires_at: data.expires_at,
             encrypted_payload,
             is_deleted: data.is_deleted,
-        }
+            provider,
+            allowed_domains: data.allowed_domains.clone(),
+            custom_functions: data.custom_functions.clone(),
+        })
     }
 
     /// 从 Vault 数据中解析 EncryptedPayload
@@ -235,7 +253,9 @@ impl StorageBackend for VaultStorageBackend {
                     let encrypted_payload = Self::parse_encrypted_payload(&data)
                         .map_err(|e| VaultError::StorageError(e.to_string()))?;
 
-                    return Ok(Some(Self::data_to_entry(&data, encrypted_payload)));
+                    let entry = Self::data_to_entry(&data, encrypted_payload)
+                        .map_err(|e| VaultError::StorageError(e.to_string()))?;
+                    return Ok(Some(entry));
                 }
                 Err(VaultBackendError::ClientError(VaultClientError::SecretNotFound(_))) => {
                     continue;

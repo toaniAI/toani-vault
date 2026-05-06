@@ -5,7 +5,9 @@
 use super::models::*;
 use super::storage::StorageBackend;
 use super::version::CredentialVersion;
-use crate::models::{CredentialMetadata, CredentialType};
+use crate::models::{
+    CredentialCustomFunction, CredentialMetadata, CredentialProvider, CredentialType,
+};
 use crate::services::db::pool::{DatabaseError, execute_pg_script_pool};
 use crate::services::db::{DatabaseConfig, DatabasePool};
 use chrono::{DateTime, Utc};
@@ -89,6 +91,9 @@ impl PostgresStorageBackend {
                 service_id VARCHAR(64) NOT NULL,
                 credential_type VARCHAR(32) NOT NULL,
                 encrypted_payload JSONB NOT NULL,
+                provider VARCHAR(32),
+                allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb,
+                custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb,
                 version INTEGER NOT NULL DEFAULT 1,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -111,6 +116,9 @@ impl PostgresStorageBackend {
                 credential_id VARCHAR(64) NOT NULL REFERENCES {schema}.credentials(credential_id) ON DELETE CASCADE,
                 version INTEGER NOT NULL,
                 encrypted_payload JSONB NOT NULL,
+                provider VARCHAR(32),
+                allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb,
+                custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb,
                 change_reason TEXT,
                 changed_by VARCHAR(128),
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -134,6 +142,22 @@ impl PostgresStorageBackend {
         execute_pg_script_pool(pool, &versions_sql)
             .await
             .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
+
+        execute_pg_script_pool(
+            pool,
+            &format!(
+                r#"
+                ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS provider VARCHAR(32);
+                ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
+                ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb;
+                ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS provider VARCHAR(32);
+                ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
+                ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb;
+                "#
+            ),
+        )
+        .await
+        .map_err(|e| DatabaseError::SchemaError(e.to_string()))?;
 
         Ok(())
     }
@@ -171,6 +195,15 @@ impl PostgresStorageBackend {
         }
     }
 
+    fn provider_from_str(value: &str) -> Result<CredentialProvider, VaultError> {
+        match value {
+            "okx" => Ok(CredentialProvider::Okx),
+            "binance" => Ok(CredentialProvider::Binance),
+            "custom" => Ok(CredentialProvider::Custom),
+            other => Err(VaultError::StorageError(format!("未知 provider: {other}"))),
+        }
+    }
+
     fn entry_from_row(row: &sqlx::postgres::PgRow) -> Result<VaultEntry, VaultError> {
         let encrypted_payload =
             Self::payload_from_json(row.try_get("encrypted_payload").map_err(|e| {
@@ -188,6 +221,27 @@ impl PostgresStorageBackend {
         let expires_at: Option<DateTime<Utc>> = row
             .try_get("expires_at")
             .map_err(|e| VaultError::StorageError(format!("读取 expires_at 失败: {e}")))?;
+        let provider = row
+            .try_get::<Option<String>, _>("provider")
+            .map_err(|e| VaultError::StorageError(format!("读取 provider 失败: {e}")))?
+            .map(|value| Self::provider_from_str(&value))
+            .transpose()?;
+        let allowed_domains = row
+            .try_get::<Value, _>("allowed_domains")
+            .map_err(|e| VaultError::StorageError(format!("读取 allowed_domains 失败: {e}")))
+            .and_then(|value| {
+                serde_json::from_value::<Vec<String>>(value).map_err(|error| {
+                    VaultError::StorageError(format!("解析 allowed_domains 失败: {error}"))
+                })
+            })?;
+        let custom_functions = row
+            .try_get::<Value, _>("custom_functions")
+            .map_err(|e| VaultError::StorageError(format!("读取 custom_functions 失败: {e}")))
+            .and_then(|value| {
+                serde_json::from_value::<Vec<CredentialCustomFunction>>(value).map_err(|error| {
+                    VaultError::StorageError(format!("解析 custom_functions 失败: {error}"))
+                })
+            })?;
 
         Ok(VaultEntry {
             credential_id: CredentialId::from_string(
@@ -220,6 +274,9 @@ impl PostgresStorageBackend {
             is_deleted: row
                 .try_get("is_deleted")
                 .map_err(|e| VaultError::StorageError(format!("读取 is_deleted 失败: {e}")))?,
+            provider,
+            allowed_domains,
+            custom_functions,
         })
     }
 
@@ -231,6 +288,27 @@ impl PostgresStorageBackend {
         let created_at: DateTime<Utc> = row
             .try_get("created_at")
             .map_err(|e| VaultError::StorageError(format!("读取版本 created_at 失败: {e}")))?;
+        let provider = row
+            .try_get::<Option<String>, _>("provider")
+            .map_err(|e| VaultError::StorageError(format!("读取版本 provider 失败: {e}")))?
+            .map(|value| Self::provider_from_str(&value))
+            .transpose()?;
+        let allowed_domains = row
+            .try_get::<Value, _>("allowed_domains")
+            .map_err(|e| VaultError::StorageError(format!("读取版本 allowed_domains 失败: {e}")))
+            .and_then(|value| {
+                serde_json::from_value::<Vec<String>>(value).map_err(|error| {
+                    VaultError::StorageError(format!("解析版本 allowed_domains 失败: {error}"))
+                })
+            })?;
+        let custom_functions = row
+            .try_get::<Value, _>("custom_functions")
+            .map_err(|e| VaultError::StorageError(format!("读取版本 custom_functions 失败: {e}")))
+            .and_then(|value| {
+                serde_json::from_value::<Vec<CredentialCustomFunction>>(value).map_err(|error| {
+                    VaultError::StorageError(format!("解析版本 custom_functions 失败: {error}"))
+                })
+            })?;
 
         Ok(CredentialVersion {
             id: uuid::Uuid::now_v7(),
@@ -242,6 +320,9 @@ impl PostgresStorageBackend {
                 .map_err(|e| VaultError::StorageError(format!("读取版本号失败: {e}")))?
                 as u32,
             encrypted_payload,
+            provider,
+            allowed_domains,
+            custom_functions,
             change_reason: row
                 .try_get("change_reason")
                 .map_err(|e| VaultError::StorageError(format!("读取 change_reason 失败: {e}")))?,
@@ -264,14 +345,18 @@ impl StorageBackend for PostgresStorageBackend {
             r#"
             INSERT INTO {schema}.credentials (
                 credential_id, tenant_id, user_id_hash, service_id, credential_type,
-                encrypted_payload, version, created_at, updated_at, expires_at, is_deleted
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                encrypted_payload, provider, allowed_domains, custom_functions,
+                version, created_at, updated_at, expires_at, is_deleted
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             ON CONFLICT (credential_id) DO UPDATE SET
                 tenant_id = EXCLUDED.tenant_id,
                 user_id_hash = EXCLUDED.user_id_hash,
                 service_id = EXCLUDED.service_id,
                 credential_type = EXCLUDED.credential_type,
                 encrypted_payload = EXCLUDED.encrypted_payload,
+                provider = EXCLUDED.provider,
+                allowed_domains = EXCLUDED.allowed_domains,
+                custom_functions = EXCLUDED.custom_functions,
                 version = EXCLUDED.version,
                 created_at = EXCLUDED.created_at,
                 updated_at = EXCLUDED.updated_at,
@@ -281,6 +366,12 @@ impl StorageBackend for PostgresStorageBackend {
             schema = self.schema
         );
         let payload = Self::payload_to_json(&entry.encrypted_payload)?;
+        let allowed_domains = serde_json::to_value(&entry.allowed_domains).map_err(|error| {
+            VaultError::SerializationError(format!("allowed_domains serialize failed: {error}"))
+        })?;
+        let custom_functions = serde_json::to_value(&entry.custom_functions).map_err(|error| {
+            VaultError::SerializationError(format!("custom_functions serialize failed: {error}"))
+        })?;
         let created_at = Self::timestamp_from_secs(entry.created_at)?;
         let updated_at = Self::timestamp_from_secs(entry.updated_at)?;
         let expires_at = entry
@@ -296,6 +387,9 @@ impl StorageBackend for PostgresStorageBackend {
                 .bind(entry.service_id.as_str())
                 .bind(entry.credential_type.as_str())
                 .bind(payload)
+                .bind(entry.provider.map(|provider| provider.as_str().to_string()))
+                .bind(allowed_domains)
+                .bind(custom_functions)
                 .bind(entry.version as i32)
                 .bind(created_at)
                 .bind(updated_at)
@@ -445,15 +539,24 @@ impl StorageBackend for PostgresStorageBackend {
                 service_id = $4,
                 credential_type = $5,
                 encrypted_payload = $6,
-                version = $7,
-                updated_at = $8,
-                expires_at = $9,
-                is_deleted = $10
+                provider = $7,
+                allowed_domains = $8,
+                custom_functions = $9,
+                version = $10,
+                updated_at = $11,
+                expires_at = $12,
+                is_deleted = $13
             WHERE credential_id = $1
             "#,
             schema = self.schema
         );
         let payload = Self::payload_to_json(&entry.encrypted_payload)?;
+        let allowed_domains = serde_json::to_value(&entry.allowed_domains).map_err(|error| {
+            VaultError::SerializationError(format!("allowed_domains serialize failed: {error}"))
+        })?;
+        let custom_functions = serde_json::to_value(&entry.custom_functions).map_err(|error| {
+            VaultError::SerializationError(format!("custom_functions serialize failed: {error}"))
+        })?;
         let updated_at = Self::timestamp_from_secs(entry.updated_at)?;
         let expires_at = entry
             .expires_at
@@ -469,6 +572,9 @@ impl StorageBackend for PostgresStorageBackend {
                     .bind(entry.service_id.as_str())
                     .bind(entry.credential_type.as_str())
                     .bind(payload)
+                    .bind(entry.provider.map(|provider| provider.as_str().to_string()))
+                    .bind(allowed_domains)
+                    .bind(custom_functions)
                     .bind(entry.version as i32)
                     .bind(updated_at)
                     .bind(expires_at)
@@ -493,19 +599,38 @@ impl StorageBackend for PostgresStorageBackend {
         let sql = format!(
             r#"
             INSERT INTO {schema}.credential_versions (
-                credential_id, version, encrypted_payload, change_reason, changed_by, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+                credential_id, version, encrypted_payload, provider, allowed_domains,
+                custom_functions, change_reason, changed_by, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (credential_id, version) DO NOTHING
             "#,
             schema = self.schema
         );
         let payload = Self::payload_to_json(&version.encrypted_payload)?;
+        let allowed_domains = serde_json::to_value(&version.allowed_domains).map_err(|error| {
+            VaultError::SerializationError(format!(
+                "version allowed_domains serialize failed: {error}"
+            ))
+        })?;
+        let custom_functions =
+            serde_json::to_value(&version.custom_functions).map_err(|error| {
+                VaultError::SerializationError(format!(
+                    "version custom_functions serialize failed: {error}"
+                ))
+            })?;
 
         self.block_on(async {
             sqlx::query(&sql)
                 .bind(&version.credential_id)
                 .bind(version.version as i32)
                 .bind(payload)
+                .bind(
+                    version
+                        .provider
+                        .map(|provider| provider.as_str().to_string()),
+                )
+                .bind(allowed_domains)
+                .bind(custom_functions)
                 .bind(&version.change_reason)
                 .bind(&version.changed_by)
                 .bind(version.created_at)
@@ -523,7 +648,8 @@ impl StorageBackend for PostgresStorageBackend {
     ) -> Result<Vec<CredentialVersion>, VaultError> {
         let sql = format!(
             r#"
-            SELECT credential_id, version, encrypted_payload, change_reason, changed_by, created_at
+            SELECT credential_id, version, encrypted_payload, provider, allowed_domains,
+                   custom_functions, change_reason, changed_by, created_at
             FROM {schema}.credential_versions
             WHERE credential_id = $1
             ORDER BY version DESC
@@ -550,7 +676,8 @@ impl StorageBackend for PostgresStorageBackend {
     ) -> Result<Option<CredentialVersion>, VaultError> {
         let sql = format!(
             r#"
-            SELECT credential_id, version, encrypted_payload, change_reason, changed_by, created_at
+            SELECT credential_id, version, encrypted_payload, provider, allowed_domains,
+                   custom_functions, change_reason, changed_by, created_at
             FROM {schema}.credential_versions
             WHERE credential_id = $1 AND version = $2
             LIMIT 1

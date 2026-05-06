@@ -177,11 +177,74 @@ const apiKeyCred = await sdk.credentials.createApiKey(
   "secret_key",
 );
 
+const okxCredential = await sdk.credentials.createApiKey(
+  "okx-trading",
+  "okx_api_key",
+  "okx_secret_key",
+  {
+    provider: "okx",
+    passphrase: "okx_passphrase",
+    allowedDomains: ["www.okx.com:443", "*.okx.com:443"],
+  },
+);
+
+const customExchange = await sdk.credentials.createApiKey(
+  "custom-exchange",
+  "custom_api_key",
+  "custom_secret_key",
+  {
+    provider: "custom",
+    allowedDomains: ["api.example.com:443"],
+    customFunctions: [
+      {
+        function_name: "build_auth_header",
+        function_description: "Build a simple bearer token header",
+        function_body:
+          'export default function func(input) { return `Bearer ${api_key}:${input.args?.[0] ?? ""}`; }',
+      },
+    ],
+  },
+);
+
 // 快捷方式：创建 OAuth 刷新令牌
 const oauthCred = await sdk.credentials.createOAuthRefresh(
   "google",
   "1//0d...",
 );
+```
+
+### Sandbox `http_request` 模板
+
+```typescript
+import { OperationType } from "@toani/vault-sdk";
+
+await sdk.sandbox.executeOperation("session-id", {
+  operationType: OperationType.HttpRequest,
+  method: "GET",
+  url: "https://www.okx.com/api/v5/account/balance",
+  headers: {
+    "OK-ACCESS-KEY": "${credential.api_key}",
+    "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+    "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+    "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+  },
+});
+
+await sdk.sandbox.executeOperation("session-id", {
+  operationType: OperationType.HttpRequest,
+  method: "GET",
+  url: "https://api.binance.com/api/v3/account",
+  parameters: {
+    query: {
+      recvWindow: "5000",
+      timestamp: "${functions.binance_timestamp()}",
+      signature: "${functions.binance_sign()}",
+    },
+  },
+  headers: {
+    "X-MBX-APIKEY": "${credential.api_key}",
+  },
+});
 ```
 
 ### 获取凭证列表
@@ -237,6 +300,26 @@ if (result.deleted) {
 
 ```typescript
 const exists = await sdk.credentials.exists("credential-id");
+```
+
+### Sandbox `http_request` 模板示例
+
+```typescript
+const result = await sdk.sandbox.executeOperation("session-id", {
+  operationType: OperationType.HttpRequest,
+  description: "Query OKX balances",
+  parameters: {
+    method: "GET",
+    url: "https://www.okx.com/api/v5/account/balance",
+    headers: {
+      "OK-ACCESS-KEY": "${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+      "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+      "Content-Type": "application/json",
+    },
+  },
+});
 ```
 
 ## Token 管理

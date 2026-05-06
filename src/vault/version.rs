@@ -5,7 +5,8 @@
 //! - 版本回滚支持
 //! - 审计追踪
 
-use super::models::EncryptedPayload;
+use super::models::{CredentialTransportConfig, EncryptedPayload};
+use crate::models::{CredentialCustomFunction, CredentialProvider};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -25,6 +26,15 @@ pub struct CredentialVersion {
     /// 加密的凭证载荷
     pub encrypted_payload: EncryptedPayload,
 
+    /// 交易所 / 自定义 Provider
+    pub provider: Option<CredentialProvider>,
+
+    /// HTTP 请求白名单域名
+    pub allowed_domains: Vec<String>,
+
+    /// 自定义模板函数
+    pub custom_functions: Vec<CredentialCustomFunction>,
+
     /// 变更原因
     pub change_reason: Option<String>,
 
@@ -41,6 +51,7 @@ impl CredentialVersion {
         credential_id: String,
         version: u32,
         encrypted_payload: EncryptedPayload,
+        transport: CredentialTransportConfig,
         change_reason: Option<String>,
         changed_by: Option<String>,
     ) -> Self {
@@ -49,6 +60,9 @@ impl CredentialVersion {
             credential_id,
             version,
             encrypted_payload,
+            provider: transport.provider,
+            allowed_domains: transport.allowed_domains,
+            custom_functions: transport.custom_functions,
             change_reason,
             changed_by,
             created_at: Utc::now(),
@@ -256,12 +270,25 @@ mod tests {
             "test-credential-id".to_string(),
             1,
             create_test_payload(),
+            CredentialTransportConfig {
+                provider: Some(CredentialProvider::Okx),
+                allowed_domains: vec!["www.okx.com:443".to_string()],
+                custom_functions: vec![CredentialCustomFunction {
+                    function_name: "normalize_symbol".to_string(),
+                    function_description: None,
+                    function_body: "export default function func() { return \"BTC-USDT\"; }"
+                        .to_string(),
+                }],
+            },
             Some("初始创建".to_string()),
             Some("user_123".to_string()),
         );
 
         assert_eq!(version.credential_id, "test-credential-id");
         assert_eq!(version.version, 1);
+        assert_eq!(version.provider, Some(CredentialProvider::Okx));
+        assert_eq!(version.allowed_domains, vec!["www.okx.com:443".to_string()]);
+        assert_eq!(version.custom_functions.len(), 1);
         assert_eq!(version.change_reason, Some("初始创建".to_string()));
         assert_eq!(version.changed_by, Some("user_123".to_string()));
     }

@@ -166,6 +166,10 @@ toani credentials get 018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c
 These commands read metadata only. They do not expose plaintext secrets, do not decrypt credentials,
 and still require a bearer token with `credential:read`.
 
+When a credential was created through the REST API with transport config, the metadata returned by
+`credentials list` / `get` includes `provider`, `allowed_domains`, and `custom_functions`. The CLI
+still does not create or update those fields; use the Dashboard or REST API for mutation.
+
 ## Sandbox Workflow
 
 The CLI controls remote TEE sandbox sessions. Browser-backed operations run through the backend
@@ -253,10 +257,62 @@ toani sandbox terminate <sessionId>
 - `http_request` may resolve credential references inside nested headers/body values. When a remote
   API expects fixed framing, use `prefix` / `suffix`, for example
   `{"$credential":"api_key","prefix":"Bearer "}`.
+- `http_request` also supports string templates for exchange REST flows:
+  `${credential.api_key}`, `${credential.secret_key}`, `${credential.passphrase}`,
+  `${functions.okx_timestamp()}`, `${functions.okx_sign()}`,
+  `${functions.binance_timestamp()}`, `${functions.binance_sign()}`.
+- Before execution, the backend enforces the credential-level `allowed_domains` whitelist. Matching
+  ignores scheme, supports explicit ports, and supports leading subdomain wildcards such as
+  `*.okx.com:443`.
+- `http_request` also supports a `query` object inside `--params`. Template rendering runs before
+  the final `allowed_domains` check, so the rendered URL must still land on an allowed `host:port`.
+- `allowed_domains` accepts exact hosts such as `api.binance.com:443` and leading subdomain
+  wildcards such as `*.okx.com:443`. It does not allow paths, and `*.okx.com:443` does not match
+  `okx.com:443`, `evil-okx.com:443`, or `www.okx.com.evil.com:443`.
 - `execute_script` may still receive `bindings`, but every binding value must be a plain string.
   Do not pass credential references in `execute_script.bindings`.
 - When `execute_script.bindings` contains `{"$credential":"..."}`, the backend rejects the request
   instead of resolving the secret into script-visible data.
+
+### Exchange `http_request` templates
+
+Use this pattern when a session is bound to an exchange API-key credential and the credential
+metadata already contains the correct `provider` and `allowed_domains`.
+
+```bash
+# OKX private REST request
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://www.okx.com/api/v5/account/balance",
+    "headers":{
+      "OK-ACCESS-KEY":"${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP":"${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE":"${credential.passphrase}",
+      "OK-ACCESS-SIGN":"${functions.okx_sign()}"
+    }
+  }'
+
+# Binance signed REST request
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://api.binance.com/api/v3/account",
+    "query":{
+      "recvWindow":"${functions.recv_window()}",
+      "timestamp":"${functions.binance_timestamp()}",
+      "signature":"${functions.binance_sign()}"
+    },
+    "headers":{
+      "X-MBX-APIKEY":"${credential.api_key}"
+    }
+  }'
+```
+
+`custom_functions` must return strings. At runtime they can read `credential`, `provider`,
+`method`, `url`, `query`, `headers`, and `body`, but network access and `process.env` are blocked.
 
 ### Examples
 
@@ -329,6 +385,32 @@ toani sandbox execute <sessionId> \
       "messages":[{"role":"user","content":"ping"}]
     },
     "timeout_ms":10000
+  }'
+
+# OKX private REST request using string templates
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://www.okx.com/api/v5/account/balance",
+    "headers":{
+      "OK-ACCESS-KEY":"${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP":"${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE":"${credential.passphrase}",
+      "OK-ACCESS-SIGN":"${functions.okx_sign()}",
+      "Content-Type":"application/json"
+    }
+  }'
+
+# Binance SIGNED REST request using string templates
+toani sandbox execute <sessionId> \
+  --operation-type http_request \
+  --params '{
+    "method":"GET",
+    "url":"https://api.binance.com/api/v3/account?timestamp=${functions.binance_timestamp()}&signature=${functions.binance_sign()}",
+    "headers":{
+      "X-MBX-APIKEY":"${credential.api_key}"
+    }
   }'
 
 # Invalid: execute_script bindings cannot resolve credentials

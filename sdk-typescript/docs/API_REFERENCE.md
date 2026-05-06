@@ -154,17 +154,23 @@ create(
 | `serviceId`      | `string`                  | 是   | 服务 ID                 |
 | `credentialType` | `CredentialType`          | 是   | 凭证类型                |
 | `plaintextData`  | `Record<string, unknown>` | 是   | 明文凭证内容            |
+| `provider`       | `'okx' \| 'binance' \| 'custom'` | 否   | API Key 凭证使用的 provider |
+| `allowedDomains` | `string[]`                | 否   | `sandbox http_request` 域名白名单 |
+| `customFunctions` | `CredentialCustomFunction[]` | 否 | 自定义 TypeScript 模板函数 |
 | `expiresAt`      | `number`                  | 否   | 过期时间（Unix 时间戳） |
 
 **CreateCredentialResponse:**
 
-| 属性             | 类型                  | 描述     |
-| ---------------- | --------------------- | -------- |
-| `credentialId`   | `string`              | 凭证 ID  |
-| `serviceId`      | `string`              | 服务 ID  |
-| `credentialType` | `string`              | 凭证类型 |
-| `createdAt`      | `string`              | 创建时间 |
-| `expiresAt`      | `string \| undefined` | 过期时间 |
+| 属性               | 类型                                | 描述         |
+| ------------------ | ----------------------------------- | ------------ |
+| `credential_id`    | `string`                            | 凭证 ID      |
+| `service_id`       | `string`                            | 服务 ID      |
+| `credential_type`  | `string`                            | 凭证类型     |
+| `created_at`       | `string`                            | 创建时间     |
+| `provider`         | `CredentialProvider \| undefined`   | Provider     |
+| `allowed_domains`  | `string[] \| undefined`             | 域名白名单   |
+| `custom_functions` | `CredentialCustomFunction[] \| undefined` | 自定义模板函数 |
+| `expires_at`       | `string \| undefined`               | 过期时间     |
 
 #### createUsernamePassword(serviceId, username, password, options)
 
@@ -179,7 +185,7 @@ createUsernamePassword(
 ): Promise<CreateCredentialResponse>
 ```
 
-#### createApiKey(serviceId, apiKey, apiSecret, options)
+#### createApiKey(serviceId, apiKey, secretKey, options)
 
 创建 API Key 凭证（快捷方法）。
 
@@ -187,10 +193,29 @@ createUsernamePassword(
 createApiKey(
   serviceId: string,
   apiKey: string,
-  apiSecret?: string,
-  options?: { expiresAt?: number; requestOptions?: RequestOptions }
+  secretKey?: string,
+  options?: {
+    expiresAt?: number;
+    provider?: 'okx' | 'binance' | 'custom';
+    allowedDomains?: string[];
+    customFunctions?: CredentialCustomFunction[];
+    passphrase?: string;
+    requestOptions?: RequestOptions;
+  }
 ): Promise<CreateCredentialResponse>
 ```
+
+示例：
+
+```typescript
+await sdk.credentials.createApiKey("okx-trading", "okx_api_key", "okx_secret_key", {
+  provider: "okx",
+  passphrase: "okx_passphrase",
+  allowedDomains: ["www.okx.com:443", "*.okx.com:443"],
+});
+```
+
+`createApiKey()` 会同时写入 `secret_key` 和兼容字段 `api_secret`，便于 `${credential.secret_key}`、`${functions.okx_sign()}`、`${functions.binance_sign()}` 直接使用。
 
 #### createOAuthRefresh(serviceId, refreshToken, options)
 

@@ -50,6 +50,8 @@ export { SandboxWebSocketClient } from "./websocket.js";
 export {
   // 枚举
   CredentialType,
+  type CredentialProvider,
+  type CredentialCustomFunction,
   TokenScope,
   CredBridgeErrorCode,
   SdkEventType,
