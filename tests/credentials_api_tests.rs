@@ -459,6 +459,9 @@ async fn test_list_credentials_applies_real_pagination() {
                     service_id: ServiceId::new(service_id),
                     credential_type: CredentialType::ApiKey,
                     expires_at: None,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
                 },
                 create_test_payload(),
             )
