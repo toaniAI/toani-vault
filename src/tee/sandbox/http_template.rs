@@ -246,6 +246,17 @@ pub fn extract_supported_http_credential_fields(
         }
     }
 
+    if credential_type == CredentialType::OAuthRefresh {
+        let refresh_token = ["refreshToken", "refresh_token"]
+            .iter()
+            .find_map(|field| values.get(*field).cloned())
+            .ok_or_else(|| {
+                SandboxError::Other("credential plaintext missing refresh_token".to_string())
+            })?;
+        values.insert("refreshToken".to_string(), refresh_token.clone());
+        values.insert("refresh_token".to_string(), refresh_token);
+    }
+
     if values.is_empty() {
         return Err(SandboxError::Other(format!(
             "sandbox credential delegation found no scalar fields for {}",
@@ -853,6 +864,28 @@ mod tests {
         assert_eq!(fields.get("secret_key").map(String::as_str), Some("sk"));
         assert_eq!(fields.get("passphrase").map(String::as_str), Some("pp"));
         assert_eq!(fields.get("label").map(String::as_str), Some("sandbox"));
+    }
+
+    #[test]
+    fn extracts_oauth_refresh_aliases_for_templates() {
+        let fields = extract_supported_http_credential_fields(
+            CredentialType::OAuthRefresh,
+            &json!({
+                "refreshToken": "rt_123",
+                "note": "sandbox"
+            }),
+        )
+        .expect("field extraction should succeed");
+
+        assert_eq!(
+            fields.get("refreshToken").map(String::as_str),
+            Some("rt_123")
+        );
+        assert_eq!(
+            fields.get("refresh_token").map(String::as_str),
+            Some("rt_123")
+        );
+        assert_eq!(fields.get("note").map(String::as_str), Some("sandbox"));
     }
 
     #[test]

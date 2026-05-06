@@ -6,6 +6,7 @@ import {
   getDefaultSkillInstallChoice,
   getSkillInstallTargetLabel,
   installBundledSkill,
+  resolveBundledSkillPath,
 } from "../src/lib/skill-installer.js";
 
 const tempDirs: string[] = [];
@@ -81,6 +82,21 @@ describe("skill installer", () => {
         sourcePath: path.join(homeDir, "missing-SKILL.md"),
       }),
     ).toThrowError(/Bundled SKILL\.md not found/);
+  });
+
+  it("finds the bundled SKILL.md from source and bundled module layouts", () => {
+    const packageRoot = createTempDir();
+    const skillPath = path.join(packageRoot, "SKILL.md");
+    fs.mkdirSync(path.join(packageRoot, "src", "lib"), { recursive: true });
+    fs.mkdirSync(path.join(packageRoot, "dist"), { recursive: true });
+    fs.writeFileSync(skillPath, "# bundled skill\n", "utf8");
+
+    expect(
+      resolveBundledSkillPath(`file://${path.join(packageRoot, "src", "lib", "skill-installer.js")}`),
+    ).toBe(skillPath);
+    expect(
+      resolveBundledSkillPath(`file://${path.join(packageRoot, "dist", "index.js")}`),
+    ).toBe(skillPath);
   });
 
   it("prefers both when Claude and Codex homes are present", () => {

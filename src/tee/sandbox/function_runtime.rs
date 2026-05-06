@@ -10,6 +10,7 @@ use std::process::Stdio;
 use std::sync::OnceLock;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
+use tracing::warn;
 use uuid::Uuid;
 
 const IMPORTS_PREFIX: &str = "/* @imports:";
@@ -84,57 +85,76 @@ pub async fn execute_custom_function(
 
     let user_module_path = execution_dir.join("user.mts");
     let runner_path = execution_dir.join("runner.mjs");
-    fs::write(&user_module_path, function.function_body.as_bytes()).map_err(|error| {
-        SandboxError::Other(format!("failed to write custom function source: {error}"))
-    })?;
-    fs::write(
-        &runner_path,
-        build_runner_script(
-            context,
-            args,
-            user_module_path
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or("user.mts"),
-        )?,
-    )
-    .map_err(|error| SandboxError::Other(format!("failed to write function runner: {error}")))?;
+    let result = async {
+        fs::write(&user_module_path, function.function_body.as_bytes()).map_err(|error| {
+            SandboxError::Other(format!("failed to write custom function source: {error}"))
+        })?;
+        fs::write(
+            &runner_path,
+            build_runner_script(
+                context,
+                args,
+                user_module_path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("user.mts"),
+            )?,
+        )
+        .map_err(|error| {
+            SandboxError::Other(format!("failed to write function runner: {error}"))
+        })?;
 
-    let output = timeout(
-        FUNCTION_EXECUTION_TIMEOUT,
-        Command::new("node")
-            .arg("--experimental-strip-types")
-            .arg("--permission")
-            .arg(format!("--allow-fs-read={}", runtime_dir.display()))
-            .arg(format!("--allow-fs-write={}", execution_dir.display()))
-            .arg(runner_path.as_os_str())
-            .current_dir(&execution_dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output(),
-    )
-    .await
-    .map_err(|_| SandboxError::Timeout {
-        operation: format!("custom function {function_name}"),
-    })?
-    .map_err(|error| SandboxError::Other(format!("failed to execute custom function: {error}")))?;
+        let output = timeout(
+            FUNCTION_EXECUTION_TIMEOUT,
+            Command::new("node")
+                .arg("--experimental-strip-types")
+                .arg("--permission")
+                .arg(format!("--allow-fs-read={}", runtime_dir.display()))
+                .arg(format!("--allow-fs-write={}", execution_dir.display()))
+                .arg(runner_path.as_os_str())
+                .current_dir(&execution_dir)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output(),
+        )
+        .await
+        .map_err(|_| SandboxError::Timeout {
+            operation: format!("custom function {function_name}"),
+        })?
+        .map_err(|error| {
+            SandboxError::Other(format!("failed to execute custom function: {error}"))
+        })?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SandboxError::Other(format!(
-            "custom function {function_name} failed: {}",
-            stderr.trim()
-        )));
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(SandboxError::Other(format!(
+                "custom function {function_name} failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        String::from_utf8(output.stdout).map_err(|error| {
+            SandboxError::Other(format!(
+                "custom function output is not valid UTF-8: {error}"
+            ))
+        })
     }
+    .await;
 
-    let stdout = String::from_utf8(output.stdout).map_err(|error| {
-        SandboxError::Other(format!(
-            "custom function output is not valid UTF-8: {error}"
-        ))
-    })?;
+    cleanup_execution_directory(&execution_dir);
+    result
+}
 
-    Ok(stdout)
+fn cleanup_execution_directory(execution_dir: &Path) {
+    if let Err(error) = fs::remove_dir_all(execution_dir) {
+        if execution_dir.exists() {
+            warn!(
+                path = %execution_dir.display(),
+                "failed to remove custom function execution directory: {error}"
+            );
+        }
+    }
 }
 
 fn parse_imports_annotation(body: &str) -> Result<Vec<FunctionImportSpec>, SandboxError> {
@@ -447,8 +467,9 @@ fn exact_semver_regex() -> &'static Regex {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_imports_annotation, validate_custom_functions};
+    use super::{cleanup_execution_directory, parse_imports_annotation, validate_custom_functions};
     use crate::models::CredentialCustomFunction;
+    use std::fs;
 
     #[test]
     fn parses_imports_annotation() {
@@ -497,5 +518,21 @@ mod tests {
         ])
         .expect_err("duplicate names should be rejected");
         assert!(error.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn cleanup_execution_directory_removes_run_directory() {
+        let execution_dir =
+            std::env::temp_dir().join(format!("credbridge-test-run-{}", uuid::Uuid::now_v7()));
+        fs::create_dir_all(&execution_dir).expect("execution dir should be created");
+        fs::write(execution_dir.join("runner.mjs"), "console.log('ok');")
+            .expect("runner file should be created");
+
+        cleanup_execution_directory(&execution_dir);
+
+        assert!(
+            !execution_dir.exists(),
+            "execution directory should be removed after cleanup"
+        );
     }
 }

@@ -473,6 +473,13 @@ fn normalize_oauth_plaintext_data(
     normalized
 }
 
+fn normalize_plaintext_data_for_storage(
+    credential_type: CredentialType,
+    plaintext_data: &serde_json::Value,
+) -> serde_json::Value {
+    normalize_oauth_plaintext_data(credential_type, plaintext_data)
+}
+
 /// 创建凭证响应
 #[derive(Debug, Serialize)]
 pub struct CreateCredentialResponse {
@@ -585,7 +592,7 @@ pub async fn create_credential(
     // 先生成 credential_id，确保加密时使用的 ID 与存储时一致
     let credential_id = CredentialId::new();
     let normalized_plaintext_data =
-        normalize_oauth_plaintext_data(credential_type, &request.plaintext_data);
+        normalize_plaintext_data_for_storage(credential_type, &request.plaintext_data);
 
     // 加密凭证内容（在 TEE 内完成）
     let encrypted_payload = encrypt_credential_in_tee(
@@ -1022,6 +1029,15 @@ pub async fn update_credential(
 
     let tenant_id = TenantId::new(&token.tenant_id);
     let user_id = UserId::new(&token.user_id);
+    let current_metadata = state
+        .vault
+        .get_credential_metadata(&credential_id, &tenant_id, &user_id)
+        .map_err(vault_error_to_api_error)?
+        .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
+    let normalized_plaintext_data = normalize_plaintext_data_for_storage(
+        current_metadata.credential_type,
+        &request.plaintext_data,
+    );
 
     // 加密新的凭证内容
     let encrypted_payload = encrypt_credential_update(
@@ -1029,7 +1045,7 @@ pub async fn update_credential(
         tenant_id.as_str(),
         &user_id,
         &credential_id,
-        &request.plaintext_data,
+        &normalized_plaintext_data,
     )
     .await
     .map_err(|e| ApiError::new("internal_error", e))?;
@@ -1237,6 +1253,21 @@ mod tests {
 
         assert_eq!(normalized["refreshToken"], "rt_new");
         assert!(normalized.get("refresh_token").is_none());
+    }
+
+    #[test]
+    fn test_normalize_plaintext_data_for_storage_applies_oauth_rules() {
+        let normalized = normalize_plaintext_data_for_storage(
+            CredentialType::OAuthRefresh,
+            &json!({
+                "refresh_token": "rt_legacy",
+                "note": "preserved"
+            }),
+        );
+
+        assert_eq!(normalized["refreshToken"], "rt_legacy");
+        assert!(normalized.get("refresh_token").is_none());
+        assert_eq!(normalized["note"], "preserved");
     }
 
     #[test]

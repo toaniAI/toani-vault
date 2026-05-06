@@ -14,18 +14,20 @@ use tower::ServiceExt;
 
 use tokio::sync::Mutex;
 use vault_service::api::credentials::{
-    AppState, AuditLogger, DefaultAuditLogger, create_credential, decrypt_credential_endpoint,
-    delete_credential, get_credential, list_credentials,
+    AppState, AuditLogger, DefaultAuditLogger, UpdateCredentialApiRequest, create_credential,
+    decrypt_credential_endpoint, delete_credential, get_credential, list_credentials,
+    update_credential,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::api::versions::{get_version_detail, get_version_history};
+use vault_service::crypto::EncryptedBlob;
 use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
 use vault_service::crypto::keys::HardwareRootKey;
 use vault_service::models::CredentialType;
 use vault_service::tee::{Enclave, EnclaveConfig};
 use vault_service::vault::models::{
-    CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId,
+    CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId, VaultEntry,
 };
 use vault_service::vault::storage::CredentialVault;
 
@@ -64,6 +66,31 @@ fn create_test_payload() -> EncryptedPayload {
         vec![0u8; constants::AUTH_TAG_LENGTH],
         vec![1, 2, 3, 4, 5],
     )
+}
+
+async fn decrypt_entry_plaintext(state: &AppState, entry: &VaultEntry) -> serde_json::Value {
+    let blob = EncryptedBlob {
+        version: entry.encrypted_payload.version,
+        algorithm: entry.encrypted_payload.algorithm.clone(),
+        kdf: entry.encrypted_payload.kdf.clone(),
+        nonce: entry.encrypted_payload.nonce.clone(),
+        auth_tag: entry.encrypted_payload.auth_tag.clone(),
+        ciphertext: entry.encrypted_payload.ciphertext.clone(),
+        aad_hash: None,
+    };
+    let plaintext = {
+        let mut enclave = state.enclave.lock().await;
+        enclave
+            .decrypt_credential(
+                entry.tenant_id.as_str(),
+                entry.user_id.hash(),
+                entry.credential_id.as_str(),
+                &blob,
+            )
+            .expect("TEE decrypt should succeed in tests")
+    };
+
+    serde_json::from_slice(&plaintext).expect("decrypted payload should be valid JSON")
 }
 
 /// 创建模拟的已验证 Token
@@ -342,6 +369,62 @@ async fn test_create_credential_rejects_invalid_allowed_domains() {
             .unwrap()
             .contains("allowed_domains")
     );
+}
+
+#[tokio::test]
+async fn test_update_credential_normalizes_oauth_plaintext_before_encrypting() {
+    let state = setup_test_state().await;
+    let tenant_id = TenantId::new("tenant_123");
+    let user_id = UserId::new("user_456");
+    let created = state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: tenant_id.clone(),
+                user_id: user_id.clone(),
+                service_id: ServiceId::new("oauth-service"),
+                credential_type: CredentialType::OAuthRefresh,
+                expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
+            },
+            create_test_payload(),
+        )
+        .expect("credential should be created");
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let response = update_credential(
+        axum::extract::State(state.clone()),
+        axum::Extension(token),
+        axum::extract::Path(created.credential_id.as_str().to_string()),
+        Ok(axum::Json(UpdateCredentialApiRequest {
+            plaintext_data: serde_json::json!({
+                "refresh_token": "rt_updated",
+                "note": "preserved"
+            }),
+            change_reason: Some("normalize oauth payload".to_string()),
+            provider: None,
+            allowed_domains: None,
+            custom_functions: None,
+        })),
+    )
+    .await
+    .expect("update should succeed");
+
+    assert_eq!(response.0.version, 2);
+
+    let updated = state
+        .vault
+        .get_credential(&created.credential_id, &tenant_id, &user_id)
+        .expect("credential lookup should succeed")
+        .expect("credential should exist");
+    let plaintext = decrypt_entry_plaintext(&state, &updated).await;
+
+    assert_eq!(plaintext["refreshToken"], "rt_updated");
+    assert!(plaintext.get("refresh_token").is_none());
+    assert_eq!(plaintext["note"], "preserved");
 }
 
 /// 测试获取凭证列表
