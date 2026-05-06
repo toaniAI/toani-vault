@@ -70,8 +70,8 @@ ToaniVault health semantics are:
 
 Environment-specific attestation settings must match actual runtime capability:
 
-- Dev (`.values.yaml`) uses `TEE_MODE=simulation` because the dev lane does not guarantee production DCAP quote materialization. This prevents expected dev-only `attestation=failed` from keeping the pod permanently NotReady.
-- Test/prod-like deployments (`.test.values.yaml`) keep `TEE_MODE=hardware` and must provide working DCAP/SGX prerequisites.
+- Dev (`.values.yaml`) now uses `TEE_MODE=hardware` and therefore requires working DCAP/SGX prerequisites on the target TEE nodes.
+- Test/prod-like deployments (`.test.values.yaml`) also keep `TEE_MODE=hardware` and must provide working DCAP/SGX prerequisites.
 
 Deployment values and post-Helm patching must keep probes aligned with this contract:
 

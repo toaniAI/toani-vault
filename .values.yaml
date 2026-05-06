@@ -25,9 +25,9 @@ envs:
   SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-go-owner"
   SANDBOX_OWNER_PORT: "8080"
   CREDBRIDGE_AUDIT_ALLOW_MEMORY_FALLBACK: "true"
-  # Dev runs without production DCAP quote materialization, so use simulation
-  # attestation semantics to keep /ready focused on deployable dependencies.
-  TEE_MODE: simulation
+  # Dev deployment now uses real SGX/DCAP attestation semantics and therefore
+  # requires hardware prerequisites to be present on the target TEE nodes.
+  TEE_MODE: hardware
   TEE_DEBUG: "true"
   TEE_ENCLAVE_PATH: /app/credbridge_enclave.signed.so
   SEALED_STORAGE_PATH: /app/data/sealed
