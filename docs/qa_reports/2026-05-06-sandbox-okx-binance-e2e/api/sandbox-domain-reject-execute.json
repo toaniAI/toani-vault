@@ -1,0 +1,27 @@
+{
+  "captured_at": "2026-05-06T03:46:01.333Z",
+  "request": {
+    "operation_type": "http_request",
+    "description": "Attempt forbidden domain with OKX credential",
+    "parameters": {
+      "method": "GET",
+      "url": "https://evil-okx.com/api/v5/account/balance",
+      "headers": {
+        "OK-ACCESS-KEY": "${credential.api_key}",
+        "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+        "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+        "OK-ACCESS-SIGN": "${functions.okx_sign()}"
+      }
+    }
+  },
+  "status": 500,
+  "body": {
+    "success": false,
+    "error": "internal_error",
+    "message": "沙箱错误: http_request blocked by allowed_domains policy: evil-okx.com:443",
+    "i18n": {
+      "key": "errors.a...[REDACTED]..._error"
+    },
+    "locale": "zh-CN"
+  }
+}

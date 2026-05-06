@@ -62,6 +62,8 @@ L0: SGX Sealing Key
 - 开发者指南：[docs/07-开发者指南/README.md](docs/07-开发者指南/README.md)
 - SGX Runner 手册：[docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md](docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md)
 
+内部需求补充和验收证据分别维护在 `docs/requirements/` 与 `docs/qa_reports/`，它们面向产品 / QA 交接，不作为公开 onboarding 路径。
+
 ## CLI 使用指南
 
 Toani Vault 提供了一个命令行工具，覆盖引导式接入、本地 `config` 配置、只读凭证元数据查询，以及携带 bearer token 发起受限 sandbox 请求。

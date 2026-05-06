@@ -1,0 +1,82 @@
+[
+    {
+        "id": "dfbef135-2fc3-410c-bc64-d2bb6cbb850d",
+        "status": "ready",
+        "metadata": {
+            "credential_id": "019dfb64-7e69-7981-b08a-8cfba12b5fb4",
+            "original_intent": "Verify OKX private balance through sandbox http_request"
+        },
+        "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "created_by": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+        "expires_at": "2026-05-06T04:16:00.603607+00:00",
+        "started_at": "2026-05-06T03:46:00.603607+00:00",
+        "credential_id": "019dfb64-7e69-7981-b08a-8cfba12b5fb4",
+        "terminated_at": null,
+        "tee_context_id": "2e63f61c-84b7-4d05-9b13-509966130f69",
+        "original_intent": "Verify OKX private balance through sandbox http_request",
+        "last_error_summary": null,
+        "termination_reason": null,
+        "active_operation_id": null,
+        "active_operation_started_at": null
+    },
+    {
+        "id": "a1380c0e-bfab-4191-b168-9e4697f0558d",
+        "status": "ready",
+        "metadata": {
+            "credential_id": "019dfb64-7ea8-7411-ac38-2a735e0b44a2",
+            "original_intent": "Verify Binance private account through sandbox http_request"
+        },
+        "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "created_by": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+        "expires_at": "2026-05-06T04:16:00.895268+00:00",
+        "started_at": "2026-05-06T03:46:00.895268+00:00",
+        "credential_id": "019dfb64-7ea8-7411-ac38-2a735e0b44a2",
+        "terminated_at": null,
+        "tee_context_id": "7db39590-90cc-4d91-94f8-3fd9e1dc32ca",
+        "original_intent": "Verify Binance private account through sandbox http_request",
+        "last_error_summary": null,
+        "termination_reason": null,
+        "active_operation_id": null,
+        "active_operation_started_at": null
+    },
+    {
+        "id": "5f37f2c4-7879-4d47-9b27-ceda5fd3d05d",
+        "status": "ready",
+        "metadata": {
+            "credential_id": "019dfb64-7e69-7981-b08a-8cfba12b5fb4",
+            "original_intent": "Verify non-whitelisted domains are rejected"
+        },
+        "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "created_by": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+        "expires_at": "2026-05-06T04:16:01.289201+00:00",
+        "started_at": "2026-05-06T03:46:01.289201+00:00",
+        "credential_id": "019dfb64-7e69-7981-b08a-8cfba12b5fb4",
+        "terminated_at": null,
+        "tee_context_id": "dc857da1-1f1b-404d-aa3d-18a047c629bd",
+        "original_intent": "Verify non-whitelisted domains are rejected",
+        "last_error_summary": null,
+        "termination_reason": null,
+        "active_operation_id": null,
+        "active_operation_started_at": null
+    },
+    {
+        "id": "507319d9-5bb3-43e2-a004-2a5b84b3d763",
+        "status": "ready",
+        "metadata": {
+            "credential_id": "019dfb64-7ea8-7411-ac38-2a735e0b44a2",
+            "original_intent": "Verify invalid signature is rejected"
+        },
+        "tenant_id": "019d8414-bf83-7641-a3fb-ad93d58715bd",
+        "created_by": "019d7b1d-42e7-7071-bdae-63b777db2b6c",
+        "expires_at": "2026-05-06T04:16:01.382312+00:00",
+        "started_at": "2026-05-06T03:46:01.382312+00:00",
+        "credential_id": "019dfb64-7ea8-7411-ac38-2a735e0b44a2",
+        "terminated_at": null,
+        "tee_context_id": "e03bbc50-162f-4280-bf6c-971e12549fa7",
+        "original_intent": "Verify invalid signature is rejected",
+        "last_error_summary": null,
+        "termination_reason": null,
+        "active_operation_id": null,
+        "active_operation_started_at": null
+    }
+]

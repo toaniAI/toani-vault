@@ -1,0 +1,39 @@
+{
+  "captured_at": "2026-05-06T03:46:00.553Z",
+  "request": {
+    "scopes": [
+      "credential:read"
+    ],
+    "ttl_seconds": 900,
+    "credential_ids": [
+      "019dfb64-7e69-7981-b08a-8cfba12b5fb4",
+      "019dfb64-7ea8-7411-ac38-2a735e0b44a2"
+    ]
+  },
+  "status": 200,
+  "body": {
+    "data": {
+      "access_token": "v4.local...[REDACTED]...kyHg6w",
+      "credential_ids": [
+        "019dfb64-7e69-7981-b08a-8cfba12b5fb4",
+        "019dfb64-7ea8-7411-ac38-2a735e0b44a2"
+      ],
+      "display_name": null,
+      "expires_at": 1778040060,
+      "expires_in": 900,
+      "granted_scopes": [
+        "credential:read",
+        "credential:decrypt",
+        "sandbox:write",
+        "sandbox:read",
+        "sandbox:execute"
+      ],
+      "issued_from": "access_token",
+      "revoked_at": null,
+      "subject_type": "user",
+      "token_id": "019dfb64-7ef7-7912-a5d8-fd711ed80240",
+      "token_type": "Bearer"
+    },
+    "success": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "input_value": "450192",
+  "buttons": [
+    {
+      "text": "English",
+      "disabled": false
+    },
+    {
+      "text": "Resend 59s",
+      "disabled": true
+    },
+    {
+      "text": "Update email address",
+      "disabled": false
+    },
+    {
+      "text": "Verifying...",
+      "disabled": true
+    }
+  ]
+}

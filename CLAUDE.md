@@ -172,24 +172,26 @@ React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui.
 The frontend uses a **feature-based** folder structure:
 
 ```
-features/
-├── auth/pages/       — LoginPage, ProfilePage
-├── audit/pages/      — AuditPage
-├── credentials/pages/ — CredentialsPage
-├── dashboard/pages/  — DashboardPage
-├── developer/pages/  — DeveloperCenter
-├── tenants/pages/    — SettingsPage, UsersPage
-└── tokens/pages/     — TokensPage
+app/                    — router, layout, providers, route wrappers, NotFound
+components/ui/          — reusable shadcn/ui components
+components/zkme/        — branded page shells and shared presentation building blocks
+features/auth/          — LoginPage, OnboardingPage, InvitationAcceptPage, ProfilePage
+features/credentials/   — CredentialsPage and related helpers/contracts
+features/tokens/        — TokensPage and verification helpers
+features/developer/     — DeveloperCenter and API tester helpers
+features/audit/         — audit page modules kept in code, not currently routed
+features/tenants/       — tenants/settings/users page modules kept in code, not currently routed
+shared/                 — api, auth/session helpers, config, i18n, Zustand stores
+hooks/                  — shared hooks such as toast helpers
 ```
 
-- `components/ui/` — Reusable shadcn/ui components
-- `hooks/` — Custom React hooks (data fetching via TanStack Query)
-- `stores/` — Zustand global state
-- `lib/` — Utilities (API client, `cn()`, etc.)
-- `shared/` — Cross-feature utilities (i18n, audit log presentation)
-- `app/` — Router, Layout, providers, App root
+Current routed surface from `frontend/src/app/router.tsx`:
 
-All routes are protected via `ProtectedRoute`; public routes use `PublicRoute`. Pages are lazy-loaded via `React.lazy`.
+- Public: `/login`, `/invitation/accept`
+- Protected: `/credentials`, `/tokens`, `/developer`, `/onboarding`
+- Redirects to `/credentials`: `/audit`, `/tenants`, `/settings`, `/users`, `/profile`
+
+All routed pages are lazy-loaded via `React.lazy`; auth gating is handled by `ProtectedRoute` and `PublicRoute`.
 
 ### API Structure
 

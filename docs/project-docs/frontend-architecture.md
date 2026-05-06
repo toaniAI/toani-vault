@@ -1,6 +1,7 @@
 # CredBridge 前端架构文档
 
 **生成日期**: 2026-03-25
+**最后更新**: 2026-05-06
 **框架**: React 19 + TypeScript
 **构建工具**: Vite
 **样式**: Tailwind CSS + shadcn/ui
@@ -64,26 +65,30 @@
 
 ```
 frontend/src/
-├── app/                    # 应用入口
-│   └── main.tsx           # 主入口文件
-├── components/            # 共享 UI 组件
-│   └── ui/               # shadcn/ui 组件
-├── features/              # 功能模块
-│   ├── auth/             # 认证功能
-│   ├── credentials/      # 凭证管理
-│   ├── audit/            # 审计日志
-│   ├── dashboard/        # 仪表板
-│   ├── tenants/          # 多租户管理
-│   ├── tokens/           # Token 管理
-│   ├── layout/           # 布局组件
-│   └── developer/        # 开发者工具
-├── hooks/                 # 自定义 Hooks
-├── lib/                   # 工具函数
-├── shared/                # 共享资源
-│   ├── api/              # API 客户端
-│   ├── types/            # TypeScript 类型
-│   └── utils/            # 工具函数
-└── index.css             # 全局样式
+├── app/                    # Router、Layout、providers、route wrappers
+│   └── pages/            # NotFound 等顶层页面
+├── assets/brand/          # zkme / Toani 品牌字体与图片资源
+├── components/
+│   ├── ui/               # shadcn/ui 组件
+│   └── zkme/             # 品牌化页面壳、面板、状态徽章等共享表达
+├── features/
+│   ├── auth/             # Login / Onboarding / Invitation / Profile 页面
+│   ├── credentials/      # 凭证列表、创建弹窗、详情与辅助逻辑
+│   ├── audit/            # 审计页面模块（代码保留，当前路由未开放）
+│   ├── developer/        # Developer Center 与 API tester
+│   ├── tenants/          # tenants/settings/users 页面模块（代码保留，当前路由未开放）
+│   └── tokens/           # 受限 token 签发与列表
+├── hooks/                 # toast 等共享 hooks
+├── lib/                   # `cn()` 等基础工具
+├── shared/
+│   ├── api/              # Axios client、hooks、types、query client
+│   ├── audit/            # 审计展示帮助函数
+│   ├── auth/             # session token、logout 等认证桥接逻辑
+│   ├── config/           # 运行时配置
+│   ├── i18n/             # 国际化消息与 provider
+│   ├── lib/              # 共享业务工具
+│   └── stores/           # auth / locale / theme Zustand stores
+└── index.css             # 全局主题与 token
 ```
 
 ---
@@ -96,15 +101,17 @@ frontend/src/
 
 **功能**:
 
-- 登录/登出
-- Token 管理
-- 权限检查
+- Privy 登录与后端 session bootstrap
+- onboarding 流程
+- invitation accept 流程
+- profile 页面模块保留在代码中
 
 **组件**:
 
-- `LoginForm` - 登录表单
-- `AuthGuard` - 认证守卫
-- `TokenManager` - Token 管理界面
+- `LoginPage`
+- `OnboardingPage`
+- `InvitationAcceptPage`
+- `ProfilePage`
 
 ### Credentials (凭证模块)
 
@@ -112,18 +119,19 @@ frontend/src/
 
 **功能**:
 
-- 凭证列表
-- 创建/编辑凭证
-- 凭证解密
-- 版本历史
+- 凭证列表、筛选、分页
+- 创建凭证弹窗
+- 凭证详情侧边栏
+- 删除确认、可见性切换、过期时间校验
+- `api_key` 场景下的 `provider` / `allowed_domains` / `custom_functions`
 
 **组件**:
 
-- `CredentialList` - 凭证列表
-- `CredentialForm` - 凭证表单
-- `CredentialDetail` - 凭证详情
-- `DecryptModal` - 解密弹窗
-- `VersionHistory` - 版本历史
+- `CredentialsPage`
+- `CredentialsPage.contracts.ts`
+- `CredentialsPage.expiration.ts`
+- `CredentialsPage.helpers.ts`
+- `CredentialsPage.visibility.ts`
 
 ### Audit (审计模块)
 
@@ -133,29 +141,14 @@ frontend/src/
 
 - 审计日志列表
 - 日志筛选
-- 日志导出
+- 校验结果头部展示
+- 当前代码存在，但 `frontend/src/app/router.tsx` 中该路由会重定向到 `/credentials`
 
 **组件**:
 
-- `AuditLogList` - 审计日志列表
-- `AuditLogFilter` - 日志筛选器
-- `AuditLogDetail` - 日志详情
-
-### Dashboard (仪表板)
-
-路径: `features/dashboard/`
-
-**功能**:
-
-- 统计数据展示
-- 活动图表
-- 快捷操作
-
-**组件**:
-
-- `StatsCards` - 统计卡片
-- `ActivityChart` - 活动图表
-- `QuickActions` - 快捷操作
+- `AuditPage`
+- `AuditFilters.ts`
+- `AuditVerifyResultHeader.ts`
 
 ### Tenants (租户模块)
 
@@ -163,15 +156,45 @@ frontend/src/
 
 **功能**:
 
-- 租户列表
-- 租户配置
-- 配额管理
+- tenant 列表与创建流
+- users / settings 页面模块
+- 当前代码存在，但 `/tenants`、`/settings`、`/users` 路由都会重定向到 `/credentials`
 
 **组件**:
 
-- `TenantList` - 租户列表
-- `TenantConfig` - 租户配置
-- `QuotaManager` - 配额管理
+- `TenantsPage`
+- `UsersPage`
+- `SettingsPage`
+
+### Tokens (受限 Token 模块)
+
+路径: `features/tokens/`
+
+**功能**:
+
+- 基于当前可见 credential IDs 签发受限 token
+- token 列表、状态筛选、复制
+- token 使用期和 credential 绑定关系展示
+
+**组件**:
+
+- `TokensPage`
+- `TokensPage.verify.ts`
+
+### Developer (开发者中心)
+
+路径: `features/developer/`
+
+**功能**:
+
+- 系统概览与文档入口
+- API tester
+- SDK / CLI / sandbox 示例展示
+
+**组件**:
+
+- `DeveloperCenter`
+- `DeveloperCenter.apiTester.ts`
 
 ---
 
@@ -180,25 +203,72 @@ frontend/src/
 ### Zustand Store
 
 ```typescript
-// stores/auth.ts
+// shared/stores/authStore.ts
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 interface AuthState {
-  token: string | null;
-  tenantId: string | null;
+  privyReady: boolean;
+  privyAuthenticated: boolean;
+  backendSessionReady: boolean;
+  isAuthenticated: boolean;
   user: User | null;
-  setToken: (token: string) => void;
+  memberships: TenantMembership[];
+  currentTenantId: string | null;
+  setPrivyState: (ready: boolean, authenticated: boolean) => void;
+  setSession: (user: User, memberships: TenantMembership[]) => void;
+  switchCurrentTenant: (tenantId: string) => void;
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  token: null,
-  tenantId: null,
-  user: null,
-  setToken: (token) => set({ token }),
-  logout: () => set({ token: null, user: null }),
-}));
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      privyReady: false,
+      privyAuthenticated: false,
+      backendSessionReady: false,
+      isAuthenticated: false,
+      user: null,
+      memberships: [],
+      currentTenantId: null,
+      setPrivyState: (ready, authenticated) =>
+        set((state) => ({
+          privyReady: ready,
+          privyAuthenticated: authenticated,
+          isAuthenticated: authenticated && state.backendSessionReady,
+        })),
+      setSession: (user, memberships) =>
+        set({
+          user,
+          memberships,
+          currentTenantId: memberships[0]?.tenantId ?? null,
+          backendSessionReady: true,
+          isAuthenticated: true,
+        }),
+      switchCurrentTenant: (tenantId) => set({ currentTenantId: tenantId }),
+      logout: () =>
+        set({
+          privyReady: false,
+          privyAuthenticated: false,
+          backendSessionReady: false,
+          isAuthenticated: false,
+          user: null,
+          memberships: [],
+          currentTenantId: null,
+        }),
+    }),
+    {
+      name: "auth-storage",
+      storage: createJSONStorage(() => localStorage),
+    },
+  ),
+);
 ```
+
+当前还有两个配套 store：
+
+- `shared/stores/localeStore.ts`：语言状态
+- `shared/stores/themeStore.ts`：浅色优先主题切换
 
 ### TanStack Query
 
@@ -237,29 +307,31 @@ export function useCreateCredential() {
 ```typescript
 // shared/api/client.ts
 import axios from "axios";
+import { readPersistedSessionToken } from "@/shared/auth/sessionTokens";
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "/api/v1",
+  baseURL: frontendRuntimeConfig.apiBaseUrl,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// 请求拦截器 - 添加 Token
-apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
+// 请求拦截器 - 添加当前后端 session token
+apiClient.interceptors.request.use(async (config) => {
+  const token = await readPersistedSessionToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  config.headers["X-Request-ID"] = crypto.randomUUID();
   return config;
 });
 
-// 响应拦截器 - 错误处理
+// 401 时走重新登录流程，而不是刷新本地 token
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
+      prepareForManualRelogin();
     }
     return Promise.reject(error);
   },
@@ -369,24 +441,35 @@ export function CredentialCard({ credential, onDecrypt }: CredentialCardProps) {
 
 ```typescript
 // app/router.tsx
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 export const router = createBrowserRouter([
+  { path: '/invitation/accept', element: <InvitationAcceptPage /> },
+  { path: '/login', element: <PublicRoute><LoginPage /></PublicRoute> },
   {
     path: '/',
-    element: <Layout />,
+    element: <ProtectedRoute><MainLayout /></ProtectedRoute>,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Navigate to="/credentials" replace /> },
       { path: 'credentials', element: <CredentialsPage /> },
-      { path: 'credentials/:id', element: <CredentialDetailPage /> },
-      { path: 'audit', element: <AuditPage /> },
-      { path: 'tenants', element: <TenantsPage /> },
       { path: 'tokens', element: <TokensPage /> },
+      { path: 'developer', element: <DeveloperCenter /> },
+      { path: 'audit', element: <Navigate to="/credentials" replace /> },
+      { path: 'tenants', element: <Navigate to="/credentials" replace /> },
+      { path: 'settings', element: <Navigate to="/credentials" replace /> },
+      { path: 'users', element: <Navigate to="/credentials" replace /> },
+      { path: 'profile', element: <Navigate to="/credentials" replace /> },
     ],
   },
-  { path: '/login', element: <LoginPage /> },
+  { path: '/onboarding', element: <ProtectedRoute><OnboardingPage /></ProtectedRoute> },
+  { path: '*', element: <NotFoundPage /> },
 ]);
 ```
+
+说明：
+
+- 当前公开控制台不是 dashboard-first，而是 credentials-first。
+- `audit` / `tenants` 相关页面源码仍在仓库中，但默认路由已经收口到 `/credentials`。
 
 ---
 

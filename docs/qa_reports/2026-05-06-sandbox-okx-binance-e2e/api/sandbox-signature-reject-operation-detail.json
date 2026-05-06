@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-05-06T03:46:01.576Z",
+  "status": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "operation_id": "229ff3e0-b657-49ab-8c5d-606e9c14145c",
+      "session_id": "507319d9-5bb3-43e2-a004-2a5b84b3d763",
+      "operation_type": "http_request",
+      "status": "completed",
+      "started_at": "2026-05-06T03:46:01.443491+00:00",
+      "completed_at": "2026-05-06T03:46:01.557948+00:00",
+      "execution_time_ms": 114
+    }
+  }
+}

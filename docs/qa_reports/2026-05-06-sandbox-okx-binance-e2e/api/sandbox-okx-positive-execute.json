@@ -1,0 +1,78 @@
+{
+  "captured_at": "2026-05-06T03:46:00.787Z",
+  "request": {
+    "operation_type": "http_request",
+    "description": "GET OKX private balance",
+    "parameters": {
+      "method": "GET",
+      "url": "https://www.okx.com/api/v5/account/balance",
+      "headers": {
+        "OK-ACCESS-KEY": "${credential.api_key}",
+        "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+        "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+        "OK-ACCESS-SIGN": "${functions.okx_sign()}"
+      }
+    }
+  },
+  "status": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "operation_id": "424d72ef-67c3-4cc3-8d3b-4d20d29d6383",
+      "success": true,
+      "data": {
+        "body": {
+          "code": "0",
+          "data": [
+            {
+              "adjEq": "",
+              "availEq": "",
+              "borrowFroz": "",
+              "delta": "",
+              "deltaLever": "",
+              "deltaNeutralStatus": "",
+              "details": [],
+              "imr": "",
+              "isoEq": "",
+              "mgnRatio": "",
+              "mmr": "",
+              "notionalUsd": "",
+              "notionalUsdForBorrow": "",
+              "notionalUsdForFutures": "",
+              "notionalUsdForOption": "",
+              "notionalUsdForSwap": "",
+              "ordFroz": "",
+              "totalEq": "0",
+              "uTime": "1778039160792",
+              "upl": ""
+            }
+          ],
+          "msg": ""
+        },
+        "headers": {
+          "b-locale": "en_US",
+          "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+          "connection": "keep-alive",
+          "content-length": "359",
+          "content-security-policy": "frame-ancestors 'self'",
+          "content-type": "application/json",
+          "date": "Wed, 06 May 2026 03:45:59 GMT",
+          "expires": "0",
+          "pragma": "no-cache",
+          "set-cookie": "locale=en-US; Max-Age=604800; Expires=Wed, 13-May-2026 03:46:00 GMT; Path=/",
+          "strict-transport-security": "max-age=31536000; includeSubDomains",
+          "vary": "Origin",
+          "x-brokerid": "0",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "x-xss-protection": "1; mode=block"
+        },
+        "status": 200,
+        "truncated": false,
+        "url": "https://www.okx.com/api/v5/account/balance"
+      },
+      "error": null,
+      "execution_time_ms": 107
+    }
+  }
+}

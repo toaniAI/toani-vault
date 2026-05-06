@@ -1,0 +1,62 @@
+{
+  "captured_at": "2026-05-06T03:46:01.547Z",
+  "request": {
+    "operation_type": "http_request",
+    "description": "Attempt Binance request with invalid signature",
+    "parameters": {
+      "method": "GET",
+      "url": "https://api.binance.com/api/v3/account",
+      "query": {
+        "timestamp": "${functions.binance_timestamp()}",
+        "recvWindow": "5000",
+        "signature": "bad_signature_for_verify2"
+      },
+      "headers": {
+        "X-MBX-APIKEY": "${credential.api_key}"
+      }
+    }
+  },
+  "status": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "operation_id": "229ff3e0-b657-49ab-8c5d-606e9c14145c",
+      "success": true,
+      "data": {
+        "body": {
+          "code": -1022,
+          "msg": "Signature for this request is not valid."
+        },
+        "headers": {
+          "cache-control": "no-cache, no-store, must-revalidate",
+          "connection": "keep-alive",
+          "content-length": "63",
+          "content-security-policy": "default-src 'self'",
+          "content-type": "application/json;charset=UTF-8",
+          "date": "Wed, 06 May 2026 03:46:01 GMT",
+          "expires": "0",
+          "pragma": "no-cache",
+          "server": "nginx",
+          "strict-transport-security": "max-age=31536000; includeSubdomains",
+          "via": "1.1 dac8b23bf45fd8f9ba7a740285471a56.cloudfront.net (CloudFront)",
+          "x-amz-cf-id": "nSv6hHsjeuYWC-v_bti58MB063e1khrF_8zeatJjeuXaE-3mPgcQjA==",
+          "x-amz-cf-pop": "HKG54-P1",
+          "x-cache": "Error from cloudfront",
+          "x-content-security-policy": "default-src 'self'",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "SAMEORIGIN",
+          "x-mbx-used-weight": "40",
+          "x-mbx-used-weight-1m": "40",
+          "x-mbx-uuid": "12bd2797-67ad-436c-b1ab-6915022bf45b",
+          "x-webkit-csp": "default-src 'self'",
+          "x-xss-protection": "1; mode=block"
+        },
+        "status": 400,
+        "truncated": false,
+        "url": "https://api.binance.com/api/v3/account?recvWindow=5000&signature=[REDACTED]&timestamp=1778039161443"
+      },
+      "error": null,
+      "execution_time_ms": 114
+    }
+  }
+}

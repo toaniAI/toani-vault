@@ -9,6 +9,8 @@
 - API 参考：[03-API 参考/README.md](03-API 参考/README.md)
 - SDK 与工具：[04-SDK 与工具/README.md](04-SDK 与工具/README.md)
 - 部署与运维：[05-部署与运维/README.md](05-部署与运维/README.md)
+- 安全与合规：[06-安全与合规/README.md](06-安全与合规/README.md)
+- 开发者指南：[07-开发者指南/README.md](07-开发者指南/README.md)
 - 故障排除：[09-故障排除/README.md](09-故障排除/README.md)
 - 用户手册：[08-用户指南/USER_MANUAL.md](08-用户指南/USER_MANUAL.md)
 
@@ -24,4 +26,5 @@
 
 - `docs/99-归档/` 保留历史材料，仅供追溯，不属于当前公开使用面。
 - `docs/project-docs/`、`docs/plans/`、`docs/design/` 等目录保留内部参考性质内容，不视为正式用户文档。
+- `docs/qa_reports/` 和 `docs/requirements/` 保存验收证据与需求缺口输入，面向内部交付与修复闭环。
 - 如果文档内容与当前代码不一致，以仓库中的实际实现和构建入口为准。

@@ -75,6 +75,10 @@ Primary implementation areas:
 - Developer guides: [docs/07-开发者指南/README.md](docs/07-开发者指南/README.md)
 - SGX runner runbook: [docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md](docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md)
 
+Internal requirement captures and acceptance evidence live under `docs/requirements/` and
+`docs/qa_reports/`. Those directories are maintained for product and QA handoff, not as the public
+onboarding path.
+
 ## CLI Usage Guide
 
 Toani Vault provides a CLI for guided onboarding, local config, read-only credential metadata

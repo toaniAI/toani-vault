@@ -1,0 +1,23 @@
+146-| `credential:read`    | 读取凭证元数据   |
+147-| `credential:decrypt` | 解密凭证获取明文 |
+148-| `credential:write`   | 创建/更新凭证    |
+149:| `sandbox:execute`    | 执行沙箱操作     |
+150-| `audit:read`         | 读取审计日志     |
+151-| `admin`              | 所有管理权限     |
+152-
+--
+158-
+159-创建新的加密凭证。
+160-
+161:**Endpoint**: `POST /api/v1/credentials`
+162-
+163-**Scope**: `credential:write`
+164-
+--
+233-
+234-获取当前用户的所有凭证元数据列表。
+235-
+236:**Endpoint**: `GET /api/v1/credentials`
+237-
+238-**Scope**: `credential:read`
+239-

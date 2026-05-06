@@ -1,6 +1,6 @@
 # 测试策略
 
-本目录包含 CredBridge 的测试文档、测试用例和测试报告。
+本目录包含 CredBridge 当前仍在维护的测试策略、SGX 运行手册和系统验收规范。
 
 ## 测试文档
 
@@ -20,8 +20,8 @@
 ### 单元测试
 
 - Rust 单元测试：`cargo test`
-- TypeScript 单元测试：`npm test`
-- 覆盖率要求：>80%
+- TypeScript 单元测试：`cd frontend && npm run test:unit`
+- 前端构建校验：`cd frontend && npm run build`
 
 ### 集成测试
 
@@ -31,9 +31,9 @@
 
 ### 端到端测试
 
-- Playwright E2E 测试
-- 关键用户流程验证
-- 跨浏览器测试
+- 当前仓库没有统一的 `npm run test:e2e` 入口
+- 浏览器验收与探索性测试证据统一沉淀到 `docs/qa_reports/`
+- 关键用户流程验证以对应的 claim matrix / summary 为准
 
 ### 安全测试
 
@@ -50,23 +50,24 @@
 # Rust 测试
 cargo test
 
-# TypeScript 测试
-npm test
-
-# E2E 测试
-npm run test:e2e
+# Frontend 测试
+cd frontend
+npm run test:unit
+npm run build
+npm run lint
 ```
 
 ### CI/CD测试
 
-- GitHub Actions 自动运行
-- 代码提交触发
-- 合并请求强制检查
+- 后端硬门禁：`cargo fmt`、`cargo clippy --tests -- -D warnings`、`cargo test`
+- 前端校验命令以 `frontend/package.json` 为准
+- SGX 相关验证以 runner / Drone 流程和 `SGX_RUNNER_RUNBOOK.md` 为准
 
 ## 测试报告
 
-历史测试报告已归档至：`99-归档/历史报告/`
+- 当前验收与回归报告保存在 `docs/qa_reports/`
+- 需求缺口与补充说明保存在 `docs/requirements/`
 
 ---
 
-**更新时间**: 2026-04-02
+**更新时间**: 2026-05-06

@@ -120,11 +120,17 @@ L0: SGX Sealing Key (hardware root)
 
 React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui.
 
-- `components/` — Reusable UI components (shadcn/ui based)
-- `pages/` — Route-level page components
-- `hooks/` — Custom React hooks (data fetching via TanStack Query)
-- `stores/` — Zustand global state
-- `lib/` — Utilities (API client, `cn()`, etc.)
+- `app/` — App shell, router, providers, route guards, shared top-level pages
+- `components/` — Reusable UI plus branded `components/zkme` shells and patterns
+- `features/` — Feature modules (`auth`, `credentials`, `audit`, `developer`, `tenants`, `tokens`)
+- `shared/` — API client, auth/session helpers, runtime config, i18n, Zustand stores
+- `hooks/` — Shared hooks such as toast helpers
+
+Current routed frontend surface:
+
+- Public: `/login`, `/invitation/accept`
+- Protected: `/credentials`, `/tokens`, `/developer`, `/onboarding`
+- Legacy routes such as `/audit`, `/tenants`, `/settings`, `/users`, `/profile` currently redirect to `/credentials`
 
 ### External Services (required for full operation)
 
