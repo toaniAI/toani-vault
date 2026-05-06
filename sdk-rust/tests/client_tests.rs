@@ -74,26 +74,7 @@ async fn test_token_parsing() {
 
 #[tokio::test]
 async fn test_token_validation() {
-    let mock_server = MockServer::start().await;
-
-    Mock::given(method("POST"))
-        .and(path("/api/v1/tokens/verify"))
-        .and(header("authorization", "Bearer test_token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "valid": true,
-            "claims": {
-                "jti": "test_jti",
-                "sub": "tenant1:user1",
-                "exp": (chrono::Utc::now().timestamp() + 3600) as i64,
-                "iat": chrono::Utc::now().timestamp() as i64,
-                "scope": "credential:read",
-                "tenant_id": "tenant1",
-            }
-        })))
-        .mount(&mock_server)
-        .await;
-
-    let config = CredBridgeConfig::new(&mock_server.uri()).with_token("test_token");
+    let config = CredBridgeConfig::new("https://api.credbridge.io").with_token(create_test_token());
     let client = std::sync::Arc::new(CredBridgeClient::new(config).unwrap());
     let token_manager = TokenManager::new(client);
 

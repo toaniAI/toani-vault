@@ -129,9 +129,13 @@ pub struct OperationRecord {
     pub execution_time_ms: Option<u64>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct SessionCredentialMaterial {
     values: HashMap<String, Zeroizing<String>>,
+    provider: Option<crate::models::CredentialProvider>,
+    allowed_domains: Vec<String>,
+    custom_functions: Vec<crate::models::CredentialCustomFunction>,
 }
 
 #[derive(Debug)]
@@ -398,6 +402,9 @@ impl ActiveNsjailSession {
 
         let material = Arc::new(SessionCredentialMaterial {
             values: extract_supported_credential_fields(entry.credential_type, &plaintext_data)?,
+            provider: entry.provider,
+            allowed_domains: entry.allowed_domains.clone(),
+            custom_functions: entry.custom_functions.clone(),
         });
         *self.credential_cache.write().await = Some(material.clone());
         Ok(material)

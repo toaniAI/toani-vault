@@ -31,10 +31,10 @@ describe("CredentialsService", () => {
   describe("创建凭证", () => {
     it("应该成功创建凭证", async () => {
       const mockResponse = {
-        credentialId: "cred-123",
-        serviceId: "schwab",
-        credentialType: "username_password",
-        createdAt: "1704067200",
+        credential_id: "cred-123",
+        service_id: "schwab",
+        credential_type: "username_password",
+        created_at: "1704067200",
       };
 
       vi.spyOn(client, "post").mockResolvedValue(mockResponse);
@@ -48,8 +48,8 @@ describe("CredentialsService", () => {
         },
       });
 
-      expect(result.credentialId).toBe("cred-123");
-      expect(result.serviceId).toBe("schwab");
+      expect(result.credential_id).toBe("cred-123");
+      expect(result.service_id).toBe("schwab");
       expect(client.post).toHaveBeenCalledWith(
         "/credentials",
         {
@@ -59,6 +59,70 @@ describe("CredentialsService", () => {
             username: "user@example.com",
             password: "secret",
           },
+          provider: undefined,
+          allowed_domains: undefined,
+          custom_functions: undefined,
+          expires_at: undefined,
+        },
+        undefined,
+      );
+    });
+
+    it("应该透传 provider、allowedDomains 和 customFunctions", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        credential_id: "cred-okx",
+        service_id: "okx",
+        credential_type: "api_key",
+        created_at: "1704067200",
+        provider: "okx",
+        allowed_domains: ["www.okx.com:443"],
+        custom_functions: [
+          {
+            function_name: "build_auth_header",
+            function_body:
+              "export default function func(input) { return `Bearer ${input}`; }",
+          },
+        ],
+      });
+
+      await service.create({
+        serviceId: "okx",
+        credentialType: CredentialType.ApiKey,
+        plaintextData: {
+          api_key: "ak_test",
+          secret_key: "sk_test",
+          passphrase: "passphrase",
+        },
+        provider: "okx",
+        allowedDomains: ["www.okx.com:443"],
+        customFunctions: [
+          {
+            function_name: "build_auth_header",
+            function_body:
+              "export default function func(input) { return `Bearer ${input}`; }",
+          },
+        ],
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "okx",
+          credential_type: CredentialType.ApiKey,
+          plaintext_data: {
+            api_key: "ak_test",
+            secret_key: "sk_test",
+            passphrase: "passphrase",
+          },
+          provider: "okx",
+          allowed_domains: ["www.okx.com:443"],
+          custom_functions: [
+            {
+              function_name: "build_auth_header",
+              function_body:
+                "export default function func(input) { return `Bearer ${input}`; }",
+            },
+          ],
           expires_at: undefined,
         },
         undefined,
@@ -97,10 +161,10 @@ describe("CredentialsService", () => {
   describe("快捷创建方法", () => {
     it("createUsernamePassword 应该正确创建凭证", async () => {
       const mockResponse = {
-        credentialId: "cred-123",
-        serviceId: "schwab",
-        credentialType: "username_password",
-        createdAt: "1704067200",
+        credential_id: "cred-123",
+        service_id: "schwab",
+        credential_type: "username_password",
+        created_at: "1704067200",
       };
 
       vi.spyOn(client, "post").mockResolvedValue(mockResponse);
@@ -111,7 +175,7 @@ describe("CredentialsService", () => {
         "secret",
       );
 
-      expect(result.credentialId).toBe("cred-123");
+      expect(result.credential_id).toBe("cred-123");
       expect(client.post).toHaveBeenCalledWith(
         "/credentials",
         {
@@ -121,6 +185,9 @@ describe("CredentialsService", () => {
             username: "user@example.com",
             password: "secret",
           },
+          provider: undefined,
+          allowed_domains: undefined,
+          custom_functions: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -129,10 +196,10 @@ describe("CredentialsService", () => {
 
     it("createApiKey 应该正确创建凭证", async () => {
       const mockResponse = {
-        credentialId: "cred-456",
-        serviceId: "stripe",
-        credentialType: "api_key",
-        createdAt: "1704067200",
+        credential_id: "cred-456",
+        service_id: "stripe",
+        credential_type: "api_key",
+        created_at: "1704067200",
       };
 
       vi.spyOn(client, "post").mockResolvedValue(mockResponse);
@@ -143,7 +210,7 @@ describe("CredentialsService", () => {
         "secret_key",
       );
 
-      expect(result.credentialType).toBe("api_key");
+      expect(result.credential_type).toBe("api_key");
       expect(client.post).toHaveBeenCalledWith(
         "/credentials",
         {
@@ -151,8 +218,12 @@ describe("CredentialsService", () => {
           credential_type: CredentialType.ApiKey,
           plaintext_data: {
             api_key: "sk_live_...",
+            secret_key: "secret_key",
             api_secret: "secret_key",
           },
+          provider: undefined,
+          allowed_domains: undefined,
+          custom_functions: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -161,10 +232,10 @@ describe("CredentialsService", () => {
 
     it("createApiKey 应该支持不带 secret", async () => {
       vi.spyOn(client, "post").mockResolvedValue({
-        credentialId: "cred-789",
-        serviceId: "openai",
-        credentialType: "api_key",
-        createdAt: "1704067200",
+        credential_id: "cred-789",
+        service_id: "openai",
+        credential_type: "api_key",
+        created_at: "1704067200",
       });
 
       await service.createApiKey("openai", "sk-...");
@@ -177,6 +248,58 @@ describe("CredentialsService", () => {
           plaintext_data: {
             api_key: "sk-...",
           },
+          provider: undefined,
+          allowed_domains: undefined,
+          custom_functions: undefined,
+          expires_at: undefined,
+        },
+        undefined,
+      );
+    });
+
+    it("createApiKey 应该支持 OKX transport 配置", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        credential_id: "cred-okx",
+        service_id: "okx",
+        credential_type: "api_key",
+        created_at: "1704067200",
+      });
+
+      await service.createApiKey("okx", "ak_test", "sk_test", {
+        provider: "okx",
+        passphrase: "passphrase",
+        allowedDomains: ["www.okx.com:443", "*.okx.com:443"],
+        customFunctions: [
+          {
+            function_name: "build_auth_header",
+            function_description: "build bearer header",
+            function_body:
+              "export default function func(input) { return `Bearer ${input}`; }",
+          },
+        ],
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        {
+          service_id: "okx",
+          credential_type: CredentialType.ApiKey,
+          plaintext_data: {
+            api_key: "ak_test",
+            secret_key: "sk_test",
+            api_secret: "sk_test",
+            passphrase: "passphrase",
+          },
+          provider: "okx",
+          allowed_domains: ["www.okx.com:443", "*.okx.com:443"],
+          custom_functions: [
+            {
+              function_name: "build_auth_header",
+              function_description: "build bearer header",
+              function_body:
+                "export default function func(input) { return `Bearer ${input}`; }",
+            },
+          ],
           expires_at: undefined,
         },
         undefined,
@@ -185,17 +308,17 @@ describe("CredentialsService", () => {
 
     it("createOAuthRefresh 应该正确创建凭证", async () => {
       const mockResponse = {
-        credentialId: "cred-abc",
-        serviceId: "google",
-        credentialType: "oauth_refresh",
-        createdAt: "1704067200",
+        credential_id: "cred-abc",
+        service_id: "google",
+        credential_type: "oauth_refresh",
+        created_at: "1704067200",
       };
 
       vi.spyOn(client, "post").mockResolvedValue(mockResponse);
 
       const result = await service.createOAuthRefresh("google", "1//0d...");
 
-      expect(result.credentialType).toBe("oauth_refresh");
+      expect(result.credential_type).toBe("oauth_refresh");
       expect(client.post).toHaveBeenCalledWith(
         "/credentials",
         {
@@ -204,6 +327,9 @@ describe("CredentialsService", () => {
           plaintext_data: {
             refreshToken: "1//0d...",
           },
+          provider: undefined,
+          allowed_domains: undefined,
+          custom_functions: undefined,
           expires_at: undefined,
         },
         undefined,

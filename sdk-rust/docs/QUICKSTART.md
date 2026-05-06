@@ -64,7 +64,10 @@ async fn create_credential(sdk: &ToaniVaultSDK) -> Result<String, Box<dyn std::e
 ### 快捷创建方法
 
 ```rust
-use toani_vault_sdk::types::CredentialType;
+use toani_vault_sdk::types::{CredentialProvider, CredentialType};
+use toani_vault_sdk::{CreateCredentialRequest, CredentialCustomFunction};
+use serde_json::json;
+use std::collections::HashMap;
 
 // 创建用户名密码凭证
 let cred1 = sdk.credentials()
@@ -97,6 +100,100 @@ let cred3 = sdk.credentials()
         None,
     )
     .await?;
+
+// 创建带 provider / allowed_domains / custom_functions 的 API Key 凭证
+let mut exchange_plaintext = HashMap::new();
+exchange_plaintext.insert("api_key".to_string(), json!("binance-api-key"));
+exchange_plaintext.insert("secret_key".to_string(), json!("binance-secret-key"));
+
+let cred4 = sdk.credentials()
+    .create_with_request(
+        CreateCredentialRequest {
+            service_id: "binance-trading".to_string(),
+            credential_type: CredentialType::ApiKey,
+            plaintext_data: exchange_plaintext,
+            expires_at: None,
+            provider: Some(CredentialProvider::Binance),
+            allowed_domains: vec!["api.binance.com:443".to_string()],
+            custom_functions: vec![CredentialCustomFunction {
+                function_name: "stable_recv_window".to_string(),
+                function_description: Some("Returns a fixed recvWindow value".to_string()),
+                function_body: "export default function func() { return \"5000\"; }".to_string(),
+            }],
+        },
+        None,
+    )
+    .await?;
+```
+
+### Sandbox `http_request` 模板
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::{
+    CreateSandboxSessionRequest, ExecuteSandboxOperationRequest, SandboxOperationType,
+};
+
+let session = sdk.sandbox().create_session(
+    CreateSandboxSessionRequest {
+        credential_id: "okx-credential-id".to_string(),
+        original_intent: "Call an exchange REST API from the sandbox".to_string(),
+        metadata: None,
+    },
+    None,
+).await?;
+
+let okx_request = ExecuteSandboxOperationRequest {
+    operation_type: SandboxOperationType::HttpRequest,
+    description: "GET OKX balance".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://www.okx.com/api/v5/account/balance"),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "OK-ACCESS-KEY": "${credential.api_key}",
+                "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+                "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+                "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+            }),
+        ),
+    ]),
+};
+
+let _okx_response = sdk.sandbox()
+    .execute(&session.data.session_id, okx_request, None)
+    .await?;
+
+let binance_request = ExecuteSandboxOperationRequest {
+    operation_type: SandboxOperationType::HttpRequest,
+    description: "GET Binance account".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://api.binance.com/api/v3/account"),
+        ),
+        (
+            "query".to_string(),
+            json!({
+                "timestamp": "${functions.binance_timestamp()}",
+                "recvWindow": "5000",
+                "signature": "${functions.binance_sign()}",
+            }),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "X-MBX-APIKEY": "${credential.api_key}",
+            }),
+        ),
+    ]),
+};
 ```
 
 ### 获取凭证列表

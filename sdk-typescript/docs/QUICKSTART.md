@@ -55,7 +55,7 @@ const credential = await client.credentials.create({
   expiresAt: Math.floor(Date.now() / 1000) + 86400 * 30, // 30天后过期
 });
 
-console.log("Created:", credential.credentialId);
+console.log("Created:", credential.credential_id);
 ```
 
 ### 创建快捷方法
@@ -77,6 +77,31 @@ const cred2 = await client.credentials.createApiKey(
 
 // 创建 OAuth 刷新令牌
 const cred3 = await client.credentials.createOAuthRefresh("google", "1//0d...");
+```
+
+### API Key transport 配置
+
+```typescript
+const okxCred = await client.credentials.createApiKey(
+  "okx",
+  process.env.OKX_API_KEY!,
+  process.env.OKX_SECRET_KEY!,
+  {
+    provider: "okx",
+    passphrase: process.env.OKX_PASSPHRASE,
+    allowedDomains: ["www.okx.com:443", "*.okx.com:443"],
+    customFunctions: [
+      {
+        function_name: "build_auth_header",
+        function_body:
+          "export default function func(input) { return `Bearer ${input}`; }",
+      },
+    ],
+  },
+);
+
+console.log(okxCred.provider);
+console.log(okxCred.allowed_domains);
 ```
 
 ### 获取凭证列表
@@ -110,6 +135,40 @@ const decrypted = await client.credentials.decrypt(
 
 console.log(decrypted.plaintextData.username);
 console.log(decrypted.plaintextData.password);
+```
+
+### Sandbox `http_request` 模板
+
+```typescript
+import { OperationType } from "@toani/vault-sdk";
+
+await client.sandbox.executeOperation("session-id", {
+  operationType: OperationType.HttpRequest,
+  method: "GET",
+  url: "https://www.okx.com/api/v5/account/balance",
+  headers: {
+    "OK-ACCESS-KEY": "${credential.api_key}",
+    "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+    "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+    "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+  },
+});
+
+await client.sandbox.executeOperation("session-id", {
+  operationType: OperationType.HttpRequest,
+  method: "GET",
+  url: "https://api.binance.com/api/v3/account",
+  parameters: {
+    query: {
+      recvWindow: "5000",
+      timestamp: "${functions.binance_timestamp()}",
+      signature: "${functions.binance_sign()}",
+    },
+  },
+  headers: {
+    "X-MBX-APIKEY": "${credential.api_key}",
+  },
+});
 ```
 
 ### 删除凭证

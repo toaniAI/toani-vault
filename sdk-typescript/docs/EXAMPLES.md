@@ -22,7 +22,11 @@
 ### 1.1 创建不同类型的凭证
 
 ```typescript
-import { CredBridgeClient, CredentialType } from "@toani/vault-sdk";
+import {
+  CredBridgeClient,
+  CredentialType,
+  OperationType,
+} from "@toani/vault-sdk";
 
 const client = new CredBridgeClient({
   baseUrl: "https://api.toani.io",
@@ -37,7 +41,7 @@ async function createUserCredentials() {
     "SecurePassword123!",
     { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 90 }, // 90天过期
   );
-  return credential.credentialId;
+  return credential.credential_id;
 }
 
 // 创建 API Key 凭证
@@ -48,7 +52,31 @@ async function createApiCredentials() {
     "sk_secret_...",
     { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 365 }, // 1年过期
   );
-  return credential.credentialId;
+  return credential.credential_id;
+}
+
+// 创建 OKX API Key 凭证
+async function createOkxCredential() {
+  const credential = await client.credentials.createApiKey(
+    "okx",
+    process.env.OKX_API_KEY!,
+    process.env.OKX_SECRET_KEY!,
+    {
+      provider: "okx",
+      passphrase: process.env.OKX_PASSPHRASE,
+      allowedDomains: ["www.okx.com:443", "*.okx.com:443"],
+      customFunctions: [
+        {
+          function_name: "build_auth_header",
+          function_description: "build bearer header",
+          function_body:
+            "export default function func(input) { return `Bearer ${input}`; }",
+        },
+      ],
+      expiresAt: Math.floor(Date.now() / 1000) + 86400 * 180,
+    },
+  );
+  return credential.credential_id;
 }
 
 // 创建 OAuth 刷新令牌
@@ -58,7 +86,7 @@ async function createOAuthCredentials() {
     "1//0dYVjK7V7V7V7V7V7V7V7V7V7V7V...",
     { expiresAt: Math.floor(Date.now() / 1000) + 86400 * 180 }, // 180天过期
   );
-  return credential.credentialId;
+  return credential.credential_id;
 }
 
 // 创建自定义凭证
@@ -73,7 +101,43 @@ async function createCustomCredential() {
     },
     expiresAt: Math.floor(Date.now() / 1000) + 3600, // 1小时过期
   });
-  return credential.credentialId;
+  return credential.credential_id;
+}
+```
+
+### 1.2 Sandbox `http_request` 模板
+
+```typescript
+async function fetchOkxBalance(sessionId: string) {
+  return client.sandbox.executeOperation(sessionId, {
+    operationType: OperationType.HttpRequest,
+    method: "GET",
+    url: "https://www.okx.com/api/v5/account/balance",
+    headers: {
+      "OK-ACCESS-KEY": "${credential.api_key}",
+      "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+      "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+      "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+    },
+  });
+}
+
+async function fetchBinanceAccount(sessionId: string) {
+  return client.sandbox.executeOperation(sessionId, {
+    operationType: OperationType.HttpRequest,
+    method: "GET",
+    url: "https://api.binance.com/api/v3/account",
+    parameters: {
+      query: {
+        recvWindow: "5000",
+        timestamp: "${functions.binance_timestamp()}",
+        signature: "${functions.binance_sign()}",
+      },
+    },
+    headers: {
+      "X-MBX-APIKEY": "${credential.api_key}",
+    },
+  });
 }
 ```
 

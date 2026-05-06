@@ -5,6 +5,7 @@
 //! - KV v2 引擎操作
 //! - Token 认证
 
+use crate::models::CredentialCustomFunction;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -463,6 +464,18 @@ pub struct VaultCredentialData {
     /// 最后更新时间戳（可选，Unix 秒）
     #[serde(default)]
     pub updated_at: Option<u64>,
+
+    /// 交易所 / 自定义 Provider
+    #[serde(default)]
+    pub provider: Option<String>,
+
+    /// HTTP 请求白名单域名
+    #[serde(default)]
+    pub allowed_domains: Vec<String>,
+
+    /// 自定义模板函数
+    #[serde(default)]
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 /// Vault 凭证数据构建器
@@ -576,6 +589,9 @@ impl VaultCredentialDataBuilder {
             auth_tag: self.auth_tag,
             is_deleted: false,
             updated_at: None,
+            provider: None,
+            allowed_domains: Vec::new(),
+            custom_functions: Vec::new(),
         }
     }
 }
@@ -616,6 +632,9 @@ impl VaultCredentialData {
             auth_tag,
             is_deleted: false,
             updated_at: None,
+            provider: None,
+            allowed_domains: Vec::new(),
+            custom_functions: Vec::new(),
         }
     }
 
@@ -708,6 +727,14 @@ mod tests {
             "base64_nonce".to_string(),
             "base64_auth_tag".to_string(),
         );
+        let mut data = data;
+        data.provider = Some("okx".to_string());
+        data.allowed_domains = vec!["www.okx.com:443".to_string()];
+        data.custom_functions = vec![CredentialCustomFunction {
+            function_name: "normalize_symbol".to_string(),
+            function_description: None,
+            function_body: "export default function func() { return \"BTC-USDT\"; }".to_string(),
+        }];
 
         let json = data.to_json().unwrap();
         let parsed = VaultCredentialData::from_json(json).unwrap();
@@ -715,5 +742,8 @@ mod tests {
         assert_eq!(parsed.credential_id, data.credential_id);
         assert_eq!(parsed.tenant_id, data.tenant_id);
         assert_eq!(parsed.encrypted_payload, data.encrypted_payload);
+        assert_eq!(parsed.provider, Some("okx".to_string()));
+        assert_eq!(parsed.allowed_domains, vec!["www.okx.com:443".to_string()]);
+        assert_eq!(parsed.custom_functions.len(), 1);
     }
 }

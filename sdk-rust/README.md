@@ -115,6 +115,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### 使用快捷方法创建凭证
 
 ```rust
+use toani_vault_sdk::{CreateCredentialRequest, CredentialCustomFunction, CredentialProvider};
+use serde_json::json;
+use std::collections::HashMap;
+
 // 创建用户名密码凭证
 let credential = sdk.credentials()
     .create_username_password(
@@ -137,6 +141,27 @@ let credential = sdk.credentials()
     )
     .await?;
 
+// 创建带 provider / allowed_domains 的交易所 API Key 凭证
+use toani_vault_sdk::credentials::ExchangeApiKeyOptions;
+use toani_vault_sdk::types::CredentialProvider;
+
+let okx_credential = sdk.credentials()
+    .create_exchange_api_key(
+        "okx-trading",
+        "okx_api_key",
+        "okx_secret_key",
+        CredentialProvider::Okx,
+        ExchangeApiKeyOptions {
+            passphrase: Some("okx_passphrase".to_string()),
+            allowed_domains: Some(vec![
+                "www.okx.com:443".to_string(),
+                "*.okx.com:443".to_string(),
+            ]),
+            ..Default::default()
+        },
+    )
+    .await?;
+
 // 创建 OAuth 刷新令牌凭证
 let credential = sdk.credentials()
     .create_oauth_refresh(
@@ -146,6 +171,129 @@ let credential = sdk.credentials()
         None,
     )
     .await?;
+```
+
+### 创建带 Provider 配置的交易所凭证
+
+当凭证需要模板渲染、域名白名单或自定义函数时，使用 `create_with_request`：
+
+```rust
+use toani_vault_sdk::{
+    CreateCredentialRequest, CredentialCustomFunction, CredentialProvider,
+};
+use serde_json::json;
+use std::collections::HashMap;
+
+let mut plaintext_data = HashMap::new();
+plaintext_data.insert("api_key".to_string(), json!("okx-api-key"));
+plaintext_data.insert("secret_key".to_string(), json!("okx-secret-key"));
+plaintext_data.insert("passphrase".to_string(), json!("okx-passphrase"));
+
+let credential = sdk.credentials()
+    .create_with_request(
+        CreateCredentialRequest {
+            service_id: "okx-trading".to_string(),
+            credential_type: toani_vault_sdk::CredentialType::ApiKey,
+            plaintext_data,
+            expires_at: None,
+            provider: Some(CredentialProvider::Okx),
+            allowed_domains: vec![
+                "www.okx.com:443".to_string(),
+                "*.okx.com:443".to_string(),
+            ],
+            custom_functions: vec![CredentialCustomFunction {
+                function_name: "normalize_symbol".to_string(),
+                function_description: Some("Formats symbols for upstream APIs".to_string()),
+                function_body: "export default function func(input) { return String(input).toUpperCase(); }".to_string(),
+            }],
+        },
+        None,
+    )
+    .await?;
+
+println!("Provider: {:?}", credential.provider);
+println!("Allowed domains: {:?}", credential.allowed_domains);
+```
+
+### Sandbox `http_request` 模板渲染
+
+OKX 查询余额：
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::{
+    CreateSandboxSessionRequest, ExecuteSandboxOperationRequest, SandboxOperationType,
+};
+
+let session = sdk.sandbox().create_session(
+    CreateSandboxSessionRequest {
+        credential_id: "okx-credential-id".to_string(),
+        original_intent: "Fetch OKX balance via template-rendered REST request".to_string(),
+        metadata: None,
+    },
+    None,
+).await?;
+
+let request = ExecuteSandboxOperationRequest {
+    operation_type: SandboxOperationType::HttpRequest,
+    description: "GET OKX account balance".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://www.okx.com/api/v5/account/balance"),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "OK-ACCESS-KEY": "${credential.api_key}",
+                "OK-ACCESS-TIMESTAMP": "${functions.okx_timestamp()}",
+                "OK-ACCESS-PASSPHRASE": "${credential.passphrase}",
+                "OK-ACCESS-SIGN": "${functions.okx_sign()}",
+            }),
+        ),
+    ]),
+};
+
+let response = sdk.sandbox()
+    .execute(&session.data.session_id, request, None)
+    .await?;
+println!("OKX response: {:?}", response.data.data);
+```
+
+Binance 查询账户：
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::ExecuteSandboxOperationRequest;
+
+let request = ExecuteSandboxOperationRequest {
+    operation_type: toani_vault_sdk::SandboxOperationType::HttpRequest,
+    description: "GET Binance account information".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://api.binance.com/api/v3/account"),
+        ),
+        (
+            "query".to_string(),
+            json!({
+                "timestamp": "${functions.binance_timestamp()}",
+                "recvWindow": "5000",
+                "signature": "${functions.binance_sign()}",
+            }),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "X-MBX-APIKEY": "${credential.api_key}",
+            }),
+        ),
+    ]),
+};
 ```
 
 ### Token 管理

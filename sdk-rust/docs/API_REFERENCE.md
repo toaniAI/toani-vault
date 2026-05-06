@@ -217,13 +217,40 @@ pub async fn create(
 
 **CreateCredentialResponse:**
 
-| 字段              | 类型             | 描述     |
-| ----------------- | ---------------- | -------- |
-| `credential_id`   | `String`         | 凭证 ID  |
-| `service_id`      | `String`         | 服务 ID  |
-| `credential_type` | `String`         | 凭证类型 |
-| `created_at`      | `String`         | 创建时间 |
-| `expires_at`      | `Option<String>` | 过期时间 |
+| 字段               | 类型                               | 描述                  |
+| ------------------ | ---------------------------------- | --------------------- |
+| `credential_id`    | `String`                           | 凭证 ID               |
+| `service_id`       | `String`                           | 服务 ID               |
+| `credential_type`  | `String`                           | 凭证类型              |
+| `created_at`       | `String`                           | 创建时间              |
+| `expires_at`       | `Option<String>`                   | 过期时间              |
+| `provider`         | `Option<CredentialProvider>`       | 交易所 / 自定义类型   |
+| `allowed_domains`  | `Vec<String>`                      | `http_request` 白名单 |
+| `custom_functions` | `Vec<CredentialCustomFunction>`    | 自定义模板函数        |
+
+#### create_with_request(request, options)
+
+创建带 `provider` / `allowed_domains` / `custom_functions` 的凭证。
+
+```rust
+pub async fn create_with_request(
+    &self,
+    request: CreateCredentialRequest,
+    options: Option<RequestOptions>
+) -> Result<CreateCredentialResponse>
+```
+
+**CreateCredentialRequest:**
+
+| 字段               | 类型                            | 描述                  |
+| ------------------ | ------------------------------- | --------------------- |
+| `service_id`       | `String`                        | 服务 ID               |
+| `credential_type`  | `CredentialType`               | 凭证类型              |
+| `plaintext_data`   | `HashMap<String, Value>`       | 敏感字段明文          |
+| `expires_at`       | `Option<i64>`                  | 过期时间              |
+| `provider`         | `Option<CredentialProvider>`   | `okx` / `binance` / `custom` |
+| `allowed_domains`  | `Vec<String>`                  | `sandbox http_request` 域名白名单 |
+| `custom_functions` | `Vec<CredentialCustomFunction>`| 自定义模板函数        |
 
 #### create_username_password(service_id, username, password, expires_at, options)
 
@@ -254,6 +281,12 @@ pub async fn create_api_key(
     options: Option<RequestOptions>
 ) -> Result<CreateCredentialResponse>
 ```
+
+说明：
+
+- 快捷方法会把 `api_key` 写入 `plaintext_data.api_key`
+- 如果提供第三个参数，也会同时写入 `plaintext_data.api_secret`
+- 对 OKX / Binance 这类需要 `secret_key`、`passphrase`、白名单域名或模板函数的场景，请使用 `create_with_request`
 
 #### create_oauth_refresh(service_id, refresh_token, expires_at, options)
 
@@ -292,16 +325,19 @@ pub async fn list(
 
 **CredentialMetadata:**
 
-| 字段              | 类型             | 描述         |
-| ----------------- | ---------------- | ------------ |
-| `credential_id`   | `String`         | 凭证 ID      |
-| `credential_type` | `CredentialType` | 凭证类型     |
-| `user_id_hash`    | `String`         | 用户 ID 哈希 |
-| `service_id`      | `String`         | 服务 ID      |
-| `tenant_id`       | `String`         | 租户 ID      |
-| `created_at`      | `String`         | 创建时间     |
-| `expires_at`      | `Option<String>` | 过期时间     |
-| `is_deleted`      | `bool`           | 是否已删除   |
+| 字段               | 类型                            | 描述                  |
+| ------------------ | ------------------------------- | --------------------- |
+| `credential_id`    | `String`                        | 凭证 ID               |
+| `credential_type`  | `CredentialType`               | 凭证类型              |
+| `user_id_hash`     | `String`                        | 用户 ID 哈希          |
+| `service_id`       | `String`                        | 服务 ID               |
+| `tenant_id`        | `String`                        | 租户 ID               |
+| `created_at`       | `String`                        | 创建时间              |
+| `expires_at`       | `Option<String>`                | 过期时间              |
+| `is_deleted`       | `bool`                          | 是否已删除            |
+| `provider`         | `Option<CredentialProvider>`    | 交易所 / 自定义类型   |
+| `allowed_domains`  | `Vec<String>`                   | `http_request` 白名单 |
+| `custom_functions` | `Vec<CredentialCustomFunction>` | 自定义模板函数        |
 
 #### get(credential_id, options)
 
@@ -314,6 +350,31 @@ pub async fn get(
     options: Option<RequestOptions>
 ) -> Result<GetCredentialResponse>
 ```
+
+`GetCredentialResponse` 额外包含 `provider`、`allowed_domains`、`custom_functions` 字段。
+
+#### update_with_request(credential_id, request, options)
+
+更新凭证并同时更新 `provider` / `allowed_domains` / `custom_functions`。
+
+```rust
+pub async fn update_with_request(
+    &self,
+    credential_id: impl AsRef<str>,
+    request: UpdateCredentialRequest,
+    options: Option<RequestOptions>
+) -> Result<UpdateCredentialResponse>
+```
+
+`UpdateCredentialRequest` 新增字段：
+
+| 字段 | 类型 | 描述 |
+| --- | --- | --- |
+| `provider` | `Option<Option<CredentialProvider>>` | `None` 表示不更新，`Some(None)` 表示清空 |
+| `allowed_domains` | `Option<Vec<String>>` | 替换域名白名单 |
+| `custom_functions` | `Option<Vec<CredentialCustomFunction>>` | 替换自定义函数 |
+
+`UpdateCredentialResponse` 额外返回 `provider`、`allowed_domains`、`custom_functions`。
 
 #### decrypt(credential_id, reason, options)
 
@@ -336,6 +397,42 @@ pub async fn decrypt(
 | `service_id`      | `String`                 | 服务 ID        |
 | `credential_type` | `String`                 | 凭证类型       |
 | `plaintext_data`  | `HashMap<String, Value>` | 解密的明文数据 |
+
+#### Sandbox `http_request` 模板
+
+`ExecuteSandboxOperationRequest` 的 `parameters` 可以直接传模板：
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+use toani_vault_sdk::{ExecuteSandboxOperationRequest, SandboxOperationType};
+
+let request = ExecuteSandboxOperationRequest {
+    operation_type: SandboxOperationType::HttpRequest,
+    description: "GET Binance account".to_string(),
+    parameters: HashMap::from([
+        ("method".to_string(), json!("GET")),
+        (
+            "url".to_string(),
+            json!("https://api.binance.com/api/v3/account"),
+        ),
+        (
+            "query".to_string(),
+            json!({
+                "timestamp": "${functions.binance_timestamp()}",
+                "recvWindow": "5000",
+                "signature": "${functions.binance_sign()}",
+            }),
+        ),
+        (
+            "headers".to_string(),
+            json!({
+                "X-MBX-APIKEY": "${credential.api_key}",
+            }),
+        ),
+    ]),
+};
+```
 
 #### delete(credential_id, options)
 

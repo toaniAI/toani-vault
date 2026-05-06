@@ -49,12 +49,22 @@ const TARGETS: Record<
 };
 
 export function resolveBundledSkillPath(moduleUrl = import.meta.url): string {
-  return path.resolve(
-    path.dirname(fileURLToPath(moduleUrl)),
-    "..",
-    "..",
-    "SKILL.md",
-  );
+  let currentDir = path.dirname(fileURLToPath(moduleUrl));
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    const candidate = path.join(currentDir, SKILL_FILE_NAME);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  return path.resolve(path.dirname(fileURLToPath(moduleUrl)), "..", "..", SKILL_FILE_NAME);
 }
 
 export function getSkillInstallTargetLabel(target: SkillInstallTarget): string {

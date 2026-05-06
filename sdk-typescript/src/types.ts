@@ -22,6 +22,14 @@ export enum CredentialType {
   KycDocument = "kyc_document",
 }
 
+export type CredentialProvider = "okx" | "binance" | "custom";
+
+export interface CredentialCustomFunction {
+  function_name: string;
+  function_description?: string;
+  function_body: string;
+}
+
 /** Token Scope 权限 */
 export enum TokenScope {
   /** 凭证读取权限 */
@@ -80,6 +88,12 @@ export interface CreateCredentialRequest {
   credentialType: CredentialType;
   /** 明文凭证内容（将被加密） */
   plaintextData: Record<string, unknown>;
+  /** Exchange / custom provider for API key credentials */
+  provider?: CredentialProvider;
+  /** Absolute-domain allowlist used by sandbox http_request */
+  allowedDomains?: string[];
+  /** Custom TypeScript template helper functions */
+  customFunctions?: CredentialCustomFunction[];
   /** 过期时间（Unix 时间戳，可选） */
   expiresAt?: number;
 }
@@ -94,6 +108,12 @@ export interface CreateCredentialResponse {
   credential_type: string;
   /** 创建时间 */
   created_at: string;
+  /** Provider */
+  provider?: CredentialProvider;
+  /** Domain allowlist */
+  allowed_domains?: string[];
+  /** Custom functions */
+  custom_functions?: CredentialCustomFunction[];
   /** 过期时间 */
   expires_at?: string;
 }
@@ -104,6 +124,9 @@ export type CreateCredentialResponseCamel = {
   serviceId: string;
   credentialType: string;
   createdAt: string;
+  provider?: CredentialProvider;
+  allowedDomains?: string[];
+  customFunctions?: CredentialCustomFunction[];
   expiresAt?: string;
 };
 
@@ -121,6 +144,12 @@ export interface CredentialMetadata {
   tenantId: string;
   /** 创建时间 */
   createdAt: string;
+  /** Provider */
+  provider?: CredentialProvider;
+  /** Domain allowlist */
+  allowedDomains?: string[];
+  /** Custom functions */
+  customFunctions?: CredentialCustomFunction[];
   /** 过期时间 */
   expiresAt?: string;
   /** 是否已删除 */
@@ -145,6 +174,12 @@ export interface GetCredentialResponse {
   credentialType: string;
   /** 创建时间 */
   createdAt: string;
+  /** Provider */
+  provider?: CredentialProvider;
+  /** Domain allowlist */
+  allowedDomains?: string[];
+  /** Custom functions */
+  customFunctions?: CredentialCustomFunction[];
   /** 过期时间 */
   expiresAt?: string;
   /** 是否已删除 */

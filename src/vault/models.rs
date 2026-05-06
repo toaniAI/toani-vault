@@ -6,7 +6,10 @@
 //! - AES-256-GCM 加密载荷
 
 use crate::crypto::constants;
-use crate::models::{CredentialMetadata, CredentialType, StoredCredential};
+use crate::models::{
+    CredentialCustomFunction, CredentialMetadata, CredentialProvider, CredentialType,
+    StoredCredential,
+};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -404,6 +407,22 @@ pub struct VaultEntry {
 
     /// 是否已删除（软删除）
     pub is_deleted: bool,
+
+    /// 交易所 / 自定义 Provider
+    pub provider: Option<CredentialProvider>,
+
+    /// HTTP 请求白名单域名
+    pub allowed_domains: Vec<String>,
+
+    /// 自定义模板函数
+    pub custom_functions: Vec<CredentialCustomFunction>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CredentialTransportConfig {
+    pub provider: Option<CredentialProvider>,
+    pub allowed_domains: Vec<String>,
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 impl VaultEntry {
@@ -415,6 +434,27 @@ impl VaultEntry {
         credential_type: CredentialType,
         encrypted_payload: EncryptedPayload,
         expires_at: Option<u64>,
+    ) -> Self {
+        Self::new_with_config(
+            tenant_id,
+            user_id,
+            service_id,
+            credential_type,
+            encrypted_payload,
+            expires_at,
+            CredentialTransportConfig::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_config(
+        tenant_id: TenantId,
+        user_id: UserId,
+        service_id: ServiceId,
+        credential_type: CredentialType,
+        encrypted_payload: EncryptedPayload,
+        expires_at: Option<u64>,
+        config: CredentialTransportConfig,
     ) -> Self {
         let now = current_timestamp();
 
@@ -430,6 +470,9 @@ impl VaultEntry {
             expires_at,
             encrypted_payload,
             is_deleted: false,
+            provider: config.provider,
+            allowed_domains: config.allowed_domains,
+            custom_functions: config.custom_functions,
         }
     }
 
@@ -446,6 +489,29 @@ impl VaultEntry {
         encrypted_payload: EncryptedPayload,
         expires_at: Option<u64>,
     ) -> Self {
+        Self::with_credential_id_and_config(
+            credential_id,
+            tenant_id,
+            user_id,
+            service_id,
+            credential_type,
+            encrypted_payload,
+            expires_at,
+            CredentialTransportConfig::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_credential_id_and_config(
+        credential_id: CredentialId,
+        tenant_id: TenantId,
+        user_id: UserId,
+        service_id: ServiceId,
+        credential_type: CredentialType,
+        encrypted_payload: EncryptedPayload,
+        expires_at: Option<u64>,
+        config: CredentialTransportConfig,
+    ) -> Self {
         let now = current_timestamp();
 
         Self {
@@ -460,6 +526,9 @@ impl VaultEntry {
             expires_at,
             encrypted_payload,
             is_deleted: false,
+            provider: config.provider,
+            allowed_domains: config.allowed_domains,
+            custom_functions: config.custom_functions,
         }
     }
 
@@ -499,6 +568,9 @@ impl VaultEntry {
             is_deleted: self.is_deleted,
             version: self.version,
             status,
+            provider: self.provider,
+            allowed_domains: self.allowed_domains.clone(),
+            custom_functions: self.custom_functions.clone(),
         }
     }
 
@@ -588,6 +660,15 @@ pub struct CreateCredentialRequest {
 
     /// 过期时间（可选）
     pub expires_at: Option<u64>,
+
+    /// 交易所 / 自定义 Provider
+    pub provider: Option<CredentialProvider>,
+
+    /// HTTP 请求白名单域名
+    pub allowed_domains: Vec<String>,
+
+    /// 自定义模板函数
+    pub custom_functions: Vec<CredentialCustomFunction>,
 }
 
 /// 获取当前 Unix 时间戳（秒）

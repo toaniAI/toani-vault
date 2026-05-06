@@ -38,6 +38,9 @@ fn test_ac1_uuid_v7_generation() {
                 service_id: ServiceId::new("schwab"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -77,6 +80,9 @@ fn test_ac1_credential_storage_metadata() {
                 service_id: service_id.clone(),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: Some(expires_at),
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -137,6 +143,9 @@ fn test_ac3_query_metadata_without_payload() {
                 service_id: ServiceId::new("github"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -176,6 +185,9 @@ fn test_ac3_tenant_isolation() {
                 service_id: ServiceId::new("service_a"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -190,6 +202,9 @@ fn test_ac3_tenant_isolation() {
                 service_id: ServiceId::new("service_b"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -278,6 +293,9 @@ fn test_credential_filtering() {
                 service_id: ServiceId::new("schwab"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -291,6 +309,9 @@ fn test_credential_filtering() {
                 service_id: ServiceId::new("github"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -304,6 +325,9 @@ fn test_credential_filtering() {
                 service_id: ServiceId::new("google"),
                 credential_type: CredentialType::OAuthRefresh,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -363,6 +387,9 @@ fn test_credential_expiration() {
                 service_id: ServiceId::new("service_1"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(now + 86400), // 24小时后过期
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -402,6 +429,9 @@ fn test_list_credentials_expired_filter_behavior() {
                 service_id: ServiceId::new("expired_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(now.saturating_sub(60)),
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -449,6 +479,9 @@ fn test_credential_soft_delete() {
                 service_id: ServiceId::new("to_be_deleted"),
                 credential_type: CredentialType::SessionCookie,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
@@ -519,6 +552,9 @@ fn test_user_isolation_within_tenant() {
                 service_id: ServiceId::new("service_a"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
             },
             create_test_payload(),
         )
