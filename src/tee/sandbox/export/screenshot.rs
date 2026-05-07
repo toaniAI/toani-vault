@@ -955,7 +955,7 @@ mod tests {
         // connect 方法在未启用 CDP 时应该返回错误
         #[cfg(not(feature = "screenshot-cdp"))]
         {
-            let mut client = PlaywrightClient::default();
+            let mut client = PlaywrightClient::with_default_config();
             let result = client.connect().await;
             assert!(result.is_err());
         }

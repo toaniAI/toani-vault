@@ -34,14 +34,28 @@ steps:
       - rustup component add clippy
       - cargo clippy --tests -- -D warnings
 
+  - name: rust-check-screenshot-cdp
+    image: rust:1.88.0-slim-bookworm
+    pull: if-not-exists
+    depends_on:
+      - cargo-fetch
+    environment:
+      TEE_MODE: simulation
+    commands:
+      - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
+      - cargo check --features screenshot-cdp --lib
+
   - name: rust-test
     image: rust:1.88.0-slim-bookworm
     pull: if-not-exists
     depends_on:
       - cargo-fetch
+    environment:
+      TEE_MODE: simulation
+      CARGO_PROFILE_TEST_DEBUG: "0"
     commands:
       - apt-get update && apt-get install -y libssl-dev pkg-config protobuf-compiler libsodium-dev cmake build-essential
-      - cargo test
+      - cargo test --no-default-features
 
 ---
 kind: pipeline
