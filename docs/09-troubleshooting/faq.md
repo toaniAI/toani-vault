@@ -563,7 +563,7 @@ privy.on("connection:failed", (error) => {
 });
 ```
 
-**相关文档**：[认证流程说明](../03-API 参考/README.md#认证-api)
+**相关文档**：[认证流程说明](../03-api-reference/README.md#认证-api)
 
 ---
 
@@ -653,7 +653,7 @@ axios.interceptors.response.use(
 
 3. **会话状态管理**：使用 Zustand 或 React Context 管理会话状态
 
-**相关文档**：[认证 API](../03-API 参考/README.md#认证-api)
+**相关文档**：[认证 API](../03-api-reference/README.md#认证-api)
 
 ---
 
@@ -800,7 +800,7 @@ curl -X POST https://api.credbridge/api/v1/auth/invitations/consume \
 }
 ```
 
-**相关文档**：[租户管理](../03-API 参考/TENANT-API.md)
+**相关文档**：[租户管理](../03-api-reference/TENANT-API.md)
 
 ---
 

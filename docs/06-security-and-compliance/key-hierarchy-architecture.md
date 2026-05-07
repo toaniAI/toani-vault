@@ -522,7 +522,7 @@ assert!(KeyCleaner::clear_and_verify(&mut data));
 
 ## 相关文档
 
-- [TEE 安全架构](TEE 安全架构.md) - Enclave 设计
+- [TEE 安全架构](tee-security-architecture.md) - Enclave 设计
 - [加密算法实现](加密算法实现.md) - AES-256-GCM 加密
 - [密钥派生](密钥派生.md) - HKDF 详细实现
 - [密钥清理指南](密钥清理指南.md) - 密钥清理最佳实践

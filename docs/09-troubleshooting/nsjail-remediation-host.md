@@ -452,4 +452,4 @@ nsjail --mode o \
 - `sandbox:read`
 - `sandbox:execute`
 
-相关依据见 [docs/03-API 参考/REST-API.md](/Users/yvan/AIWorkspace/credbridge/docs/03-API%20参考/REST-API.md:1288)。
+相关依据见 [docs/03-api-reference/REST-API.md](/Users/yvan/AIWorkspace/credbridge/docs/03-API%20参考/REST-API.md:1288)。

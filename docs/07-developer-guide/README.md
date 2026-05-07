@@ -4,10 +4,10 @@
 
 ## 当前入口
 
-- [测试策略](测试策略/README.md) - Rust 验证命令、验收材料与测试边界
-- [SGX Runner 手册](测试策略/SGX_RUNNER_RUNBOOK.md) - Linux SGX runner 准备、运行与排障
-- [SGX 测试完整指南](测试策略/SGX_TESTING_COMPLETE_GUIDE.md) - SGX 测试矩阵与执行建议
-- [系统验收与证据判定规范](测试策略/系统验收与证据判定规范.md) - 证据分级、通过门槛与禁止事项
+- [测试策略](test-strategy/README.md) - Rust 验证命令、验收材料与测试边界
+- [SGX Runner 手册](test-strategy/SGX_RUNNER_RUNBOOK.md) - Linux SGX runner 准备、运行与排障
+- [SGX 测试完整指南](test-strategy/SGX_TESTING_COMPLETE_GUIDE.md) - SGX 测试矩阵与执行建议
+- [系统验收与证据判定规范](test-strategy/system-acceptance-and-evidence-policy.md) - 证据分级、通过门槛与禁止事项
 
 ## 当前仓库的验证基线
 

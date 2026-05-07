@@ -634,11 +634,11 @@ curl http://localhost:8080/api/v1/attestation/report
 
 ## 相关文档
 
-- [TEE 安全架构](TEE 安全架构.md) - Enclave 设计
+- [TEE 安全架构](tee-security-architecture.md) - Enclave 设计
 - [Quote 管理](Quote 管理.md) - Quote 详细管理
 - [挑战响应机制](挑战响应机制.md) - 挑战 - 响应协议
-- [ATTESTATION-API](../03-API 参考/ATTESTATION-API.md) - API 文档
-- [架构设计](../01-项目概述/架构设计.md) - 整体架构
+- [ATTESTATION-API](../03-api-reference/ATTESTATION-API.md) - API 文档
+- [架构设计](../01-project-overview/architecture.md) - 整体架构
 
 ---
 

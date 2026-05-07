@@ -266,7 +266,7 @@ POST /api/v1/sandbox/sessions/{id}/execute
 DELETE /api/v1/sandbox/sessions/{id}
 ```
 
-> **注意**: 完整 API 规范请参考 `docs/openapi/sandbox.yaml` 和 `docs/03-API 参考/REST-API.md`
+> **注意**: 完整 API 规范请参考 `docs/openapi/sandbox.yaml` 和 `docs/03-api-reference/REST-API.md`
 
 ---
 

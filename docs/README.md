@@ -4,23 +4,23 @@
 
 ## 核心入口
 
-- 项目概述：[01-项目概述/README.md](01-项目概述/README.md)
-- 核心功能：[02-核心功能模块/README.md](02-核心功能模块/README.md)
-- API 参考：[03-API 参考/README.md](03-API 参考/README.md)
-- SDK 与工具：[04-SDK 与工具/README.md](04-SDK 与工具/README.md)
-- 部署与运维：[05-部署与运维/README.md](05-部署与运维/README.md)
-- 安全与合规：[06-安全与合规/README.md](06-安全与合规/README.md)
-- 开发者指南：[07-开发者指南/README.md](07-开发者指南/README.md)
-- 故障排除：[09-故障排除/README.md](09-故障排除/README.md)
-- 用户手册：[08-用户指南/USER_MANUAL.md](08-用户指南/USER_MANUAL.md)
+- 项目概述：[01-project-overview/README.md](01-project-overview/README.md)
+- 核心功能：[02-core-modules/README.md](02-core-modules/README.md)
+- API 参考：[03-api-reference/README.md](03-api-reference/README.md)
+- SDK 与工具：[04-sdk-and-tooling/README.md](04-sdk-and-tooling/README.md)
+- 部署与运维：[05-deployment-and-operations/README.md](05-deployment-and-operations/README.md)
+- 安全与合规：[06-security-and-compliance/README.md](06-security-and-compliance/README.md)
+- 开发者指南：[07-developer-guide/README.md](07-developer-guide/README.md)
+- 故障排除：[09-troubleshooting/README.md](09-troubleshooting/README.md)
+- 用户手册：[08-user-guide/USER_MANUAL.md](08-user-guide/USER_MANUAL.md)
 
 ## 常用跳转
 
 - Rust SDK: [../sdk-rust/README.md](../sdk-rust/README.md)
 - TypeScript SDK: [../sdk-typescript/README.md](../sdk-typescript/README.md)
 - CLI: [../cli/README.md](../cli/README.md)
-- Docker 部署: [05-部署与运维/DEPLOYMENT.md](05-部署与运维/DEPLOYMENT.md)
-- SGX Runner 手册: [07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md](07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md)
+- Docker 部署: [05-deployment-and-operations/DEPLOYMENT.md](05-deployment-and-operations/DEPLOYMENT.md)
+- SGX Runner 手册: [07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
 ## 文档边界
 

@@ -8,7 +8,7 @@
 
 - [验收测试用例](ACCEPTANCE_TEST_CASES.md) - 完整的验收测试用例集
 - [测试计划](acceptance-test-plan.md) - 测试策略和计划
-- [系统验收与证据判定规范](系统验收与证据判定规范.md) - 系统验收原则、证据权重、操作规范与禁止事项
+- [系统验收与证据判定规范](system-acceptance-and-evidence-policy.md) - 系统验收原则、证据权重、操作规范与禁止事项
 
 ### SGX 测试
 

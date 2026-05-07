@@ -22,7 +22,7 @@
 
 | 文件         | 路径                | 描述                           |
 | ------------ | ------------------- | ------------------------------ |
-| SDK 综合指南 | `docs/04-SDK 与工具/SDK-GUIDE.md` | 双语言对比、常见用例、最佳实践 |
+| SDK 综合指南 | `docs/04-sdk-and-tooling/SDK-GUIDE.md` | 双语言对比、常见用例、最佳实践 |
 
 ### TypeScript 示例项目
 
@@ -160,4 +160,4 @@ cargo run
 - 初学者：从 `QUICKSTART.md` 开始
 - 开发者：参考 `API_REFERENCE.md`
 - 高级用户：查看 `EXAMPLES.md`
-- 双语言对比：阅读 `docs/04-SDK 与工具/SDK-GUIDE.md`
+- 双语言对比：阅读 `docs/04-sdk-and-tooling/SDK-GUIDE.md`

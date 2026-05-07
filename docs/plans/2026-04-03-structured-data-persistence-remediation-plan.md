@@ -81,7 +81,7 @@ cargo test
 - [src/tenant/mod.rs](/Users/yvan/AIWorkspace/credbridge/src/tenant/mod.rs)
 - [tests/api/audit_tests.rs](/Users/yvan/AIWorkspace/credbridge/tests/api/audit_tests.rs)
 - [tests/audit/immudb_tests.rs](/Users/yvan/AIWorkspace/credbridge/tests/audit/immudb_tests.rs)
-- [docs/05-部署与运维/IMMUDB_SETUP.md](/Users/yvan/AIWorkspace/credbridge/docs/05-%E9%83%A8%E7%BD%B2%E4%B8%8E%E8%BF%90%E7%BB%B4/IMMUDB_SETUP.md)
+- [docs/05-deployment-and-operations/IMMUDB_SETUP.md](/Users/yvan/AIWorkspace/credbridge/docs/05-%E9%83%A8%E7%BD%B2%E4%B8%8E%E8%BF%90%E7%BB%B4/IMMUDB_SETUP.md)
 
 ## Problem Statement
 
@@ -248,7 +248,7 @@ Move the default audit implementation in the main runtime from `MemoryAuditStora
 - [src/audit/immudb_store.rs](/Users/yvan/AIWorkspace/credbridge/src/audit/immudb_store.rs)
 - [src/audit/recorder.rs](/Users/yvan/AIWorkspace/credbridge/src/audit/recorder.rs)
 - [docker/docker-compose.yml](/Users/yvan/AIWorkspace/credbridge/docker/docker-compose.yml) if startup wiring is incomplete
-- [docs/05-部署与运维/IMMUDB_SETUP.md](/Users/yvan/AIWorkspace/credbridge/docs/05-部署与运维/IMMUDB_SETUP.md) if operator instructions need refresh
+- [docs/05-deployment-and-operations/IMMUDB_SETUP.md](/Users/yvan/AIWorkspace/credbridge/docs/05-deployment-and-operations/IMMUDB_SETUP.md) if operator instructions need refresh
 
 ### Implementation steps
 
@@ -361,7 +361,7 @@ Make storage mode explicit and safe across all domains.
 - [src/config.rs](/Users/yvan/AIWorkspace/credbridge/src/config.rs)
 - [README.md](/Users/yvan/AIWorkspace/credbridge/README.md)
 - [README_zh.md](/Users/yvan/AIWorkspace/credbridge/README_zh.md)
-- deployment docs under [docs/05-部署与运维](/Users/yvan/AIWorkspace/credbridge/docs/05-部署与运维/README.md)
+- deployment docs under [docs/05-deployment-and-operations](/Users/yvan/AIWorkspace/credbridge/docs/05-deployment-and-operations/README.md)
 
 ### Implementation steps
 

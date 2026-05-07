@@ -456,10 +456,10 @@ assert!(KeyCleaner::clear_and_verify(&mut data));
 
 ## 相关文档
 
-- [密钥层次架构](密钥层次架构.md) - 四层密钥派生系统
-- [远程认证协议](远程认证协议.md) - SGX DCAP 认证
+- [密钥层次架构](key-hierarchy-architecture.md) - 四层密钥派生系统
+- [远程认证协议](remote-attestation-protocol.md) - SGX DCAP 认证
 - [沙箱安全隔离](沙箱安全隔离.md) - TEE Sandbox 设计
-- [架构设计](../01-项目概述/架构设计.md) - 整体架构
+- [架构设计](../01-project-overview/architecture.md) - 整体架构
 - [内存安全与密钥清理](../../README.md#内存安全与密钥清理-story-14) - 详细实现
 
 ---
