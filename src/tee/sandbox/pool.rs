@@ -5,7 +5,7 @@ use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     PoolStatus, SandboxHealth,
     browser_runtime::SandboxBrowserRuntime,
-    config::{MountConfig, MountType, NsjailConfig, SandboxConfig, SandboxPoolConfig},
+    config::{NsjailConfig, SandboxConfig, SandboxPoolConfig},
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, WarmNsjailInstance},
     repository::{NewSandboxSessionRecord, SandboxRepository, metadata_to_json, to_chrono_utc},
@@ -227,23 +227,7 @@ impl NsjailSandboxPool {
 
     /// 创建 nsjail 配置
     fn create_nsjail_config(&self) -> NsjailConfig {
-        let mut sandbox = self.sandbox_config.clone();
-        let frontend_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("frontend");
-        if frontend_dir.exists()
-            && !sandbox
-                .security
-                .namespace
-                .mount_points
-                .iter()
-                .any(|mount| mount.src == frontend_dir)
-        {
-            sandbox.security.namespace.mount_points.push(MountConfig {
-                src: frontend_dir.clone(),
-                dst: frontend_dir,
-                mount_type: MountType::Bind,
-                read_only: true,
-            });
-        }
+        let sandbox = self.sandbox_config.clone();
 
         let mut env = std::collections::HashMap::new();
         if let Some(path) = std::env::var_os("PATH") {

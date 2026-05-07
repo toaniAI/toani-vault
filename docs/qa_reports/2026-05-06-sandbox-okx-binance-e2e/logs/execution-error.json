@@ -1,6 +1,0 @@
-{
-  "name": "TimeoutError",
-  "message": "page.waitForFunction: Timeout 30000ms exceeded.",
-  "detail": null,
-  "captured_at": "2026-05-06T03:41:04.134Z"
-}

@@ -1612,7 +1612,7 @@ mod tests {
             std::env::remove_var("SANDBOX_OWNER_BASE_URL");
             std::env::remove_var("POD_IP");
             std::env::set_var("SANDBOX_OWNER_HEADLESS_SERVICE", "credbridge-owner");
-            std::env::set_var("POD_NAMESPACE", "zkme-dev");
+            std::env::set_var("POD_NAMESPACE", "example-dev");
             std::env::set_var("CREDBRIDGE_PORT", "8080");
             std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
             std::env::remove_var("SANDBOX_OWNER_PORT");
@@ -1623,7 +1623,7 @@ mod tests {
 
         assert_eq!(
             resolved.0,
-            "http://owner-a.credbridge-owner.zkme-dev.svc.cluster.local:8080"
+            "http://owner-a.credbridge-owner.example-dev.svc.cluster.local:8080"
         );
         assert_eq!(resolved.1, SandboxOwnerBaseUrlSource::HeadlessDnsFallback);
     }

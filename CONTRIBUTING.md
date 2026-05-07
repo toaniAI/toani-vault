@@ -19,7 +19,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 ### Prerequisites
 
 - **Rust** 1.75+ (install via [rustup](https://rustup.rs/))
-- **Node.js** 20+ with npm (for frontend development)
+- **Node.js** 20+ with npm (for CLI and TypeScript tooling)
 - **Docker** and Docker Compose (for running external services)
 - **PostgreSQL** 15+ (or use the Docker Compose stack)
 - **Redis** 7+ (or use the Docker Compose stack)
@@ -69,17 +69,11 @@ sqlx migrate run           # apply migrations
 ### 5. Build and Run
 
 ```bash
-# Backend
 cargo build
 RUST_LOG=debug cargo run
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev
 ```
 
-The API server starts on `http://localhost:8080` and the frontend dev server on `http://localhost:5173`.
+The API server starts on `http://localhost:8080`.
 
 ### 6. Verify Setup
 
@@ -90,8 +84,6 @@ cargo test
 # Run linter
 cargo clippy --tests -- -D warnings
 
-# Run frontend linter
-cd frontend && npm run lint
 ```
 
 ## Coding Standards
@@ -112,14 +104,6 @@ cargo fmt                          # format
 cargo clippy --tests -- -D warnings  # lint (including test code)
 cargo test                         # all tests
 ```
-
-### React / TypeScript Frontend
-
-- Strict TypeScript mode — avoid `any`
-- Functional components with hooks only
-- State management: Zustand for global state, TanStack Query for server state
-- UI components: shadcn/ui + Radix UI primitives
-- Styles: Tailwind CSS utility classes with `cn()` for merging
 
 ### Commit Messages
 

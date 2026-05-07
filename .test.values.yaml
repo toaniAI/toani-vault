@@ -7,8 +7,8 @@ strategy:
     maxUnavailable: 0
 
 image:
-  repository: hub.bitkinetic.com/zkme/credbridge
-  tag: stable
+  repository: registry.example.com/example-org/credbridge
+  tag: test-latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -22,18 +22,18 @@ envs:
   CREDBRIDGE_HOST: 0.0.0.0
   CREDBRIDGE_PORT: "8080"
   CREDBRIDGE_ENV: production
-  SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-go-owner"
+  SANDBOX_OWNER_HEADLESS_SERVICE: "credbridge-owner"
   SANDBOX_OWNER_PORT: "8080"
   TEE_MODE: hardware
   SEALED_STORAGE_PATH: /app/data/sealed
   RUST_LOG: info
-  DATABASE_URL: "postgresql://dn:CHANGE_ME_DB_PASSWORD@localhost:5432/credbridge"
-  REDIS_URL: "redis://:Ysdn2025G0217@redis74-master.test.svc.cluster.local:6379/0"
-  VAULT_ADDR: "http://vault:8200"
+  DATABASE_URL: "postgresql://username:password@db.example.com:5432/credbridge"
+  REDIS_URL: "redis://:password@redis.example.com:6379/0"
+  VAULT_ADDR: "https://vault.example.com"
   # Optional plaintext fallback for CI/CD when Drone secrets are unavailable.
   # Prefer Drone secrets in production; these values are committed to git if filled in here.
-  PRIVY_APP_ID: "cmniaifov006t0cl1af6l5xqs"
-  PRIVY_APP_SECRET: "privy_app_secret_51xduL8UX9MyuZDEizgyhhh9MXsAQsZbW5n9T1xBTdrT1fgcYDqK64Yv4Cnefyhirjx94sctJPzNyAFqyVJ2GH73"
+  PRIVY_APP_ID: "replace-with-your-privy-app-id"
+  PRIVY_APP_SECRET: "replace-with-your-secret"
 
 o_envs:
   - name: SANDBOX_OWNER_ID

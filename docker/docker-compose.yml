@@ -43,7 +43,7 @@ services:
 
       # HashiCorp Vault 配置
       - VAULT_ADDR=http://vault:8200
-      - VAULT_TOKEN=${VAULT_TOKEN:-credbridge-root-token}
+      - VAULT_TOKEN=${VAULT_TOKEN:-replace-me-vault-root-token}
 
       # Privy 配置（显式注入，允许通过 .env 或宿主环境明文传入）
       - PRIVY_APP_ID=${PRIVY_APP_ID:-}
@@ -214,7 +214,7 @@ services:
     ports:
       - "8200:8200"
     environment:
-      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_TOKEN:-credbridge-root-token}
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_TOKEN:-replace-me-vault-root-token}
       - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
       - VAULT_ADDR=http://0.0.0.0:8200
     volumes:
@@ -224,7 +224,7 @@ services:
       - credbridge_network
     command: >
       vault server -dev
-      -dev-root-token-id=${VAULT_TOKEN:-credbridge-root-token}
+      -dev-root-token-id=${VAULT_TOKEN:-replace-me-vault-root-token}
       -dev-listen-address=0.0.0.0:8200
     healthcheck:
       test: ["CMD", "vault", "status"]
@@ -249,7 +249,7 @@ services:
       - IPC_LOCK
     environment:
       - VAULT_ADDR=http://vault:8200
-      - VAULT_TOKEN=${VAULT_TOKEN:-credbridge-root-token}
+      - VAULT_TOKEN=${VAULT_TOKEN:-replace-me-vault-root-token}
     volumes:
       - ./config/vault-agent:/vault/config:ro
     networks:

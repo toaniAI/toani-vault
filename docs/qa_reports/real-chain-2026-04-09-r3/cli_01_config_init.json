@@ -1,9 +1,0 @@
-{
-  "ok": true,
-  "configPath": "/tmp/credbridge-cli-r3/.toani/config.json",
-  "config": {
-    "baseUrl": "http://127.0.0.1:8080",
-    "output": "json",
-    "timeout": 30000
-  }
-}

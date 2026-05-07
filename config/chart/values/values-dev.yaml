@@ -1,8 +1,8 @@
 # Environment-specific configuration
 environment: dev
-namespace: zkme-dev
+namespace: credbridge-dev
 
 # Project configuration
 project:
-  name: zkme              # 项目名称
-  server: credbridge             # 服务名称
+  name: credbridge
+  server: credbridge

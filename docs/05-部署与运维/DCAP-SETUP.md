@@ -136,7 +136,7 @@ sudo nano /etc/sgx_default_qcnl.conf
 
 # 配置内容：
 {
-  "pccs_url": "https://sgx-dcap-server-vpc.cn-hongkong.aliyuncs.com/sgx/certification/v4/",
+  "pccs_url": "https://pccs.example.com/sgx/certification/v4/",
   "use_secure_cert": true,
   "collateral_service": "https://api.trustedservices.intel.com/sgx/certification/v4/",
   "pccs_api_version": "3.1"

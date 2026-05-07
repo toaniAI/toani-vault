@@ -1,11 +1,10 @@
 # CredBridge 用户手册
 
-本手册面向当前仓库的公开使用方式，覆盖 Web 控制台、SDK、CLI、部署和常见操作。旧的独立协议适配入口已不再作为公开使用面。
+本手册面向当前仓库的公开使用方式，覆盖主服务、SDK、CLI、部署和常见操作。旧的独立协议适配入口已不再作为公开使用面。
 
 ## 1. 系统组成
 
 - 主服务：负责认证、凭证、审计、TEE、租户和 Sandbox 相关业务能力
-- 前端控制台：提供管理界面
 - Rust SDK / TypeScript SDK：提供程序化接入
 - CLI：提供脚本化和运维入口
 
@@ -25,23 +24,9 @@ cargo clippy --tests -- -D warnings
 cargo test
 ```
 
-### 2.3 前端构建
-
-```bash
-cd frontend
-npm run build
-```
-
 ## 3. 常见使用面
 
-### 3.1 Web 控制台
-
-- 管理凭证
-- 查看审计信息
-- 管理租户与 Token
-- 使用 Sandbox 相关界面
-
-### 3.2 CLI
+### 3.1 CLI
 
 CLI 是当前推荐的自动化入口，适用于脚本、运维和 Agent 工作流。
 
@@ -59,7 +44,7 @@ CLI 是当前推荐的自动化入口，适用于脚本、运维和 Agent 工作
 - `credentials` 当前只读，不负责创建、更新、解密或删除凭证。
 - 推荐先执行 `toani login`，再执行 `toani doctor`。
 
-### 3.3 SDK
+### 3.2 SDK
 
 - Rust SDK: `sdk-rust/`
 - TypeScript SDK: `sdk-typescript/`

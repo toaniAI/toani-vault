@@ -1,8 +1,8 @@
 # Environment-specific configuration
 environment: test
-namespace: zkme-test
+namespace: credbridge-test
 
 # Project configuration
 project:
-  name: zkme              # 项目名称
-  server: credbridge             # 服务名称
+  name: credbridge
+  server: credbridge

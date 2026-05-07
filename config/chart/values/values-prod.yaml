@@ -1,12 +1,12 @@
 # Environment-specific configuration
 environment: prod
-namespace: zkme-pd
-cluster: "hk"
+namespace: credbridge-prod
+cluster: "replace-with-your-cluster"
 
 # Project configuration
 project:
-  name: zkme              # 项目名称
-  server: credbridge             # 服务名称
+  name: credbridge
+  server: credbridge
 
 sandboxOwnerRouting:
   enabled: true

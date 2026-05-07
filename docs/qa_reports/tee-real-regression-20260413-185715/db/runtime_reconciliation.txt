@@ -1,4 +1,0 @@
-credential|019d8684-529b-7753-8e4f-34d9a99296b0|tee-real-20260413-185715|username_password|false
-token|019d8684-d98f-7d63-9304-4029fd7d716f|user|access_token|["credential:read"]|["019d8684-529b-7753-8e4f-34d9a99296b0"]
-sandbox|0017c2dd-3430-4b4e-bba9-58d8eb301525|019d8684-529b-7753-8e4f-34d9a99296b0|active|real-env regression with session token
-operation|34fa8fc3-2119-45fc-86ea-f2239df54e81|0017c2dd-3430-4b4e-bba9-58d8eb301525|navigate|failed

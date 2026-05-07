@@ -1,8 +1,0 @@
-/Users/yvan/AIWorkspace/credbridge/frontend/tmp_get_dev_session_token.cjs:45
-    if (!emailInput) throw new Error('email input not found');
-                           ^
-
-Error: email input not found
-    at /Users/yvan/AIWorkspace/credbridge/frontend/tmp_get_dev_session_token.cjs:45:28
-
-Node.js v25.8.0
