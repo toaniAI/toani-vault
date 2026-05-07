@@ -36,3 +36,6 @@ coverage/
 *.swo
 *~
 .omx/
+
+# Nested repos kept locally but no longer tracked here
+/frontend/

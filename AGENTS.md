@@ -52,21 +52,6 @@ cargo fmt
 cargo clippy
 ```
 
-### Frontend (React + Vite)
-
-```bash
-cd frontend
-
-# Dev server (http://localhost:5173)
-npm run dev
-
-# Build for production
-npm run build
-
-# Lint
-npm run lint
-```
-
 ### Full Stack (Docker)
 
 ```bash
@@ -115,22 +100,6 @@ L0: SGX Sealing Key (hardware root)
 | `connector/` | External system connectors                                                         |
 | `mcp/`       | Model Context Protocol server integration                                          |
 | `bin/`       | Additional binary entry points                                                     |
-
-### Frontend Structure (`frontend/src/`)
-
-React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui.
-
-- `app/` — App shell, router, providers, route guards, shared top-level pages
-- `components/` — Reusable UI plus branded `components/zkme` shells and patterns
-- `features/` — Feature modules (`auth`, `credentials`, `audit`, `developer`, `tenants`, `tokens`)
-- `shared/` — API client, auth/session helpers, runtime config, i18n, Zustand stores
-- `hooks/` — Shared hooks such as toast helpers
-
-Current routed frontend surface:
-
-- Public: `/login`, `/invitation/accept`
-- Protected: `/credentials`, `/tokens`, `/developer`, `/onboarding`
-- Legacy routes such as `/audit`, `/tenants`, `/settings`, `/users`, `/profile` currently redirect to `/credentials`
 
 ### External Services (required for full operation)
 
@@ -195,5 +164,6 @@ mb health                                  # Health check
 - **Use metamemory** — when you discover important knowledge, project patterns, or user preferences, save them to memory so future sessions can benefit.
 - **Output files** — when generating files the user needs (images, PDFs, reports), copy them to the outputs directory provided in the system prompt so they get sent to the chat automatically.
 - **Be concise in chat** — responses appear as Feishu/Telegram cards with limited space. Keep answers focused and use markdown formatting.
+- **Public branch maintenance** — root-level `frontend` references and gitlinks are intentionally removed from this repository; keep the public/backend mirror boundary intact.
 
 @RTK.md

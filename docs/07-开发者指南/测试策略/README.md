@@ -1,6 +1,6 @@
 # 测试策略
 
-本目录包含 CredBridge 当前仍在维护的测试策略、SGX 运行手册和系统验收规范。
+本目录包含 CredBridge 当前仍在维护的后端测试策略、SGX 运行手册和系统验收规范。
 
 ## 测试文档
 
@@ -20,8 +20,6 @@
 ### 单元测试
 
 - Rust 单元测试：`cargo test`
-- TypeScript 单元测试：`cd frontend && npm run test:unit`
-- 前端构建校验：`cd frontend && npm run build`
 
 ### 集成测试
 
@@ -49,18 +47,11 @@
 ```bash
 # Rust 测试
 cargo test
-
-# Frontend 测试
-cd frontend
-npm run test:unit
-npm run build
-npm run lint
 ```
 
-### CI/CD测试
+### CI/CD 测试
 
 - 后端硬门禁：`cargo fmt`、`cargo clippy --tests -- -D warnings`、`cargo test`
-- 前端校验命令以 `frontend/package.json` 为准
 - SGX 相关验证以 runner / Drone 流程和 `SGX_RUNNER_RUNBOOK.md` 为准
 
 ## 测试报告

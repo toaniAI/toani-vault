@@ -16,9 +16,6 @@ trigger:
     - push
     # 保留 cron，便于定时回归
     - cron
-  paths:
-    exclude:
-      - frontend/**
 
 services:
   - name: redis
@@ -128,9 +125,6 @@ trigger:
   event:
     - push
     - tag
-  paths:
-    exclude:
-      - frontend/**
 
 steps:
   - name: verify-nsjail-archive

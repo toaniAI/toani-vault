@@ -2,7 +2,7 @@
 
 [English README](README.md)
 
-Toani Vault 是一个围绕 Intel SGX TEE 构建的 AI 原生零信任凭证保险库。当前仓库的公开使用面已经收口到主服务、前端控制台、Rust/TypeScript SDK，以及一个覆盖 onboarding、只读凭证元数据查询和 sandbox 操作的 CLI。
+Toani Vault 是一个围绕 Intel SGX TEE 构建的 AI 原生零信任凭证保险库。当前仓库的公开使用面已经收口到主服务、Rust/TypeScript SDK，以及一个覆盖 onboarding、只读凭证元数据查询和 sandbox 操作的 CLI。
 
 ## 当前能力
 
@@ -11,7 +11,7 @@ Toani Vault 是一个围绕 Intel SGX TEE 构建的 AI 原生零信任凭证保�
 - PASETO v4.local 认证、Redis 会话与 Token 流程
 - Schema-per-tenant 与 PostgreSQL RLS 多租户隔离
 - 审计日志、远程证明、TEE Sandbox 执行接口
-- React 管理界面、Rust SDK、TypeScript SDK、CLI
+- Rust SDK、TypeScript SDK、CLI
 
 ## 运行时存储策略（Phase 5）
 
@@ -52,7 +52,6 @@ L0: SGX Sealing Key
 - `src/vault/`：凭证存储与后端
 - `cli/`：负责 onboarding、只读凭证元数据查询和 sandbox 操作的 CLI
 - `sdk-rust/`、`sdk-typescript/`：客户端 SDK
-- `frontend/`：React 控制台
 
 ## 文档入口
 
@@ -174,13 +173,6 @@ CLI 将配置存储在 `~/.toani/config.json`。`baseUrl`、`output` 和 `timeou
 cargo fmt
 cargo clippy --tests -- -D warnings
 cargo test
-```
-
-前端构建：
-
-```bash
-cd frontend
-npm run build
 ```
 
 Linux SGX 环境下的硬件编译检查：

@@ -3,8 +3,8 @@
 [中文 README](README_zh.md)
 
 Toani Vault is an AI-native, zero-trust credential vault built around Intel SGX TEE. The current
-repository centers on one main service runtime, a React console, Rust and TypeScript SDKs, and a
-CLI for onboarding, read-only credential metadata lookup, and bearer-token driven sandbox flows.
+repository centers on one main service runtime, Rust and TypeScript SDKs, and a CLI for onboarding,
+read-only credential metadata lookup, and bearer-token driven sandbox flows.
 
 ## What It Provides
 
@@ -13,7 +13,7 @@ CLI for onboarding, read-only credential metadata lookup, and bearer-token drive
 - PASETO v4.local authentication plus Redis-backed session/token flows
 - Multi-tenant isolation with schema-per-tenant and PostgreSQL RLS
 - Audit logging, attestation endpoints, and TEE sandbox execution APIs
-- Rust SDK, TypeScript SDK, CLI, and a React frontend
+- Rust SDK, TypeScript SDK, and CLI tooling
 
 ## Runtime Storage Policy (Phase 5)
 
@@ -65,7 +65,6 @@ Primary implementation areas:
 - `src/vault/`: credential persistence and storage backends
 - `cli/`: CLI for onboarding, read-only credential metadata, and sandbox operations
 - `sdk-rust/` and `sdk-typescript/`: client SDKs
-- `frontend/`: React web console
 
 ## Documentation
 
@@ -195,13 +194,6 @@ Core verification gates:
 cargo fmt
 cargo clippy --tests -- -D warnings
 cargo test
-```
-
-Frontend build:
-
-```bash
-cd frontend
-npm run build
 ```
 
 Hardware compile check on Linux SGX runners:
