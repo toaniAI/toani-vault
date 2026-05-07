@@ -203,3 +203,15 @@ export TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so
 - [cli/README.md](cli/README.md)
 - [sdk-rust/README.md](sdk-rust/README.md)
 - [sdk-typescript/README.md](sdk-typescript/README.md)
+
+## 致谢与引用说明
+
+Toani Vault 的部分沙箱与浏览器相关设计，参考并受到了以下开源项目的启发：
+
+- [google/nsjail](https://github.com/google/nsjail)：一个基于 Linux namespaces、cgroups、
+  rlimits 与 seccomp-bpf 的轻量级隔离沙箱
+- [lightpanda-io/browser](https://github.com/lightpanda-io/browser)：一个面向 AI 与自动化场景
+  的 headless browser 开源项目
+
+感谢这两个项目的维护者与贡献者持续投入开源工作，为安全沙箱和浏览器自动化方向的实践与探索
+提供了重要参考。

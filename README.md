@@ -223,3 +223,16 @@ Reference material:
 - [cli/README.md](cli/README.md)
 - [sdk-rust/README.md](sdk-rust/README.md)
 - [sdk-typescript/README.md](sdk-typescript/README.md)
+
+## Acknowledgements
+
+Some of Toani Vault's sandbox and browser-related design work is informed by the following
+open-source projects:
+
+- [google/nsjail](https://github.com/google/nsjail), a lightweight Linux isolation sandbox based on
+  namespaces, cgroups, rlimits, and seccomp-bpf
+- [lightpanda-io/browser](https://github.com/lightpanda-io/browser), a headless browser project
+  designed for AI and automation workloads
+
+We appreciate the maintainers and contributors of these projects for their open-source work, which
+helps accelerate secure sandboxing and browser automation exploration across the ecosystem.
