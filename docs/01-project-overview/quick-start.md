@@ -223,23 +223,21 @@ kubectl get svc -n credbridge
 #### 使用 CLI
 
 ```bash
-# 安装 CLI
-cargo install --path cli
+# 安装 CLI（推荐 npm 包）
+npm install -g @toani/vault-cli@latest
 
-# 登录
-credbridge auth login \
-  --url http://localhost:8080 \
-  --token <your-paseto-token>
+# 推荐首跑流程
+toani login
+toani doctor
 
-# 创建凭证
-credbridge credentials create \
-  --name my-database \
-  --type database \
-  --value "postgres://user:password@localhost:5432/mydb"
-
-# 查看凭证列表
-credbridge credentials list
+# 只读查看凭证元数据
+toani credentials list
 ```
+
+说明：
+
+- 当前公开 CLI 只提供 `credentials list|get` 的只读能力，不负责创建、更新、删除或解密凭证。
+- 新建凭证请使用 Web 控制台 `/credentials` 页面或直接调用 REST API。
 
 #### 使用 REST API
 
@@ -250,7 +248,7 @@ curl -X POST http://localhost:8080/api/v1/credentials \
   -H "Content-Type: application/json" \
   -d '{
     "service_id": "my-database",
-    "credential_type": "database",
+    "credential_type": "username_password",
     "plaintext_data": {
       "username": "admin",
       "password": "secret_password"
@@ -261,7 +259,7 @@ curl -X POST http://localhost:8080/api/v1/credentials \
 {
   "credential_id": "018f1b4e-7e9e-7f3a-8b5c-2d4e6f8a0b2c",
   "service_id": "my-database",
-  "credential_type": "database",
+  "credential_type": "username_password",
   "created_at": "1709990400"
 }
 ```
@@ -269,7 +267,7 @@ curl -X POST http://localhost:8080/api/v1/credentials \
 #### 使用 TypeScript SDK
 
 ```typescript
-import { ToaniVaultSDK } from "@toani/vault-sdk";
+import { CredentialType, ToaniVaultSDK } from "@toani/vault-sdk";
 
 const sdk = new ToaniVaultSDK({
   baseUrl: "http://localhost:8080",
@@ -279,7 +277,7 @@ const sdk = new ToaniVaultSDK({
 // 创建凭证
 const credential = await sdk.credentials.create({
   serviceId: "my-database",
-  credentialType: "database",
+  credentialType: CredentialType.UsernamePassword,
   plaintextData: {
     username: "admin",
     password: "secret_password",
