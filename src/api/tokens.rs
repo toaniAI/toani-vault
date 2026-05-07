@@ -127,7 +127,7 @@ pub async fn create_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateTokenRequest>,
 ) -> Result<Json<CreatedTokenResponse>, ApiErrorResponse> {
-    let created = issue_access_token_from_user_token(&state, &token, request).await?;
+    let created = issue_access_token_from_user_token(&state, &token, request, None).await?;
     Ok(Json(created))
 }
 
@@ -135,6 +135,7 @@ pub async fn issue_access_token_from_user_token(
     state: &AuthApiState,
     token: &ValidatedToken,
     request: CreateTokenRequest,
+    token_name: Option<String>,
 ) -> Result<CreatedTokenResponse, ApiErrorResponse> {
     if !token.is_user_subject() {
         return Err(ApiErrorResponse::forbidden(
@@ -229,6 +230,11 @@ pub async fn issue_access_token_from_user_token(
     .with_token_kind("user_access_token")
     .with_scopes(granted_scopes.clone())
     .with_credential_ids(credential_ids.clone());
+    let metadata = if let Some(token_name) = token_name {
+        metadata.with_token_name(token_name)
+    } else {
+        metadata
+    };
     let metadata = if let Some(session_id) = token.session_id() {
         metadata.with_session_id(parse_uuid_str(session_id, "session_id")?)
     } else {
@@ -271,7 +277,7 @@ pub async fn issue_access_token_from_user_token(
         token_type: "Bearer".to_string(),
         subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string(),
-        display_name: None,
+        display_name: metadata.display_name.clone(),
         expires_in: ttl_seconds,
         scope: scope_string,
         granted_scopes: granted_scopes.clone(),

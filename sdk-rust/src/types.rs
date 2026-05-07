@@ -662,7 +662,9 @@ pub struct CreateTokenResponse {
 pub struct CreateAccessTokenResponse {
     pub access_token: String,
     pub token_id: String,
+    pub token_name: Option<String>,
     pub token_type: String,
+    pub display_name: Option<String>,
     pub expires_at: u64,
     pub expires_in: u64,
     pub granted_scopes: Vec<String>,

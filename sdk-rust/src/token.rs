@@ -257,12 +257,14 @@ impl TokenManager {
         scopes: Vec<String>,
         credential_ids: Vec<String>,
         expires_in: Option<u64>,
+        token_name: Option<String>,
         options: Option<RequestOptions>,
     ) -> Result<CreateAccessTokenResponse> {
         let body = serde_json::json!({
             "scopes": scopes,
             "ttl_seconds": expires_in,
             "credential_ids": credential_ids,
+            "token_name": token_name,
         });
 
         self.client
