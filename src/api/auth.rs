@@ -1037,7 +1037,10 @@ pub async fn create_access_token_handler(
             expires_in: request.ttl_seconds,
             credential_ids: request.credential_ids,
         },
-        request.token_name.clone().map(|name| name.trim().to_string()),
+        request
+            .token_name
+            .clone()
+            .map(|name| name.trim().to_string()),
     )
     .await?;
 
