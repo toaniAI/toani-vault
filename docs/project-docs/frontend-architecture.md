@@ -1,7 +1,7 @@
 # CredBridge 前端架构文档
 
 **生成日期**: 2026-03-25
-**最后更新**: 2026-05-06
+**最后更新**: 2026-05-07
 **框架**: React 19 + TypeScript
 **构建工具**: Vite
 **样式**: Tailwind CSS + shadcn/ui
@@ -124,6 +124,9 @@ frontend/src/
 - 凭证详情侧边栏
 - 删除确认、可见性切换、过期时间校验
 - `api_key` 场景下的 `provider` / `allowed_domains` / `custom_functions`
+- `provider=okx` 时强制要求 `passphrase`
+- `allowed_domains` 由逗号/换行文本规范化为 `string[]`
+- 当前详情弹窗会拉取 `GET /api/v1/credentials/:id`，但 UI 仍只展示基础元数据
 
 **组件**:
 
@@ -132,6 +135,14 @@ frontend/src/
 - `CredentialsPage.expiration.ts`
 - `CredentialsPage.helpers.ts`
 - `CredentialsPage.visibility.ts`
+
+### 当前凭证创建交互细节
+
+- `api_key` provider 选项：`okx`、`binance`、`custom`
+- `okx` 会显示带校验的 `passphrase`
+- `custom` 会显示 `custom_functions` 编辑区
+- `allowed_domains` 支持逗号和换行分隔输入
+- 详情弹窗当前仅显示：名称、类型、ID、创建时间、过期时间、状态
 
 ### Audit (审计模块)
 

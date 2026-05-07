@@ -56,9 +56,11 @@
 
 **状态**: 已实现
 
-- 凭证与租户管理
-- 审计查看
-- Sandbox 相关界面
+- 当前公开路由为 `/credentials`、`/tokens`、`/developer`、`/onboarding`
+- `/credentials` 支持 `api_key` 的 `provider`、`allowed_domains`、OKX `passphrase` 和
+  `custom_functions`
+- `/developer` 提供 API tester、SDK/CLI 示例与系统概览
+- 审计、租户、设置、用户、Profile 代码模块保留在仓库中，但当前路由不直接开放
 
 ## 8. SDK 生态
 
@@ -74,14 +76,14 @@
 
 当前对自动化和 Agent 的公开入口是 CLI，而不是旧的独立协议适配入口。
 
-- `credbridge auth ...`
-- `credbridge credentials ...`
-- `credbridge tokens ...`
-- `credbridge audit ...`
-- `credbridge sandbox ...`
+- `toani login`
+- `toani doctor`
+- `toani config init|show`
+- `toani credentials list|get`
+- `toani sandbox ...`
 
 业务规则仍由主服务负责，CLI 负责稳定命令面和脚本化输出。
 
 ---
 
-**最后更新**: 2026-03-26
+**最后更新**: 2026-05-07

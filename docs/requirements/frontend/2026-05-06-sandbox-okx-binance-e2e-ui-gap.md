@@ -1,5 +1,22 @@
 # Dev TEE Sandbox OKX/Binance E2E 前端缺口
 
+## 2026-05-07 状态更新
+
+基于当前仓库中的 `frontend/src/features/credentials/pages/CredentialsPage.tsx`，原始创建弹窗缺口已部分关闭：
+
+- 已实现：`provider` 选择器（`okx` / `binance` / `custom`）
+- 已实现：`allowed_domains` 文本输入并在提交前序列化为数组
+- 已实现：`provider=okx` 时的 `passphrase` 显示与必填校验
+- 已实现：`provider=custom` 时的 `custom_functions` 编辑区与基础校验
+
+仍未完成的部分：
+
+- 凭证详情弹窗虽然会请求 `GET /api/v1/credentials/:id`，但当前 UI 仍只展示基础元数据，
+  尚未展示 `provider`、`allowed_domains`、`custom_functions` 摘要
+
+下文保留的是 2026-05-06 的原始缺口记录与验收上下文，用于追踪需求来源；若与当前代码状态冲突，
+以上状态更新为准。
+
 ## 背景
 
 本轮验收目标要求用户在 `/credentials` 页面直接创建可用于 OKX / Binance sandbox `http_request` 的 `api_key` 凭证，并在页面侧完整填写：
@@ -11,7 +28,7 @@
 
 验收计划来源：`/Users/yvan/Downloads/PLAN-Verify2.md`
 
-## 运行时观察
+## 2026-05-06 运行时观察
 
 2026-05-06 在 `https://dev-credbridge.bitkinetic.com/credentials` 打开“Create Credential”弹窗后，`API Key` 类型下当前可见字段只有：
 
@@ -26,7 +43,7 @@
 - 页面截图：`/Users/yvan/AIWorkspace/credbridge/docs/qa_reports/2026-05-06-sandbox-okx-binance-e2e/browser/probe-credentials-modal.png`
 - 字段结构导出：`/Users/yvan/AIWorkspace/credbridge/docs/qa_reports/2026-05-06-sandbox-okx-binance-e2e/logs/probe-credentials-modal.json`
 
-当前弹窗未暴露以下必要输入：
+当日弹窗未暴露以下必要输入：
 
 - `provider` 选择（至少 `okx` / `binance` / `custom`）
 - `allowed_domains` 文本域
@@ -35,7 +52,7 @@
 
 ## 问题定义
 
-页面当前能力无法直接创建满足 OKX / Binance 私有 REST sandbox 验收要求的凭证，因此以下计划项不能通过 UI 路径完成：
+当日页面能力无法直接创建满足 OKX / Binance 私有 REST sandbox 验收要求的凭证，因此以下计划项不能通过 UI 路径完成：
 
 - `CLAIM-CRED-001`
 - `CLAIM-TOKEN-001` 中“限制到本次创建的 credential IDs”的前置 UI 建凭证路径

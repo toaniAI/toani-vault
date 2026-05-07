@@ -35,6 +35,8 @@
 - [监控告警](MONITORING.md) - Prometheus + Grafana 监控配置
 - 健康检查端点：`/health`（liveness）, `/ready` / `/health/detail`（readiness）
 - 指标端点：`/metrics`
+- 若健康检查经过前端或外部网关代理，先对照 [HEALTH_ENDPOINT_PROXY_CHECKLIST.md](HEALTH_ENDPOINT_PROXY_CHECKLIST.md)
+  确认 `/health`、`/ready`、`/health/detail` 没有错误回退到前端静态页
 
 ### 日志与审计
 
@@ -67,4 +69,4 @@
 
 ---
 
-**更新时间**: 2026-04-03
+**更新时间**: 2026-05-07

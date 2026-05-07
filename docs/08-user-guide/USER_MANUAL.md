@@ -36,10 +36,19 @@ npm run build
 
 ### 3.1 Web 控制台
 
-- 管理凭证
-- 查看审计信息
-- 管理租户与 Token
-- 使用 Sandbox 相关界面
+当前公开 Web 控制台入口为：
+
+- `/credentials`：管理凭证列表、创建凭证、查看基础元数据、删除凭证
+- `/tokens`：签发和查看受限 token
+- `/developer`：查看 API / SDK / CLI 示例，并使用 API tester
+- `/onboarding`：新用户引导流程
+
+说明：
+
+- `api_key` 凭证创建弹窗支持 `provider`、`allowed_domains`、OKX `passphrase`、以及
+  `provider=custom` 时的 `custom_functions`
+- 审计、租户、设置、用户、Profile 代码模块仍保留在仓库中，但当前前端路由不会直接开放
+  这些页面；访问旧路径会重定向到 `/credentials`
 
 ### 3.2 CLI
 
