@@ -12,6 +12,8 @@ docs/internal/
 .sealed/
 .cursor/
 .playwright-cli/
+.pw-browser/
+.pw-browsers/
 
 # Build artifacts
 /target
@@ -36,5 +38,6 @@ coverage/
 *.swo
 *~
 .omx/
+tmp/
 
 # Nested repos kept locally but no longer tracked here

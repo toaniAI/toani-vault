@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/scripts/hooks.py --hook Stop",
+            "timeout": 10,
+            "statusMessage": "Running session stop hook"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/scripts/hooks.py --hook UserPromptSubmit",
+            "timeout": 10,
+            "statusMessage": "Running user prompt submit hook"
+          }
+        ]
+      }
+    ]
+  }
+}
