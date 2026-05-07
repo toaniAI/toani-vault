@@ -61,7 +61,7 @@ L0: SGX Sealing Key
 - 开发者指南：[docs/07-developer-guide/README.md](docs/07-developer-guide/README.md)
 - SGX Runner 手册：[docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
-内部需求补充和验收证据分别维护在 `docs/requirements/` 与 `docs/qa_reports/`，它们面向产品 / QA 交接，不作为公开 onboarding 路径。
+内部规划输入、需求补充和 QA 验收材料保留在私有 `master` 分支，不随当前 public 镜像发布。
 
 ## CLI 使用指南
 

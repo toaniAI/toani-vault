@@ -24,7 +24,6 @@
 
 ## 文档边界
 
-- `docs/99-归档/` 保留历史材料，仅供追溯，不属于当前公开使用面。
-- `docs/project-docs/`、`docs/plans/`、`docs/design/` 等目录保留内部参考性质内容，不视为正式用户文档。
-- `docs/qa_reports/` 和 `docs/requirements/` 保存验收证据与需求缺口输入，面向内部交付与修复闭环。
+- `docs/project-docs/` 与 `docs/plans/` 保留内部参考性质内容，不视为正式用户文档。
+- 私有 `master` 分支保留需求输入、验收证据和内部修复闭环材料；public 镜像不发布这些目录。
 - 如果文档内容与当前代码不一致，以仓库中的实际实现和构建入口为准。

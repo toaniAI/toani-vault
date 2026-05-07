@@ -74,9 +74,8 @@ Primary implementation areas:
 - Developer guides: [docs/07-developer-guide/README.md](docs/07-developer-guide/README.md)
 - SGX runner runbook: [docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
-Internal requirement captures and acceptance evidence live under `docs/requirements/` and
-`docs/qa_reports/`. Those directories are maintained for product and QA handoff, not as the public
-onboarding path.
+Private planning inputs, requirement captures, and QA evidence remain on the internal `master`
+branch and are not published in this public mirror.
 
 ## CLI Usage Guide
 
