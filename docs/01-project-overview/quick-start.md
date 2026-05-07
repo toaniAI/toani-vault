@@ -543,11 +543,11 @@ println!("Token: {}", token);
 
 ### 学习资源
 
-- [项目介绍](项目介绍.md) - 了解项目定位和核心能力
-- [功能特性](功能特性.md) - 详细功能列表和使用场景
-- [架构设计](架构设计.md) - 深入了解系统架构
-- [API 文档](../03-API 参考/README.md) - 完整的 API 参考
-- [SDK 指南](../04-SDK 与工具/README.md) - SDK 使用教程
+- [项目介绍](introduction.md) - 了解项目定位和核心能力
+- [功能特性](feature-highlights.md) - 详细功能列表和使用场景
+- [架构设计](architecture.md) - 深入了解系统架构
+- [API 文档](../03-api-reference/README.md) - 完整的 API 参考
+- [SDK 指南](../04-sdk-and-tooling/README.md) - SDK 使用教程
 
 ### 进阶主题
 

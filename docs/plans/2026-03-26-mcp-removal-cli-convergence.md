@@ -347,7 +347,7 @@ Remove references to MCP from:
 
 Known areas to review:
 
-- `docs/08-用户指南/USER_MANUAL.md`
+- `docs/08-user-guide/USER_MANUAL.md`
 - `docs/design/mcp-sse-design.md`
 - `docs/mcp-examples/`
 - `AGENTS.md`

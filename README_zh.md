@@ -56,10 +56,10 @@ L0: SGX Sealing Key
 ## 文档入口
 
 - 文档总入口：[docs/README.md](docs/README.md)
-- 部署与运维：[docs/05-部署与运维/README.md](docs/05-部署与运维/README.md)
-- API 参考：[docs/03-API 参考/README.md](docs/03-API 参考/README.md)
-- 开发者指南：[docs/07-开发者指南/README.md](docs/07-开发者指南/README.md)
-- SGX Runner 手册：[docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md](docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md)
+- 部署与运维：[docs/05-deployment-and-operations/README.md](docs/05-deployment-and-operations/README.md)
+- API 参考：[docs/03-api-reference/README.md](docs/03-api-reference/README.md)
+- 开发者指南：[docs/07-developer-guide/README.md](docs/07-developer-guide/README.md)
+- SGX Runner 手册：[docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
 内部需求补充和验收证据分别维护在 `docs/requirements/` 与 `docs/qa_reports/`，它们面向产品 / QA 交接，不作为公开 onboarding 路径。
 

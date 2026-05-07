@@ -69,10 +69,10 @@ Primary implementation areas:
 ## Documentation
 
 - Documentation hub: [docs/README.md](docs/README.md)
-- Deployment and operations: [docs/05-部署与运维/README.md](docs/05-部署与运维/README.md)
-- API reference: [docs/03-API 参考/README.md](docs/03-API 参考/README.md)
-- Developer guides: [docs/07-开发者指南/README.md](docs/07-开发者指南/README.md)
-- SGX runner runbook: [docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md](docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md)
+- Deployment and operations: [docs/05-deployment-and-operations/README.md](docs/05-deployment-and-operations/README.md)
+- API reference: [docs/03-api-reference/README.md](docs/03-api-reference/README.md)
+- Developer guides: [docs/07-developer-guide/README.md](docs/07-developer-guide/README.md)
+- SGX runner runbook: [docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
 Internal requirement captures and acceptance evidence live under `docs/requirements/` and
 `docs/qa_reports/`. Those directories are maintained for product and QA handoff, not as the public

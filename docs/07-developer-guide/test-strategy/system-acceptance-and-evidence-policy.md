@@ -341,7 +341,7 @@
 - 验收用例：[ACCEPTANCE_TEST_CASES.md](./ACCEPTANCE_TEST_CASES.md)
 - SGX 执行手册：[SGX_TEST_EXECUTION_GUIDE.md](./SGX_TEST_EXECUTION_GUIDE.md)
 - SGX Runner 手册：[SGX_RUNNER_RUNBOOK.md](./SGX_RUNNER_RUNBOOK.md)
-- 部署与监控文档：[MONITORING.md](../../05-部署与运维/MONITORING.md)
+- 部署与监控文档：[MONITORING.md](../../05-deployment-and-operations/MONITORING.md)
 - 前端路由与仪表板实现：[router.tsx](/Users/yvan/AIWorkspace/credbridge/frontend/src/app/router.tsx)、[DashboardPage.tsx](/Users/yvan/AIWorkspace/credbridge/frontend/src/features/dashboard/pages/DashboardPage.tsx)
 
 说明：

@@ -410,9 +410,9 @@ pub struct TeeRuntimeConfig {
 
 - Modify: `/Users/yvan/AIWorkspace/credbridge/README.md`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/API.md`
-- Modify: `/Users/yvan/AIWorkspace/credbridge/docs/03-API 参考/REST-API.md`
+- Modify: `/Users/yvan/AIWorkspace/credbridge/docs/03-api-reference/REST-API.md`
 - Modify: `/Users/yvan/AIWorkspace/credbridge/docs/project-docs/tee-sandbox.md`
-- Modify: `/Users/yvan/AIWorkspace/credbridge/docs/05-部署与运维/DCAP-SETUP.md`
+- Modify: `/Users/yvan/AIWorkspace/credbridge/docs/05-deployment-and-operations/DCAP-SETUP.md`
 - Optional: `/Users/yvan/AIWorkspace/credbridge/AGENTS.md`
 - Optional: `/Users/yvan/AIWorkspace/credbridge/CLAUDE.md`
 

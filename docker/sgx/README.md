@@ -71,4 +71,4 @@ docker run --rm -it \
 ```
 
 For a fuller operator sequence, see
-[`docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md`](../../docs/07-开发者指南/测试策略/SGX_RUNNER_RUNBOOK.md).
+[`docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md`](../../docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md).

@@ -109,7 +109,7 @@
 | ----------- | -------- | -------------------- | -------- | -------------------------------------------------------- |
 | ENV-DOC-001 | P0       | tech spec 已冻结     | **PASS** | tech-spec 文件存在                                       |
 | ENV-DOC-002 | P0       | 测试计划已冻结       | **PASS** | test-plan 文件存在                                       |
-| ENV-DOC-003 | P0       | API 文档可访问       | **PASS** | `docs/03-API 参考/README.md` 已更新，包含 Privy 认证端点 |
+| ENV-DOC-003 | P0       | API 文档可访问       | **PASS** | `docs/03-api-reference/README.md` 已更新，包含 Privy 认证端点 |
 | ENV-DOC-004 | P1       | CLI / SDK 文档可访问 | **PASS** | CLI/SDK 文档存在                                         |
 | ENV-DOC-005 | P1       | 已知限制清单明确     | **PASS** | 测试计划 Out of scope 已明确                             |
 

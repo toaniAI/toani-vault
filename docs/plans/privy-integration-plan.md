@@ -417,7 +417,7 @@ apiClient.interceptors.request.use(async (config) => {
 
 **目标**: 文档反映 Privy 认证方式
 
-**文件**: `docs/03-API 参考/REST-API.md`
+**文件**: `docs/03-api-reference/REST-API.md`
 
 **更新内容**:
 

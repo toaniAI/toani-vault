@@ -714,7 +714,7 @@ curl -X POST http://localhost:8080/api/v1/audit/export \
 - [不可篡改存储](不可篡改存储.md) - Merkle Tree 实现
 - [合规检查清单](合规检查清单.md) - 合规要求清单
 - [审计日志查询 API](../../README.md#审计日志查询-api-ep4-story43) - API 文档
-- [架构设计](../01-项目概述/架构设计.md) - 整体架构
+- [架构设计](../01-project-overview/architecture.md) - 整体架构
 
 ---
 

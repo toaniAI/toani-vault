@@ -86,9 +86,9 @@ export TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so
 ## 5. 常见文档入口
 
 - 文档导航：`docs/README.md`
-- API 参考：`docs/03-API 参考/`
-- 部署运维：`docs/05-部署与运维/`
-- 开发者指南：`docs/07-开发者指南/`
+- API 参考：`docs/03-api-reference/`
+- 部署运维：`docs/05-deployment-and-operations/`
+- 开发者指南：`docs/07-developer-guide/`
 
 ## 6. 说明
 

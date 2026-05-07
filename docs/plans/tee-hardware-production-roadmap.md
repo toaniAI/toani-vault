@@ -99,7 +99,7 @@
 
 - [ ] 确认 `AttestationService` 在 `TeeRuntimeMode::Hardware` 下 **所有** 校验路径均要求真实签名/白名单/验证者公钥，无遗留 `allows_simulation` 误用。
 - [ ] `ChallengeProtocol` / `ProverProtocol` 与真实 Quote 字段、时间戳、重放防护对齐。
-- [ ] 对外 JSON 中 `requested_mode` / `effective_mode` / `root_key_source` 与实现一致；更新 `API.md` 与 `docs/03-API 参考/REST-API.md` 中的硬件示例。
+- [ ] 对外 JSON 中 `requested_mode` / `effective_mode` / `root_key_source` 与实现一致；更新 `API.md` 与 `docs/03-api-reference/REST-API.md` 中的硬件示例。
 - [ ] 将 attestation 的运行期异常映射到明确状态：Quote 失效、PCCS/PCS 异常、Enclave 非 Running 时，不能仅在 JSON 字段中弱提示，必须能驱动 readiness/metrics 变红。
 
 ### 4.6 vault-service 独立二进制（本路线图默认不纳入首要目标）
@@ -115,7 +115,7 @@
 
 ### 4.7 运维与配置（仅支撑「在 TEE 节点跑通主服务」）
 
-- [ ] 在 `docs/05-部署与运维/` 中增加**最小**检查表，覆盖在 TEE 节点上启动主服务所需前置：BIOS、驱动、`aesmd`、PCCS、`TEE_PCS_BASE_URL`、`TEE_DEBUG` 等。**不**在本路线图内展开生产级策略文档。
+- [ ] 在 `docs/05-deployment-and-operations/` 中增加**最小**检查表，覆盖在 TEE 节点上启动主服务所需前置：BIOS、驱动、`aesmd`、PCCS、`TEE_PCS_BASE_URL`、`TEE_DEBUG` 等。**不**在本路线图内展开生产级策略文档。
 - [ ] （可选）简要说明 compose/容器与裸机单节点在设备挂载上的差异，便于开发验证；**完整容器化/K8s 生产方案不属本路线图交付范围**。
 - [ ] 质量门禁采用**分层策略**：PR 常规门禁至少包含 `cargo fmt --check`、`cargo clippy --tests -- -D warnings`、`cargo test`；hardware 专项验收由 SGX 专用 runner 执行 `cargo test --test sgx_hardware_tests -- --ignored --test-threads=1`。
 - [ ] 阶段结果、PR 描述与验收记录中，必须分开列出“已执行验证”和“未执行验证”；若 SGX、PCCS、AESM、immudb、RLS 等环境缺失导致测试未跑，必须明确原因、影响范围与补充验证命令。

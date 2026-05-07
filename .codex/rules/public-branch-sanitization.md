@@ -61,7 +61,7 @@ Replace private values with explicit placeholders such as:
 
 ### Required scans
 
-- `rtk rg -n 'frontend/' README.md README_zh.md AGENTS.md docs/07-开发者指南/README.md docs/07-开发者指南/测试策略/README.md`
+- `rtk rg -n 'frontend/' README.md README_zh.md AGENTS.md docs/07-developer-guide/README.md docs/07-developer-guide/test-strategy/README.md`
 - `rtk rg -n 'bitkinetic|aliyuncs|branch_dev|branch_test|deploy-auth-key|deploy-base-url|docker-hub-username|docker-hub-password|git@git\\.bitkinetic' . --hidden --glob '!.git'`
 - `rtk rg -n 'PRIVY_APP_SECRET|postgresql://|redis://|VAULT_TOKEN=' .env.example .values.yaml .test.values.yaml`
 
