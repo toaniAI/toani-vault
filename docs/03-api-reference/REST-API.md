@@ -1,4 +1,4 @@
-# CredBridge REST API
+# ToaniVault REST API
 
 本文档记录当前 `src/main.rs` 与 `src/api/*.rs` 中实际已注册的 REST 端点。
 

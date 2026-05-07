@@ -15,7 +15,7 @@ Provide agents with an immediately executable `toani` usage guide, with special 
 ## Core Mental Model
 
 1. `toani` is a CLI, not SDK pseudocode.
-2. `sandbox` is a remote TEE browser session provided by the CredBridge backend, not a local browser and not the agent's own runtime node.
+2. `sandbox` is a remote TEE browser session provided by the ToaniVault backend, not a local browser and not the agent's own runtime node.
 3. Page operations are composed through `toani sandbox create-session`, `toani sandbox bootstrap-page`, and `toani sandbox execute`.
 4. `http_request` is a backend-side direct HTTP operation and does not start the remote browser; it can resolve credential references inside nested headers/body values, supports fixed `prefix` / `suffix` wrappers such as `Bearer `, and also supports exchange-style string templates like `${credential.api_key}` and `${functions.okx_sign()}` / `${functions.binance_sign()}`.
 5. Rocket Loader-style pages should run `bootstrap-page` explicitly before `wait` / `fill` / `click`.

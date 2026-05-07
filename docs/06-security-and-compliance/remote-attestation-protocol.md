@@ -1,6 +1,6 @@
 # 远程认证协议
 
-CredBridge 实现了基于 Intel SGX DCAP（Data Center Attestation Primitives）的远程认证协议，用于验证 Enclave 的身份和完整性。
+ToaniVault 实现了基于 Intel SGX DCAP（Data Center Attestation Primitives）的远程认证协议，用于验证 Enclave 的身份和完整性。
 
 ## 目录
 
@@ -380,7 +380,7 @@ assert!(quote_age < 3600); // 不超过 1 小时
 │                  挑战 - 响应认证流程                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  客户端                      CredBridge API          Enclave    │
+│  客户端                      ToaniVault API          Enclave    │
 │    │                            │                        │      │
 │    │ 1. POST /attestation/challenge                            │
 │    │───────────────────────────>│                        │      │

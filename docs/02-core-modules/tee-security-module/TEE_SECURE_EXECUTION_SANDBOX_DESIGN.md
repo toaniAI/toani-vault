@@ -1,14 +1,14 @@
-# CredBridge TEE 安全执行沙箱设计文档
+# ToaniVault TEE 安全执行沙箱设计文档
 
 ## 概述
 
-本文档描述 CredBridge 的"凭证不出 Enclave"安全执行架构，支持 AI Agent 和开发者在可信执行环境（TEE）内完成敏感操作，同时确保凭证明文永不离开硬件隔离环境。
+本文档描述 ToaniVault 的"凭证不出 Enclave"安全执行架构，支持 AI Agent 和开发者在可信执行环境（TEE）内完成敏感操作，同时确保凭证明文永不离开硬件隔离环境。
 
 ## 核心架构
 
 ### 安全架构概述
 
-CredBridge TEE沙箱采用**多层隔离架构**，确保：
+ToaniVault TEE沙箱采用**多层隔离架构**，确保：
 
 1. 凭证明文永不出Enclave
 2. 沙箱间严格隔离，防止横向移动
@@ -16,7 +16,7 @@ CredBridge TEE沙箱采用**多层隔离架构**，确保：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                       CredBridge Enclave (SGX/TEE)                               │
+│                       ToaniVault Enclave (SGX/TEE)                               │
 │                                                                                  │
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │                      Enclave 级安全边界                                  │   │
@@ -342,7 +342,7 @@ impl NsjailSandboxPool {
 
 **TEE 环境限制分析：**
 
-由于 CredBridge 运行在 TEE（可信执行环境）内，沙箱方案必须满足以下约束：
+由于 ToaniVault 运行在 TEE（可信执行环境）内，沙箱方案必须满足以下约束：
 
 - **KVM 不可用**：TEE 内无法运行虚拟机管理器
 - **内核模块受限**：不能依赖特权内核模块
@@ -380,7 +380,7 @@ impl NsjailSandboxPool {
 
 #### 1.2.1 多层隔离架构（基于 nsjail）
 
-CredBridge 采用 **nsjail** 作为沙箱运行时，通过 Linux Namespaces、seccomp-bpf 和 cgroups 实现轻量级隔离。
+ToaniVault 采用 **nsjail** 作为沙箱运行时，通过 Linux Namespaces、seccomp-bpf 和 cgroups 实现轻量级隔离。
 
 **nsjail 核心配置结构：**
 
@@ -1640,7 +1640,7 @@ impl MockLlmProvider {
                     "confidence": 0.92,
                     "reasoning": "截图内容与申请目的完全一致，未发现敏感信息泄露"
                 },
-                "watermark_text": "CredBridge | SessionID | 2024-01-15T10:30:00Z"
+                "watermark_text": "ToaniVault | SessionID | 2024-01-15T10:30:00Z"
             }).to_string()
         );
 
@@ -2363,7 +2363,7 @@ pub const SCREENSHOT_REVIEW_PROMPT: &str = r#"
         "confidence": 0.95,
         "reasoning": "详细说明批准或拒绝的原因"
     },
-    "watermark_text": "CredBridge | {user_id_hash} | {timestamp}"
+    "watermark_text": "ToaniVault | {user_id_hash} | {timestamp}"
 }
 "#;
 ```
@@ -3830,7 +3830,7 @@ Content-Type: application/json
     "has_sensitive_content": false,
     "requires_redaction": false
   },
-  "watermark": "CredBridge | user_hash | 2024-01-15T10:10:00Z",
+  "watermark": "ToaniVault | user_hash | 2024-01-15T10:10:00Z",
   "signature": "{enclave_signature}",
   "audit_log_id": "audit_002"
 }
@@ -4150,7 +4150,7 @@ ws.send(
 // src/sandbox/index.ts
 
 /**
- * CredBridge 安全执行沙箱 SDK
+ * ToaniVault 安全执行沙箱 SDK
  *
  * 提供在 TEE 环境中执行浏览器操作的能力，
  * 所有凭证明文不出 Enclave

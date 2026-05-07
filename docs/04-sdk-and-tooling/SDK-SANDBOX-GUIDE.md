@@ -1,4 +1,4 @@
-# CredBridge Sandbox SDK 使用指南
+# ToaniVault Sandbox SDK 使用指南
 
 > **迁移注意**: SDK 包已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，旧包名已弃用。请将 `import { CredBridgeSDK }` 改为 `import { ToaniVaultSDK }`。
 
@@ -107,7 +107,7 @@ automateTask().catch(console.error);
 
 ### 什么是 Sandbox
 
-Sandbox 是 CredBridge 提供的 TEE（可信执行环境）安全浏览器自动化服务。它允许 AI Agent 在隔离环境中执行网页操作，而无需暴露用户的真实凭证。
+Sandbox 是 ToaniVault 提供的 TEE（可信执行环境）安全浏览器自动化服务。它允许 AI Agent 在隔离环境中执行网页操作，而无需暴露用户的真实凭证。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -116,7 +116,7 @@ Sandbox 是 CredBridge 提供的 TEE（可信执行环境）安全浏览器自�
 └──────────────────────────┬──────────────────────────────────┘
                            │ SDK API 调用
 ┌──────────────────────────▼──────────────────────────────────┐
-│              CredBridge Gateway 层                           │
+│              ToaniVault Gateway 层                           │
 │         (API 认证、请求路由、审计日志)                        │
 └──────────────────────────┬──────────────────────────────────┘
                            │ 安全通道
@@ -1081,6 +1081,6 @@ queryPortfolio("your-credential-id")
 
 ---
 
-**© 2026 CredBridge. All rights reserved.**
+**© 2026 ToaniVault. All rights reserved.**
 
-**安全声明**: 本文档包含 CredBridge Sandbox SDK 的使用指南，请妥善保管您的 API Token，不要在客户端代码中暴露敏感凭证。
+**安全声明**: 本文档包含 ToaniVault Sandbox SDK 的使用指南，请妥善保管您的 API Token，不要在客户端代码中暴露敏感凭证。

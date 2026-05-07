@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-26
 
-**Goal:** Remove the standalone MCP server and converge all AI-facing integration onto the main CredBridge service plus the official CLI.
+**Goal:** Remove the standalone MCP server and converge all AI-facing integration onto the main ToaniVault service plus the official CLI.
 
 **Non-goal:** This document does not cover backward compatibility or migration. The system is not yet released, so the target architecture can be adopted directly.
 
@@ -14,7 +14,7 @@ Adopt a single business authority:
 AI Agent
   -> credbridge CLI
       -> credbridge-sdk
-          -> main CredBridge HTTP service
+          -> main ToaniVault HTTP service
               -> auth / token / vault / tee / audit / tenant / sandbox
 ```
 

@@ -1,6 +1,6 @@
 # 四层密钥层次架构
 
-CredBridge 实现了四层密钥层次架构，确保密钥材料的安全派生、存储和使用。
+ToaniVault 实现了四层密钥层次架构，确保密钥材料的安全派生、存储和使用。
 
 ## 目录
 
@@ -75,7 +75,7 @@ use vault_service::crypto::hkdf::Hkdf;
 // 从 Sealing Key 派生 Master Key
 let hkdf = Hkdf::new(Some(salt), &sealing_key)?;
 let mut master_key = vec![0u8; 32];
-hkdf.expand(b" CredBridge Master Key", &mut master_key)?;
+hkdf.expand(b" ToaniVault Master Key", &mut master_key)?;
 ```
 
 #### L2: User Vault Key（用户保险库密钥）
@@ -151,7 +151,7 @@ zeroize(&credential_key); // 立即清零
 
 ### HKDF（HMAC-based Extract-and-Expand Key Derivation Function）
 
-CredBridge 使用 HKDF-SHA-256 进行密钥派生，符合 RFC 5869 标准。
+ToaniVault 使用 HKDF-SHA-256 进行密钥派生，符合 RFC 5869 标准。
 
 ### HKDF 两个阶段
 
@@ -199,12 +199,12 @@ hkdf.expand(info, &mut okm)?;
 use vault_service::crypto::hkdf::Hkdf;
 
 // L0 → L1: 从 Sealing Key 派生 Master Key
-let salt = b"CredBridge L1 Salt";
+let salt = b"ToaniVault L1 Salt";
 let ikm = &sealing_key; // L0
 let hkdf = Hkdf::new(Some(salt), ikm)?;
 
 let mut master_key = vec![0u8; 32]; // L1
-hkdf.expand(b"CredBridge Master Key", &mut master_key)?;
+hkdf.expand(b"ToaniVault Master Key", &mut master_key)?;
 
 // L1 → L2: 从 Master Key 派生 User Vault Key
 let tenant_id = b"tenant_123";

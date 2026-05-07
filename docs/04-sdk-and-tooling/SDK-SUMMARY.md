@@ -1,4 +1,4 @@
-# CredBridge SDK 文档与示例 - 完成总结
+# ToaniVault SDK 文档与示例 - 完成总结
 
 ## 文档交付清单
 
@@ -119,7 +119,7 @@
 
 ## 验收标准检查
 
-✅ **Given**: 开发者需要集成 CredBridge
+✅ **Given**: 开发者需要集成 ToaniVault
 
 - **When**: 查阅 SDK 文档
 - **Then**: 找到完整的 API 参考、快速入门指南

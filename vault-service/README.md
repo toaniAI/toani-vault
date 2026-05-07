@@ -1,6 +1,6 @@
-# CredBridge Vault Service
+# ToaniVault Vault Service
 
-CredBridge 凭证保险库服务 - 基于 TEE（可信执行环境）和 HashiCorp Vault 的安全凭证存储系统。
+ToaniVault 凭证保险库服务 - 基于 TEE（可信执行环境）和 HashiCorp Vault 的安全凭证存储系统。
 
 ## 功能特性
 
@@ -165,7 +165,7 @@ let config = VaultConfig {
 
 ## 租户隔离中间件
 
-CredBridge 实现了基于 Token 的租户隔离中间件，自动从 PASETO Token 中提取 `tenant_id` 并验证租户隔离。
+ToaniVault 实现了基于 Token 的租户隔离中间件，自动从 PASETO Token 中提取 `tenant_id` 并验证租户隔离。
 
 ### 工作原理
 
@@ -230,7 +230,7 @@ pub fn validate_path_tenant_id(
 
 ## 租户管理模块
 
-CredBridge 提供了完整的租户管理模块，支持多租户配置管理、生命周期管理和资源隔离。
+ToaniVault 提供了完整的租户管理模块，支持多租户配置管理、生命周期管理和资源隔离。
 
 ### 快速开始
 
@@ -328,7 +328,7 @@ println!("Updated to version: {}", updated.version);
 
 ## 远程认证 API
 
-CredBridge 提供基于 Intel SGX DCAP 的远程认证服务 API，支持挑战-响应协议来验证 Enclave 身份。
+ToaniVault 提供基于 Intel SGX DCAP 的远程认证服务 API，支持挑战-响应协议来验证 Enclave 身份。
 
 ### 认证流程
 
@@ -371,7 +371,7 @@ curl http://localhost:3000/api/v1/attestation/status
 
 ## Token 系统
 
-CredBridge 使用基于 **PASETO v4.local** 的有限 Scope Token 系统，在 TEE Enclave 内完成所有 Token 的签发和验证。
+ToaniVault 使用基于 **PASETO v4.local** 的有限 Scope Token 系统，在 TEE Enclave 内完成所有 Token 的签发和验证。
 
 ### Token 格式
 
@@ -449,7 +449,7 @@ let token_key = PasetoToken::derive_key_from_master(
 
 ## Token 状态管理（Redis）
 
-CredBridge 使用 Redis 管理 Token 状态，支持撤销检查、元数据查询和批量撤销操作。
+ToaniVault 使用 Redis 管理 Token 状态，支持撤销检查、元数据查询和批量撤销操作。
 
 ### Redis 数据结构
 
@@ -628,7 +628,7 @@ vault-service/
 
 - **仅 TEE Enclave 持有**：Vault Token 永远不会离开 TEE 安全边界
 - **短期 Token**：设置合理的 TTL，定期轮换
-- **专用策略**：使用最小权限原则，为 CredBridge 创建专用策略
+- **专用策略**：使用最小权限原则，为 ToaniVault 创建专用策略
 
 ### 双重加密
 
@@ -737,7 +737,7 @@ MIT License - 查看 [LICENSE](../LICENSE) 文件了解详情
 
 ## 监控与告警
 
-CredBridge Vault Service 内置了完整的监控与告警系统，支持 Prometheus 指标导出、健康检查和告警通知。
+ToaniVault Vault Service 内置了完整的监控与告警系统，支持 Prometheus 指标导出、健康检查和告警通知。
 
 ### 健康检查端点
 

@@ -1,6 +1,6 @@
-# Contributing to CredBridge
+# Contributing to ToaniVault
 
-Thank you for your interest in contributing to CredBridge! This document outlines the process for contributing to the project and how to get your development environment set up.
+Thank you for your interest in contributing to ToaniVault! This document outlines the process for contributing to the project and how to get your development environment set up.
 
 ## Table of Contents
 
@@ -127,7 +127,7 @@ docs: update deployment guide for SGX hardware mode
 
 ### Security Requirements
 
-CredBridge handles sensitive credential data. All contributions must:
+ToaniVault handles sensitive credential data. All contributions must:
 
 - Never log secrets, tokens, or plaintext credential values
 - Use the existing four-layer key hierarchy for any new encryption operations
@@ -187,4 +187,4 @@ For general questions and discussion, open a GitHub Discussion rather than an is
 
 ---
 
-Thank you for contributing to CredBridge!
+Thank you for contributing to ToaniVault!

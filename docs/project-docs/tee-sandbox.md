@@ -1,4 +1,4 @@
-# CredBridge TEE 沙箱文档
+# ToaniVault TEE 沙箱文档
 
 **生成日期**: 2026-03-18
 **模块版本**: 0.1.0
@@ -18,7 +18,7 @@ TEE（可信执行环境）模块提供安全的代码执行环境，基于 Inte
 
 ### 运行模式选择
 
-CredBridge 通过 `TEE_MODE` 显式选择运行模式：
+ToaniVault 通过 `TEE_MODE` 显式选择运行模式：
 
 ```bash
 TEE_MODE=hardware cargo run

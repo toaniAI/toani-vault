@@ -1,4 +1,4 @@
-# CredBridge Tenant API
+# ToaniVault Tenant API
 
 本文档描述当前 `src/api/tenant.rs` 实际实现的租户管理接口。
 

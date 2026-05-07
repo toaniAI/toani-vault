@@ -1,6 +1,6 @@
-# CredBridge Docker 部署指南
+# ToaniVault Docker 部署指南
 
-本目录包含 CredBridge Vault Service 的 Docker 容器化配置。
+本目录包含 ToaniVault Vault Service 的 Docker 容器化配置。
 
 ## 目录结构
 
@@ -102,7 +102,7 @@ curl http://localhost:8080/ready
 
 | 服务          | 端口 | 用途                     |
 | ------------- | ---- | ------------------------ |
-| vault-service | 8080 | CredBridge 主服务        |
+| vault-service | 8080 | ToaniVault 主服务        |
 | postgres      | 5432 | 主数据库                 |
 | redis         | 6379 | 缓存与会话存储           |
 | immudb        | 3322 | 不可变审计日志           |
@@ -367,4 +367,4 @@ docker-compose logs -f vault-service
 
 ## 许可证
 
-Copyright (c) 2026 CredBridge. All rights reserved.
+Copyright (c) 2026 ToaniVault. All rights reserved.

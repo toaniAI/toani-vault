@@ -1,4 +1,4 @@
-# CredBridge TEE 安全执行沙箱验收标准与实施计划
+# ToaniVault TEE 安全执行沙箱验收标准与实施计划
 
 > 基于《TEE_SECURE_EXECUTION_SANDBOX_DESIGN.md》设计文档制定
 > 版本: 1.0
@@ -10,7 +10,7 @@
 
 ### 1.1 目标
 
-本文档定义 CredBridge TEE 安全执行沙箱的验收标准和分阶段实施计划，确保系统按照设计规范正确实现，满足安全、功能和性能要求。
+本文档定义 ToaniVault TEE 安全执行沙箱的验收标准和分阶段实施计划，确保系统按照设计规范正确实现，满足安全、功能和性能要求。
 
 ### 1.2 范围
 
@@ -1051,8 +1051,8 @@ Phase 5 (TEE 环境)
 ### 9.2 参考文档
 
 - [TEE_SECURE_EXECUTION_SANDBOX_DESIGN.md](./TEE_SECURE_EXECUTION_SANDBOX_DESIGN.md)
-- CredBridge API 规范
-- CredBridge 安全策略
+- ToaniVault API 规范
+- ToaniVault 安全策略
 
 ---
 

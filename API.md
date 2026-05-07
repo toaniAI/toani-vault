@@ -1,6 +1,6 @@
-# CredBridge API 文档
+# ToaniVault API 文档
 
-本文档详细描述了 CredBridge 保险库服务的所有 RESTful API 端点。
+本文档详细描述了 ToaniVault 保险库服务的所有 RESTful API 端点。
 
 ## 目录
 
@@ -101,7 +101,7 @@
 
 ## TEE 运行模式
 
-CredBridge 通过 `TEE_MODE` 显式选择运行模式，不再根据环境隐式推断：
+ToaniVault 通过 `TEE_MODE` 显式选择运行模式，不再根据环境隐式推断：
 
 ```bash
 TEE_MODE=hardware cargo run

@@ -1,4 +1,4 @@
-# CredBridge Attestation API
+# ToaniVault Attestation API
 
 本文档描述当前 `src/api/attestation.rs` 实际实现的远程认证接口。
 

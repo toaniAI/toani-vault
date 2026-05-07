@@ -1,4 +1,4 @@
-# CredBridge TypeScript SDK - 高级示例
+# ToaniVault TypeScript SDK - 高级示例
 
 > **迁移说明**: 本 SDK 已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，主类从 `CredBridgeSDK` 重命名为 `ToaniVaultSDK`。旧名称 `CredBridgeSDK` 仍然作为兼容性别名保留，但建议使用新名称。`CredBridgeClient`、`CredBridgeError`、`CredBridgeErrorCode` 等类名保持不变。
 

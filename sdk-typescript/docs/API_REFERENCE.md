@@ -1,4 +1,4 @@
-# CredBridge TypeScript SDK - API 参考
+# ToaniVault TypeScript SDK - API 参考
 
 ## 目录
 

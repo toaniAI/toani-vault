@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 将 CredBridge 从“开发环境自动进入 simulation”调整为“通过统一开关显式选择 `hardware` 或 `simulation`”，并完成真实 TEE 硬件路径的接入与文档/测试分层。
+**Goal:** 将 ToaniVault 从“开发环境自动进入 simulation”调整为“通过统一开关显式选择 `hardware` 或 `simulation`”，并完成真实 TEE 硬件路径的接入与文档/测试分层。
 
 **Architecture:** 以 `TEE_MODE` 作为唯一运行时来源，定义统一的 `TeeRuntimeMode`/等价配置对象，禁止 `Environment::Development`、Docker 脚本或 API 初始化逻辑隐式改写 TEE 行为。`hardware` 模式下系统必须 fail-closed：硬件探测失败、Quote 生成失败、验证材料缺失时直接报错，不允许自动降级到 simulation。`simulation` 模式仍保留，但只能在显式开启时启用，主要服务于开发机、单元测试与无 SGX runner 的 CI。
 

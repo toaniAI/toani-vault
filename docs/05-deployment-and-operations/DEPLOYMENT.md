@@ -1,6 +1,6 @@
-# CredBridge 部署文档
+# ToaniVault 部署文档
 
-本文档详细介绍 CredBridge 系统的各种部署方式，包括 Docker Compose、Kubernetes 以及生产环境最佳实践。
+本文档详细介绍 ToaniVault 系统的各种部署方式，包括 Docker Compose、Kubernetes 以及生产环境最佳实践。
 
 ## 目录
 

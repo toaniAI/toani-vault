@@ -1,4 +1,4 @@
-# CredBridge SGX Enclave
+# ToaniVault SGX Enclave
 
 This directory now contains the real Intel SGX SDK build inputs for hardware attestation:
 

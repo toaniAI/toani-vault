@@ -1,4 +1,4 @@
-# CredBridge 架构设计
+# ToaniVault 架构设计
 
 ## 整体架构
 
@@ -7,7 +7,7 @@ Clients
   -> TypeScript SDK
   -> Rust SDK
   -> CLI
-      -> CredBridge HTTP Service
+      -> ToaniVault HTTP Service
           -> auth / token / vault / audit / tenant / sandbox / attestation
               -> PostgreSQL / Redis / Vault / immudb / SGX runtime
 ```

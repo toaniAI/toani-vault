@@ -1,6 +1,6 @@
 # SGX 硬件测试执行指南
 
-本文档详细介绍如何在 Intel SGX 硬件环境下执行 CredBridge 测试套件。
+本文档详细介绍如何在 Intel SGX 硬件环境下执行 ToaniVault 测试套件。
 
 ---
 
@@ -489,4 +489,4 @@ mkdir -p ~/sgx_diagnosis && \
 - [SGX 硬件测试计划](./SGX_HARDWARE_TEST_PLAN.md)
 - [DCAP 设置指南](./DCAP_SETUP.md)
 - [TEE 沙箱分析](./SANDBOX_ANALYSIS.md)
-- [CredBridge API 文档](./API.md)
+- [ToaniVault API 文档](./API.md)

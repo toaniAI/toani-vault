@@ -1,8 +1,8 @@
-# CredBridge SDK 综合指南
+# ToaniVault SDK 综合指南
 
 > **迁移注意**: SDK 包已从 `@credbridge/sdk` (TypeScript) 和 `credbridge-sdk` (Rust) 重命名为 `@toani/vault-sdk` 和 `toani-vault-sdk`。旧包名已弃用。请将 `import { CredBridgeClient }` 改为 `import { CredBridgeClient } from '@toani/vault-sdk'`（类名保持不变），Rust 中使用 `use toani_vault_sdk::`。
 
-本文档提供 CredBridge TypeScript 和 Rust SDK 的完整使用指南。
+本文档提供 ToaniVault TypeScript 和 Rust SDK 的完整使用指南。
 
 ## 目录
 
@@ -20,7 +20,7 @@
 
 ## 概述
 
-CredBridge SDK 提供两种语言的官方实现：
+ToaniVault SDK 提供两种语言的官方实现：
 
 - **TypeScript SDK**: 适用于 Node.js 和浏览器环境
 - **Rust SDK**: 适用于高性能后端服务和系统级应用

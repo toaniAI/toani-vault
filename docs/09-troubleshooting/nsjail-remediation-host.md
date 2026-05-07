@@ -394,7 +394,7 @@ nsjail --mode o \
 
 1. 节点上执行 `nsjail` 最小 smoke test 成功
 2. 容器内执行 `newuidmap/newgidmap` 不再报 `not allowed`
-3. CredBridge 服务启动时不再出现 user namespace 初始化错误
+3. ToaniVault 服务启动时不再出现 user namespace 初始化错误
 4. TEE sandbox `create-session` 可以稳定进入 `ready/running`
 
 ---

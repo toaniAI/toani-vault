@@ -1,6 +1,6 @@
 # API 参考
 
-本目录记录当前 CredBridge 服务中已经实现的 HTTP API。本文档以 `src/main.rs` 与 `src/api/*.rs` 的实际路由、请求/响应结构为准，不以历史设计稿或旧示例为准。
+本目录记录当前 ToaniVault 服务中已经实现的 HTTP API。本文档以 `src/main.rs` 与 `src/api/*.rs` 的实际路由、请求/响应结构为准，不以历史设计稿或旧示例为准。
 
 ## 文档列表
 

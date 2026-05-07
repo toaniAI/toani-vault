@@ -1,4 +1,4 @@
-# CredBridge TEE 安全执行沙箱 - 验收测试计划
+# ToaniVault TEE 安全执行沙箱 - 验收测试计划
 
 ## 背景与目标
 

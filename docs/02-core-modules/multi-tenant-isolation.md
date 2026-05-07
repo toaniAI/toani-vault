@@ -1,8 +1,8 @@
-# CredBridge 多租户架构设计文档
+# ToaniVault 多租户架构设计文档
 
 ## 概述
 
-CredBridge 采用 **Schema-per-Tenant + RLS（行级安全）** 的多租户架构，确保租户数据的强隔离。这是 CredBridge 安全模型的核心组件之一。
+ToaniVault 采用 **Schema-per-Tenant + RLS（行级安全）** 的多租户架构，确保租户数据的强隔离。这是 ToaniVault 安全模型的核心组件之一。
 
 ## 架构决策
 

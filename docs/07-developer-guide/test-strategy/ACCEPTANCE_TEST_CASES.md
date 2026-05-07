@@ -1,4 +1,4 @@
-# CredBridge TEE 安全执行沙箱 - 验收测试用例库
+# ToaniVault TEE 安全执行沙箱 - 验收测试用例库
 
 > 基于 TEE_SECURE_EXECUTION_SANDBOX_ACCEPTANCE_PLAN.md 整理
 > 生成时间: 2026-03-17

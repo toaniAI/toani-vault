@@ -1,8 +1,8 @@
-# CredBridge 快速开始
+# ToaniVault 快速开始
 
 > **迁移注意**: SDK 包已从 `@credbridge/sdk` 重命名为 `@toani/vault-sdk`，旧包名已弃用。请将 `import { CredBridgeSDK }` 改为 `import { ToaniVaultSDK }`。
 
-本指南将帮助您快速部署和开始使用 CredBridge。
+本指南将帮助您快速部署和开始使用 ToaniVault。
 
 ## 环境要求
 
@@ -385,7 +385,7 @@ http://localhost:8080/console
 
 ## 认证流程
 
-CredBridge 采用 **Privy 钱包优先** 的认证模式，用户通过钱包（MetaMask、WalletConnect 等）进行身份验证。
+ToaniVault 采用 **Privy 钱包优先** 的认证模式，用户通过钱包（MetaMask、WalletConnect 等）进行身份验证。
 
 ### 认证流程概览
 

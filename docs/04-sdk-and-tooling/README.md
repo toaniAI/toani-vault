@@ -1,6 +1,6 @@
 # SDK 与工具
 
-本目录包含 CredBridge 各语言 SDK 和工具的使用文档。
+本目录包含 ToaniVault 各语言 SDK 和工具的使用文档。
 
 ## SDK 文档
 

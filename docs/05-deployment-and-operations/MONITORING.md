@@ -1,6 +1,6 @@
-# CredBridge 监控与告警指南
+# ToaniVault 监控与告警指南
 
-本文档介绍 CredBridge Vault Service 的监控与告警系统的配置和使用方法。
+本文档介绍 ToaniVault Vault Service 的监控与告警系统的配置和使用方法。
 
 ## 目录
 
@@ -13,7 +13,7 @@
 
 ## 概述
 
-CredBridge Vault Service 内置了完整的监控与告警系统，包括：
+ToaniVault Vault Service 内置了完整的监控与告警系统，包括：
 
 - **健康检查端点**：检查数据库、Redis、TEE 等组件状态
 - **Prometheus 指标**：导出请求数、延迟、错误率、Token 使用率等指标
@@ -38,7 +38,7 @@ CredBridge Vault Service 内置了完整的监控与告警系统，包括：
   "status": "alive",
   "service": "credbridge-vault",
   "version": "0.1.0",
-  "message": "CredBridge service is running"
+  "message": "ToaniVault service is running"
 }
 ```
 
@@ -253,7 +253,7 @@ rate(credbridge_alerts_triggered_total[1h])
 ```json
 {
   "dashboard": {
-    "title": "CredBridge Vault Monitoring",
+    "title": "ToaniVault Vault Monitoring",
     "panels": [
       {
         "title": "Request Rate",
@@ -390,7 +390,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "CredBridge error rate is high"
+          summary: "ToaniVault error rate is high"
           description: "Error rate is {{ $value }}% for more than 3 minutes"
 
       - alert: CredBridgeTeeAnomaly
@@ -399,7 +399,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "CredBridge TEE anomaly detected"
+          summary: "ToaniVault TEE anomaly detected"
           description: "Critical TEE anomaly has been detected"
 
       - alert: CredBridgeHighMemoryUsage
@@ -408,7 +408,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "CredBridge memory usage is high"
+          summary: "ToaniVault memory usage is high"
           description: "Memory usage is {{ $value }}%"
 ```
 

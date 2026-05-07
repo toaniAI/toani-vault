@@ -1,8 +1,8 @@
-# CredBridge 真实 TEE（Intel SGX）运行实现路线图
+# ToaniVault 真实 TEE（Intel SGX）运行实现路线图
 
 ## 首要目标（本路线图验收口径）
 
-**完成本 hardware roadmap = CredBridge 主服务可在 TEE 节点上按设计启动，并跑通真实证明链路**（真实 L0/sealing、真实 MRENCLAVE/MRSIGNER、真实 DCAP Quote 与 PCS/PCCS 最小闭环、Attestation 初始化与对外语义一致，且无 hardware→simulation 静默降级）。
+**完成本 hardware roadmap = ToaniVault 主服务可在 TEE 节点上按设计启动，并跑通真实证明链路**（真实 L0/sealing、真实 MRENCLAVE/MRSIGNER、真实 DCAP Quote 与 PCS/PCCS 最小闭环、Attestation 初始化与对外语义一致，且无 hardware→simulation 静默降级）。
 
 > **文档目的**：将当前代码库中仍为模拟或 fail-closed 的部分，整理为可执行的工程清单；交付物对齐上述首要目标，而非「整站生产上线方案」。
 >

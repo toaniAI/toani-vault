@@ -1,10 +1,10 @@
-# CredBridge MCP 集成指南
+# ToaniVault MCP 集成指南
 
-本文档介绍如何将 CredBridge 与 AI Agent 通过 MCP (Model Context Protocol) 集成。
+本文档介绍如何将 ToaniVault 与 AI Agent 通过 MCP (Model Context Protocol) 集成。
 
 ## 概述
 
-CredBridge MCP Server 为 AI Agent 提供安全的凭证管理能力，支持：
+ToaniVault MCP Server 为 AI Agent 提供安全的凭证管理能力，支持：
 
 - 创建和管理多类型凭证（用户名密码、API 密钥、OAuth 令牌等）
 - 细粒度的 Scope 权限控制
@@ -15,7 +15,7 @@ CredBridge MCP Server 为 AI Agent 提供安全的凭证管理能力，支持：
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   AI Agent      │────▶│  MCP Protocol    │────▶│  CredBridge     │
+│   AI Agent      │────▶│  MCP Protocol    │────▶│  ToaniVault     │
 │  (Claude/Cursor)│     │  (stdio/SSE)     │     │  MCP Server     │
 └─────────────────┘     └──────────────────┘     └────────┬────────┘
                                                           │
@@ -31,7 +31,7 @@ CredBridge MCP Server 为 AI Agent 提供安全的凭证管理能力，支持：
 
 ### 1. MCP Server 配置
 
-在 MCP 客户端配置文件中添加 CredBridge MCP Server：
+在 MCP 客户端配置文件中添加 ToaniVault MCP Server：
 
 **Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`):**
 
@@ -481,7 +481,7 @@ client
 ## 参考资料
 
 - [MCP 协议规范](https://spec.modelcontextprotocol.io/)
-- [CredBridge 架构文档](./architecture.md)
+- [ToaniVault 架构文档](./architecture.md)
 - [审计日志 API](./audit-api.md)
 - [TEE 远程认证指南](./remote-attestation.md)
 

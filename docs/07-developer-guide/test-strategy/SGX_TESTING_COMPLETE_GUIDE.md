@@ -1,6 +1,6 @@
 # SGX 硬件测试完整指南
 
-本文档是 CredBridge SGX 硬件测试的完整入口，整合了所有测试相关的文档、脚本和用例。
+本文档是 ToaniVault SGX 硬件测试的完整入口，整合了所有测试相关的文档、脚本和用例。
 
 ---
 
@@ -296,7 +296,7 @@ cargo test --test sgx_hardware_tests --release \
 
 ### 项目文档
 
-- [CredBridge 架构文档](./ARCHITECTURE.md)
+- [ToaniVault 架构文档](./ARCHITECTURE.md)
 - [TEE 安全模型](./TEE_SECURITY_MODEL.md)
 - [API 参考](./API.md)
 
@@ -332,4 +332,4 @@ cargo test --test sgx_hardware_tests --release \
 ---
 
 **最后更新**: 2026-03-20
-**维护者**: CredBridge 安全团队
+**维护者**: ToaniVault 安全团队

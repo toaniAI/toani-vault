@@ -1,6 +1,6 @@
 # 安全与合规
 
-本目录包含 CredBridge 项目的安全架构、密码学实现、审计合规等文档。
+本目录包含 ToaniVault 项目的安全架构、密码学实现、审计合规等文档。
 
 ## 文档导航
 
@@ -55,7 +55,7 @@
 
 ## 相关资源
 
-- [CredBridge 主文档](../README.md)
+- [ToaniVault 主文档](../README.md)
 - [贡献指南](../CONTRIBUTING.md)
 - [安全声明](../README.md#安全声明)
 

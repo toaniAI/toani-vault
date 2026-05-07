@@ -1,6 +1,6 @@
 # DCAP 远程认证设置指南
 
-本文档介绍如何在 CredBridge 中配置和使用 Intel SGX DCAP (Data Center Attestation Primitives) 远程认证功能。
+本文档介绍如何在 ToaniVault 中配置和使用 Intel SGX DCAP (Data Center Attestation Primitives) 远程认证功能。
 
 ## 目录
 
@@ -8,14 +8,14 @@
 - [环境要求](#环境要求)
 - [安装 DCAP 驱动和库](#安装-dcap-驱动和库)
 - [配置 Intel PCS](#配置-intel-pcs)
-- [CredBridge DCAP 配置](#credbridge-dcap-配置)
+- [ToaniVault DCAP 配置](#credbridge-dcap-配置)
 - [调试 Demo](#调试-demo)
 - [API 使用](#api-使用)
 - [故障排查](#故障排查)
 
 ## 概述
 
-DCAP 远程认证允许远程验证方密码学验证 CredBridge Enclave 的真实性。主要功能包括：
+DCAP 远程认证允许远程验证方密码学验证 ToaniVault Enclave 的真实性。主要功能包括：
 
 - **Quote 生成**: Enclave 启动时自动生成 DCAP Quote
 - **Intel PCS 注册**: 向 Intel 配置服务注册 Enclave
@@ -26,7 +26,7 @@ DCAP 远程认证允许远程验证方密码学验证 CredBridge Enclave 的真�
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        CredBridge Enclave                        │
+│                        ToaniVault Enclave                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
 │  │   Enclave   │  │   DCAP      │  │   Quote Generation      │  │
 │  │   Core      │  │   Service   │  │   (MRENCLAVE/MRSIGNER)  │  │
@@ -178,7 +178,7 @@ sudo systemctl enable pccs
 3. 创建新的 API Key
 4. 保存 API Key（仅显示一次）
 
-## CredBridge DCAP 配置
+## ToaniVault DCAP 配置
 
 ### 环境变量配置
 
@@ -282,7 +282,7 @@ cargo run --features tee-hardware --bin sgx_dcap_quote_standard_demo
 
 ### 远程认证 API 端点
 
-启动 CredBridge 服务后，可以使用以下 API 进行远程认证：
+启动 ToaniVault 服务后，可以使用以下 API 进行远程认证：
 
 #### 1. 获取 Quote
 
@@ -490,7 +490,7 @@ service.allow_mrenclave(actual_mrenclave);
 export RUST_LOG=debug
 export DCAP_DEBUG=1
 
-# 运行 CredBridge
+# 运行 ToaniVault
 cargo run
 ```
 
@@ -552,4 +552,4 @@ cargo run
 - [Intel SGX 官方文档](https://www.intel.com/content/www/us/en/developer/tools/software-guard-extensions/overview.html)
 - [Intel DCAP 仓库](https://github.com/intel/SGXDataCenterAttestationPrimitives)
 - [SGX SDK 仓库](https://github.com/intel/linux-sgx)
-- [CredBridge API 文档](API.md)
+- [ToaniVault API 文档](API.md)
