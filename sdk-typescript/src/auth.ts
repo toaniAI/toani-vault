@@ -63,7 +63,6 @@ interface AuthMembershipsResponseApi {
 interface AuthCreateAccessTokenResponseApi {
   access_token: string;
   token_id: string;
-  token_name?: string;
   token_type: string;
   subject_type?: string;
   issued_from?: string;
@@ -136,7 +135,6 @@ function mapCreateAccessTokenResponse(
   return {
     accessToken: response.access_token,
     tokenId: response.token_id,
-    tokenName: response.token_name,
     tokenType: response.token_type,
     subjectType: response.subject_type,
     issuedFrom: response.issued_from,
@@ -168,7 +166,6 @@ export class AuthService {
         scopes: request.scopes,
         ttl_seconds: request.ttlSeconds,
         credential_ids: request.credentialIds,
-        token_name: request.tokenName,
       },
       options,
     );

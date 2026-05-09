@@ -216,8 +216,6 @@ pub struct CreateAccessTokenRequest {
     pub ttl_seconds: Option<u64>,
     #[serde(default)]
     pub credential_ids: Vec<String>,
-    #[serde(default)]
-    pub token_name: Option<String>,
 }
 
 /// access token 响应
@@ -225,7 +223,6 @@ pub struct CreateAccessTokenRequest {
 pub struct AccessTokenResponse {
     pub access_token: String,
     pub token_id: String,
-    pub token_name: Option<String>,
     pub token_type: String,
     pub subject_type: String,
     pub issued_from: String,
@@ -1025,10 +1022,6 @@ pub async fn create_access_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateAccessTokenRequest>,
 ) -> Result<ApiSuccessResponse<AccessTokenResponse>, ApiErrorResponse> {
-    if let Some(error) = validate_token_name(request.token_name.as_deref()) {
-        return Err(error);
-    }
-
     let created = issue_access_token_from_user_token(
         &state,
         &token,
@@ -1036,18 +1029,15 @@ pub async fn create_access_token_handler(
             scopes: request.scopes,
             expires_in: request.ttl_seconds,
             credential_ids: request.credential_ids,
+            token_name: None,
         },
-        request
-            .token_name
-            .clone()
-            .map(|name| name.trim().to_string()),
+        None,
     )
     .await?;
 
     Ok(ApiSuccessResponse::new(AccessTokenResponse {
         access_token: created.access_token,
         token_id: created.token_id,
-        token_name: created.display_name.clone(),
         token_type: created.token_type,
         subject_type: created.subject_type,
         issued_from: created.issued_from,
@@ -1602,25 +1592,6 @@ fn validate_display_name(display_name: Option<&str>) -> Option<ApiErrorResponse>
         if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
             return Some(ApiErrorResponse::invalid_request(
                 "display_name must be 128 characters or fewer",
-            ));
-        }
-    }
-
-    None
-}
-
-fn validate_token_name(token_name: Option<&str>) -> Option<ApiErrorResponse> {
-    const MAX_TOKEN_NAME_CHARS: usize = 128;
-
-    if let Some(token_name) = token_name {
-        if token_name.trim().is_empty() {
-            return Some(ApiErrorResponse::invalid_request(
-                "token_name cannot be empty",
-            ));
-        }
-        if token_name.chars().count() > MAX_TOKEN_NAME_CHARS {
-            return Some(ApiErrorResponse::invalid_request(
-                "token_name must be 128 characters or fewer",
             ));
         }
     }

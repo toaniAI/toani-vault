@@ -60,9 +60,7 @@ describe("AuthService", () => {
     vi.spyOn(client, "post").mockResolvedValue({
       access_token: "v4.local.access-token",
       token_id: "token-123",
-      token_name: "daily sync token",
       token_type: "Bearer",
-      display_name: "daily sync token",
       expires_at: 1770000000,
       expires_in: 900,
       granted_scopes: ["credential:read", "audit:read"],
@@ -70,20 +68,16 @@ describe("AuthService", () => {
 
     const result = await service.createAccessToken({
       scopes: ["credential:read", "audit:read"],
-      tokenName: "daily sync token",
       ttlSeconds: 900,
     });
 
     expect(result.accessToken).toBe("v4.local.access-token");
-    expect(result.tokenName).toBe("daily sync token");
-    expect(result.displayName).toBe("daily sync token");
     expect(result.grantedScopes).toEqual(["credential:read", "audit:read"]);
     expect(client.post).toHaveBeenCalledWith(
       "/auth/access-token",
       {
         scopes: ["credential:read", "audit:read"],
         ttl_seconds: 900,
-        token_name: "daily sync token",
       },
       undefined,
     );

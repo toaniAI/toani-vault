@@ -32,6 +32,8 @@ pub struct CreateTokenRequest {
     pub expires_in: Option<u64>,
     #[serde(default)]
     pub credential_ids: Vec<String>,
+    #[serde(default)]
+    pub token_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +41,7 @@ pub struct CreatedTokenResponse {
     pub access_token: String,
     pub token: String,
     pub token_id: String,
+    pub token_name: Option<String>,
     pub token_type: String,
     pub subject_type: String,
     pub issued_from: String,
@@ -127,7 +130,8 @@ pub async fn create_token_handler(
     Extension(token): Extension<ValidatedToken>,
     Json(request): Json<CreateTokenRequest>,
 ) -> Result<Json<CreatedTokenResponse>, ApiErrorResponse> {
-    let created = issue_access_token_from_user_token(&state, &token, request, None).await?;
+    let token_name = normalize_token_name(request.token_name.clone())?;
+    let created = issue_access_token_from_user_token(&state, &token, request, token_name).await?;
     Ok(Json(created))
 }
 
@@ -274,6 +278,7 @@ pub async fn issue_access_token_from_user_token(
         token: access_token.clone(),
         access_token,
         token_id: claims.jti.clone(),
+        token_name: metadata.token_name.clone(),
         token_type: "Bearer".to_string(),
         subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string(),
@@ -286,6 +291,27 @@ pub async fn issue_access_token_from_user_token(
         expires_at: claims.exp,
         revoked_at: None,
     })
+}
+
+fn normalize_token_name(token_name: Option<String>) -> Result<Option<String>, ApiErrorResponse> {
+    const MAX_TOKEN_NAME_CHARS: usize = 128;
+
+    if let Some(token_name) = token_name {
+        let trimmed = token_name.trim();
+        if trimmed.is_empty() {
+            return Err(ApiErrorResponse::invalid_request(
+                "token_name cannot be empty",
+            ));
+        }
+        if trimmed.chars().count() > MAX_TOKEN_NAME_CHARS {
+            return Err(ApiErrorResponse::invalid_request(
+                "token_name must be 128 characters or less",
+            ));
+        }
+        return Ok(Some(trimmed.to_string()));
+    }
+
+    Ok(None)
 }
 
 async fn revoke_token_handler(
@@ -828,6 +854,7 @@ mod tests {
             scopes: scopes.iter().map(|scope| (*scope).to_string()).collect(),
             expires_in,
             credential_ids: vec![credential_id.to_string()],
+            token_name: None,
         }
     }
 
@@ -912,6 +939,53 @@ mod tests {
 
         assert!(!response.token.is_empty());
         assert_eq!(response.token, response.access_token);
+    }
+
+    #[tokio::test]
+    async fn create_token_persists_token_name_as_display_name() {
+        let (state, credential_id) = seed_test_state();
+        let response = create_token_handler(
+            State(state),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(3600),
+                credential_ids: vec![credential_id],
+                token_name: Some("daily sync token".to_string()),
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert_eq!(response.token_name.as_deref(), Some("daily sync token"));
+        assert_eq!(response.display_name.as_deref(), Some("daily sync token"));
+    }
+
+    #[tokio::test]
+    async fn create_token_rejects_empty_token_name() {
+        let (state, credential_id) = seed_test_state();
+        let err = create_token_handler(
+            State(state),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(3600),
+                credential_ids: vec![credential_id],
+                token_name: Some("   ".to_string()),
+            }),
+        )
+        .await
+        .expect_err("empty token_name must be rejected");
+
+        assert_eq!(err.error, "invalid_request");
+        assert_eq!(err.message, "token_name cannot be empty");
     }
 
     #[tokio::test]
@@ -1084,6 +1158,7 @@ mod tests {
                 scopes: vec![],
                 expires_in: None,
                 credential_ids: vec![credential_id],
+                token_name: None,
             }),
         )
         .await

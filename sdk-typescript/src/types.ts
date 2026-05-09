@@ -321,6 +321,8 @@ export interface CreateTokenRequest {
   scopes: string[];
   /** 允许访问的凭证白名单 */
   credentialIds: string[];
+  /** 用户为 token 指定的名称 */
+  tokenName?: string;
   /** 过期时间（秒） */
   expiresIn?: number;
 }
@@ -331,8 +333,12 @@ export interface CreateTokenResponse {
   accessToken: string;
   /** Token ID */
   tokenId: string;
+  /** Token 名称 */
+  tokenName?: string;
   /** Token 类型 */
   tokenType: string;
+  /** 展示名称 */
+  displayName?: string;
   /** 有效期（秒） */
   expiresIn: number;
   /** 空格分隔的 scope 字符串 */
@@ -349,8 +355,6 @@ export interface AuthCreateAccessTokenRequest {
   scopes: string[];
   /** 允许访问的凭证白名单 */
   credentialIds: string[];
-  /** 用户为 token 指定的名称 */
-  tokenName?: string;
   /** 过期时间（秒） */
   ttlSeconds?: number;
 }
@@ -361,8 +365,6 @@ export interface AuthCreateAccessTokenResponse {
   accessToken: string;
   /** Token ID */
   tokenId: string;
-  /** Token 名称 */
-  tokenName?: string;
   /** Token 类型 */
   tokenType: string;
   /** 主体类型 */

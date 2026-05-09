@@ -383,7 +383,9 @@ describe("TokenManager", () => {
       vi.spyOn(client, "post").mockResolvedValue({
         access_token: "new-access-token",
         token_id: "new-token-id",
+        token_name: "daily sync token",
         token_type: "Bearer",
+        display_name: "daily sync token",
         expires_in: 3600,
         scope: "credential:read",
         issued_at: 1710000000,
@@ -392,16 +394,20 @@ describe("TokenManager", () => {
 
       const result = await tokenManager.create({
         scopes: ["credential:read"],
+        tokenName: "daily sync token",
         expiresIn: 3600,
       });
 
       expect(result.accessToken).toBe("new-access-token");
       expect(result.tokenId).toBe("new-token-id");
+      expect(result.tokenName).toBe("daily sync token");
+      expect(result.displayName).toBe("daily sync token");
       expect(client.post).toHaveBeenCalledWith(
         "/tokens",
         {
           scopes: ["credential:read"],
           expires_in: 3600,
+          token_name: "daily sync token",
         },
         undefined,
       );

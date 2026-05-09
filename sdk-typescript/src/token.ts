@@ -35,7 +35,9 @@ interface TokenRevokeResponse {
 interface CreateTokenResponseApi {
   access_token: string;
   token_id: string;
+  token_name?: string;
   token_type: string;
+  display_name?: string;
   expires_in: number;
   scope: string;
   issued_at: number;
@@ -233,6 +235,7 @@ export class TokenManager {
         scopes: request.scopes,
         expires_in: request.expiresIn,
         credential_ids: request.credentialIds,
+        token_name: request.tokenName,
       },
       options,
     );
@@ -240,7 +243,9 @@ export class TokenManager {
     return {
       accessToken: response.access_token,
       tokenId: response.token_id,
+      tokenName: response.token_name,
       tokenType: response.token_type,
+      displayName: response.display_name,
       expiresIn: response.expires_in,
       scope: response.scope,
       issuedAt: response.issued_at,

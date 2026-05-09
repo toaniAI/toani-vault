@@ -643,6 +643,7 @@ pub struct CreateTokenRequest {
     pub scopes: Vec<String>,
     pub expires_in: Option<u64>,
     pub credential_ids: Option<Vec<String>>,
+    pub token_name: Option<String>,
 }
 
 /// 创建 token 响应
@@ -650,7 +651,9 @@ pub struct CreateTokenRequest {
 pub struct CreateTokenResponse {
     pub access_token: String,
     pub token_id: String,
+    pub token_name: Option<String>,
     pub token_type: String,
+    pub display_name: Option<String>,
     pub expires_in: u64,
     pub scope: String,
     pub issued_at: u64,
@@ -662,7 +665,6 @@ pub struct CreateTokenResponse {
 pub struct CreateAccessTokenResponse {
     pub access_token: String,
     pub token_id: String,
-    pub token_name: Option<String>,
     pub token_type: String,
     pub display_name: Option<String>,
     pub expires_at: u64,
