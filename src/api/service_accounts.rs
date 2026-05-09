@@ -397,6 +397,7 @@ async fn create_service_account_token_handler(
         token: access_token.clone(),
         access_token,
         token_id,
+        token_name: metadata.token_name.clone(),
         token_type: "Bearer".to_string(),
         subject_type: TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT.to_string(),
         issued_from: TOKEN_ISSUED_FROM_SERVICE_ACCOUNT.to_string(),
