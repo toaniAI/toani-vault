@@ -293,6 +293,7 @@ pub async fn issue_access_token_from_user_token(
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn normalize_token_name(token_name: Option<String>) -> Result<Option<String>, ApiErrorResponse> {
     const MAX_TOKEN_NAME_CHARS: usize = 128;
 
