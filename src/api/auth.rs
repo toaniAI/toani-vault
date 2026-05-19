@@ -40,6 +40,7 @@ use crate::auth::{
     AuthError, AuthService, CreateUserRequest, ExternalIdentity, InviteeType, MembershipRole,
     TenantInvitation, TenantMembership, User,
 };
+use crate::oauth_broker::OAuthBrokerService;
 use crate::token::TOKEN_ISSUED_FROM_SESSION;
 use crate::vault::storage::CredentialVault;
 
@@ -60,6 +61,8 @@ pub struct AuthApiState {
     pub audit_storage: Option<Arc<dyn AuditStorage>>,
     /// 凭证 Vault（用于 token 发放时校验白名单资源）
     pub vault: Option<Arc<CredentialVault>>,
+    /// OAuth Broker 资源服务（用于 binding handle 校验）
+    pub oauth_broker_service: Option<Arc<dyn OAuthBrokerService>>,
     /// PASETO 签名密钥（需与认证中间件验证密钥一致）
     pub token_secret_key: Vec<u8>,
 }
@@ -72,6 +75,7 @@ impl AuthApiState {
             token_store: create_token_store(),
             audit_storage: None,
             vault: None,
+            oauth_broker_service: None,
             token_secret_key: vec![0u8; 32],
         }
     }
@@ -86,6 +90,7 @@ impl AuthApiState {
             token_store,
             audit_storage: None,
             vault: None,
+            oauth_broker_service: None,
             token_secret_key: vec![0u8; 32],
         }
     }
@@ -101,6 +106,11 @@ impl AuthApiState {
         self
     }
 
+    pub fn with_oauth_broker_service(mut self, service: Arc<dyn OAuthBrokerService>) -> Self {
+        self.oauth_broker_service = Some(service);
+        self
+    }
+
     pub fn with_token_secret_key(mut self, token_secret_key: Vec<u8>) -> Self {
         self.token_secret_key = token_secret_key;
         self
@@ -113,9 +123,9 @@ impl AuthApiState {
         user_id: &str,
         outcome: Outcome,
         details: Option<serde_json::Value>,
-    ) {
+    ) -> Result<(), String> {
         let Some(storage) = &self.audit_storage else {
-            return;
+            return Ok(());
         };
 
         let entry = AuditEntry::new(
@@ -134,9 +144,11 @@ impl AuthApiState {
             entry
         };
 
-        if let Err(error) = storage.record(entry).await {
-            tracing::warn!("[AUDIT] Auth audit record failed: {error:?}");
-        }
+        storage
+            .record(entry)
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -216,6 +228,8 @@ pub struct CreateAccessTokenRequest {
     pub ttl_seconds: Option<u64>,
     #[serde(default)]
     pub credential_ids: Vec<String>,
+    #[serde(default)]
+    pub binding_handles: Vec<String>,
 }
 
 /// access token 响应
@@ -226,11 +240,13 @@ pub struct AccessTokenResponse {
     pub token_type: String,
     pub subject_type: String,
     pub issued_from: String,
+    pub token_plane: String,
     pub display_name: Option<String>,
     pub expires_at: u64,
     pub expires_in: u64,
     pub granted_scopes: Vec<String>,
     pub credential_ids: Vec<String>,
+    pub binding_handles: Vec<String>,
     pub revoked_at: Option<String>,
 }
 
@@ -897,7 +913,10 @@ pub async fn create_session_handler(
                     Outcome::Failure,
                     Some(json!({ "error": e.to_string() })),
                 )
-                .await;
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::warn!("[AUDIT] failed auth audit record failed: {error}")
+                });
             return auth_error_to_response(e, &locale);
         }
     };
@@ -974,21 +993,7 @@ pub async fn create_session_handler(
         Err(e) => return auth_error_to_response(e, &locale),
     };
 
-    // 5. 记录审计日志
-    state
-        .record_audit(
-            AuditAction::TokenIssue,
-            &user.id.to_string(),
-            Outcome::Success,
-            Some(json!({
-                "session_id": session.id.to_string(),
-                "has_invitation": request.invitation_token.is_some(),
-                "membership_created": invited_membership.is_some(),
-            })),
-        )
-        .await;
-
-    // 6. 构建响应
+    // 5. 构建响应
     let user_profile = map_user_profile(&user, identities);
 
     let session_info = SessionInfo {
@@ -1030,6 +1035,7 @@ pub async fn create_access_token_handler(
             expires_in: request.ttl_seconds,
             credential_ids: request.credential_ids,
             token_name: None,
+            binding_handles: request.binding_handles,
         },
         None,
     )
@@ -1041,11 +1047,13 @@ pub async fn create_access_token_handler(
         token_type: created.token_type,
         subject_type: created.subject_type,
         issued_from: created.issued_from,
+        token_plane: created.token_plane,
         display_name: created.display_name,
         expires_at: created.expires_at,
         expires_in: created.expires_in,
         granted_scopes: created.granted_scopes,
         credential_ids: created.credential_ids,
+        binding_handles: created.binding_handles,
         revoked_at: created.revoked_at,
     }))
 }
@@ -1259,16 +1267,6 @@ pub async fn logout_handler(
         }
     }
 
-    // 4. 记录审计日志
-    state
-        .record_audit(
-            AuditAction::TokenRevoke,
-            &token.user_id,
-            Outcome::Success,
-            Some(json!({ "session_id": session_id_str })),
-        )
-        .await;
-
     let mut response = (StatusCode::OK, Json(LogoutResponse { success: true })).into_response();
     set_content_language(response.headers_mut(), locale.as_str());
     response
@@ -1338,7 +1336,7 @@ pub async fn consume_invitation_handler(
     };
 
     // 3. 记录审计日志
-    state
+    if let Err(error) = state
         .record_audit(
             AuditAction::SystemConfigChange, // Using existing action for membership changes
             &user_id.to_string(),
@@ -1349,7 +1347,15 @@ pub async fn consume_invitation_handler(
                 "role": membership.role.as_str(),
             })),
         )
-        .await;
+        .await
+    {
+        tracing::warn!(
+            user_id = %user_id,
+            membership_id = %membership.id,
+            tenant_id = %membership.tenant_id,
+            "invitation consumed but audit write failed: {error}"
+        );
+    }
 
     // 4. 构建响应
     let membership_info = MembershipInfo {
@@ -1465,7 +1471,7 @@ pub async fn sync_mfa_status_handler(
     };
 
     // 3. 记录审计日志
-    state
+    if let Err(error) = state
         .record_audit(
             AuditAction::SystemConfigChange,
             &user_id.to_string(),
@@ -1475,7 +1481,15 @@ pub async fn sync_mfa_status_handler(
                 "mfa_verified": mfa_status.verified,
             })),
         )
-        .await;
+        .await
+    {
+        tracing::warn!(
+            user_id = %user_id,
+            mfa_enabled = mfa_status.enabled,
+            mfa_verified = mfa_status.verified,
+            "mfa status synced but audit write failed: {error}"
+        );
+    }
 
     // 4. 构建响应
     let response = MfaStatusResponse {
@@ -2205,7 +2219,9 @@ mod tests {
             metadata,
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         };
 
         assert!(is_web_session_token(&base));
@@ -2810,6 +2826,309 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct CountingAuditStorage {
+        record_calls: AtomicUsize,
+    }
+
+    impl CountingAuditStorage {
+        fn record_call_count(&self) -> usize {
+            self.record_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl AuditStorage for CountingAuditStorage {
+        async fn record(
+            &self,
+            _entry: AuditEntry,
+        ) -> Result<crate::audit::SignedAuditEntry, String> {
+            self.record_calls.fetch_add(1, Ordering::SeqCst);
+            Err("unexpected audit write".to_string())
+        }
+
+        async fn query(
+            &self,
+            _filter: crate::audit::AuditFilter,
+            _offset: usize,
+            _limit: usize,
+        ) -> Result<(Vec<crate::audit::SignedAuditEntry>, u64), String> {
+            unreachable!("login audit regression tests do not query audit logs")
+        }
+
+        async fn get_by_id(
+            &self,
+            _id: &str,
+        ) -> Result<Option<crate::audit::SignedAuditEntry>, String> {
+            unreachable!("login audit regression tests do not fetch audit logs by id")
+        }
+
+        async fn get_by_index(
+            &self,
+            _index: u64,
+        ) -> Result<Option<crate::audit::SignedAuditEntry>, String> {
+            unreachable!("login audit regression tests do not fetch audit logs by index")
+        }
+
+        async fn get_all(
+            &self,
+            _filter: crate::audit::AuditFilter,
+        ) -> Result<Vec<crate::audit::SignedAuditEntry>, String> {
+            unreachable!("login audit regression tests do not export audit logs")
+        }
+    }
+
+    struct SuccessfulSessionAuthService {
+        user: User,
+        identity: ExternalIdentity,
+        session: crate::auth::AuthSession,
+    }
+
+    impl SuccessfulSessionAuthService {
+        fn new() -> Self {
+            let user = User::new().with_display_name("Session User");
+            let mut identity = ExternalIdentity::new(
+                user.id,
+                crate::auth::IdentityProvider::Privy,
+                "did:privy:test",
+            );
+            identity.set_primary();
+            identity.verify();
+
+            let session = crate::auth::AuthSession::new(user.id, "mock-session-hash", 3600)
+                .with_identity(identity.id);
+
+            Self {
+                user,
+                identity,
+                session,
+            }
+        }
+    }
+
+    struct LogoutAuthService {
+        revoke_session_calls: AtomicUsize,
+    }
+
+    impl LogoutAuthService {
+        fn new() -> Self {
+            Self {
+                revoke_session_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn revoke_session_call_count(&self) -> usize {
+            self.revoke_session_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl AuthService for LogoutAuthService {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, AuthError> {
+            unreachable!("logout handler tests do not create users from Privy")
+        }
+
+        async fn get_or_create_external_identity(
+            &self,
+            _: Uuid,
+            _: crate::auth::IdentityProvider,
+            _: &str,
+            _: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, AuthError> {
+            unreachable!("logout handler tests do not load identities")
+        }
+
+        async fn create_tenant_invitation(
+            &self,
+            _: Uuid,
+            _: MembershipRole,
+            _: InviteeType,
+            _: Option<String>,
+            _: Option<String>,
+            _: Uuid,
+            _: i64,
+        ) -> Result<(TenantInvitation, String), AuthError> {
+            unreachable!("logout handler tests do not create invitations")
+        }
+
+        async fn consume_invitation(
+            &self,
+            _: &str,
+            _: Uuid,
+        ) -> Result<TenantMembership, AuthError> {
+            unreachable!("logout handler tests do not consume invitations")
+        }
+
+        async fn create_session(
+            &self,
+            _: Uuid,
+            _: Option<Uuid>,
+            _: CreateUserRequest,
+        ) -> Result<(crate::auth::AuthSession, String), AuthError> {
+            unreachable!("logout handler tests do not create sessions")
+        }
+
+        async fn get_active_membership(
+            &self,
+            _: Uuid,
+            _: Uuid,
+        ) -> Result<Option<TenantMembership>, AuthError> {
+            unreachable!("logout handler tests do not load memberships")
+        }
+
+        async fn audit_log(
+            &self,
+            _: crate::auth::AuthEventType,
+            _: Option<Uuid>,
+            _: Option<serde_json::Value>,
+        ) -> Result<(), AuthError> {
+            Ok(())
+        }
+
+        async fn verify_session(&self, _: &str) -> Result<crate::auth::AuthSession, AuthError> {
+            unreachable!("logout handler tests do not verify sessions")
+        }
+
+        async fn revoke_session(&self, _: Uuid, _: &str) -> Result<(), AuthError> {
+            self.revoke_session_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn get_user(&self, _: Uuid) -> Result<User, AuthError> {
+            unreachable!("logout handler tests do not load users")
+        }
+
+        async fn get_user_identities(&self, _: Uuid) -> Result<Vec<ExternalIdentity>, AuthError> {
+            unreachable!("logout handler tests do not load identities")
+        }
+
+        async fn get_user_memberships(&self, _: Uuid) -> Result<Vec<TenantMembership>, AuthError> {
+            unreachable!("logout handler tests do not load memberships")
+        }
+
+        async fn sync_mfa_status(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, AuthError> {
+            unreachable!("logout handler tests do not sync MFA status")
+        }
+
+        async fn get_mfa_status(
+            &self,
+            _: Uuid,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, AuthError> {
+            unreachable!("logout handler tests do not fetch MFA status")
+        }
+    }
+
+    #[async_trait]
+    impl AuthService for SuccessfulSessionAuthService {
+        async fn create_user_from_privy(
+            &self,
+            _privy_token: &str,
+            _hinted_email: Option<&str>,
+        ) -> Result<User, AuthError> {
+            Ok(self.user.clone())
+        }
+
+        async fn get_or_create_external_identity(
+            &self,
+            _: Uuid,
+            _: crate::auth::IdentityProvider,
+            _: &str,
+            _: Option<serde_json::Value>,
+        ) -> Result<ExternalIdentity, AuthError> {
+            unreachable!("login handler does not call get_or_create_external_identity directly")
+        }
+
+        async fn create_tenant_invitation(
+            &self,
+            _: Uuid,
+            _: MembershipRole,
+            _: InviteeType,
+            _: Option<String>,
+            _: Option<String>,
+            _: Uuid,
+            _: i64,
+        ) -> Result<(TenantInvitation, String), AuthError> {
+            unreachable!("login handler does not create invitations")
+        }
+
+        async fn consume_invitation(
+            &self,
+            _: &str,
+            _: Uuid,
+        ) -> Result<TenantMembership, AuthError> {
+            unreachable!("login handler does not consume invitations without a token")
+        }
+
+        async fn create_session(
+            &self,
+            _: Uuid,
+            _: Option<Uuid>,
+            _: CreateUserRequest,
+        ) -> Result<(crate::auth::AuthSession, String), AuthError> {
+            Ok((self.session.clone(), "mock-session-token".to_string()))
+        }
+
+        async fn get_active_membership(
+            &self,
+            _: Uuid,
+            _: Uuid,
+        ) -> Result<Option<TenantMembership>, AuthError> {
+            Ok(None)
+        }
+
+        async fn audit_log(
+            &self,
+            _: crate::auth::AuthEventType,
+            _: Option<Uuid>,
+            _: Option<serde_json::Value>,
+        ) -> Result<(), AuthError> {
+            Ok(())
+        }
+
+        async fn verify_session(&self, _: &str) -> Result<crate::auth::AuthSession, AuthError> {
+            unreachable!("login handler tests do not verify sessions")
+        }
+
+        async fn revoke_session(&self, _: Uuid, _: &str) -> Result<(), AuthError> {
+            unreachable!("login handler tests do not revoke sessions")
+        }
+
+        async fn get_user(&self, _: Uuid) -> Result<User, AuthError> {
+            Ok(self.user.clone())
+        }
+
+        async fn get_user_identities(&self, _: Uuid) -> Result<Vec<ExternalIdentity>, AuthError> {
+            Ok(vec![self.identity.clone()])
+        }
+
+        async fn get_user_memberships(&self, _: Uuid) -> Result<Vec<TenantMembership>, AuthError> {
+            Ok(vec![])
+        }
+
+        async fn sync_mfa_status(
+            &self,
+            _: Uuid,
+            _: &str,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, AuthError> {
+            unreachable!("login handler tests do not sync MFA status")
+        }
+
+        async fn get_mfa_status(
+            &self,
+            _: Uuid,
+        ) -> Result<crate::auth::service::MfaStatusSnapshot, AuthError> {
+            unreachable!("login handler tests do not fetch MFA status")
+        }
+    }
+
     #[async_trait]
     impl AuthService for CountingAuthService {
         async fn create_user_from_privy(
@@ -3010,5 +3329,65 @@ mod tests {
         let body = read_json_body(response).await;
         assert_eq!(body["error"], "privy_auth_failed");
         assert_eq!(auth_service.create_user_call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_handler_success_does_not_write_login_audit_log() {
+        let auth_service = Arc::new(SuccessfulSessionAuthService::new());
+        let audit_storage = Arc::new(CountingAuditStorage::default());
+        let app = auth_routes()
+            .with_state(AuthApiState::new(auth_service).with_audit_storage(audit_storage.clone()));
+
+        let request = Request::builder()
+            .uri("/auth/session")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "privy_access_token": "valid_token_here",
+                })
+                .to_string(),
+            ))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(audit_storage.record_call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_logout_handler_does_not_write_token_revoke_audit_log() {
+        let auth_service = Arc::new(LogoutAuthService::new());
+        let audit_storage = Arc::new(CountingAuditStorage::default());
+        let state =
+            AuthApiState::new(auth_service.clone()).with_audit_storage(audit_storage.clone());
+        let session_id = Uuid::now_v7();
+
+        let mut metadata = HashMap::new();
+        metadata.insert("session_id".to_string(), session_id.to_string());
+
+        let token = ValidatedToken {
+            token_id: session_id.to_string(),
+            subject: "tenant:user".to_string(),
+            tenant_id: Uuid::now_v7().to_string(),
+            user_id: Uuid::now_v7().to_string(),
+            expires_at: u64::MAX,
+            scopes: vec![TokenScope::TokensRead],
+            issued_at: 1,
+            membership_id: Some(Uuid::now_v7().to_string()),
+            metadata,
+            subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
+            issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
+            allowed_credential_ids: None,
+            allowed_binding_handles: None,
+        };
+
+        let response =
+            logout_handler(State(state), Extension(token), ResolvedLocale::default()).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(auth_service.revoke_session_call_count(), 1);
+        assert_eq!(audit_storage.record_call_count(), 0);
     }
 }

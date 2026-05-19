@@ -1,7 +1,7 @@
 //! 审计记录器
 //!
 //! 实现审计事件的记录、签名和存储
-//! 支持 Merkle Tree 哈希和数字签名
+//! 支持链式哈希和数字签名
 
 use super::events::{AuditEntry, AuditEventId, Outcome};
 use ring::digest::{SHA256, digest};
@@ -41,7 +41,7 @@ pub struct SignedAuditEntry {
     /// 原始审计条目
     pub entry: AuditEntry,
 
-    /// 条目内容哈希（Merkle Tree 叶子节点）
+    /// 条目内容哈希
     #[serde(
         serialize_with = "serialize_bytes",
         deserialize_with = "deserialize_bytes_32"
@@ -64,13 +64,6 @@ pub struct SignedAuditEntry {
 
     /// 条目在日志中的索引
     pub log_index: u64,
-
-    /// Merkle Tree 根哈希（截至此条目）
-    #[serde(
-        serialize_with = "serialize_bytes",
-        deserialize_with = "deserialize_bytes_32"
-    )]
-    pub merkle_root: [u8; 32],
 }
 
 fn serialize_bytes<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
@@ -113,6 +106,27 @@ where
 }
 
 impl SignedAuditEntry {
+    pub fn sign(
+        entry: AuditEntry,
+        prev_hash: [u8; 32],
+        log_index: u64,
+        signing_key: &SigningKeyPair,
+    ) -> Result<Self, RecorderError> {
+        let content_hash = entry.content_hash();
+        let combined_data = [content_hash.as_slice(), prev_hash.as_slice()].concat();
+        let combined_hash = digest(&SHA256, &combined_data);
+        let signature = signing_key.sign(combined_hash.as_ref())?;
+
+        Ok(Self {
+            entry,
+            content_hash,
+            prev_hash,
+            signature,
+            signer_fingerprint: signing_key.fingerprint().to_string(),
+            log_index,
+        })
+    }
+
     /// 将条目序列化为 JSON
     pub fn to_json(&self) -> Result<String, RecorderError> {
         #[derive(Serialize)]
@@ -123,7 +137,6 @@ impl SignedAuditEntry {
             signature: String,
             signer_fingerprint: &'a str,
             log_index: u64,
-            merkle_root: String,
         }
 
         let ser = SignedEntrySer {
@@ -133,7 +146,6 @@ impl SignedAuditEntry {
             signature: hex::encode(&self.signature),
             signer_fingerprint: &self.signer_fingerprint,
             log_index: self.log_index,
-            merkle_root: hex::encode(self.merkle_root),
         };
 
         serde_json::to_string(&ser).map_err(|e| RecorderError::SerializationError(e.to_string()))
@@ -142,14 +154,11 @@ impl SignedAuditEntry {
 
 /// 审计日志链
 ///
-/// 维护不可篡改的审计日志链，使用 Merkle Tree 和数字签名
+/// 维护不可篡改的审计日志链，使用链式哈希和数字签名
 #[derive(Debug)]
 pub struct AuditLogChain {
     /// 已签名条目
     entries: VecDeque<SignedAuditEntry>,
-
-    /// Merkle Tree 根哈希
-    merkle_root: [u8; 32],
 
     /// 当前日志索引
     current_index: u64,
@@ -164,7 +173,6 @@ impl AuditLogChain {
         let genesis_hash = Self::compute_genesis_hash();
         Self {
             entries: VecDeque::new(),
-            merkle_root: genesis_hash,
             current_index: 0,
             genesis_hash,
         }
@@ -179,10 +187,13 @@ impl AuditLogChain {
         hash
     }
 
+    pub fn genesis_hash() -> [u8; 32] {
+        Self::compute_genesis_hash()
+    }
+
     /// 添加已签名条目到链
     pub fn append(&mut self, signed_entry: SignedAuditEntry) {
         self.current_index = signed_entry.log_index + 1;
-        self.merkle_root = signed_entry.merkle_root;
         self.entries.push_back(signed_entry);
     }
 
@@ -197,11 +208,6 @@ impl AuditLogChain {
     /// 获取当前日志索引
     pub fn current_index(&self) -> u64 {
         self.current_index
-    }
-
-    /// 获取 Merkle Tree 根哈希
-    pub fn merkle_root(&self) -> [u8; 32] {
-        self.merkle_root
     }
 
     /// 获取条目数量
@@ -291,7 +297,6 @@ impl AuditLogChain {
             total_entries: total_count,
             success_count,
             failure_count,
-            merkle_root: hex::encode(self.merkle_root),
             start_time,
             end_time,
         }
@@ -313,8 +318,6 @@ pub struct AuditReport {
     pub success_count: usize,
     /// 失败数
     pub failure_count: usize,
-    /// Merkle Tree 根哈希
-    pub merkle_root: String,
     /// 开始时间
     pub start_time: Option<u64>,
     /// 结束时间
@@ -470,28 +473,8 @@ impl AuditRecorder {
             .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
 
         let log_index = chain.current_index();
-        let content_hash = entry.content_hash();
         let prev_hash = chain.last_hash();
-
-        // 计算组合哈希（内容 + 前一个哈希）
-        let combined_data = [content_hash.as_slice(), prev_hash.as_slice()].concat();
-        let combined_hash = digest(&SHA256, &combined_data);
-
-        // 签名
-        let signature = self.signing_key.sign(combined_hash.as_ref())?;
-
-        // 计算新的 Merkle Tree 根哈希
-        let merkle_root = self.compute_merkle_root(&chain, content_hash);
-
-        let signed_entry = SignedAuditEntry {
-            entry,
-            content_hash,
-            prev_hash,
-            signature,
-            signer_fingerprint: self.signing_key.fingerprint().to_string(),
-            log_index,
-            merkle_root,
-        };
+        let signed_entry = SignedAuditEntry::sign(entry, prev_hash, log_index, &self.signing_key)?;
 
         chain.append(signed_entry.clone());
 
@@ -499,16 +482,6 @@ impl AuditRecorder {
         self.cleanup_old_entries(&mut chain)?;
 
         Ok(signed_entry)
-    }
-
-    /// 计算 Merkle Tree 根哈希
-    fn compute_merkle_root(&self, chain: &AuditLogChain, new_content_hash: [u8; 32]) -> [u8; 32] {
-        let last_hash = chain.last_hash();
-        let combined = [last_hash.as_slice(), new_content_hash.as_slice()].concat();
-        let digest = digest(&SHA256, &combined);
-        let mut root = [0u8; 32];
-        root.copy_from_slice(digest.as_ref());
-        root
     }
 
     /// 清理旧条目
@@ -535,15 +508,6 @@ impl AuditRecorder {
             .lock()
             .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
         Ok(chain.recent(n).into_iter().cloned().collect())
-    }
-
-    /// 获取当前 Merkle Tree 根哈希
-    pub fn merkle_root(&self) -> Result<[u8; 32], RecorderError> {
-        let chain = self
-            .chain
-            .lock()
-            .map_err(|e| RecorderError::StorageError(format!("锁获取失败: {e}")))?;
-        Ok(chain.merkle_root())
     }
 
     /// 验证审计链完整性

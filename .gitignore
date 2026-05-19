@@ -12,8 +12,6 @@ docs/internal/
 .sealed/
 .cursor/
 .playwright-cli/
-.pw-browser/
-.pw-browsers/
 
 # Build artifacts
 /target
@@ -38,6 +36,6 @@ coverage/
 *.swo
 *~
 .omx/
-tmp/
 
-# Nested repos kept locally but no longer tracked here
+# Frontend workspace is maintained out-of-repo and must not be committed here
+/frontend/

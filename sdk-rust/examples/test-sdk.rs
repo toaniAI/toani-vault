@@ -57,7 +57,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("   - OAuthRefresh: {:?}", CredentialType::OAuthRefresh);
             println!("   - ApiKey: {:?}", CredentialType::ApiKey);
             println!("   - SessionCookie: {:?}", CredentialType::SessionCookie);
-            println!("   - KycDocument: {:?}", CredentialType::KycDocument);
             println!("   - Certificate: {:?}", CredentialType::Certificate);
             println!("   - SshKey: {:?}", CredentialType::SshKey);
             println!(

@@ -88,6 +88,13 @@ pub struct TokenClaims {
     )]
     pub issued_from: String,
 
+    /// 令牌平面，默认 management
+    #[serde(
+        default = "default_token_plane",
+        skip_serializing_if = "is_default_token_plane"
+    )]
+    pub token_plane: String,
+
     /// 成员资格 ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub membership_id: Option<String>,
@@ -95,6 +102,10 @@ pub struct TokenClaims {
     /// 来源会话 ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+
+    /// 运行时 binding handle 白名单
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binding_handles: Vec<String>,
 }
 
 impl TokenClaims {
@@ -132,8 +143,10 @@ impl TokenClaims {
             mfa_verified,
             subject_type: default_subject_type(),
             issued_from: default_issued_from(),
+            token_plane: default_token_plane(),
             membership_id: None,
             session_id: None,
+            binding_handles: Vec::new(),
         }
     }
 
@@ -256,6 +269,11 @@ impl TokenClaims {
         self
     }
 
+    pub fn with_token_plane(mut self, token_plane: impl Into<String>) -> Self {
+        self.token_plane = token_plane.into();
+        self
+    }
+
     pub fn with_membership_id(mut self, membership_id: impl Into<String>) -> Self {
         self.membership_id = Some(membership_id.into());
         self
@@ -263,6 +281,11 @@ impl TokenClaims {
 
     pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
         self.session_id = Some(session_id.into());
+        self
+    }
+
+    pub fn with_binding_handles(mut self, binding_handles: Vec<String>) -> Self {
+        self.binding_handles = binding_handles;
         self
     }
 }
@@ -325,6 +348,14 @@ fn default_issued_from() -> String {
 
 fn is_default_issued_from(value: &str) -> bool {
     value == TOKEN_ISSUED_FROM_SESSION
+}
+
+fn default_token_plane() -> String {
+    "management".to_string()
+}
+
+fn is_default_token_plane(value: &str) -> bool {
+    value == "management"
 }
 
 /// 获取当前 Unix 时间戳（秒）

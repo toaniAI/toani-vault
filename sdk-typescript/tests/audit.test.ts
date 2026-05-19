@@ -97,7 +97,6 @@ describe("AuditService", () => {
       verified: true,
       content_hash_match: true,
       signature_valid: true,
-      merkle_proof_valid: true,
       details: [
         {
           step: "signature",

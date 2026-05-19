@@ -28,6 +28,7 @@ pub mod config;
 pub mod connector;
 pub mod crypto;
 pub mod models;
+pub mod oauth_broker;
 pub mod services;
 pub mod tee;
 pub mod tenant;

@@ -601,7 +601,7 @@ mod example_tests {
         let session = ctx.create_session().await;
 
         // 创建操作请求
-        let op = create_operation_request(OperationType::Navigate, "导航到测试页面");
+        let op = create_operation_request(OperationType::HttpRequest, "发起测试请求");
 
         // 执行操作
         let result = session.execute_operation(op).await;

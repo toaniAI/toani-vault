@@ -56,7 +56,6 @@ interface VerifyAuditLogResultApi {
   verified: boolean;
   content_hash_match: boolean;
   signature_valid: boolean;
-  merkle_proof_valid: boolean;
   details: AuditVerificationDetailApi[];
   verified_at: number;
 }
@@ -175,7 +174,6 @@ export class AuditService {
       verified: response.verified,
       contentHashMatch: response.content_hash_match,
       signatureValid: response.signature_valid,
-      merkleProofValid: response.merkle_proof_valid,
       details: response.details.map(mapVerificationDetail),
       verifiedAt: response.verified_at,
     };

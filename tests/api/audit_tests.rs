@@ -26,13 +26,12 @@ use vault_service::audit::{
     AuditAction, AuditEntry, MemoryAuditStorage, Outcome, RiskTier, hash_user_id,
 };
 
-/// 创建测试 Token（带 audit:read 权限）
-fn create_audit_token() -> ValidatedToken {
+fn create_audit_token_for_user(user_id: &str) -> ValidatedToken {
     ValidatedToken {
         token_id: Uuid::now_v7().to_string(),
-        subject: "tenant1:user1".to_string(),
+        subject: format!("tenant1:{user_id}"),
         tenant_id: "tenant1".to_string(),
-        user_id: "user1".to_string(),
+        user_id: user_id.to_string(),
         expires_at: u64::MAX,
         scopes: vec![TokenScope::AuditRead],
         issued_at: 1000,
@@ -40,17 +39,23 @@ fn create_audit_token() -> ValidatedToken {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        token_plane: "management".to_string(),
         allowed_credential_ids: None,
+        allowed_binding_handles: None,
     }
 }
 
-/// 创建管理员 Token
-fn create_admin_token() -> ValidatedToken {
+/// 创建测试 Token（带 audit:read 权限）
+fn create_audit_token() -> ValidatedToken {
+    create_audit_token_for_user("user1")
+}
+
+fn create_admin_token_for_user(user_id: &str) -> ValidatedToken {
     ValidatedToken {
         token_id: Uuid::now_v7().to_string(),
-        subject: "tenant1:user1".to_string(),
+        subject: format!("tenant1:{user_id}"),
         tenant_id: "tenant1".to_string(),
-        user_id: "user1".to_string(),
+        user_id: user_id.to_string(),
         expires_at: u64::MAX,
         scopes: vec![TokenScope::Admin],
         issued_at: 1000,
@@ -58,8 +63,15 @@ fn create_admin_token() -> ValidatedToken {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        token_plane: "management".to_string(),
         allowed_credential_ids: None,
+        allowed_binding_handles: None,
     }
+}
+
+/// 创建管理员 Token
+fn create_admin_token() -> ValidatedToken {
+    create_admin_token_for_user("user1")
 }
 
 /// 创建无权限 Token
@@ -76,7 +88,9 @@ fn create_no_permission_token() -> ValidatedToken {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        token_plane: "management".to_string(),
         allowed_credential_ids: None,
+        allowed_binding_handles: None,
     }
 }
 
@@ -480,7 +494,9 @@ async fn test_token_stats_endpoint_returns_active_count_for_current_tenant() {
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        token_plane: "management".to_string(),
         allowed_credential_ids: None,
+        allowed_binding_handles: None,
     };
 
     for expires_in in [900_u64, 1800_u64] {
@@ -609,6 +625,35 @@ async fn test_list_audit_logs_pagination_keeps_global_desc_order() {
 }
 
 #[tokio::test]
+async fn test_list_audit_logs_supports_limit_offset_pagination() {
+    let app = create_test_app();
+
+    let request = Request::builder()
+        .uri("/audit/logs?limit=3&offset=3")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    let log_indexes = extract_log_indexes(&payload);
+
+    assert_eq!(log_indexes.len(), 3);
+    assert_eq!(payload["data"]["page"], 2);
+    assert_eq!(payload["data"]["page_size"], 3);
+    assert_eq!(payload["data"]["offset"], 3);
+    assert_eq!(payload["data"]["limit"], 3);
+    assert_eq!(payload["data"]["total"], 10);
+    assert_eq!(payload["data"]["total_pages"], 4);
+    assert_eq!(payload["data"]["has_more"], true);
+}
+
+#[tokio::test]
 async fn test_list_audit_logs_with_filters() {
     let app = create_test_app();
 
@@ -713,6 +758,9 @@ async fn test_list_audit_logs_user_isolation_non_admin() {
     // 验证只返回属于 user1 的日志（应该是 5 条）
     let items = payload["data"]["items"].as_array().unwrap();
     assert_eq!(items.len(), 5, "非管理员应只能看到自己的审计日志");
+    assert_eq!(payload["data"]["total"], 5);
+    assert_eq!(payload["data"]["total_pages"], 1);
+    assert_eq!(payload["data"]["has_more"], false);
 
     // 验证所有返回的日志都属于当前用户
     let user1_hash = hash_user_id("user1");
@@ -750,12 +798,12 @@ async fn test_list_audit_logs_non_admin_cannot_query_other_user() {
 async fn test_list_audit_logs_admin_is_still_scoped_to_current_user() {
     let app = create_multi_user_test_app();
 
-    // 使用管理员 token
+    // 使用管理员 token，但当前主体不是已有审计日志所属的 user1
     let request = Request::builder()
         .uri("/audit/logs?page=1&page_size=20")
         .method("GET")
         .header("Authorization", "Bearer admin_token")
-        .extension(create_admin_token()) // scopes = [Admin]
+        .extension(create_admin_token_for_user("admin")) // scopes = [Admin]
         .body(Body::empty())
         .unwrap();
 
@@ -765,18 +813,13 @@ async fn test_list_audit_logs_admin_is_still_scoped_to_current_user() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let payload: Value = serde_json::from_slice(&body).unwrap();
 
-    // 管理员默认也只能看到自己的日志（5 条）
+    // 管理员默认也只能看到自己的日志；当前主体 admin 没有审计日志，因此应返回 0 条
     let items = payload["data"]["items"].as_array().unwrap();
-    assert_eq!(items.len(), 5, "管理员默认也应只能看到自己的审计日志");
-
-    let user1_hash = hash_user_id("user1");
-    for item in items {
-        assert_eq!(
-            item["user_id_hash"].as_str().unwrap(),
-            user1_hash,
-            "管理员默认列表也应只返回当前主体的日志"
-        );
-    }
+    assert_eq!(
+        items.len(),
+        0,
+        "管理员默认也应只能看到当前主体自己的审计日志"
+    );
 }
 
 /// BUG-18219: 管理员也不能借助 user_id_hash 查询其他主体的日志
@@ -822,6 +865,7 @@ async fn test_list_audit_logs_non_admin_can_query_own_hash() {
     // 应返回自己的日志（5 条）
     let items = payload["data"]["items"].as_array().unwrap();
     assert_eq!(items.len(), 5);
+    assert_eq!(payload["data"]["total"], 5);
 }
 
 #[tokio::test]
@@ -830,6 +874,22 @@ async fn test_list_audit_logs_invalid_pagination() {
 
     let request = Request::builder()
         .uri("/audit/logs?page=0")
+        .method("GET")
+        .header("Authorization", "Bearer test_token")
+        .extension(create_audit_token())
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_list_audit_logs_invalid_limit() {
+    let app = create_test_app();
+
+    let request = Request::builder()
+        .uri("/audit/logs?limit=0")
         .method("GET")
         .header("Authorization", "Bearer test_token")
         .extension(create_audit_token())
@@ -1114,7 +1174,6 @@ async fn test_verify_audit_log_by_index() {
     assert!(data["data"]["verified"].as_bool().unwrap());
     assert!(data["data"]["content_hash_match"].as_bool().unwrap());
     assert!(data["data"]["signature_valid"].as_bool().unwrap());
-    assert!(data["data"]["merkle_proof_valid"].as_bool().unwrap());
 }
 
 #[tokio::test]

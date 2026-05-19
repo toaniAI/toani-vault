@@ -356,7 +356,7 @@ impl AuditEntry {
         serde_json::from_str(json)
     }
 
-    /// 计算条目的内容哈希（用于 Merkle Tree）
+    /// 计算条目的内容哈希
     pub fn content_hash(&self) -> [u8; 32] {
         use ring::digest::{SHA256, digest};
         let json = self.to_json().unwrap_or_default();

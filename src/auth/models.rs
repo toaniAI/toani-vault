@@ -1364,6 +1364,7 @@ pub struct ApiTokenMetadata {
     pub subject_id: Uuid,
     pub tenant_id: Uuid,
     pub issued_from: String,
+    pub token_plane: String,
     pub session_id: Option<Uuid>,
     pub membership_id: Option<Uuid>,
     pub token_name: Option<String>,
@@ -1372,6 +1373,7 @@ pub struct ApiTokenMetadata {
     pub description: Option<String>,
     pub scopes: Vec<String>,
     pub credential_ids: Vec<String>,
+    pub binding_handles: Vec<String>,
     pub issued_membership_role_snapshot: Option<String>,
     pub permission_source: Option<String>,
     pub created_via: Option<String>,
@@ -1403,6 +1405,7 @@ impl ApiTokenMetadata {
             subject_id,
             tenant_id,
             issued_from: issued_from.into(),
+            token_plane: "management".to_string(),
             session_id: None,
             membership_id: None,
             token_name: None,
@@ -1411,6 +1414,7 @@ impl ApiTokenMetadata {
             description: None,
             scopes: Vec::new(),
             credential_ids: Vec::new(),
+            binding_handles: Vec::new(),
             issued_membership_role_snapshot: None,
             permission_source: None,
             created_via: None,
@@ -1432,6 +1436,16 @@ impl ApiTokenMetadata {
 
     pub fn with_credential_ids(mut self, credential_ids: Vec<String>) -> Self {
         self.credential_ids = credential_ids;
+        self
+    }
+
+    pub fn with_binding_handles(mut self, binding_handles: Vec<String>) -> Self {
+        self.binding_handles = binding_handles;
+        self
+    }
+
+    pub fn with_token_plane(mut self, token_plane: impl Into<String>) -> Self {
+        self.token_plane = token_plane.into();
         self
     }
 
@@ -1572,6 +1586,13 @@ impl AuthEventType {
             AuthEventType::MfaFailed => "mfa_failed",
             AuthEventType::AuthenticationFailed => "authentication_failed",
         }
+    }
+
+    pub fn is_login_flow_event(&self) -> bool {
+        matches!(
+            self,
+            AuthEventType::UserCreated | AuthEventType::UserLogin | AuthEventType::SessionCreated
+        )
     }
 }
 
@@ -2294,6 +2315,15 @@ mod tests {
         assert!(log.success);
         assert!(log.user_id.is_some());
         assert!(log.ip_address.is_some());
+    }
+
+    #[test]
+    fn test_login_flow_event_detection() {
+        assert!(AuthEventType::UserCreated.is_login_flow_event());
+        assert!(AuthEventType::UserLogin.is_login_flow_event());
+        assert!(AuthEventType::SessionCreated.is_login_flow_event());
+        assert!(!AuthEventType::InvitationCreated.is_login_flow_event());
+        assert!(!AuthEventType::SessionRevoked.is_login_flow_event());
     }
 
     #[test]

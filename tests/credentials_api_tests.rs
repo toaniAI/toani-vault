@@ -31,6 +31,56 @@ use vault_service::vault::models::{
 };
 use vault_service::vault::storage::CredentialVault;
 
+struct FailingAuditLogger;
+
+#[async_trait::async_trait]
+impl AuditLogger for FailingAuditLogger {
+    async fn log_credential_created(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        _credential_id: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        Err("forced credential create audit failure".to_string())
+    }
+
+    async fn log_credential_accessed(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        _credential_id: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        Err("forced credential access audit failure".to_string())
+    }
+
+    async fn log_credential_deleted(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        _credential_id: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        Err("forced credential delete audit failure".to_string())
+    }
+
+    async fn log_decryption_attempt(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        _credential_id: &str,
+        _success: bool,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        Err("forced credential decrypt audit failure".to_string())
+    }
+}
+
 /// 设置测试状态
 async fn setup_test_state() -> AppState {
     let vault = CredentialVault::new_in_memory();
@@ -116,7 +166,9 @@ fn create_test_token(tenant_id: &str, user_id: &str, scopes: Vec<TokenScope>) ->
         metadata: std::collections::HashMap::new(),
         subject_type: vault_service::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: vault_service::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+        token_plane: "management".to_string(),
         allowed_credential_ids: None,
+        allowed_binding_handles: None,
     }
 }
 
@@ -192,6 +244,36 @@ async fn test_create_credential_missing_scope() {
 
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_create_credential_succeeds_when_audit_write_fails_after_persist() {
+    let mut state = setup_test_state().await;
+    state.audit_logger = Arc::new(FailingAuditLogger);
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let response = create_credential(
+        axum::extract::State(state),
+        axum::Extension(token),
+        Ok(axum::Json(
+            vault_service::api::credentials::CreateCredentialApiRequest {
+                service_id: "test_service".to_string(),
+                credential_type: "username_password".to_string(),
+                plaintext_data: serde_json::json!({
+                    "username": "test_user",
+                    "password": "secret123"
+                }),
+                expires_at: None,
+                provider: None,
+                allowed_domains: None,
+                custom_functions: None,
+            },
+        )),
+    )
+    .await
+    .expect("credential creation should still succeed");
+
+    assert_eq!(response.0, StatusCode::CREATED);
 }
 
 /// 测试创建凭证时拒绝过去时间的 expires_at

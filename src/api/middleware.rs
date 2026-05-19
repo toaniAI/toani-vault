@@ -317,8 +317,12 @@ pub struct ValidatedToken {
     pub subject_type: String,
     /// 令牌来源
     pub issued_from: String,
+    /// 令牌平面
+    pub token_plane: String,
     /// 资源级凭证白名单；None 表示不受限
     pub allowed_credential_ids: Option<Vec<String>>,
+    /// 资源级 binding handle 白名单；None 表示不受限
+    pub allowed_binding_handles: Option<Vec<String>>,
 }
 
 impl ValidatedToken {
@@ -375,14 +379,29 @@ impl ValidatedToken {
         self.subject_type == TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT
     }
 
+    pub fn token_plane(&self) -> &str {
+        &self.token_plane
+    }
+
     pub fn allowed_credential_ids(&self) -> Option<&[String]> {
         self.allowed_credential_ids.as_deref()
+    }
+
+    pub fn allowed_binding_handles(&self) -> Option<&[String]> {
+        self.allowed_binding_handles.as_deref()
     }
 
     pub fn can_access_credential(&self, credential_id: &str) -> bool {
         match &self.allowed_credential_ids {
             None => true,
             Some(ids) => ids.iter().any(|id| id == credential_id),
+        }
+    }
+
+    pub fn can_access_binding_handle(&self, binding_handle: &str) -> bool {
+        match &self.allowed_binding_handles {
+            None => true,
+            Some(handles) => handles.iter().any(|handle| handle == binding_handle),
         }
     }
 
@@ -408,7 +427,9 @@ impl ValidatedToken {
             metadata: HashMap::new(),
             subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         }
     }
 }
@@ -564,9 +585,19 @@ async fn validate_token(
         .get_api_token_metadata(&validation_result.token_id)
         .await
     {
+        validation_result.subject_type = metadata.subject_type.as_str().to_string();
+        validation_result.issued_from = metadata.issued_from.clone();
+        validation_result.token_plane = metadata.token_plane.clone();
+
         if !metadata.credential_ids.is_empty() {
             validation_result.allowed_credential_ids = Some(metadata.credential_ids.clone());
         }
+
+        validation_result.allowed_binding_handles = if metadata.binding_handles.is_empty() {
+            None
+        } else {
+            Some(metadata.binding_handles.clone())
+        };
 
         if metadata.revoked_at.is_some() {
             let mut params = I18nParams::new();
@@ -707,7 +738,9 @@ async fn validate_session_token(
             metadata,
             subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         });
     }
 
@@ -723,7 +756,9 @@ async fn validate_session_token(
         metadata,
         subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+        token_plane: "management".to_string(),
         allowed_credential_ids: None,
+        allowed_binding_handles: None,
     })
 }
 
@@ -819,6 +854,11 @@ pub(crate) fn validate_paseto_token(
         .and_then(|v| v.as_str())
         .unwrap_or(TOKEN_ISSUED_FROM_SESSION)
         .to_string();
+    let token_plane = claims
+        .get_claim("token_plane")
+        .and_then(|v| v.as_str())
+        .unwrap_or("management")
+        .to_string();
 
     // 解析租户 ID 和用户 ID
     let (tenant_id, user_id) = parse_subject(&subject, locale)
@@ -844,6 +884,17 @@ pub(crate) fn validate_paseto_token(
         metadata.insert("membership_id".to_string(), mid.clone());
     }
 
+    let allowed_binding_handles = claims
+        .get_claim("binding_handles")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str().map(ToString::to_string))
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty());
+
     Ok(ValidatedToken {
         token_id,
         subject,
@@ -856,7 +907,9 @@ pub(crate) fn validate_paseto_token(
         metadata,
         subject_type,
         issued_from,
+        token_plane,
         allowed_credential_ids: None,
+        allowed_binding_handles,
     })
 }
 
@@ -1036,7 +1089,9 @@ pub mod tests {
             metadata: HashMap::new(),
             subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         }
     }
 

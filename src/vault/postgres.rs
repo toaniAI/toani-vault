@@ -185,7 +185,6 @@ impl PostgresStorageBackend {
             "oauth_refresh" | "oauth_token" | "o_auth_refresh" => Ok(CredentialType::OAuthRefresh),
             "api_key" => Ok(CredentialType::ApiKey),
             "session_cookie" => Ok(CredentialType::SessionCookie),
-            "kyc_document" => Ok(CredentialType::KycDocument),
             "client_certificate" => Ok(CredentialType::ClientCertificate),
             "ssh_key" => Ok(CredentialType::SshKey),
             "database_connection" => Ok(CredentialType::DatabaseConnection),

@@ -143,7 +143,7 @@ async fn create_service_account_handler(
         .await
         .map_err(map_auth_error)?;
 
-    state
+    if let Err(error) = state
         .record_audit(
             AuditAction::TokenIssue,
             &token.user_id,
@@ -154,7 +154,14 @@ async fn create_service_account_handler(
                 "name": created.name,
             })),
         )
-        .await;
+        .await
+    {
+        tracing::warn!(
+            user_id = %token.user_id,
+            service_account_id = %created.id,
+            "service account created but audit write failed: {error}"
+        );
+    }
 
     Ok(ApiSuccessResponse::new(map_service_account(created)))
 }
@@ -379,7 +386,7 @@ async fn create_service_account_token_handler(
         .await
         .map_err(map_auth_error)?;
 
-    state
+    if let Err(error) = state
         .record_audit(
             AuditAction::TokenIssue,
             &token.user_id,
@@ -391,21 +398,31 @@ async fn create_service_account_token_handler(
                 "scopes": granted_scopes,
             })),
         )
-        .await;
+        .await
+    {
+        tracing::warn!(
+            user_id = %token.user_id,
+            service_account_id = %service_account.id,
+            token_id = %token_id,
+            "service account token issued but audit write failed: {error}"
+        );
+    }
 
     Ok(ApiSuccessResponse::new(CreatedTokenResponse {
         token: access_token.clone(),
         access_token,
         token_id,
-        token_name: metadata.token_name.clone(),
+        token_name: None,
         token_type: "Bearer".to_string(),
         subject_type: TOKEN_SUBJECT_TYPE_SERVICE_ACCOUNT.to_string(),
         issued_from: TOKEN_ISSUED_FROM_SERVICE_ACCOUNT.to_string(),
+        token_plane: "runtime".to_string(),
         display_name: request.display_name,
         expires_in: ttl_seconds,
         scope,
         granted_scopes: metadata.scopes.clone(),
         credential_ids: Vec::new(),
+        binding_handles: Vec::new(),
         issued_at,
         expires_at,
         revoked_at: None,
@@ -557,7 +574,9 @@ mod tests {
             metadata: HashMap::new(),
             subject_type: "user".to_string(),
             issued_from: "profile".to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         }
     }
 

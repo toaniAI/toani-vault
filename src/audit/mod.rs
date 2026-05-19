@@ -3,7 +3,7 @@
 //! 实现不可篡改的审计日志系统，支持以下功能：
 //!
 //! - **审计事件记录**: 记录凭证访问、Token 操作、系统配置变更等事件
-//! - **Merkle Tree**: 计算审计链的哈希树，确保完整性
+//! - **链式哈希**: 维护审计链的前后关系，确保完整性
 //! - **数字签名**: 对审计条目进行签名，防止篡改
 //! - **PII 脱敏**: 自动敏感数据脱敏，保护用户隐私
 //! - **immudb 存储**: 使用 immudb 实现不可篡改的持久化存储
@@ -14,7 +14,7 @@
 //! audit/
 //! ├── mod.rs              - 模块导出
 //! ├── events.rs           - 审计事件定义（AuditEntry, AuditAction, RiskTier, 等）
-//! ├── recorder.rs         - 审计记录器（签名、Merkle Tree、存储）
+//! ├── recorder.rs         - 审计记录器（签名、链式哈希、存储）
 //! ├── immudb_client.rs    - immudb 客户端封装
 //! └── immudb_store.rs     - immudb 存储实现
 //! ```
@@ -87,9 +87,6 @@
 //! // 存储审计条目
 //! let stored = store.store(&signed_entry).await?;
 //!
-//! // 验证条目完整性
-//! let result = store.verify_entry(0).await?;
-//! assert!(result.verified);
 //! ```
 //!
 //! # 架构约束
@@ -117,7 +114,7 @@
 //!
 //! # 安全特性
 //!
-//! 1. **不可篡改**: 使用 Merkle Tree 和数字签名确保审计日志完整性
+//! 1. **不可篡改**: 使用链式哈希和数字签名确保审计日志完整性
 //! 2. **隐私保护**: PII 数据自动脱敏，保留类型信息用于审计
 //! 3. **可追溯**: UUID v7 支持时间排序，便于事件时序分析
 //! 4. **完整性验证**: 支持验证整个审计链的完整性
@@ -142,13 +139,13 @@ pub use recorder::{
 // 公开导出 - immudb 客户端
 pub use immudb_client::{
     ImmuDbAuditEntry, ImmuDbClient, ImmuDbConfig, ImmuDbState, ImmuDbStorage, QueryOptions,
-    StorageStats, VerificationProof,
+    StorageStats,
 };
 
 // 公开导出 - immudb 存储
 pub use immudb_store::{
     AuditReport, AuditStorage, AuditStoreFactory, CacheStats, ImmuDbAuditStore, ImmuDbStoreConfig,
-    StoredAuditEntry, VerificationResult,
+    StoredAuditEntry,
 };
 
 // 公开导出 - 审计宏

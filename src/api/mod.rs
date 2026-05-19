@@ -2,6 +2,7 @@
 //!
 //! HTTP API 路由和处理器
 
+pub mod approvals;
 pub mod attestation;
 pub mod audit;
 pub mod audit_models;
@@ -12,6 +13,7 @@ pub mod i18n;
 pub mod logging_middleware;
 pub mod middleware;
 pub mod notifications;
+pub mod oauth_broker;
 pub mod rate_limit;
 pub mod response;
 pub mod routes;
@@ -32,6 +34,7 @@ pub const API_VERSION: &str = "v1";
 pub const API_BASE_PATH: &str = "/api/v1";
 
 // 重新导出主要类型
+pub use approvals::{ApprovalApiState, approval_routes};
 pub use attestation::{
     AttestationApiConfig, AttestationInitError, AttestationState, attestation_routes,
     init_attestation_api,
@@ -51,6 +54,7 @@ pub use credentials::{AppState, AuditLogger, DefaultAuditLogger};
 pub use i18n::{LocaleResolverState, ResolvedLocale, locale_middleware};
 pub use middleware::{TokenScope, ValidatedToken};
 pub use notifications::notifications_routes;
+pub use oauth_broker::{OAuthBrokerApiState, oauth_broker_routes};
 pub use sandbox::{SandboxState, sandbox_routes};
 pub use service_accounts::service_account_routes;
 pub use tenant::{TenantApiState, tenant_routes};

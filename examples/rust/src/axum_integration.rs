@@ -218,7 +218,6 @@ fn parse_credential_type(s: &str) -> Result<CredentialType, String> {
         "oauth_refresh" => Ok(CredentialType::OAuthRefresh),
         "api_key" => Ok(CredentialType::ApiKey),
         "session_cookie" => Ok(CredentialType::SessionCookie),
-        "kyc_document" => Ok(CredentialType::KycDocument),
         _ => Err(format!("Unknown credential type: {}", s)),
     }
 }

@@ -26,18 +26,18 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ring::digest::{SHA256, digest};
 use ring::signature::{ED25519, UnparsedPublicKey};
 use serde_json::json;
-use sqlx::{PgPool, QueryBuilder, Row};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
 
 use crate::api::audit_models::*;
 use crate::api::middleware::{TokenScope, ValidatedToken};
 use crate::audit::immudb_store::AuditStorage as ImmuDbRecorderStorage;
 use crate::audit::{
-    AuditEntry, AuditFilter, AuditRecorder, ImmuDbAuditStore, MemoryAuditStorage, RecorderError,
-    SignedAuditEntry, SigningKeyPair, VerificationProof, hash_user_id,
+    AuditEntry, AuditFilter, AuditLogChain, ImmuDbAuditStore, MemoryAuditStorage, RecorderError,
+    SignedAuditEntry, SigningKeyPair, hash_user_id,
 };
 
 /// 审计 API 状态
@@ -79,13 +79,6 @@ pub trait AuditStorage: Send + Sync {
     /// 按索引获取审计条目
     async fn get_by_index(&self, index: u64) -> Result<Option<SignedAuditEntry>, String>;
 
-    /// 获取验证证明
-    async fn get_verification_proof(&self, index: u64)
-    -> Result<Option<VerificationProof>, String>;
-
-    /// 验证条目
-    async fn verify_entry(&self, index: u64) -> Result<bool, String>;
-
     /// 获取所有条目（用于导出）
     async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String>;
 }
@@ -94,7 +87,7 @@ pub trait AuditStorage: Send + Sync {
 pub struct PostgresAuditStorageAdapter {
     pool: PgPool,
     schema: String,
-    recorder: Arc<tokio::sync::Mutex<AuditRecorder>>,
+    signing_key: Arc<SigningKeyPair>,
     public_key: Vec<u8>,
 }
 
@@ -117,16 +110,13 @@ impl PostgresAuditStorageAdapter {
         let schema = Self::schema_from_env()?;
         Self::ensure_table(&pool, &schema).await?;
 
-        let signing_key = Self::load_or_create_signing_key(&schema)?;
-        let recorder = AuditRecorder::with_key(100_000, signing_key);
-        let existing_entries = Self::load_existing_entries(&pool, &schema).await?;
-        recorder.restore_entries(&existing_entries)?;
-        let public_key = recorder.public_key().to_vec();
+        let signing_key = Self::load_or_create_signing_key(&pool, &schema).await?;
+        let public_key = signing_key.public_key().to_vec();
 
         Ok(Self {
             pool,
             schema,
-            recorder: Arc::new(tokio::sync::Mutex::new(recorder)),
+            signing_key: Arc::new(signing_key),
             public_key,
         })
     }
@@ -197,6 +187,11 @@ impl PostgresAuditStorageAdapter {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_cb_audit_logs_entry_id
                 ON "{schema}".audit_logs (entry_id)
                 WHERE entry_id IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS "{schema}".audit_signing_keys (
+                key_name VARCHAR(64) PRIMARY KEY,
+                private_key BYTEA NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
             "#
         );
 
@@ -228,48 +223,16 @@ impl PostgresAuditStorageAdapter {
         Ok(())
     }
 
-    async fn load_existing_entries(
-        pool: &PgPool,
-        schema: &str,
-    ) -> Result<Vec<SignedAuditEntry>, RecorderError> {
-        let sql = format!(
-            r#"SELECT signed_entry
-               FROM "{schema}".audit_logs
-               WHERE signed_entry IS NOT NULL
-               ORDER BY log_index ASC"#
-        );
-        let rows = sqlx::query(&sql)
-            .fetch_all(pool)
-            .await
-            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
-
-        rows.into_iter()
-            .map(|row| {
-                let value: serde_json::Value = row
-                    .try_get("signed_entry")
-                    .map_err(|error| RecorderError::StorageError(error.to_string()))?;
-                serde_json::from_value(value)
-                    .map_err(|error| RecorderError::SerializationError(error.to_string()))
-            })
-            .collect()
+    fn configured_signing_key_path() -> Option<PathBuf> {
+        env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
+            .ok()
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
     }
 
-    fn signing_key_path(schema: &str) -> PathBuf {
-        if let Ok(path) = env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
-            && !path.is_empty()
-        {
-            return PathBuf::from(path);
-        }
-
-        let sealed_storage_path =
-            env::var("SEALED_STORAGE_PATH").unwrap_or_else(|_| ".sealed".to_string());
-        PathBuf::from(sealed_storage_path).join(format!("{schema}.audit-signing-key.json"))
-    }
-
-    fn load_or_create_signing_key(schema: &str) -> Result<SigningKeyPair, RecorderError> {
-        let path = Self::signing_key_path(schema);
+    fn load_or_create_file_signing_key(path: &FsPath) -> Result<SigningKeyPair, RecorderError> {
         if path.exists() {
-            let bytes = fs::read(&path).map_err(|error| {
+            let bytes = fs::read(path).map_err(|error| {
                 RecorderError::StorageError(format!(
                     "读取审计签名密钥失败 {}: {error}",
                     path.display()
@@ -293,11 +256,72 @@ impl PostgresAuditStorageAdapter {
             private_key: signing_key.private_key().to_vec(),
         })
         .map_err(|error| RecorderError::SerializationError(error.to_string()))?;
-        fs::write(&path, payload).map_err(|error| {
+        fs::write(path, payload).map_err(|error| {
             RecorderError::StorageError(format!("写入审计签名密钥失败 {}: {error}", path.display()))
         })?;
 
         Ok(signing_key)
+    }
+
+    async fn load_or_create_db_signing_key(
+        pool: &PgPool,
+        schema: &str,
+    ) -> Result<SigningKeyPair, RecorderError> {
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
+            .bind(schema)
+            .bind("audit_signing_key")
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+
+        let select_sql = format!(
+            r#"SELECT private_key FROM "{schema}".audit_signing_keys WHERE key_name = $1 LIMIT 1"#
+        );
+        if let Some(row) = sqlx::query(&select_sql)
+            .bind("default")
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?
+        {
+            let private_key: Vec<u8> = row
+                .try_get("private_key")
+                .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+            tx.commit()
+                .await
+                .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+            return SigningKeyPair::from_pkcs8(private_key);
+        }
+
+        let signing_key = SigningKeyPair::generate()?;
+        let insert_sql = format!(
+            r#"INSERT INTO "{schema}".audit_signing_keys (key_name, private_key) VALUES ($1, $2)"#
+        );
+        sqlx::query(&insert_sql)
+            .bind("default")
+            .bind(signing_key.private_key().to_vec())
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|error| RecorderError::StorageError(error.to_string()))?;
+
+        Ok(signing_key)
+    }
+
+    async fn load_or_create_signing_key(
+        pool: &PgPool,
+        schema: &str,
+    ) -> Result<SigningKeyPair, RecorderError> {
+        if let Some(path) = Self::configured_signing_key_path() {
+            return Self::load_or_create_file_signing_key(&path);
+        }
+
+        Self::load_or_create_db_signing_key(pool, schema).await
     }
 
     fn apply_filters<'a>(builder: &mut QueryBuilder<'a, sqlx::Postgres>, filter: &'a AuditFilter) {
@@ -333,15 +357,56 @@ impl PostgresAuditStorageAdapter {
             builder.push_bind(service);
         }
     }
-}
 
-#[async_trait::async_trait]
-impl AuditStorage for PostgresAuditStorageAdapter {
-    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, String> {
-        let signed_entry = {
-            let recorder = self.recorder.lock().await;
-            recorder.record(entry).map_err(|error| error.to_string())?
+    async fn lock_audit_chain(
+        tx: &mut Transaction<'_, Postgres>,
+        schema: &str,
+    ) -> Result<(), String> {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))")
+            .bind(schema)
+            .bind("audit_logs_append")
+            .execute(&mut **tx)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    async fn record_in_transaction(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        entry: AuditEntry,
+    ) -> Result<SignedAuditEntry, String> {
+        Self::lock_audit_chain(tx, &self.schema).await?;
+
+        let latest_sql = format!(
+            r#"SELECT signed_entry FROM "{}".audit_logs
+               WHERE signed_entry IS NOT NULL
+               ORDER BY log_index DESC
+               LIMIT 1"#,
+            self.schema
+        );
+        let latest_row = sqlx::query(&latest_sql)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        let (prev_hash, next_log_index) = if let Some(row) = latest_row {
+            let value: serde_json::Value = row
+                .try_get("signed_entry")
+                .map_err(|error| error.to_string())?;
+            let latest_entry: SignedAuditEntry =
+                serde_json::from_value(value).map_err(|error| error.to_string())?;
+            (
+                latest_entry.content_hash,
+                latest_entry.log_index.saturating_add(1),
+            )
+        } else {
+            (AuditLogChain::genesis_hash(), 0)
         };
+
+        let signed_entry =
+            SignedAuditEntry::sign(entry, prev_hash, next_log_index, self.signing_key.as_ref())
+                .map_err(|error| error.to_string())?;
 
         let signed_entry_json =
             serde_json::to_value(&signed_entry).map_err(|error| error.to_string())?;
@@ -351,7 +416,7 @@ impl AuditStorage for PostgresAuditStorageAdapter {
             signed_entry.entry.timestamp as i64,
         )
         .ok_or_else(|| "invalid audit timestamp".to_string())?;
-        let sql = format!(
+        let insert_sql = format!(
             r#"
             INSERT INTO "{schema}".audit_logs
                 (log_index, entry_id, event_type, event_data, service, user_id_hash, risk_tier, outcome, created_at, signed_entry)
@@ -360,7 +425,7 @@ impl AuditStorage for PostgresAuditStorageAdapter {
             schema = self.schema
         );
 
-        sqlx::query(&sql)
+        sqlx::query(&insert_sql)
             .bind(i64::try_from(signed_entry.log_index).map_err(|error| error.to_string())?)
             .bind(&signed_entry.entry.id)
             .bind(signed_entry.entry.action.to_string())
@@ -371,10 +436,20 @@ impl AuditStorage for PostgresAuditStorageAdapter {
             .bind(signed_entry.entry.outcome.to_string())
             .bind(created_at)
             .bind(signed_entry_json)
-            .execute(&self.pool)
+            .execute(&mut **tx)
             .await
             .map_err(|error| error.to_string())?;
 
+        Ok(signed_entry)
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditStorage for PostgresAuditStorageAdapter {
+    async fn record(&self, entry: AuditEntry) -> Result<SignedAuditEntry, String> {
+        let mut tx = self.pool.begin().await.map_err(|error| error.to_string())?;
+        let signed_entry = self.record_in_transaction(&mut tx, entry).await?;
+        tx.commit().await.map_err(|error| error.to_string())?;
         Ok(signed_entry)
     }
 
@@ -460,21 +535,6 @@ impl AuditStorage for PostgresAuditStorageAdapter {
         })
         .transpose()
         .map_err(|error| error.to_string())
-    }
-
-    async fn get_verification_proof(
-        &self,
-        _index: u64,
-    ) -> Result<Option<VerificationProof>, String> {
-        Ok(None)
-    }
-
-    async fn verify_entry(&self, index: u64) -> Result<bool, String> {
-        if self.get_by_index(index).await?.is_none() {
-            return Ok(false);
-        }
-        let recorder = self.recorder.lock().await;
-        recorder.verify_chain().map_err(|error| error.to_string())
     }
 
     async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String> {
@@ -607,28 +667,6 @@ impl AuditStorage for MemoryAuditStorageAdapter {
         storage.get_by_index(index).map_err(|e| format!("{e:?}"))
     }
 
-    async fn get_verification_proof(
-        &self,
-        _index: u64,
-    ) -> Result<Option<VerificationProof>, String> {
-        // 内存存储不支持验证证明
-        Ok(None)
-    }
-
-    async fn verify_entry(&self, index: u64) -> Result<bool, String> {
-        let storage = self.storage.lock().await;
-
-        // 获取条目
-        let entry = storage.get_by_index(index).map_err(|e| e.to_string())?;
-
-        if entry.is_none() {
-            return Ok(false);
-        }
-
-        // 验证整个链
-        storage.verify().map_err(|e| e.to_string())
-    }
-
     async fn get_all(&self, filter: AuditFilter) -> Result<Vec<SignedAuditEntry>, String> {
         let (entries, _) = self.query(filter, 0, 100_000).await?;
         Ok(entries)
@@ -667,7 +705,6 @@ impl AuditStorage for ImmuDbAuditStorageAdapter {
         offset: usize,
         limit: usize,
     ) -> Result<(Vec<SignedAuditEntry>, u64), String> {
-        let total = self.storage.count().await.map_err(|e| e.to_string())?;
         let entries = {
             let storage = self.storage.storage();
             let storage = storage.lock().await;
@@ -679,14 +716,14 @@ impl AuditStorage for ImmuDbAuditStorageAdapter {
                     action: filter.action,
                     risk_tier: filter.risk_tier,
                     outcome: filter.outcome,
-                    limit: Some(limit),
-                    offset: Some(offset),
+                    limit: None,
+                    offset: None,
                 })
                 .await
                 .map_err(|e| e.to_string())?
         };
 
-        let entries = entries
+        let mut entries: Vec<_> = entries
             .into_iter()
             .map(|entry| entry.signed_entry)
             .filter(|entry| {
@@ -696,6 +733,9 @@ impl AuditStorage for ImmuDbAuditStorageAdapter {
                 true
             })
             .collect();
+
+        let total = entries.len() as u64;
+        entries = entries.into_iter().skip(offset).take(limit).collect();
 
         Ok((entries, total))
     }
@@ -709,28 +749,6 @@ impl AuditStorage for ImmuDbAuditStorageAdapter {
         self.storage
             .get_by_index(index)
             .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn get_verification_proof(
-        &self,
-        index: u64,
-    ) -> Result<Option<VerificationProof>, String> {
-        let storage = self.storage.storage();
-        let storage = storage.lock().await;
-        storage
-            .client()
-            .verify_entry(&format!("audit:{index}"))
-            .await
-            .map(Some)
-            .map_err(|e| e.to_string())
-    }
-
-    async fn verify_entry(&self, index: u64) -> Result<bool, String> {
-        self.storage
-            .verify_entry(index)
-            .await
-            .map(|result| result.verified)
             .map_err(|e| e.to_string())
     }
 
@@ -862,17 +880,15 @@ pub async fn list_audit_logs(
         outcome: params.outcome,
         service: params.service.clone(),
     };
+    let offset = params.offset();
+    let page_size = params.effective_page_size();
+    let page = params.current_page();
 
     // 查询
-    match state
-        .storage
-        .query(filter, params.offset(), params.page_size)
-        .await
-    {
+    match state.storage.query(filter, offset, page_size).await {
         Ok((entries, total)) => {
             let items: Vec<AuditLogListItem> = entries.iter().map(AuditLogListItem::from).collect();
-            let response =
-                AuditLogListResponse::success(items, total, params.page, params.page_size);
+            let response = AuditLogListResponse::success(items, total, page, page_size, offset);
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
@@ -964,19 +980,7 @@ pub async fn get_audit_log_detail(
             .into_response();
     }
 
-    // 获取验证证明
-    let proof = match state.storage.get_verification_proof(entry.log_index).await {
-        Ok(Some(p)) => Some(MerkleProofResponse {
-            inclusion_proof: p.inclusion_proof,
-            consistency_proof: p.consistency_proof,
-            tree_size: p.tree_size,
-            root_hash: p.root_hash,
-            transaction_id: p.transaction_id,
-        }),
-        _ => None,
-    };
-
-    let data = AuditLogDetailData::from((entry, proof));
+    let data = AuditLogDetailData::from(entry);
     let response = AuditLogDetailResponse::success(data);
     (StatusCode::OK, Json(response)).into_response()
 }
@@ -1302,20 +1306,8 @@ pub async fn verify_audit_log(
         message: Some(format!("签名者: {}", entry.signer_fingerprint)),
     });
 
-    // 3. 验证 Merkle 证明
-    let merkle_proof_valid: bool = state
-        .storage
-        .verify_entry(entry.log_index)
-        .await
-        .unwrap_or_default();
-    details.push(VerificationDetail {
-        step: "Merkle Tree 验证".to_string(),
-        passed: merkle_proof_valid,
-        message: Some(format!("Merkle 根: {}", hex::encode(entry.merkle_root))),
-    });
-
     // 总体验证结果
-    let verified = content_hash_match && signature_valid && merkle_proof_valid;
+    let verified = content_hash_match && signature_valid;
 
     let data = AuditVerifyData {
         id: entry.entry.id.clone(),
@@ -1323,7 +1315,6 @@ pub async fn verify_audit_log(
         verified,
         content_hash_match,
         signature_valid,
-        merkle_proof_valid,
         details,
         verified_at: current_timestamp_millis(),
     };
@@ -1374,7 +1365,9 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         }
     }
 
@@ -1391,7 +1384,9 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         }
     }
 
@@ -1421,7 +1416,9 @@ mod tests {
             metadata: std::collections::HashMap::new(),
             subject_type: crate::token::TOKEN_SUBJECT_TYPE_USER.to_string(),
             issued_from: crate::token::TOKEN_ISSUED_FROM_SESSION.to_string(),
+            token_plane: "management".to_string(),
             allowed_credential_ids: None,
+            allowed_binding_handles: None,
         };
         assert!(!has_audit_permission(&no_scope_token));
     }
@@ -1443,7 +1440,6 @@ mod tests {
             signature: vec![1, 2, 3],
             signer_fingerprint: "test_fp".to_string(),
             log_index: 0,
-            merkle_root: [2u8; 32],
         };
 
         let csv = export_to_csv(&[entry]);

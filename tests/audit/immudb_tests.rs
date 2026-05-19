@@ -37,7 +37,6 @@ fn create_test_entry(index: u64, action: AuditAction, outcome: Outcome) -> Signe
         signature: vec![1, 2, 3, 4, 5],
         signer_fingerprint: "test_signer_fp".to_string(),
         log_index: index,
-        merkle_root: [0u8; 32],
     }
 }
 
@@ -204,26 +203,6 @@ mod immudb_client_tests {
         for (i, result) in results.iter().enumerate() {
             assert_eq!(result.transaction_id as usize, i + 1);
         }
-    }
-
-    #[tokio::test]
-    async fn test_verify_entry() {
-        let config = create_test_config();
-        let mut client = ImmuDbClient::new(config);
-
-        client.connect().await.expect("Failed to connect");
-        client.initialize().await.expect("Failed to initialize");
-
-        let entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
-        client.store_entry(&entry).await.expect("Failed to store");
-
-        let proof = client
-            .verify_entry("audit:0")
-            .await
-            .expect("Failed to verify");
-        assert!(proof.verified);
-        assert_eq!(proof.transaction_id, 1);
-        assert!(!proof.root_hash.is_empty());
     }
 
     #[tokio::test]
@@ -437,20 +416,6 @@ mod immudb_audit_store_tests {
     }
 
     #[tokio::test]
-    async fn test_audit_store_verify_entry() {
-        let store = create_test_store().await;
-
-        let entry = create_test_entry(0, AuditAction::CredentialDecrypt, Outcome::Success);
-        store.store(&entry).await.expect("Failed to store");
-
-        // 验证单个条目
-        let result = store.verify_entry(0).await.expect("Failed to verify entry");
-        assert!(result.verified);
-        assert_eq!(result.index, 0);
-        assert!(!result.root_hash.is_empty());
-    }
-
-    #[tokio::test]
     async fn test_audit_store_current_state() {
         let store = create_test_store().await;
 
@@ -647,15 +612,11 @@ mod immudb_integration_tests {
         let is_valid = store.verify().await.expect("Failed to verify");
         assert!(is_valid, "Store verification failed");
 
-        // 4. 验证特定条目
-        let verify_result = store.verify_entry(3).await.expect("Failed to verify entry");
-        assert!(verify_result.verified);
-
-        // 5. 获取最近条目
+        // 4. 获取最近条目
         let recent = store.get_recent(5).await.expect("Failed to get recent");
         assert_eq!(recent.len(), 5);
 
-        // 6. 生成审计报告
+        // 5. 生成审计报告
         let report = store
             .generate_report(None, None)
             .await
@@ -664,7 +625,7 @@ mod immudb_integration_tests {
         // 验证报告结构（模拟实现不返回实际条目数据）
         assert!(!report.state_hash.is_empty());
 
-        // 7. 获取当前状态
+        // 6. 获取当前状态
         let state = store.current_state().await.expect("Failed to get state");
         // tree_size 应该是 7（我们存储了 7 个条目）
         assert_eq!(
@@ -713,10 +674,6 @@ mod immudb_integration_tests {
         let stored = store.store(&entry).await.expect("Failed to store");
 
         let initial_state_hash = stored.state_hash;
-
-        // 验证条目
-        let verify_result = store.verify_entry(0).await.expect("Failed to verify");
-        assert!(verify_result.verified);
 
         // 获取当前状态
         let state = store.current_state().await.expect("Failed to get state");

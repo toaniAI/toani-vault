@@ -174,7 +174,6 @@ impl VaultStorageBackend {
                 }
                 "api_key" => crate::models::CredentialType::ApiKey,
                 "session_cookie" => crate::models::CredentialType::SessionCookie,
-                "kyc_document" => crate::models::CredentialType::KycDocument,
                 _ => crate::models::CredentialType::ApiKey,
             },
             created_at: data.created_at,

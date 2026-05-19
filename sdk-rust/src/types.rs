@@ -23,8 +23,6 @@ pub enum CredentialType {
     ApiKey,
     /// 会话 Cookie
     SessionCookie,
-    /// KYC 文档
-    KycDocument,
     /// 证书
     Certificate,
     /// SSH 密钥
@@ -40,7 +38,6 @@ impl std::fmt::Display for CredentialType {
             CredentialType::OAuthRefresh => "oauth_refresh",
             CredentialType::ApiKey => "api_key",
             CredentialType::SessionCookie => "session_cookie",
-            CredentialType::KycDocument => "kyc_document",
             CredentialType::Certificate => "certificate",
             CredentialType::SshKey => "ssh_key",
             CredentialType::DatabaseConnection => "database_connection",
@@ -1276,14 +1273,6 @@ pub struct SandboxSessionDetail {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxOperationType {
-    Navigate,
-    Click,
-    Fill,
-    GetText,
-    Export,
-    DomExport,
-    ExecuteScript,
-    Wait,
     HttpRequest,
     Custom,
 }
@@ -1291,14 +1280,6 @@ pub enum SandboxOperationType {
 impl std::fmt::Display for SandboxOperationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            SandboxOperationType::Navigate => "navigate",
-            SandboxOperationType::Click => "click",
-            SandboxOperationType::Fill => "fill",
-            SandboxOperationType::GetText => "get_text",
-            SandboxOperationType::Export => "export",
-            SandboxOperationType::DomExport => "dom_export",
-            SandboxOperationType::ExecuteScript => "execute_script",
-            SandboxOperationType::Wait => "wait",
             SandboxOperationType::HttpRequest => "http_request",
             SandboxOperationType::Custom => "custom",
         };

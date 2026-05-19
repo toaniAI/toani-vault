@@ -41,8 +41,9 @@ use redis::{AsyncCommands, Client as RedisClient, Script};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock as AsyncRwLock;
+use tokio::time::sleep;
 
 use super::response::ApiErrorResponse;
 
@@ -260,6 +261,66 @@ impl AttestationState {
             .map_err(|_| "Failed to load attestation challenge")
     }
 
+    async fn refresh_quote_with_retry(
+        &self,
+        max_attempts: u32,
+        initial_backoff: Duration,
+    ) -> Result<u64, String> {
+        let mut backoff = initial_backoff;
+        let mut last_error: Option<String> = None;
+
+        for attempt in 1..=max_attempts {
+            let enclave = self.enclave.lock().await;
+            let refresh_result = {
+                let dcap_service = self
+                    .dcap_service
+                    .write()
+                    .map_err(|_| "Failed to acquire DCAP service lock".to_string())?;
+                dcap_service.refresh_quote(&enclave)
+            };
+
+            match refresh_result {
+                Ok(quote) => return Ok(quote.timestamp),
+                Err(error) => {
+                    let error_message = format!("Failed to refresh quote: {error}");
+                    last_error = Some(error_message.clone());
+                    tracing::warn!(
+                        module = "attestation",
+                        status = "quote_refresh_retry",
+                        attempt,
+                        max_attempts,
+                        retry_in_ms = if attempt < max_attempts {
+                            backoff.as_millis() as u64
+                        } else {
+                            0
+                        },
+                        error = %error_message,
+                        "attestation quote refresh failed"
+                    );
+
+                    if attempt < max_attempts {
+                        sleep(backoff).await;
+                        backoff = backoff.saturating_mul(2);
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| "Failed to refresh quote".to_string()))
+    }
+
+    /// 主动刷新 DCAP quote 缓存，用于启动预热或自愈。
+    pub async fn warmup_quote(&self) -> Result<u64, String> {
+        self.refresh_quote_with_retry(5, Duration::from_millis(500))
+            .await
+    }
+
+    /// 后台循环使用的 quote 刷新入口。
+    pub async fn refresh_quote_in_background(&self) -> Result<u64, String> {
+        self.refresh_quote_with_retry(3, Duration::from_millis(250))
+            .await
+    }
+
     pub async fn runtime_snapshot(&self) -> AttestationRuntimeSnapshot {
         let requested_mode = self.config.tee_runtime.mode.to_string();
         let effective_mode = self.config.tee_runtime.mode.to_string();
@@ -305,38 +366,42 @@ impl AttestationState {
             };
         }
 
-        let dcap_service = match self.dcap_service.read() {
-            Ok(service) => service,
-            Err(_) => {
-                return AttestationRuntimeSnapshot {
-                    status: ApiAttestationStatus::Failed,
-                    health_status: SelfCheckStatus::Failed,
-                    requested_mode,
-                    effective_mode,
-                    root_key_source: self.config.root_key_source.clone(),
-                    detected_type: self
-                        .tee_capabilities
-                        .detected_type
-                        .description()
-                        .to_string(),
-                    hardware_available: self.tee_capabilities.hardware_available,
-                    remote_attestation_available: self
-                        .tee_capabilities
-                        .remote_attestation_available,
-                    enclave_state,
-                    enclave_running,
-                    mrenclave,
-                    mrsigner,
-                    quote_valid: false,
-                    quote_expires_at: None,
-                    last_quote_generated_at: None,
-                    last_verified_at,
-                    error: Some("Failed to acquire DCAP service lock".to_string()),
-                };
-            }
+        let quote_result = {
+            let dcap_service = match self.dcap_service.read() {
+                Ok(service) => service,
+                Err(_) => {
+                    return AttestationRuntimeSnapshot {
+                        status: ApiAttestationStatus::Failed,
+                        health_status: SelfCheckStatus::Failed,
+                        requested_mode,
+                        effective_mode,
+                        root_key_source: self.config.root_key_source.clone(),
+                        detected_type: self
+                            .tee_capabilities
+                            .detected_type
+                            .description()
+                            .to_string(),
+                        hardware_available: self.tee_capabilities.hardware_available,
+                        remote_attestation_available: self
+                            .tee_capabilities
+                            .remote_attestation_available,
+                        enclave_state,
+                        enclave_running,
+                        mrenclave,
+                        mrsigner,
+                        quote_valid: false,
+                        quote_expires_at: None,
+                        last_quote_generated_at: None,
+                        last_verified_at,
+                        error: Some("Failed to acquire DCAP service lock".to_string()),
+                    };
+                }
+            };
+
+            dcap_service.get_current_quote()
         };
 
-        match dcap_service.get_current_quote() {
+        match quote_result {
             Ok(quote) => {
                 let quote_expires_at = quote.timestamp.checked_add(self.config.quote_max_age);
                 let quote_valid =
@@ -383,39 +448,82 @@ impl AttestationState {
                 }
             }
             Err(error) => {
-                let (status, health_status) = if self.config.tee_runtime.is_hardware() {
-                    (ApiAttestationStatus::Failed, SelfCheckStatus::Failed)
+                let refresh_result = if self.config.tee_runtime.is_hardware() {
+                    self.refresh_quote_with_retry(3, Duration::from_millis(250))
+                        .await
                 } else {
-                    (
-                        ApiAttestationStatus::PendingVerification,
-                        SelfCheckStatus::Degraded,
-                    )
+                    Err("quote missing in non-hardware mode".to_string())
                 };
 
-                AttestationRuntimeSnapshot {
-                    status,
-                    health_status,
-                    requested_mode,
-                    effective_mode,
-                    root_key_source: self.config.root_key_source.clone(),
-                    detected_type: self
-                        .tee_capabilities
-                        .detected_type
-                        .description()
-                        .to_string(),
-                    hardware_available: self.tee_capabilities.hardware_available,
-                    remote_attestation_available: self
-                        .tee_capabilities
-                        .remote_attestation_available,
-                    enclave_state,
-                    enclave_running,
-                    mrenclave,
-                    mrsigner,
-                    quote_valid: false,
-                    quote_expires_at: None,
-                    last_quote_generated_at: None,
-                    last_verified_at,
-                    error: Some(format!("No valid quote available: {error}")),
+                match refresh_result {
+                    Ok(timestamp) => {
+                        let quote_expires_at = timestamp.checked_add(self.config.quote_max_age);
+                        AttestationRuntimeSnapshot {
+                            status: ApiAttestationStatus::Authenticated,
+                            health_status: SelfCheckStatus::Ready,
+                            requested_mode,
+                            effective_mode,
+                            root_key_source: self.config.root_key_source.clone(),
+                            detected_type: self
+                                .tee_capabilities
+                                .detected_type
+                                .description()
+                                .to_string(),
+                            hardware_available: self.tee_capabilities.hardware_available,
+                            remote_attestation_available: self
+                                .tee_capabilities
+                                .remote_attestation_available,
+                            enclave_state,
+                            enclave_running,
+                            mrenclave,
+                            mrsigner,
+                            quote_valid: true,
+                            quote_expires_at,
+                            last_quote_generated_at: Some(timestamp),
+                            last_verified_at,
+                            error: Some(format!(
+                                "No valid quote available: {error}; quote regenerated"
+                            )),
+                        }
+                    }
+                    Err(refresh_error) => {
+                        let (status, health_status) = if self.config.tee_runtime.is_hardware() {
+                            (ApiAttestationStatus::Failed, SelfCheckStatus::Failed)
+                        } else {
+                            (
+                                ApiAttestationStatus::PendingVerification,
+                                SelfCheckStatus::Degraded,
+                            )
+                        };
+
+                        AttestationRuntimeSnapshot {
+                            status,
+                            health_status,
+                            requested_mode,
+                            effective_mode,
+                            root_key_source: self.config.root_key_source.clone(),
+                            detected_type: self
+                                .tee_capabilities
+                                .detected_type
+                                .description()
+                                .to_string(),
+                            hardware_available: self.tee_capabilities.hardware_available,
+                            remote_attestation_available: self
+                                .tee_capabilities
+                                .remote_attestation_available,
+                            enclave_state,
+                            enclave_running,
+                            mrenclave,
+                            mrsigner,
+                            quote_valid: false,
+                            quote_expires_at: None,
+                            last_quote_generated_at: None,
+                            last_verified_at,
+                            error: Some(format!(
+                                "No valid quote available: {error}; refresh retry failed: {refresh_error}"
+                            )),
+                        }
+                    }
                 }
             }
         }

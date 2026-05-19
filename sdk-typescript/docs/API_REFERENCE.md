@@ -1,4 +1,4 @@
-# ToaniVault TypeScript SDK - API 参考
+# CredBridge TypeScript SDK - API 参考
 
 ## 目录
 
@@ -526,7 +526,6 @@ enum CredentialType {
   OAuthRefresh = "oauth_refresh",
   ApiKey = "api_key",
   SessionCookie = "session_cookie",
-  KycDocument = "kyc_document",
 }
 ```
 

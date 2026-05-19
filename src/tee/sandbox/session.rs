@@ -5,7 +5,6 @@ use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
 use crate::models::CredentialType;
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
-    browser_runtime::SandboxBrowserRuntime,
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, SandboxProcessHealth},
     repository::{
@@ -25,7 +24,7 @@ use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
 };
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use time::OffsetDateTime;
@@ -101,22 +100,16 @@ pub struct ActiveNsjailSession {
     operation_history: Arc<RwLock<Vec<OperationRecord>>>,
     operation_reviewer: Option<Arc<OperationReviewer>>,
     repository: Option<Arc<dyn SandboxRepository>>,
+    #[allow(dead_code)]
     vault: Option<Arc<CredentialVault>>,
+    #[allow(dead_code)]
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
+    #[allow(dead_code)]
     enclave: Option<SharedEnclave>,
-    browser_runtime: Arc<RwLock<Option<SandboxBrowserRuntime>>>,
-    browser_runtime_used: Arc<RwLock<bool>>,
-    browser_runtime_tainted: Arc<RwLock<bool>>,
+    #[allow(dead_code)]
     credential_cache: Arc<RwLock<Option<Arc<SessionCredentialMaterial>>>>,
-    sensitive_selectors: Arc<RwLock<HashSet<String>>>,
     resource_recovery: Option<Arc<dyn SandboxResourceRecovery>>,
     operation_executor: Arc<dyn SandboxOperationExecutor>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SandboxReusePolicy {
-    RecycleToWarmPool,
-    DestroyAfterUse,
 }
 
 #[derive(Debug, Clone)]
@@ -143,22 +136,8 @@ struct SandboxExecutionOutput {
     data: Option<Value>,
 }
 
-#[derive(Debug, Clone)]
-struct BootstrapPageRequest {
-    mode: String,
-    script_selectors: Vec<String>,
-    include_plain_scripts: bool,
-    replay_lifecycle_events: bool,
-    wait_selector: Option<String>,
-    wait_timeout_ms: u64,
-}
-
 const DEFAULT_HTTP_REQUEST_TIMEOUT_MS: u64 = 30_000;
 const MAX_HTTP_RESPONSE_BODY_BYTES: usize = 64 * 1024;
-const DEFAULT_DOM_EXPORT_MAX_BYTES: u64 = 262_144;
-const DEFAULT_BOOTSTRAP_PAGE_WAIT_TIMEOUT_MS: u64 = 30_000;
-const EXECUTE_SCRIPT_BINDINGS_ERROR: &str =
-    "invalid_request: execute_script bindings must be plain strings";
 const MAX_RESOURCE_RECOVERY_RETRIES: usize = 2;
 
 impl ActiveNsjailSession {
@@ -195,11 +174,7 @@ impl ActiveNsjailSession {
             vault,
             key_hierarchy,
             enclave,
-            browser_runtime: Arc::new(RwLock::new(None)),
-            browser_runtime_used: Arc::new(RwLock::new(false)),
-            browser_runtime_tainted: Arc::new(RwLock::new(false)),
             credential_cache: Arc::new(RwLock::new(None)),
-            sensitive_selectors: Arc::new(RwLock::new(HashSet::new())),
             resource_recovery: None,
             operation_executor: Arc::new(DefaultSandboxOperationExecutor),
         }
@@ -208,14 +183,6 @@ impl ActiveNsjailSession {
     pub async fn take_sandbox(&self) -> Option<NsjailSandbox> {
         self.shutdown_runtime().await;
         self.sandbox.write().await.take()
-    }
-
-    pub async fn sandbox_reuse_policy(&self) -> SandboxReusePolicy {
-        if *self.browser_runtime_tainted.read().await {
-            SandboxReusePolicy::DestroyAfterUse
-        } else {
-            SandboxReusePolicy::RecycleToWarmPool
-        }
     }
 
     pub async fn sandbox_process_health(&self) -> Option<SandboxProcessHealth> {
@@ -325,47 +292,10 @@ impl ActiveNsjailSession {
     }
 
     async fn shutdown_runtime(&self) {
-        if let Some(runtime) = self.browser_runtime.write().await.take() {
-            if let Err(error) = runtime.close().await {
-                warn!(
-                    session_id = %self.id,
-                    "Failed to close browser runtime cleanly: {}",
-                    error
-                );
-                self.mark_browser_runtime_tainted().await;
-            }
-        }
         *self.credential_cache.write().await = None;
-        self.sensitive_selectors.write().await.clear();
     }
 
-    async fn browser_runtime(&self) -> Result<SandboxBrowserRuntime, SandboxError> {
-        if let Some(runtime) = self.browser_runtime.read().await.as_ref().cloned() {
-            return Ok(runtime);
-        }
-
-        let runtime = {
-            let sandbox_guard = self.sandbox.read().await;
-            let sandbox = sandbox_guard
-                .as_ref()
-                .ok_or_else(|| SessionError::CreationFailed {
-                    reason: "Sandbox not available".to_string(),
-                })?;
-            let work_dir = sandbox.working_dir();
-            SandboxBrowserRuntime::launch(work_dir, sandbox).await?
-        };
-        let mut guard = self.browser_runtime.write().await;
-        if guard.is_none() {
-            *guard = Some(runtime.clone());
-            *self.browser_runtime_used.write().await = true;
-        }
-        Ok(guard.as_ref().cloned().unwrap_or(runtime))
-    }
-
-    async fn mark_browser_runtime_tainted(&self) {
-        *self.browser_runtime_tainted.write().await = true;
-    }
-
+    #[allow(dead_code)]
     async fn credential_material(&self) -> Result<Arc<SessionCredentialMaterial>, SandboxError> {
         if let Some(material) = self.credential_cache.read().await.as_ref().cloned() {
             return Ok(material);
@@ -410,30 +340,6 @@ impl ActiveNsjailSession {
         Ok(material)
     }
 
-    async fn mark_sensitive_selector(&self, selector: String) {
-        self.sensitive_selectors.write().await.insert(selector);
-    }
-
-    async fn sensitive_selectors(&self) -> Vec<String> {
-        self.sensitive_selectors
-            .read()
-            .await
-            .iter()
-            .cloned()
-            .collect()
-    }
-
-    async fn ensure_execute_script_allowed(&self) -> Result<(), SandboxError> {
-        if !self.sensitive_selectors.read().await.is_empty() {
-            return Err(SandboxError::Other(
-                "invalid_request: execute_script is disabled after credential-backed fills"
-                    .to_string(),
-            ));
-        }
-
-        Ok(())
-    }
-
     async fn execute_with_resource_retries(
         &self,
         operation: &OperationRequest,
@@ -447,10 +353,6 @@ impl ActiveNsjailSession {
                     if error.is_recoverable_resource_failure()
                         && retry_count < MAX_RESOURCE_RECOVERY_RETRIES =>
                 {
-                    if error.is_timeout() || matches!(error, SandboxError::Process(_)) {
-                        self.mark_browser_runtime_tainted().await;
-                        self.shutdown_runtime().await;
-                    }
                     let Some(recovery) = &self.resource_recovery else {
                         return Err(error);
                     };
@@ -474,10 +376,7 @@ impl ActiveNsjailSession {
                     );
                 }
                 Err(error) => {
-                    if error.is_timeout() || matches!(error, SandboxError::Process(_)) {
-                        self.mark_browser_runtime_tainted().await;
-                        self.shutdown_runtime().await;
-                    }
+                    self.shutdown_runtime().await;
                     return Err(error);
                 }
             }
@@ -724,6 +623,7 @@ impl ActiveNsjailSession {
         parameters.get(key).and_then(Value::as_u64)
     }
 
+    #[allow(dead_code)]
     fn optional_bool(parameters: &HashMap<String, Value>, key: &str, default: bool) -> bool {
         parameters
             .get(key)
@@ -731,6 +631,7 @@ impl ActiveNsjailSession {
             .unwrap_or(default)
     }
 
+    #[allow(dead_code)]
     fn optional_string(parameters: &HashMap<String, Value>, key: &str, default: &str) -> String {
         parameters
             .get(key)
@@ -740,6 +641,7 @@ impl ActiveNsjailSession {
             .unwrap_or_else(|| default.to_string())
     }
 
+    #[allow(dead_code)]
     fn optional_string_array(
         parameters: &HashMap<String, Value>,
         key: &str,
@@ -760,133 +662,12 @@ impl ActiveNsjailSession {
             .collect()
     }
 
-    fn optional_non_empty_string(
-        parameters: &HashMap<String, Value>,
-        key: &str,
-    ) -> Result<Option<String>, SandboxError> {
-        let Some(value) = parameters.get(key) else {
-            return Ok(None);
-        };
-
-        let text = value
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                SandboxError::Other(format!("invalid_request: {key} must be a string"))
-            })?;
-
-        Ok(Some(text.to_string()))
-    }
-
-    fn contains_credential_reference(value: &Value) -> bool {
-        if crate::tee::sandbox::types::CredentialReference::from_value(value).is_some() {
-            return true;
-        }
-
-        match value {
-            Value::Array(items) => items.iter().any(Self::contains_credential_reference),
-            Value::Object(map) => map.values().any(Self::contains_credential_reference),
-            _ => false,
-        }
-    }
-
-    fn resolve_bootstrap_page_request(
-        parameters: &HashMap<String, Value>,
-    ) -> Result<BootstrapPageRequest, SandboxError> {
-        for key in parameters.keys() {
-            if !matches!(
-                key.as_str(),
-                "mode"
-                    | "script_selectors"
-                    | "include_plain_scripts"
-                    | "replay_lifecycle_events"
-                    | "wait_selector"
-                    | "wait_timeout_ms"
-            ) {
-                return Err(SandboxError::Other(format!(
-                    "invalid_request: bootstrap_page does not accept {key}"
-                )));
-            }
-        }
-
-        for forbidden in ["bindings", "credential_bindings", "script"] {
-            if parameters.contains_key(forbidden) {
-                return Err(SandboxError::Other(format!(
-                    "invalid_request: bootstrap_page does not accept {forbidden}"
-                )));
-            }
-        }
-
-        if parameters
-            .values()
-            .any(ActiveNsjailSession::contains_credential_reference)
-        {
-            return Err(SandboxError::Other(
-                "invalid_request: bootstrap_page does not accept credential references".to_string(),
-            ));
-        }
-
-        let mode = Self::required_string(parameters, "mode")?;
-        if mode != "rocket_loader" {
-            return Err(SandboxError::Other(
-                "invalid_request: bootstrap_page mode must be rocket_loader".to_string(),
-            ));
-        }
-
-        let script_selectors = Self::optional_string_array(parameters, "script_selectors")?;
-        let include_plain_scripts = Self::optional_bool(parameters, "include_plain_scripts", false);
-        let replay_lifecycle_events =
-            Self::optional_bool(parameters, "replay_lifecycle_events", false);
-        let wait_selector = Self::optional_non_empty_string(parameters, "wait_selector")?;
-        let wait_timeout_ms = parameters
-            .get("wait_timeout_ms")
-            .map(|value| {
-                value.as_u64().ok_or_else(|| {
-                    SandboxError::Other(
-                        "invalid_request: wait_timeout_ms must be a positive integer".to_string(),
-                    )
-                })
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_BOOTSTRAP_PAGE_WAIT_TIMEOUT_MS);
-        if wait_timeout_ms == 0 {
-            return Err(SandboxError::Other(
-                "invalid_request: wait_timeout_ms must be a positive integer".to_string(),
-            ));
-        }
-
-        Ok(BootstrapPageRequest {
-            mode,
-            script_selectors,
-            include_plain_scripts,
-            replay_lifecycle_events,
-            wait_selector,
-            wait_timeout_ms,
-        })
-    }
-
     fn sanitized_operation_output(
         operation_type: OperationType,
         data: Option<&Value>,
         sensitive_output_values: &[String],
     ) -> Option<Value> {
         match operation_type {
-            OperationType::BootstrapPage => data.map(|value| {
-                let injected_script_count = value
-                    .get("injected_scripts")
-                    .and_then(Value::as_array)
-                    .map(|items| items.len())
-                    .unwrap_or_default();
-                let wait_satisfied = value
-                    .get("wait_satisfied")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                json!({
-                    "injected_script_count": injected_script_count,
-                    "wait_satisfied": wait_satisfied,
-                })
-            }),
             OperationType::HttpRequest => {
                 data.map(|value| Self::redact_http_response_value(value, sensitive_output_values))
             }
@@ -1096,91 +877,10 @@ impl ActiveNsjailSession {
         })
     }
 
-    async fn resolve_fill_value(&self, value: &Value) -> Result<(String, bool), SandboxError> {
-        if let Some(raw) = value.as_str() {
-            return Ok((raw.to_string(), false));
-        }
-
-        let field = value
-            .get("$credential")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                SandboxError::Other(
-                    "invalid_request: fill.value must be a string or {$credential: <field>}"
-                        .to_string(),
-                )
-            })?;
-
-        let material = self.credential_material().await?;
-        material
-            .values
-            .get(field)
-            .map(|value| (value.as_str().to_string(), true))
-            .ok_or_else(|| {
-                SandboxError::Other(format!(
-                    "invalid_request: unsupported credential field {field}"
-                ))
-            })
-    }
-
-    async fn selector_is_sensitive(&self, selector: &str) -> bool {
-        if self.sensitive_selectors.read().await.contains(selector) {
-            return true;
-        }
-
-        let normalized = selector.to_ascii_lowercase();
-        [
-            "password", "passwd", "token", "secret", "api-key", "apikey", "cookie",
-        ]
-        .iter()
-        .any(|needle| normalized.contains(needle))
-    }
-
-    async fn safe_get_text(
-        &self,
-        browser: &SandboxBrowserRuntime,
-        selector: &str,
-    ) -> Result<(String, bool), SandboxError> {
-        if self.selector_is_sensitive(selector).await {
-            return Err(SandboxError::Other(format!(
-                "invalid_request: get_text is blocked for sensitive selector {selector}"
-            )));
-        }
-
-        let meta = browser.selector_text_metadata(selector).await?;
-        if !meta.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-            return Err(SandboxError::Other(format!(
-                "selector_not_found: {selector}"
-            )));
-        }
-
-        if meta
-            .get("type")
-            .and_then(Value::as_str)
-            .map(|kind| kind.eq_ignore_ascii_case("password"))
-            .unwrap_or(false)
-        {
-            return Err(SandboxError::Other(format!(
-                "invalid_request: get_text is blocked for password field {selector}"
-            )));
-        }
-
-        let raw = meta
-            .get("value")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let redacted = redact_sensitive_text(raw);
-        Ok((redacted.clone(), redacted != raw))
-    }
-
     fn sanitized_operation_parameters(
-        operation_type: OperationType,
+        _operation_type: OperationType,
         parameters: &HashMap<String, Value>,
     ) -> Value {
-        if operation_type == OperationType::BootstrapPage {
-            return Value::Object(serde_json::Map::new());
-        }
-
         let sensitive = parameters
             .get("sensitive")
             .and_then(Value::as_bool)
@@ -1203,275 +903,11 @@ impl ActiveNsjailSession {
         );
 
         match operation.operation_type {
-            OperationType::Navigate => {
-                let browser = self.browser_runtime().await?;
-                let final_url = browser
-                    .navigate(&Self::required_string(parameters, "url")?)
-                    .await?;
-                Ok(SandboxExecutionOutput {
-                    data: Some(json!({ "final_url": final_url })),
-                })
-            }
-            OperationType::Click => {
-                let browser = self.browser_runtime().await?;
-                let selector = Self::required_string(parameters, "selector")?;
-                browser.click(&selector).await?;
-                Ok(SandboxExecutionOutput {
-                    data: Some(json!({ "clicked": true, "selector": selector })),
-                })
-            }
-            OperationType::Fill => {
-                let browser = self.browser_runtime().await?;
-                let selector = Self::required_string(parameters, "selector")?;
-                let raw_value = parameters.get("value").ok_or_else(|| {
-                    SandboxError::Other("invalid_request: fill requires value".to_string())
-                })?;
-                let (resolved, credential_backed) = self.resolve_fill_value(raw_value).await?;
-                let sensitive = parameters
-                    .get("sensitive")
-                    .and_then(Value::as_bool)
-                    .unwrap_or_else(|| {
-                        credential_backed
-                            || operation
-                                .parameters
-                                .get("value")
-                                .and_then(|value| value.get("$credential"))
-                                .is_some()
-                    });
-                if sensitive {
-                    self.mark_sensitive_selector(selector.clone()).await;
-                }
-                browser.fill(&selector, &resolved).await?;
-                Ok(SandboxExecutionOutput {
-                    data: Some(json!({
-                        "filled": true,
-                        "selector": selector,
-                        "sensitive": sensitive
-                    })),
-                })
-            }
-            OperationType::Wait => {
-                let browser = self.browser_runtime().await?;
-                let selector = parameters
-                    .get("selector")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned);
-                let timeout_ms = Self::optional_u64(parameters, "timeout_ms")
-                    .or_else(|| Self::optional_u64(parameters, "milliseconds"))
-                    .unwrap_or(5_000);
-                browser
-                    .wait_for_selector(selector.as_deref(), timeout_ms)
-                    .await?;
-                Ok(SandboxExecutionOutput {
-                    data: Some(json!({
-                        "waited": true,
-                        "selector": selector,
-                        "timeout_ms": timeout_ms
-                    })),
-                })
-            }
-            OperationType::GetText => {
-                let browser = self.browser_runtime().await?;
-                let selector = Self::required_string(parameters, "selector")?;
-                let (text, redacted) = self.safe_get_text(&browser, &selector).await?;
-                Ok(SandboxExecutionOutput {
-                    data: Some(json!({
-                        "selector": selector,
-                        "text": text,
-                        "redacted": redacted
-                    })),
-                })
-            }
-            OperationType::Export => {
-                let browser = self.browser_runtime().await?;
-                let selectors = parameters
-                    .get("selectors")
-                    .and_then(Value::as_array)
-                    .map(|items| {
-                        items
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(ToOwned::to_owned)
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                let mut items = Vec::new();
-                for selector in selectors {
-                    match self.safe_get_text(&browser, &selector).await {
-                        Ok((text, redacted)) => items.push(json!({
-                            "selector": selector,
-                            "text": text,
-                            "redacted": redacted
-                        })),
-                        Err(_) => items.push(json!({
-                            "selector": selector,
-                            "text": "********",
-                            "redacted": true
-                        })),
-                    }
-                }
-                Ok(SandboxExecutionOutput {
-                    data: Some(json!({
-                        "url": browser.current_url().await?,
-                        "items": items
-                    })),
-                })
-            }
-            OperationType::DomExport => {
-                let browser = self.browser_runtime().await?;
-                let root_selector = Self::optional_string(parameters, "root_selector", "html");
-                let format = Self::optional_string(parameters, "format", "html");
-                validate_dom_export_format(&format)?;
-                let include_text = Self::optional_bool(parameters, "include_text", true);
-                let include_metadata = Self::optional_bool(parameters, "include_metadata", false);
-                let max_bytes = Self::optional_u64(parameters, "max_bytes")
-                    .unwrap_or(DEFAULT_DOM_EXPORT_MAX_BYTES);
-                if max_bytes == 0 {
-                    return Err(SandboxError::Other(
-                        "invalid_request: max_bytes must be greater than 0".to_string(),
-                    ));
-                }
-
-                let mut sensitive_selectors = self.sensitive_selectors().await;
-                sensitive_selectors.extend(Self::optional_string_array(
-                    parameters,
-                    "extra_sensitive_selectors",
-                )?);
-
-                let data = browser
-                    .dom_export(
-                        &root_selector,
-                        &format,
-                        include_text,
-                        include_metadata,
-                        &sensitive_selectors,
-                    )
-                    .await?;
-                let data = redact_dom_export_result(data);
-                Ok(SandboxExecutionOutput {
-                    data: Some(truncate_dom_export_data(data, max_bytes)),
-                })
-            }
-            OperationType::ExecuteScript => {
-                self.ensure_execute_script_allowed().await?;
-                let browser = self.browser_runtime().await?;
-                let script = Self::required_string(parameters, "script")?;
-                let bindings = Self::resolve_execute_script_bindings(parameters)?;
-                let result = browser.execute_script(&script, &bindings).await?;
-                Ok(SandboxExecutionOutput { data: Some(result) })
-            }
-            OperationType::BootstrapPage => {
-                let browser = self.browser_runtime().await?;
-                let request = Self::resolve_bootstrap_page_request(parameters)?;
-                info!(
-                    session_id = %self.id,
-                    operation_id = %operation.operation_id,
-                    mode = %request.mode,
-                    script_selector_count = request.script_selectors.len(),
-                    include_plain_scripts = request.include_plain_scripts,
-                    replay_lifecycle_events = request.replay_lifecycle_events,
-                    wait_selector = request.wait_selector.as_deref().unwrap_or(""),
-                    wait_timeout_ms = request.wait_timeout_ms,
-                    "session bootstrap_page request resolved"
-                );
-                let result = browser
-                    .bootstrap_page(
-                        &request.mode,
-                        &request.script_selectors,
-                        request.include_plain_scripts,
-                        request.replay_lifecycle_events,
-                        request.wait_selector.as_deref(),
-                        request.wait_timeout_ms,
-                    )
-                    .await?;
-                let diagnostics = result
-                    .get("diagnostics")
-                    .and_then(Value::as_object)
-                    .cloned()
-                    .unwrap_or_default();
-                let compatibility_injections = diagnostics
-                    .get("compatibility_injections")
-                    .cloned()
-                    .unwrap_or(Value::Null);
-                let gtag_before_type = diagnostics
-                    .get("gtag_before_type")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("");
-                let gtag_after_type = diagnostics
-                    .get("gtag_after_type")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("");
-                let data_layer_initialized = diagnostics
-                    .get("data_layer_initialized")
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false);
-                let compatibility_applied = diagnostics
-                    .get("compatibility_applied")
-                    .and_then(|value| value.as_bool())
-                    .unwrap_or(false);
-                info!(
-                    session_id = %self.id,
-                    operation_id = %operation.operation_id,
-                    discovered_scripts = diagnostics
-                        .get("discovered_scripts")
-                        .and_then(|value| value.as_u64())
-                        .unwrap_or(0),
-                    reinjected_scripts = diagnostics
-                        .get("reinjected_scripts")
-                        .and_then(|value| value.as_u64())
-                        .unwrap_or(0),
-                    compatibility_injections = %compatibility_injections,
-                    gtag_before_type,
-                    gtag_after_type,
-                    data_layer_initialized,
-                    compatibility_applied,
-                    ready_state_before_scan = diagnostics
-                        .get("ready_state_before_scan")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or(""),
-                    ready_state_after_injection = diagnostics
-                        .get("ready_state_after_injection")
-                        .and_then(|value| value.as_str())
-                        .unwrap_or(""),
-                    "session bootstrap_page returned"
-                );
-                Ok(SandboxExecutionOutput { data: Some(result) })
-            }
             OperationType::HttpRequest => self.execute_http_request(parameters).await,
             OperationType::Custom => Err(SandboxError::Other(
                 "invalid_request: custom sandbox operations are not supported".to_string(),
             )),
         }
-    }
-
-    fn resolve_execute_script_bindings(
-        parameters: &HashMap<String, Value>,
-    ) -> Result<HashMap<String, String>, SandboxError> {
-        let Some(raw_bindings) = parameters
-            .get("bindings")
-            .or_else(|| parameters.get("credential_bindings"))
-        else {
-            return Ok(HashMap::new());
-        };
-
-        let Some(bindings) = raw_bindings.as_object() else {
-            return Err(SandboxError::Other(
-                EXECUTE_SCRIPT_BINDINGS_ERROR.to_string(),
-            ));
-        };
-
-        let mut resolved = HashMap::with_capacity(bindings.len());
-
-        for (name, raw_value) in bindings {
-            let Some(raw) = raw_value.as_str() else {
-                return Err(SandboxError::Other(
-                    EXECUTE_SCRIPT_BINDINGS_ERROR.to_string(),
-                ));
-            };
-            resolved.insert(name.clone(), raw.to_string());
-        }
-
-        Ok(resolved)
     }
 }
 
@@ -1534,6 +970,7 @@ impl SandboxSession for ActiveNsjailSession {
     }
 }
 
+#[allow(dead_code)]
 async fn decrypt_credential_material(
     enclave: Option<&SharedEnclave>,
     key_hierarchy: &Arc<RwLock<KeyHierarchy>>,
@@ -1617,6 +1054,7 @@ fn sanitize_parameter_value(key: &str, value: &Value, sensitive: bool) -> Value 
     }
 }
 
+#[allow(dead_code)]
 fn redact_sensitive_text(text: &str) -> String {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -1639,6 +1077,7 @@ fn redact_sensitive_text(text: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn validate_dom_export_format(format: &str) -> Result<(), SandboxError> {
     match format {
         "html" | "text" | "json" => Ok(()),
@@ -1648,6 +1087,7 @@ fn validate_dom_export_format(format: &str) -> Result<(), SandboxError> {
     }
 }
 
+#[allow(dead_code)]
 fn redact_dom_export_result(value: Value) -> Value {
     match value {
         Value::String(text) => Value::String(redact_sensitive_text(&text)),
@@ -1663,6 +1103,7 @@ fn redact_dom_export_result(value: Value) -> Value {
     }
 }
 
+#[allow(dead_code)]
 fn truncate_dom_export_data(mut data: Value, max_bytes: u64) -> Value {
     let max_bytes = usize::try_from(max_bytes).unwrap_or(usize::MAX);
     let mut truncated = false;
@@ -1703,12 +1144,14 @@ fn truncate_dom_export_data(mut data: Value, max_bytes: u64) -> Value {
     data
 }
 
+#[allow(dead_code)]
 fn serialized_len(value: &Value) -> usize {
     serde_json::to_vec(value)
         .map(|bytes| bytes.len())
         .unwrap_or(usize::MAX)
 }
 
+#[allow(dead_code)]
 fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     if value.len() <= max_bytes {
         return value.to_string();
@@ -1721,6 +1164,7 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     value[..end].to_string()
 }
 
+#[allow(dead_code)]
 fn extract_supported_credential_fields(
     credential_type: CredentialType,
     plaintext_data: &Value,
@@ -1821,7 +1265,6 @@ mod tests {
             command: vec!["sleep".to_string(), "60".to_string()],
             cwd: std::path::PathBuf::from("/"),
             env: HashMap::new(),
-            disable_seccomp_for_browser_runtime: false,
             enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
@@ -1845,23 +1288,6 @@ mod tests {
     struct MockSessionRepository {
         create_operation_calls: AtomicUsize,
         complete_operation_calls: AtomicUsize,
-    }
-
-    #[tokio::test]
-    async fn test_tainted_runtime_disables_warm_pool_reuse() {
-        let session = create_test_session();
-
-        assert_eq!(
-            session.sandbox_reuse_policy().await,
-            SandboxReusePolicy::RecycleToWarmPool
-        );
-
-        session.mark_browser_runtime_tainted().await;
-
-        assert_eq!(
-            session.sandbox_reuse_policy().await,
-            SandboxReusePolicy::DestroyAfterUse
-        );
     }
 
     #[async_trait]
@@ -2147,242 +1573,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_execute_script_bindings_accepts_plain_strings() {
-        let parameters = HashMap::from([(
-            "bindings".to_string(),
-            json!({
-                "username": "alice",
-                "otp": "123456"
-            }),
-        )]);
-
-        let bindings = ActiveNsjailSession::resolve_execute_script_bindings(&parameters)
-            .expect("plain string bindings should be accepted");
-
-        assert_eq!(bindings.get("username").map(String::as_str), Some("alice"));
-        assert_eq!(bindings.get("otp").map(String::as_str), Some("123456"));
-    }
-
-    #[test]
-    fn test_resolve_execute_script_bindings_rejects_credential_reference_objects() {
-        let parameters = HashMap::from([(
-            "bindings".to_string(),
-            json!({
-                "password": { "$credential": "password" }
-            }),
-        )]);
-
-        let error = ActiveNsjailSession::resolve_execute_script_bindings(&parameters)
-            .expect_err("credential reference bindings must be rejected");
-
-        match error {
-            SandboxError::Other(message) => assert_eq!(message, EXECUTE_SCRIPT_BINDINGS_ERROR),
-            other => panic!("unexpected error variant: {other}"),
-        }
-    }
-
-    #[test]
-    fn test_resolve_execute_script_bindings_rejects_non_string_objects() {
-        let parameters = HashMap::from([(
-            "bindings".to_string(),
-            json!({
-                "payload": { "nested": "value" }
-            }),
-        )]);
-
-        let error = ActiveNsjailSession::resolve_execute_script_bindings(&parameters)
-            .expect_err("non-string bindings must be rejected");
-
-        match error {
-            SandboxError::Other(message) => assert_eq!(message, EXECUTE_SCRIPT_BINDINGS_ERROR),
-            other => panic!("unexpected error variant: {other}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_execute_script_rejected_after_sensitive_fill() {
-        let session = create_test_session();
-        session.mark_sensitive_selector("#apikey".to_string()).await;
-
-        let error = session
-            .ensure_execute_script_allowed()
-            .await
-            .expect_err("execute_script should be blocked once a secret was filled");
-
-        match error {
-            SandboxError::Other(message) => assert_eq!(
-                message,
-                "invalid_request: execute_script is disabled after credential-backed fills"
-            ),
-            other => panic!("unexpected error variant: {other}"),
-        }
-    }
-
-    #[test]
-    fn test_resolve_bootstrap_page_request_accepts_controlled_fields() {
-        let parameters = HashMap::from([
-            (
-                "mode".to_string(),
-                Value::String("rocket_loader".to_string()),
-            ),
-            (
-                "script_selectors".to_string(),
-                json!(["script[src][type$=\"-text/javascript\"]"]),
-            ),
-            ("include_plain_scripts".to_string(), Value::Bool(false)),
-            ("replay_lifecycle_events".to_string(), Value::Bool(true)),
-            (
-                "wait_selector".to_string(),
-                Value::String("input[name=email]".to_string()),
-            ),
-            (
-                "wait_timeout_ms".to_string(),
-                Value::Number(30_000_u64.into()),
-            ),
-        ]);
-
-        let request = ActiveNsjailSession::resolve_bootstrap_page_request(&parameters)
-            .expect("controlled bootstrap page request should parse");
-
-        assert_eq!(request.mode, "rocket_loader");
-        assert_eq!(
-            request.script_selectors,
-            vec!["script[src][type$=\"-text/javascript\"]".to_string()]
-        );
-        assert_eq!(request.wait_selector.as_deref(), Some("input[name=email]"));
-        assert_eq!(request.wait_timeout_ms, 30_000);
-        assert!(!request.include_plain_scripts);
-        assert!(request.replay_lifecycle_events);
-    }
-
-    #[test]
-    fn test_resolve_bootstrap_page_request_rejects_bindings_and_credentials() {
-        let forbidden_bindings = HashMap::from([
-            (
-                "mode".to_string(),
-                Value::String("rocket_loader".to_string()),
-            ),
-            ("bindings".to_string(), json!({"selector": "#login"})),
-        ]);
-        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&forbidden_bindings)
-            .expect_err("bootstrap_page must reject bindings");
-        assert!(matches!(
-            error,
-            SandboxError::Other(message)
-            if message == "invalid_request: bootstrap_page does not accept bindings"
-        ));
-
-        let forbidden_credential = HashMap::from([
-            (
-                "mode".to_string(),
-                Value::String("rocket_loader".to_string()),
-            ),
-            (
-                "wait_selector".to_string(),
-                json!({ "$credential": "password" }),
-            ),
-        ]);
-        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&forbidden_credential)
-            .expect_err("bootstrap_page must reject credential references");
-        assert!(matches!(
-            error,
-            SandboxError::Other(message)
-            if message == "invalid_request: bootstrap_page does not accept credential references"
-        ));
-    }
-
-    #[test]
-    fn test_resolve_bootstrap_page_request_rejects_invalid_types() {
-        let invalid_mode = HashMap::from([(
-            "mode".to_string(),
-            Value::String("plain_scripts".to_string()),
-        )]);
-        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&invalid_mode)
-            .expect_err("bootstrap_page must reject unsupported mode");
-        assert!(matches!(
-            error,
-            SandboxError::Other(message)
-            if message == "invalid_request: bootstrap_page mode must be rocket_loader"
-        ));
-
-        let invalid_selectors = HashMap::from([
-            (
-                "mode".to_string(),
-                Value::String("rocket_loader".to_string()),
-            ),
-            ("script_selectors".to_string(), json!([1, 2])),
-        ]);
-        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&invalid_selectors)
-            .expect_err("bootstrap_page must reject non-string selectors");
-        assert!(matches!(
-            error,
-            SandboxError::Other(message)
-            if message == "invalid_request: script_selectors items must be strings"
-        ));
-
-        let invalid_timeout = HashMap::from([
-            (
-                "mode".to_string(),
-                Value::String("rocket_loader".to_string()),
-            ),
-            (
-                "wait_timeout_ms".to_string(),
-                Value::String("fast".to_string()),
-            ),
-        ]);
-        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&invalid_timeout)
-            .expect_err("bootstrap_page must reject non-integer timeout");
-        assert!(matches!(
-            error,
-            SandboxError::Other(message)
-            if message == "invalid_request: wait_timeout_ms must be a positive integer"
-        ));
-    }
-
-    #[test]
-    fn test_resolve_bootstrap_page_request_rejects_unknown_fields() {
-        let parameters = HashMap::from([
-            (
-                "mode".to_string(),
-                Value::String("rocket_loader".to_string()),
-            ),
-            ("script".to_string(), Value::String("alert(1)".to_string())),
-        ]);
-
-        let error = ActiveNsjailSession::resolve_bootstrap_page_request(&parameters)
-            .expect_err("bootstrap_page must reject raw script fields");
-
-        assert!(matches!(
-            error,
-            SandboxError::Other(message)
-            if message == "invalid_request: bootstrap_page does not accept script"
-        ));
-    }
-
-    #[test]
-    fn test_sanitized_operation_output_reduces_bootstrap_page_audit_data() {
-        let output = ActiveNsjailSession::sanitized_operation_output(
-            OperationType::BootstrapPage,
-            Some(&json!({
-                "injected_scripts": ["https://cdn.example.com/app.js"],
-                "final_url": "https://example.com/login",
-                "title": "Login",
-                "wait_satisfied": true,
-                "diagnostics": {
-                    "mode": "rocket_loader"
-                }
-            })),
-            &[],
-        )
-        .expect("bootstrap_page output should be summarized");
-
-        assert_eq!(output["injected_script_count"], 1);
-        assert_eq!(output["wait_satisfied"], true);
-        assert!(output.get("final_url").is_none());
-        assert!(output.get("diagnostics").is_none());
-    }
-
-    #[test]
     fn test_sanitized_operation_output_redacts_http_request_response_values() {
         let output = ActiveNsjailSession::sanitized_operation_output(
             OperationType::HttpRequest,
@@ -2432,7 +1622,7 @@ mod tests {
     fn test_sanitized_operation_output_leaves_non_http_request_data_untouched() {
         let original = json!({ "text": "prefix sk_live_123 suffix" });
         let output = ActiveNsjailSession::sanitized_operation_output(
-            OperationType::GetText,
+            OperationType::Custom,
             Some(&original),
             &["sk_live_123".to_string()],
         )
@@ -2468,7 +1658,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_http_request_does_not_initialize_browser_runtime() {
+    async fn test_http_request_executes_without_browser_runtime() {
         let session = create_test_session();
         let Some(url) =
             spawn_test_http_server("{\"ok\":true}".to_string(), "application/json").await
@@ -2513,7 +1703,6 @@ mod tests {
                 .and_then(Value::as_str),
             Some(url.as_str())
         );
-        assert!(session.browser_runtime.read().await.is_none());
     }
 
     #[tokio::test]
@@ -2638,7 +1827,6 @@ mod tests {
                 .to_string()
                 .contains("invalid_request: invalid url")
         );
-        assert!(session.browser_runtime.read().await.is_none());
     }
 
     #[tokio::test]

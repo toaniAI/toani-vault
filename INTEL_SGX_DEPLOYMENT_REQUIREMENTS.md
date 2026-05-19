@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- **项目名称**: ToaniVault TEE 安全增强
+- **项目名称**: CredBridge TEE 安全增强
 - **文档版本**: 1.0.0
 - **适用对象**: 运维工程师、系统管理员
 - **部署环境**: 生产环境 (Intel SGX 硬件)
@@ -14,7 +14,7 @@
 
 ### 1.1 项目简介
 
-ToaniVault 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭证安全桥接系统。通过在 SGX Enclave 中执行敏感操作，实现：
+CredBridge 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭证安全桥接系统。通过在 SGX Enclave 中执行敏感操作，实现：
 
 - **硬件级隔离**: 敏感数据和处理过程在 Enclave 中运行，操作系统和 Hypervisor 无法访问
 - **远程认证**: 客户端可验证 Enclave 身份和完整性
@@ -26,7 +26,7 @@ ToaniVault 是一个基于 Intel SGX TEE (Trusted Execution Environment) 的凭�
 在 Intel SGX 硬件服务器上完成以下部署：
 
 1. 安装和配置 Intel SGX 驱动及依赖库
-2. 部署 ToaniVault 应用（启用 TEE 硬件模式）
+2. 部署 CredBridge 应用（启用 TEE 硬件模式）
 3. 配置 Intel DCAP 远程认证服务
 4. 验证 TEE 功能完整性和安全性
 
@@ -416,7 +416,7 @@ echo "========================================"
 echo "✓ 所有检查通过，SGX 环境就绪"
 echo ""
 echo "下一步："
-echo "1. 部署 ToaniVault 应用"
+echo "1. 部署 CredBridge 应用"
 echo "2. 配置 TEE_MODE=hardware"
 echo "3. 运行功能验证测试"
 ```
@@ -480,7 +480,7 @@ crw------- 1 root root 10, 126 Mar 20 10:00 /dev/sgx_provision
 
 ---
 
-## 七、ToaniVault 应用部署
+## 七、CredBridge 应用部署
 
 ### 7.1 获取应用
 
@@ -550,7 +550,7 @@ RATE_LIMIT_REQUESTS_PER_SECOND=100
 
 ```ini
 [Unit]
-Description=ToaniVault TEE Security Service
+Description=CredBridge TEE Security Service
 After=network.target postgresql.service redis.service
 Wants=postgresql.service redis.service
 
@@ -674,7 +674,7 @@ sudo systemctl disable bluetooth cups modemmanager
 sudo ufw enable
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow 8080/tcp  # ToaniVault API
+sudo ufw allow 8080/tcp  # CredBridge API
 sudo ufw allow 22/tcp   # SSH
 
 # 3. 启用 SELinux/AppArmor
@@ -990,7 +990,7 @@ tar czf diagnosis.tar.gz ~/credbridge_diagnosis
 
 ## 附录 B: 版本兼容性
 
-| ToaniVault 版本 | Intel SGX Driver | DCAP Library | 最低内核 |
+| CredBridge 版本 | Intel SGX Driver | DCAP Library | 最低内核 |
 | --------------- | ---------------- | ------------ | -------- |
 | 0.1.x           | 2.11+            | 1.15+        | 5.11     |
 | 0.2.x           | 2.20+            | 1.18+        | 5.14     |

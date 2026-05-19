@@ -363,6 +363,12 @@ impl PlaywrightClient {
     }
 }
 
+impl Default for PlaywrightClient {
+    fn default() -> Self {
+        Self::with_default_config()
+    }
+}
+
 /// 截图服务配置
 #[derive(Debug, Clone)]
 pub struct ScreenshotConfig {
@@ -955,7 +961,7 @@ mod tests {
         // connect 方法在未启用 CDP 时应该返回错误
         #[cfg(not(feature = "screenshot-cdp"))]
         {
-            let mut client = PlaywrightClient::with_default_config();
+            let mut client = PlaywrightClient::default();
             let result = client.connect().await;
             assert!(result.is_err());
         }

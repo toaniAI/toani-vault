@@ -487,7 +487,6 @@ enum CredentialType {
   OAuthRefresh = "oauth_refresh", // OAuth 刷新令牌
   ApiKey = "api_key", // API 密钥
   SessionCookie = "session_cookie", // 会话 Cookie
-  KycDocument = "kyc_document", // KYC 文档
 }
 ```
 

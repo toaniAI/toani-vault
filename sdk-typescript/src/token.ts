@@ -87,6 +87,7 @@ interface TokenListResponseApi {
 function mapTokenMetadata(value: TokenMetadataApi): TokenMetadata {
   return {
     tokenId: value.token_id,
+    tokenName: value.token_name ?? undefined,
     tokenType: value.token_type,
     subjectType: value.subject_type,
     subjectId: value.subject_id,

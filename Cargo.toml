@@ -26,9 +26,6 @@ png = "0.17"
 # 图像处理
 image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 
-# Chrome DevTools Protocol
-chromiumoxide = { version = "0.7", features = ["tokio-runtime"], optional = true }
-
 # CSV 处理
 csv = "1.3"
 
@@ -124,7 +121,7 @@ webpki-roots = "0.26"
 security-framework = "2.11"
 
 [features]
-default = ["screenshot-cdp"]
+default = []
 # 严格生产模式：禁止调试功能
 strict-production = []
 # 允许调试模式（即使在发布构建中）
@@ -135,8 +132,8 @@ tee-hardware = []
 rls-tests = []
 # RLS 性能基准测试
 rls-benchmark = []
-# 截图 CDP 支持（使用 chromiumoxide）
-screenshot-cdp = ["chromiumoxide"]
+# 保留空特性名以兼容历史 cfg 标记；默认不启用任何浏览器截图能力
+screenshot-cdp = []
 
 [[test]]
 name = "paseto_tests"
@@ -189,10 +186,6 @@ name = "sandbox_export_tests"
 path = "tests/tee/sandbox_export_tests.rs"
 
 [[test]]
-name = "sandbox_executor_contract_tests"
-path = "tests/tee/sandbox_executor_contract_tests.rs"
-
-[[test]]
 name = "sandbox_performance"
 path = "tests/tee/sandbox_performance.rs"
 
@@ -219,3 +212,39 @@ path = "tests/integration/tenant_config_persistence_tests.rs"
 [[test]]
 name = "db_bootstrap_tests"
 path = "tests/integration/db_bootstrap_tests.rs"
+
+[[test]]
+name = "broker_resource_tests"
+path = "tests/api/broker_resource_tests.rs"
+
+[[test]]
+name = "provider_registry_tests"
+path = "tests/api/provider_registry_tests.rs"
+
+[[test]]
+name = "approval_requests_tests"
+path = "tests/api/approval_requests_tests.rs"
+
+[[test]]
+name = "callback_adapter_tests"
+path = "tests/api/callback_adapter_tests.rs"
+
+[[test]]
+name = "lark_binding_tests"
+path = "tests/api/lark_binding_tests.rs"
+
+[[test]]
+name = "google_service_binding_tests"
+path = "tests/api/google_service_binding_tests.rs"
+
+[[test]]
+name = "lark_delegated_binding_tests"
+path = "tests/api/lark_delegated_binding_tests.rs"
+
+[[test]]
+name = "google_workspace_delegated_binding_tests"
+path = "tests/api/google_workspace_delegated_binding_tests.rs"
+
+[[test]]
+name = "oauth_broker_runtime_hardening_tests"
+path = "tests/api/oauth_broker_runtime_hardening_tests.rs"

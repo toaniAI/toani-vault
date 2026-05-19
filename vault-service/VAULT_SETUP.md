@@ -1,13 +1,13 @@
 # HashiCorp Vault 安装与配置指南
 
-本文档介绍如何安装、配置和运行 HashiCorp Vault 作为 ToaniVault 的凭证存储后端。
+本文档介绍如何安装、配置和运行 HashiCorp Vault 作为 CredBridge 的凭证存储后端。
 
 ## 目录
 
 1. [安装 Vault](#安装-vault)
 2. [开发环境配置](#开发环境配置)
 3. [生产环境配置](#生产环境配置)
-4. [ToaniVault 集成](#credbridge-集成)
+4. [CredBridge 集成](#credbridge-集成)
 5. [安全最佳实践](#安全最佳实践)
 6. [故障排除](#故障排除)
 
@@ -163,7 +163,7 @@ vault operator unseal <Unseal Key 3>
 
 ### 5. 配置访问策略
 
-创建 ToaniVault 专用策略文件 `credbridge-policy.hcl`：
+创建 CredBridge 专用策略文件 `credbridge-policy.hcl`：
 
 ```hcl
 # 允许读取/写入 credbridge 路径下的所有数据
@@ -190,7 +190,7 @@ vault policy write credbridge credbridge-policy.hcl
 vault token create -policy=credbridge -ttl=8760h
 ```
 
-## ToaniVault 集成
+## CredBridge 集成
 
 ### 环境变量配置
 
@@ -273,7 +273,7 @@ async fn setup_vault() -> Result<CredentialVault, Box<dyn std::error::Error>> {
 
 - **仅 TEE Enclave 持有 Vault Token**：Token 永远不要离开 TEE 安全边界
 - **使用短期 Token**：设置合理的 TTL，定期轮换
-- **专用 Token**：为 ToaniVault 创建专用策略和 Token，不要复用 root token
+- **专用 Token**：为 CredBridge 创建专用策略和 Token，不要复用 root token
 
 ### 2. 网络隔离
 
@@ -283,7 +283,7 @@ async fn setup_vault() -> Result<CredentialVault, Box<dyn std::error::Error>> {
 
 ### 3. 数据加密
 
-ToaniVault 实现**双重加密**：
+CredBridge 实现**双重加密**：
 
 1. **第一层（TEE 内）**：AES-256-GCM 加密凭证内容
 2. **第二层（Vault）**：Vault 自带 AES-256 加密存储

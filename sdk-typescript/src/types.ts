@@ -18,8 +18,6 @@ export enum CredentialType {
   ApiKey = "api_key",
   /** 会话 Cookie */
   SessionCookie = "session_cookie",
-  /** KYC 文档 */
-  KycDocument = "kyc_document",
 }
 
 export type CredentialProvider = "okx" | "binance" | "custom";
@@ -396,6 +394,7 @@ export interface TokenStatsResponse {
 /** Token 元数据 */
 export interface TokenMetadata {
   tokenId: string;
+  tokenName?: string;
   tokenType: string;
   subjectType: string;
   subjectId: string;
@@ -799,7 +798,6 @@ export interface VerifyAuditLogResult {
   verified: boolean;
   contentHashMatch: boolean;
   signatureValid: boolean;
-  merkleProofValid: boolean;
   details: AuditVerificationDetail[];
   verifiedAt: number;
 }
@@ -885,28 +883,10 @@ export enum SessionStatus {
 
 /** 操作类型 */
 export enum OperationType {
-  /** 导航到URL */
-  Navigate = "navigate",
-  /** 点击元素 */
-  Click = "click",
-  /** 填充表单 */
-  Fill = "fill",
-  /** 获取文本 */
-  GetText = "get_text",
-  /** 获取元素属性 */
-  GetAttribute = "get_attribute",
-  /** 执行脚本 */
-  ExecuteScript = "execute_script",
-  /** 受控页面引导注入 */
-  BootstrapPage = "bootstrap_page",
-  /** 等待元素 */
-  WaitForSelector = "wait",
   /** 直接发起 HTTP 请求 */
   HttpRequest = "http_request",
-  /** 导出数据 */
-  ExportData = "export",
-  /** 导出 DOM */
-  DomExport = "dom_export",
+  /** 自定义操作 */
+  Custom = "custom",
 }
 
 /** 操作状态 */
@@ -993,14 +973,13 @@ export interface SandboxStats {
   warmInstances: number;
   healthy: boolean;
   error?: string;
-  browserRuntimeProbeError?: string;
 }
 
 /** 执行操作请求 */
 export type SandboxCredentialField = string;
 
 export interface SandboxCredentialReference {
-  /** Credential field name resolved by controlled host operations such as `fill` */
+  /** Credential field name resolved by controlled host operations. */
   $credential: SandboxCredentialField;
   /** Optional string prepended after the backend resolves the secret value. */
   prefix?: string;
@@ -1008,68 +987,21 @@ export interface SandboxCredentialReference {
   suffix?: string;
 }
 
-/** Plain string bindings passed into `execute_script` */
-export type SandboxScriptBindings = Record<string, string>;
-
-export type BootstrapPageMode = "rocket_loader";
-
-export interface BootstrapPageOptions {
-  /** Controlled bootstrap mode. Initial support is limited to Rocket Loader pages. */
-  mode?: BootstrapPageMode;
-  /** Optional selector overrides for external scripts to re-inject. */
-  scriptSelectors?: string[];
-  /** Whether to include plain text/javascript external scripts in addition to rewritten ones. */
-  includePlainScripts?: boolean;
-  /** Whether to replay DOM lifecycle events after bundle reinjection for late-mounted apps. */
-  replayLifecycleEvents?: boolean;
-  /** Optional selector to wait for after injection completes. */
-  waitSelector?: string;
-  /** Wait timeout in milliseconds. Defaults to 30000 on the backend. */
-  waitTimeoutMs?: number;
-}
-
-export interface BootstrapPageResult {
-  injectedScripts: string[];
-  finalUrl?: string;
-  title?: string;
-  waitSatisfied?: boolean;
-  diagnostics?: Record<string, unknown>;
-}
-
 export interface ExecuteOperationRequest {
   /** 操作类型 */
   operationType: OperationType;
   /** 操作描述 */
   description?: string;
-  /** 原始操作参数；用于后端新增的浏览器操作字段 */
+  /** 原始操作参数 */
   parameters?: Record<string, unknown>;
-  /** 选择器（CSS选择器或XPath） */
-  selector?: string;
-  /** 输入值。`fill` 等受控宿主操作支持 credential 引用和固定 prefix/suffix 包装。 */
-  value?: string | SandboxCredentialReference;
-  /** URL（用于导航操作） */
-  url?: string;
   /** HTTP 方法 */
   method?: string;
   /** HTTP 请求头。`http_request` 支持 credential 引用和固定 prefix/suffix 包装。 */
   headers?: Record<string, string | SandboxCredentialReference>;
   /** HTTP 请求体 */
   body?: unknown;
-  /** 脚本（用于执行脚本操作） */
-  script?: string;
-  /** 脚本绑定。仅支持普通字符串，不支持 credential 引用。 */
-  bindings?: SandboxScriptBindings;
-  /** 属性名（用于获取属性操作） */
-  attribute?: string;
   /** 超时时间（毫秒） */
   timeout?: number;
-  /** 等待条件 */
-  waitCondition?: {
-    /** 可见性 */
-    visible?: boolean;
-    /** 存在性 */
-    attached?: boolean;
-  };
 }
 
 /** 执行操作响应 */
@@ -1090,11 +1022,6 @@ export interface ExecuteOperationResponse {
   executionTimeMs: number;
 }
 
-export interface BootstrapPageResponse extends ExecuteOperationResponse {
-  data?: BootstrapPageResult;
-  result?: BootstrapPageResult;
-}
-
 /** Session 操作响应 */
 export interface SessionActionResponse {
   /** Session ID */
@@ -1107,62 +1034,6 @@ export interface SessionActionResponse {
   status: string;
   /** 消息 */
   message: string;
-}
-
-export type DomExportFormat = "html" | "text" | "json";
-
-/** DOM 导出请求 */
-export interface DomExportRequest {
-  rootSelector?: string;
-  format?: DomExportFormat;
-  includeText?: boolean;
-  includeMetadata?: boolean;
-  extraSensitiveSelectors?: string[];
-  maxBytes?: number;
-}
-
-/** DOM 导出响应 */
-export interface DomExportResponse {
-  operationId: string;
-  success: boolean;
-  format: DomExportFormat;
-  data?: unknown;
-  truncated: boolean;
-  error?: string;
-  executionTimeMs: number;
-}
-
-/** 导出数据请求 */
-export interface ExportDataRequest {
-  /** 导出格式 */
-  format: "json" | "csv" | "pdf";
-  /** 数据选择器 */
-  selectors?: string[];
-  /** @deprecated Use selectors. */
-  selector?: string;
-  /** @deprecated The backend export API accepts selectors only. */
-  extractionRules?: Array<{
-    /** 字段名 */
-    name: string;
-    /** 选择器 */
-    selector: string;
-    /** 属性（默认为textContent） */
-    attribute?: string;
-  }>;
-}
-
-/** 导出数据响应 */
-export interface ExportDataResponse {
-  /** 导出 ID */
-  exportId: string;
-  /** Base64 编码导出数据 */
-  dataBase64: string;
-  /** 数据格式 */
-  format: "json" | "csv" | "pdf";
-  /** 文件名 */
-  filename: string;
-  /** 大小（字节） */
-  sizeBytes: number;
 }
 
 /** Session 列表响应 */

@@ -24,8 +24,10 @@ use serde_json::json;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::signal;
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 use tower::Layer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::normalize_path::NormalizePathLayer;
@@ -40,6 +42,7 @@ use axum::extract::OriginalUri;
 // CredBridge internal modules
 use vault_service::api::{
     API_BASE_PATH,
+    approvals::{ApprovalApiState, approval_routes},
     attestation::{
         AttestationApiConfig, AttestationState, attestation_routes, init_attestation_api,
     },
@@ -51,6 +54,7 @@ use vault_service::api::{
     i18n::{LocaleResolverState, locale_middleware},
     middleware::auth_middleware,
     notifications::notifications_routes,
+    oauth_broker::{OAuthBrokerApiState, oauth_broker_public_routes, oauth_broker_routes},
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxOwnerRuntime, SandboxState, sandbox_routes},
     sandbox_owner::RedisSandboxOwnerRegistry,
@@ -60,6 +64,7 @@ use vault_service::api::{
     token_routes,
 };
 use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
+use vault_service::oauth_broker::PgOAuthBrokerService;
 use vault_service::services::db::{DatabasePool, ensure_required_tables_on_startup};
 use vault_service::tee::{
     Enclave, EnclaveConfig, SelfCheckItem, SelfCheckStatus, SharedEnclave, StartupReadiness,
@@ -79,6 +84,10 @@ enum SandboxOwnerBaseUrlSource {
     PodIp,
     HeadlessDnsFallback,
 }
+
+const ATTESTATION_WARMUP_MAX_ATTEMPTS: u32 = 5;
+const ATTESTATION_WARMUP_INITIAL_BACKOFF_MS: u64 = 500;
+const ATTESTATION_REFRESH_INTERVAL_SECS: u64 = 1_800;
 
 impl SandboxOwnerBaseUrlSource {
     fn as_str(self) -> &'static str {
@@ -122,15 +131,22 @@ struct HealthDetailResponse {
     ready: bool,
     version: String,
     timestamp: u64,
+    lifecycle: String,
     components: ComponentHealth,
+    checks: Vec<SelfCheckItem>,
 }
 
 #[derive(Debug, Serialize)]
 struct ComponentHealth {
+    lifecycle: String,
     vault: String,
     enclave: String,
     audit_log: String,
     attestation: String,
+    auth: String,
+    tenant: String,
+    rate_limit: String,
+    sandbox: String,
 }
 
 /// 服务器配置
@@ -315,6 +331,8 @@ struct AppState {
     credential_state: CredentialAppState,
     audit_state: AuditApiState,
     auth_state: AuthApiState,
+    approval_state: ApprovalApiState,
+    oauth_broker_state: OAuthBrokerApiState,
     tenant_store: Arc<dyn TenantConfigStore>,
     tenant_service: Arc<dyn TenantService>,
     rate_limit_state: RateLimitState,
@@ -511,6 +529,46 @@ fn init_logging(config: &ServerConfig) {
         .init();
 }
 
+async fn warmup_attestation_quote_with_retry(state: &AttestationState) {
+    let mut backoff = Duration::from_millis(ATTESTATION_WARMUP_INITIAL_BACKOFF_MS);
+
+    for attempt in 1..=ATTESTATION_WARMUP_MAX_ATTEMPTS {
+        match state.warmup_quote().await {
+            Ok(timestamp) => {
+                info!(
+                    module = "attestation",
+                    status = "warmup_ready",
+                    attempt,
+                    quote_timestamp = timestamp,
+                    "Attestation quote 预热完成"
+                );
+                return;
+            }
+            Err(error) => {
+                let has_next_attempt = attempt < ATTESTATION_WARMUP_MAX_ATTEMPTS;
+                warn!(
+                    module = "attestation",
+                    status = "warmup_retry",
+                    attempt,
+                    max_attempts = ATTESTATION_WARMUP_MAX_ATTEMPTS,
+                    retry_in_ms = if has_next_attempt {
+                        backoff.as_millis() as u64
+                    } else {
+                        0
+                    },
+                    error = %error,
+                    "Attestation quote 预热失败"
+                );
+
+                if has_next_attempt {
+                    sleep(backoff).await;
+                    backoff = backoff.saturating_mul(2);
+                }
+            }
+        }
+    }
+}
+
 /// 初始化应用状态
 async fn initialize_app_state(
     config: &ServerConfig,
@@ -694,10 +752,32 @@ async fn initialize_app_state(
         "Token 状态存储就绪"
     );
 
+    let oauth_broker_state = OAuthBrokerApiState::new(Arc::new(PgOAuthBrokerService::new(
+        database_pool.pool().clone(),
+    )))
+    .with_audit_storage(audit_storage.clone())
+    .with_credential_runtime(
+        credential_state.vault.clone(),
+        credential_state.key_hierarchy.clone(),
+        credential_state.enclave.clone(),
+    );
+    info!(
+        module = "oauth_broker",
+        status = "ready",
+        "OAuth Broker 管理平面资源壳已就绪"
+    );
+    let approval_state = ApprovalApiState::new(database_pool.pool().clone());
+    info!(
+        module = "approval",
+        status = "ready",
+        "Approval request API state ready"
+    );
+
     let auth_state =
         AuthApiState::new_with_token_store(std::sync::Arc::new(auth_service), token_store)
             .with_audit_storage(audit_storage.clone())
             .with_vault(credential_state.vault.clone())
+            .with_oauth_broker_service(oauth_broker_state.service())
             .with_token_secret_key(resolve_token_secret_key());
     info!(module = "auth", status = "ready", "认证模块就绪");
 
@@ -743,6 +823,12 @@ async fn initialize_app_state(
                 root_key_source = root_key_source.as_str(),
                 "Attestation API 就绪"
             );
+
+            warmup_attestation_quote_with_retry(&state).await;
+            let refresh_state = state.clone();
+            tokio::spawn(async move {
+                refresh_attestation_quote_loop(refresh_state).await;
+            });
             Some(state)
         }
         Err(e) => {
@@ -772,6 +858,8 @@ async fn initialize_app_state(
         credential_state,
         audit_state,
         auth_state,
+        approval_state,
+        oauth_broker_state,
         tenant_store,
         tenant_service,
         rate_limit_state,
@@ -894,6 +982,8 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
 
     // 构建 API 路由
     let api_routes = build_api_routes(app_state.clone());
+    let public_oauth_broker_routes =
+        oauth_broker_public_routes(app_state.oauth_broker_state.clone());
 
     // 速率限制层
     let rate_limit_layer = axum::middleware::from_fn(rate_limit_middleware);
@@ -902,6 +992,8 @@ fn build_router(app_state: AppState, config: &ServerConfig) -> Router {
     Router::new()
         // 根路径
         .route("/", get(root_handler))
+        // OAuth broker public callbacks need a stable non-versioned ingress path for provider redirects.
+        .merge(public_oauth_broker_routes)
         // API 路由
         .nest(API_BASE_PATH, api_routes)
         // 健康检查路由
@@ -1005,6 +1097,10 @@ fn build_api_routes(app_state: AppState) -> Router {
     let notifications_routes = notifications_routes();
     let token_routes = token_routes(app_state.auth_state.clone());
     let service_account_routes = service_account_routes(app_state.auth_state.clone());
+    let approval_routes = approval_routes(app_state.approval_state.clone());
+    let oauth_broker_public_routes =
+        oauth_broker_public_routes(app_state.oauth_broker_state.clone());
+    let oauth_broker_routes = oauth_broker_routes(app_state.oauth_broker_state.clone());
 
     // 认证中间件层
     let auth_layer = axum::middleware::from_fn_with_state(
@@ -1028,6 +1124,8 @@ fn build_api_routes(app_state: AppState) -> Router {
         .merge(notifications_routes)
         .merge(token_routes)
         .merge(service_account_routes)
+        .merge(approval_routes)
+        .merge(oauth_broker_routes)
         // 认证用户信息与偏好
         .merge(protected_auth_routes)
         // locale 解析
@@ -1062,6 +1160,7 @@ fn build_api_routes(app_state: AppState) -> Router {
         .route("/", get(api_root_handler))
         // 认证路由（公开）
         .merge(auth_routes)
+        .merge(oauth_broker_public_routes)
         // 受保护的路由
         .merge(protected_routes);
 
@@ -1156,6 +1255,39 @@ struct RuntimeOverview {
     attestation_quote_valid: bool,
 }
 
+async fn refresh_attestation_quote_loop(state: Arc<AttestationState>) {
+    let mut interval =
+        tokio::time::interval(Duration::from_secs(ATTESTATION_REFRESH_INTERVAL_SECS));
+    interval.tick().await;
+
+    loop {
+        interval.tick().await;
+
+        let refresh_result = state.refresh_quote_in_background().await;
+
+        match refresh_result {
+            Ok(timestamp) => {
+                info!(
+                    module = "attestation",
+                    status = "refresh_ready",
+                    quote_timestamp = timestamp,
+                    next_refresh_in_secs = ATTESTATION_REFRESH_INTERVAL_SECS,
+                    "attestation quote background refresh completed"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    module = "attestation",
+                    status = "refresh_retry",
+                    error = %error,
+                    next_refresh_in_secs = ATTESTATION_REFRESH_INTERVAL_SECS,
+                    "attestation quote background refresh failed"
+                );
+            }
+        }
+    }
+}
+
 async fn build_runtime_overview(state: &AppState) -> RuntimeOverview {
     let lifecycle = *state.lifecycle.read().await;
     let enclave_check = {
@@ -1223,6 +1355,40 @@ fn component_status(readiness: &StartupReadiness, component: &str) -> String {
         .find(|check| check.component == component)
         .map(|check| check.status.as_str().to_string())
         .unwrap_or_else(|| SelfCheckStatus::Failed.as_str().to_string())
+}
+
+fn readiness_failure_reason(readiness: &StartupReadiness) -> String {
+    let mut reasons: Vec<String> = readiness
+        .checks
+        .iter()
+        .filter(|check| !check.status.is_ready())
+        .map(|check| {
+            let detail = check
+                .detail
+                .clone()
+                .unwrap_or_else(|| "no detail provided".to_string());
+            format!("{}={} ({})", check.component, check.status.as_str(), detail)
+        })
+        .collect();
+
+    if reasons.is_empty() {
+        "readiness checks are pending".to_string()
+    } else {
+        reasons.sort();
+        reasons.join(", ")
+    }
+}
+
+fn readiness_report(readiness: &StartupReadiness) -> String {
+    readiness
+        .checks
+        .iter()
+        .map(|check| {
+            let detail = check.detail.clone().unwrap_or_else(|| "-".to_string());
+            format!("{}:{}:{}", check.component, check.status.as_str(), detail)
+        })
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 fn current_timestamp() -> u64 {
@@ -1323,15 +1489,16 @@ async fn api_root_handler(Extension(state): Extension<AppState>) -> impl IntoRes
 /// 健康检查处理器
 async fn health_check(Extension(state): Extension<AppState>) -> impl IntoResponse {
     let timestamp = current_timestamp();
-    let overview = build_runtime_overview(&state).await;
+    let lifecycle = *state.lifecycle.read().await;
+    let live = lifecycle.is_live();
 
     let response = HealthResponse {
-        status: if overview.readiness.live {
+        status: if live {
             "alive".to_string()
         } else {
             "shutdown".to_string()
         },
-        ready: overview.readiness.live,
+        ready: live,
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp,
     };
@@ -1372,12 +1539,31 @@ async fn readiness_check(Extension(state): Extension<AppState>) -> impl IntoResp
         ready: overview.readiness.ready,
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp,
+        lifecycle: overview
+            .readiness
+            .checks
+            .iter()
+            .find(|check| check.component == "lifecycle")
+            .map(|check| format!("{}: {}", check.component, check.status.as_str()))
+            .unwrap_or_else(|| "lifecycle: unknown".to_string()),
         components: ComponentHealth {
+            lifecycle: overview
+                .readiness
+                .checks
+                .iter()
+                .find(|check| check.component == "lifecycle")
+                .map(|check| check.status.as_str().to_string())
+                .unwrap_or_else(|| SelfCheckStatus::Failed.as_str().to_string()),
             vault: overview.vault_status,
             enclave: overview.enclave_status,
             audit_log: overview.audit_status,
             attestation: overview.attestation_status,
+            auth: component_status(&overview.readiness, "auth"),
+            tenant: component_status(&overview.readiness, "tenant"),
+            rate_limit: component_status(&overview.readiness, "rate_limit"),
+            sandbox: component_status(&overview.readiness, "sandbox"),
         },
+        checks: overview.readiness.checks.clone(),
     };
 
     let status_code = if overview.readiness.ready {
@@ -1385,6 +1571,16 @@ async fn readiness_check(Extension(state): Extension<AppState>) -> impl IntoResp
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     };
+
+    if !overview.readiness.ready {
+        warn!(
+            module = "readiness",
+            status = %overview.readiness.status.as_str(),
+            reason = %readiness_failure_reason(&overview.readiness),
+            report = %readiness_report(&overview.readiness),
+            "service readiness check failed"
+        );
+    }
 
     (status_code, Json(response))
 }
@@ -1612,7 +1808,7 @@ mod tests {
             std::env::remove_var("SANDBOX_OWNER_BASE_URL");
             std::env::remove_var("POD_IP");
             std::env::set_var("SANDBOX_OWNER_HEADLESS_SERVICE", "credbridge-owner");
-            std::env::set_var("POD_NAMESPACE", "example-dev");
+            std::env::set_var("POD_NAMESPACE", "zkme-dev");
             std::env::set_var("CREDBRIDGE_PORT", "8080");
             std::env::remove_var("SANDBOX_OWNER_NAMESPACE");
             std::env::remove_var("SANDBOX_OWNER_PORT");
@@ -1623,7 +1819,7 @@ mod tests {
 
         assert_eq!(
             resolved.0,
-            "http://owner-a.credbridge-owner.example-dev.svc.cluster.local:8080"
+            "http://owner-a.credbridge-owner.zkme-dev.svc.cluster.local:8080"
         );
         assert_eq!(resolved.1, SandboxOwnerBaseUrlSource::HeadlessDnsFallback);
     }

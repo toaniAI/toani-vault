@@ -202,6 +202,9 @@ impl PasetoToken {
         paseto_claims
             .add_additional("issued_from", claims.issued_from.as_str())
             .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        paseto_claims
+            .add_additional("token_plane", claims.token_plane.as_str())
+            .map_err(|e| TokenError::PasetoError(e.to_string()))?;
         if let Some(membership_id) = claims.membership_id.as_deref() {
             paseto_claims
                 .add_additional("membership_id", membership_id)
@@ -210,6 +213,11 @@ impl PasetoToken {
         if let Some(session_id) = claims.session_id.as_deref() {
             paseto_claims
                 .add_additional("session_id", session_id)
+                .map_err(|e| TokenError::PasetoError(e.to_string()))?;
+        }
+        if !claims.binding_handles.is_empty() {
+            paseto_claims
+                .add_additional("binding_handles", claims.binding_handles.clone())
                 .map_err(|e| TokenError::PasetoError(e.to_string()))?;
         }
 
@@ -332,6 +340,11 @@ impl PasetoToken {
             .and_then(|v| v.as_str())
             .unwrap_or(TOKEN_ISSUED_FROM_SESSION)
             .to_string();
+        let token_plane = paseto_claims
+            .get_claim("token_plane")
+            .and_then(|v| v.as_str())
+            .unwrap_or("management")
+            .to_string();
         let membership_id = paseto_claims
             .get_claim("membership_id")
             .and_then(|v| v.as_str())
@@ -340,6 +353,16 @@ impl PasetoToken {
             .get_claim("session_id")
             .and_then(|v| v.as_str())
             .map(|v| v.to_string());
+        let binding_handles = paseto_claims
+            .get_claim("binding_handles")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(ToString::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         Ok(TokenClaims {
             iss,
@@ -353,8 +376,10 @@ impl PasetoToken {
             mfa_verified,
             subject_type,
             issued_from,
+            token_plane,
             membership_id,
             session_id,
+            binding_handles,
         })
     }
 }

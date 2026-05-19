@@ -4,14 +4,13 @@ use crate::crypto::hkdf::KeyHierarchy;
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
     PoolStatus, SandboxHealth,
-    browser_runtime::SandboxBrowserRuntime,
-    config::{NsjailConfig, SandboxConfig, SandboxPoolConfig},
+    config::{MountConfig, MountType, NsjailConfig, SandboxConfig, SandboxPoolConfig},
     error::{SandboxError, SessionError},
     nsjail::{NsjailSandbox, WarmNsjailInstance},
     repository::{NewSandboxSessionRecord, SandboxRepository, metadata_to_json, to_chrono_utc},
     session::{
         ActiveNsjailSession, RecoveredSandboxResource, RecoveredSandboxResourceKind,
-        SandboxResourceRecovery, SandboxReusePolicy, SandboxSession,
+        SandboxResourceRecovery, SandboxSession,
     },
     types::{SandboxId, SessionContext, SessionId, SessionRequest},
 };
@@ -75,8 +74,6 @@ pub struct NsjailSandboxPool {
     key_hierarchy: Option<Arc<RwLock<KeyHierarchy>>>,
     /// 共享 TEE Enclave
     enclave: Option<SharedEnclave>,
-    /// browser runtime 自检失败摘要
-    browser_runtime_probe_error: Arc<RwLock<Option<String>>>,
 }
 
 impl NsjailSandboxPool {
@@ -115,7 +112,6 @@ impl NsjailSandboxPool {
             vault,
             key_hierarchy,
             enclave,
-            browser_runtime_probe_error: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -160,16 +156,6 @@ impl NsjailSandboxPool {
                 );
             }
         }
-
-        let browser_runtime_probe_error =
-            self.run_browser_runtime_probe().await.err().map(|error| {
-                warn!(
-                    "Browser runtime probe failed during sandbox pool initialization: {}",
-                    error
-                );
-                error.to_string()
-            });
-        *self.browser_runtime_probe_error.write().await = browser_runtime_probe_error;
 
         *self.status.write().await = PoolStatus::Running;
         info!("NsjailSandboxPool initialized successfully");
@@ -227,53 +213,37 @@ impl NsjailSandboxPool {
 
     /// 创建 nsjail 配置
     fn create_nsjail_config(&self) -> NsjailConfig {
-        let sandbox = self.sandbox_config.clone();
+        let mut sandbox = self.sandbox_config.clone();
+        let frontend_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("frontend");
+        if frontend_dir.exists()
+            && !sandbox
+                .security
+                .namespace
+                .mount_points
+                .iter()
+                .any(|mount| mount.src == frontend_dir)
+        {
+            sandbox.security.namespace.mount_points.push(MountConfig {
+                src: frontend_dir.clone(),
+                dst: frontend_dir,
+                mount_type: MountType::Bind,
+                read_only: true,
+            });
+        }
 
         let mut env = std::collections::HashMap::new();
         if let Some(path) = std::env::var_os("PATH") {
             env.insert("PATH".to_string(), path.to_string_lossy().to_string());
         }
-        for key in [
-            "CREDBRIDGE_SANDBOX_NODE_BINARY",
-            "NODE_PATH",
-            "LIGHTPANDA_BINARY_PATH",
-            "LIGHTPANDA_DISABLE_TELEMETRY",
-        ] {
-            if let Some(value) = std::env::var_os(key) {
-                env.insert(key.to_string(), value.to_string_lossy().to_string());
-            }
-        }
-
         NsjailConfig {
             sandbox,
             command: vec!["sleep".to_string(), "3600".to_string()], // 长时间运行的占位命令
             cwd: std::path::PathBuf::from("/"),
             env,
-            // Session sandboxes can later host browser scoped processes. Keep the
-            // session jail on the same relaxed browser policy so Lightpanda child
-            // process creation is not killed by the base denylist.
-            disable_seccomp_for_browser_runtime: true,
             enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
         }
-    }
-
-    async fn run_browser_runtime_probe(&self) -> Result<(), SandboxError> {
-        let mut sandbox = NsjailSandbox::new(self.create_nsjail_config());
-        sandbox.start().await?;
-
-        let work_dir = sandbox.working_dir();
-        let runtime = match SandboxBrowserRuntime::launch(work_dir, &sandbox).await {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                let _ = sandbox.stop().await;
-                return Err(error);
-            }
-        };
-        let _ = runtime.close().await;
-        sandbox.stop().await?;
-        Ok(())
     }
 
     /// 创建会话上下文
@@ -705,10 +675,7 @@ impl SandboxPool for NsjailSandboxPool {
             .remove(&session_id)
             .ok_or_else(|| SessionError::not_found(session_id.into()))?;
 
-        // 尝试提取 sandbox。reuse policy 必须在 shutdown_runtime 之后读取，
-        // 否则 runtime 关闭失败时新增的 taint 状态会被提前快照而丢失。
-        if let Some(mut sandbox) = session.take_sandbox().await {
-            let reuse_policy = session.sandbox_reuse_policy().await;
+        if let Some(sandbox) = session.take_sandbox().await {
             // session 已经从 map 中移除，不需要再修改状态
             drop(sessions); // 释放锁
 
@@ -723,16 +690,7 @@ impl SandboxPool for NsjailSandboxPool {
                     .await?;
             }
 
-            if reuse_policy == SandboxReusePolicy::DestroyAfterUse {
-                info!(
-                    session_id = %session_id,
-                    sandbox_id = %sandbox.id,
-                    "Destroying sandbox instead of recycling because browser runtime was tainted"
-                );
-                if let Err(error) = sandbox.stop().await {
-                    warn!("Failed to stop tainted sandbox {}: {}", sandbox.id, error);
-                }
-            } else if let Err(e) = self.recycle_sandbox(sandbox).await {
+            if let Err(e) = self.recycle_sandbox(sandbox).await {
                 warn!("Failed to recycle sandbox: {}", e);
             }
         } else {
@@ -806,11 +764,9 @@ impl SandboxPool for NsjailSandboxPool {
         }
 
         let process_health_issues = process_health_summaries.len();
-        let browser_runtime_probe_error = self.browser_runtime_probe_error.read().await.clone();
         let healthy = status == PoolStatus::Running
             && active_sessions < self.config.max_concurrent_sessions
-            && process_health_issues == 0
-            && browser_runtime_probe_error.is_none();
+            && process_health_issues == 0;
 
         let mut errors = Vec::new();
         if warm_instances < self.config.min_warm_instances {
@@ -820,9 +776,6 @@ impl SandboxPool for NsjailSandboxPool {
             ));
         }
         errors.extend(process_health_summaries.iter().cloned());
-        if let Some(probe_error) = &browser_runtime_probe_error {
-            errors.push(format!("browser runtime probe failed: {probe_error}"));
-        }
 
         SandboxHealth {
             pool_status: status,
@@ -834,7 +787,6 @@ impl SandboxPool for NsjailSandboxPool {
             } else {
                 Some(errors.join("; "))
             },
-            browser_runtime_probe_error,
             process_health_issues,
             process_health_summaries,
         }
@@ -1022,7 +974,6 @@ mod tests {
             command: vec!["sleep".to_string(), "60".to_string()],
             cwd: std::path::PathBuf::from("/"),
             env: Default::default(),
-            disable_seccomp_for_browser_runtime: false,
             enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
@@ -1044,11 +995,10 @@ mod tests {
     }
 
     #[test]
-    fn test_pool_nsjail_config_uses_browser_runtime_seccomp_policy() {
+    fn test_pool_nsjail_config_uses_default_seccomp_policy() {
         let pool = create_test_pool();
         let config = pool.create_nsjail_config();
 
-        assert!(config.disable_seccomp_for_browser_runtime);
         assert!(config.enable_user_namespace);
 
         let args = config.to_args();
@@ -1057,11 +1007,7 @@ mod tests {
             .position(|arg| arg == "--seccomp_string")
             .expect("pool nsjail config should include seccomp policy");
         let seccomp_policy = &args[seccomp_idx + 1];
-        assert!(!seccomp_policy.contains("    execve\n"));
-        assert!(!seccomp_policy.contains("    execveat\n"));
-        assert!(!seccomp_policy.contains("    fork\n"));
-        assert!(!seccomp_policy.contains("    vfork\n"));
-        assert!(!seccomp_policy.contains("    clone\n"));
+        assert!(seccomp_policy.contains("POLICY"));
     }
 
     #[tokio::test]

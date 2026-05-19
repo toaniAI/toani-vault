@@ -106,25 +106,6 @@ pub struct ImmuDbAuditEntry {
     pub state_hash: String,
 }
 
-/// 验证证明
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VerificationProof {
-    /// 条目键
-    pub key: String,
-    /// 事务 ID
-    pub transaction_id: u64,
-    /// 包含证明
-    pub inclusion_proof: Vec<String>,
-    /// 一致性证明
-    pub consistency_proof: Vec<String>,
-    /// 目标树大小
-    pub tree_size: u64,
-    /// 根哈希
-    pub root_hash: String,
-    /// 验证是否通过
-    pub verified: bool,
-}
-
 /// immudb 客户端
 ///
 /// 封装与 immudb 服务器的通信，提供审计日志的存储和检索功能
@@ -306,7 +287,7 @@ impl ImmuDbClient {
         let key = format!("audit:{}", signed_entry.log_index);
         let stored_at = current_timestamp_millis();
 
-        // 计算新的状态哈希（模拟 immudb 的 Merkle Tree）
+        // 计算新的状态哈希（模拟 immudb 的链式状态摘要）
         let state_hash = self.compute_next_state_hash(signed_entry);
         self.state_hash = Some(state_hash.clone());
         self.entry_count += 1;
@@ -369,29 +350,6 @@ impl ImmuDbClient {
         tokio::time::sleep(Duration::from_millis(5)).await;
 
         Ok(self.entries.get(key).cloned())
-    }
-
-    /// 获取条目并验证
-    pub async fn get_entry_verified(
-        &self,
-        key: &str,
-    ) -> Result<(Option<ImmuDbAuditEntry>, VerificationProof), RecorderError> {
-        self.ensure_connected()?;
-
-        let entry = self.get_entry(key).await?;
-
-        // 生成验证证明
-        let proof = VerificationProof {
-            key: key.to_string(),
-            transaction_id: self.entry_count,
-            inclusion_proof: vec![self.state_hash.clone().unwrap_or_default()],
-            consistency_proof: vec![],
-            tree_size: self.entry_count,
-            root_hash: self.state_hash.clone().unwrap_or_default(),
-            verified: entry.is_some(),
-        };
-
-        Ok((entry, proof))
     }
 
     /// 查询审计日志
@@ -481,27 +439,6 @@ impl ImmuDbClient {
             transaction_id: self.entry_count,
             state_hash: self.state_hash.clone().unwrap_or_default(),
             tree_size: self.entry_count,
-        })
-    }
-
-    /// 验证条目完整性
-    ///
-    /// # 功能
-    /// 使用 immudb 的包含证明验证条目未被篡改
-    pub async fn verify_entry(&self, key: &str) -> Result<VerificationProof, RecorderError> {
-        self.ensure_connected()?;
-
-        // 获取包含证明
-        // 实际实现中使用 immudb-rs 的 VerifiedGet
-
-        Ok(VerificationProof {
-            key: key.to_string(),
-            transaction_id: self.entry_count,
-            inclusion_proof: vec![self.state_hash.clone().unwrap_or_default()],
-            consistency_proof: vec![],
-            tree_size: self.entry_count,
-            root_hash: self.state_hash.clone().unwrap_or_default(),
-            verified: true,
         })
     }
 
@@ -852,7 +789,6 @@ mod tests {
             signature: vec![1, 2, 3],
             signer_fingerprint: "test_fp".to_string(),
             log_index: 0,
-            merkle_root: [0u8; 32],
         };
 
         let result = client.store_entry(&signed_entry).await.unwrap();

@@ -508,15 +508,7 @@ fn parse_token_subject(token: &ValidatedToken) -> Option<(Uuid, Uuid)> {
 /// 解析操作类型
 fn parse_operation_type(op_type: &str) -> OperationType {
     match op_type.to_lowercase().as_str() {
-        "navigate" => OperationType::Navigate,
-        "click" => OperationType::Click,
-        "fill" => OperationType::Fill,
-        "gettext" | "get_text" => OperationType::GetText,
-        "export" => OperationType::Export,
-        "domexport" | "dom_export" => OperationType::DomExport,
-        "executescript" | "execute_script" => OperationType::ExecuteScript,
-        "bootstrappage" | "bootstrap-page" | "bootstrap_page" => OperationType::BootstrapPage,
-        "wait" => OperationType::Wait,
+        "httprequest" | "http_request" => OperationType::HttpRequest,
         _ => OperationType::Custom,
     }
 }
@@ -602,25 +594,12 @@ mod tests {
     #[test]
     fn test_parse_operation_type() {
         assert!(matches!(
-            parse_operation_type("navigate"),
-            OperationType::Navigate
+            parse_operation_type("http_request"),
+            OperationType::HttpRequest
         ));
         assert!(matches!(
-            parse_operation_type("click"),
-            OperationType::Click
-        ));
-        assert!(matches!(parse_operation_type("fill"), OperationType::Fill));
-        assert!(matches!(
-            parse_operation_type("dom_export"),
-            OperationType::DomExport
-        ));
-        assert!(matches!(
-            parse_operation_type("bootstrap_page"),
-            OperationType::BootstrapPage
-        ));
-        assert!(matches!(
-            parse_operation_type("bootstrap-page"),
-            OperationType::BootstrapPage
+            parse_operation_type("custom"),
+            OperationType::Custom
         ));
         assert!(matches!(
             parse_operation_type("screenshot"),

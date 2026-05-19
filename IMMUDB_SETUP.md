@@ -1,12 +1,12 @@
-# ToaniVault ImmuDb 安装和配置指南
+# CredBridge ImmuDb 安装和配置指南
 
-本文档介绍如何为 ToaniVault 审计日志系统安装和配置 immudb 不可篡改数据库。
+本文档介绍如何为 CredBridge 审计日志系统安装和配置 immudb 不可篡改数据库。
 
 ## 目录
 
 - [概述](#概述)
 - [安装 immudb](#安装-immudb)
-- [配置 ToaniVault](#配置-credbridge)
+- [配置 CredBridge](#配置-credbridge)
 - [环境变量](#环境变量)
 - [数据库初始化](#数据库初始化)
 - [验证安装](#验证安装)
@@ -14,7 +14,7 @@
 
 ## 概述
 
-ToaniVault 使用 immudb 作为审计日志的持久化存储后端。immudb 是一个轻量级、高性能的不可篡改数据库，基于 Merkle Tree 提供数据完整性保证。
+CredBridge 使用 immudb 作为审计日志的持久化存储后端。immudb 是一个轻量级、高性能的不可篡改数据库，基于 Merkle Tree 提供数据完整性保证。
 
 ### 特性
 
@@ -101,11 +101,11 @@ sudo systemctl enable immudb
 sudo systemctl start immudb
 ```
 
-## 配置 ToaniVault
+## 配置 CredBridge
 
 ### 环境变量配置
 
-ToaniVault 通过环境变量配置 immudb 连接：
+CredBridge 通过环境变量配置 immudb 连接：
 
 ```bash
 # immudb 服务器地址
@@ -203,7 +203,7 @@ IMMUDB_COLLECTION=audit_logs
 
 ### 自动初始化
 
-ToaniVault 启动时会自动执行以下操作：
+CredBridge 启动时会自动执行以下操作：
 
 1. 连接到 immudb 服务器
 2. 创建数据库（如果不存在）
@@ -412,7 +412,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
    immudb --tls --certificate immudb.crt --key immudb.key
    ```
 
-3. 配置 ToaniVault：
+3. 配置 CredBridge：
    ```bash
    export IMMUDB_USE_TLS=true
    ```
@@ -473,4 +473,4 @@ async fn health_check(store: &ImmuDbAuditStore) -> bool {
 
 - [immudb 官方文档](https://docs.immudb.io/)
 - [immudb GitHub](https://github.com/codenotary/immudb)
-- [ToaniVault 架构文档](docs/CredBridge_CN_设计规范_v1.0.md)
+- [CredBridge 架构文档](docs/CredBridge_CN_设计规范_v1.0.md)

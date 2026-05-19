@@ -1,9 +1,39 @@
+#![allow(clippy::await_holding_lock)]
+
+use once_cell::sync::Lazy;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 use vault_service::services::db::{
     DatabaseConfig, DatabasePool, ensure_required_tables_on_startup,
 };
+
+static BOOTSTRAP_ENV_LOCK: Lazy<std::sync::Mutex<()>> = Lazy::new(|| std::sync::Mutex::new(()));
+
+struct FixedSchemaEnvGuard {
+    original_fixed_schema: Option<String>,
+}
+
+impl FixedSchemaEnvGuard {
+    fn set(fixed_schema: &str) -> Self {
+        let original_fixed_schema = std::env::var("CREDBRIDGE_PG_SCHEMA").ok();
+        unsafe {
+            std::env::set_var("CREDBRIDGE_PG_SCHEMA", fixed_schema);
+        }
+        Self {
+            original_fixed_schema,
+        }
+    }
+}
+
+impl Drop for FixedSchemaEnvGuard {
+    fn drop(&mut self) {
+        match self.original_fixed_schema.as_ref() {
+            Some(value) => unsafe { std::env::set_var("CREDBRIDGE_PG_SCHEMA", value) },
+            None => unsafe { std::env::remove_var("CREDBRIDGE_PG_SCHEMA") },
+        }
+    }
+}
 
 const PUBLIC_REQUIRED_TABLES: &[&str] = &[
     "tenants",
@@ -23,9 +53,22 @@ const PUBLIC_REQUIRED_TABLES: &[&str] = &[
     "sandbox_operations",
     "service_accounts",
     "api_tokens",
+    "oauth_provider_definitions",
+    "oauth_bindings",
+    "oauth_binding_policy_snapshots",
+    "oauth_binding_runtime_states",
 ];
 
 const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &["credentials", "credential_versions", "audit_logs"];
+const FIXED_SCHEMA_BROKER_TABLES: &[&str] = &[
+    "oauth_provider_definitions",
+    "oauth_bindings",
+    "oauth_binding_policy_snapshots",
+    "oauth_binding_runtime_states",
+    "oauth_auth_transactions",
+];
+const FIXED_SCHEMA_AUTH_TABLES: &[&str] = &["service_accounts", "api_tokens"];
+const FIXED_SCHEMA_API_TOKEN_COLUMNS: &[&str] = &["token_plane", "binding_handles"];
 const TENANT_REQUIRED_TABLES: &[&str] = &[
     "credentials",
     "scope_tokens",
@@ -170,6 +213,7 @@ fn assert_columns_present(existing_columns: &[String], required_columns: &[&str]
 
 #[tokio::test]
 async fn startup_bootstrap_repairs_public_fixed_and_tenant_schemas() {
+    let _env_lock = BOOTSTRAP_ENV_LOCK.lock().unwrap();
     let Some(base_database_url) = test_database_url() else {
         eprintln!(
             "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
@@ -228,10 +272,7 @@ async fn startup_bootstrap_repairs_public_fixed_and_tenant_schemas() {
         .expect("should create tenant schema");
 
     let fixed_schema = "credbridge_bootstrap_vault";
-    let original_fixed_schema = std::env::var("CREDBRIDGE_PG_SCHEMA").ok();
-    unsafe {
-        std::env::set_var("CREDBRIDGE_PG_SCHEMA", fixed_schema);
-    }
+    let _env_guard = FixedSchemaEnvGuard::set(fixed_schema);
 
     let config = DatabaseConfig {
         url: temp_database_url.clone(),
@@ -269,10 +310,222 @@ async fn startup_bootstrap_repairs_public_fixed_and_tenant_schemas() {
     database_pool.close().await;
     test_pool.close().await;
 
-    match original_fixed_schema {
-        Some(value) => unsafe { std::env::set_var("CREDBRIDGE_PG_SCHEMA", value) },
-        None => unsafe { std::env::remove_var("CREDBRIDGE_PG_SCHEMA") },
+    drop_temp_database(&admin_pool, &database_name).await;
+    admin_pool.close().await;
+}
+
+#[tokio::test]
+async fn startup_bootstrap_repairs_fixed_schema_oauth_broker_tables() {
+    let _env_lock = BOOTSTRAP_ENV_LOCK.lock().unwrap();
+    let Some(base_database_url) = test_database_url() else {
+        eprintln!(
+            "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
+        );
+        return;
+    };
+    let Some(admin_database_url) = postgres_admin_url(&base_database_url) else {
+        eprintln!("skip db bootstrap integration test: unable to derive admin database url");
+        return;
+    };
+
+    let admin_pool = match PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&admin_database_url)
+        .await
+    {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect admin database: {error}");
+            return;
+        }
+    };
+
+    let database_name = format!(
+        "credbridge_bootstrap_broker_fixed_{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    if let Err(error) = create_temp_database(&admin_pool, &database_name).await {
+        eprintln!("skip db bootstrap integration test: cannot create temp database: {error}");
+        return;
     }
+
+    let Some(temp_database_url) = temp_database_url(&base_database_url, &database_name) else {
+        eprintln!("skip db bootstrap integration test: cannot derive temp database url");
+        drop_temp_database(&admin_pool, &database_name).await;
+        return;
+    };
+
+    let fixed_schema = "credbridge_bootstrap_broker_fixed";
+    let _env_guard = FixedSchemaEnvGuard::set(fixed_schema);
+
+    let config = DatabaseConfig {
+        url: temp_database_url.clone(),
+        max_connections: 5,
+        min_connections: 1,
+        connect_timeout: 10,
+        idle_timeout: 60,
+    };
+    let database_pool = match DatabasePool::new(config).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect temp database: {error}");
+            drop_temp_database(&admin_pool, &database_name).await;
+            return;
+        }
+    };
+
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .expect("bootstrap should create fixed-schema broker tables");
+
+    let fixed_tables = fetch_schema_tables(database_pool.pool(), fixed_schema)
+        .await
+        .expect("should list fixed schema tables");
+    assert_tables_present(&fixed_tables, FIXED_SCHEMA_BROKER_TABLES);
+
+    database_pool.close().await;
+
+    drop_temp_database(&admin_pool, &database_name).await;
+    admin_pool.close().await;
+}
+
+#[tokio::test]
+async fn startup_bootstrap_repairs_fixed_schema_api_token_metadata() {
+    let _env_lock = BOOTSTRAP_ENV_LOCK.lock().unwrap();
+    let Some(base_database_url) = test_database_url() else {
+        eprintln!(
+            "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
+        );
+        return;
+    };
+    let Some(admin_database_url) = postgres_admin_url(&base_database_url) else {
+        eprintln!("skip db bootstrap integration test: unable to derive admin database url");
+        return;
+    };
+
+    let admin_pool = match PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&admin_database_url)
+        .await
+    {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect admin database: {error}");
+            return;
+        }
+    };
+
+    let database_name = format!(
+        "credbridge_bootstrap_fixed_tokens_{}",
+        &Uuid::new_v4().simple().to_string()[..12]
+    );
+    if let Err(error) = create_temp_database(&admin_pool, &database_name).await {
+        eprintln!("skip db bootstrap integration test: cannot create temp database: {error}");
+        return;
+    }
+
+    let Some(temp_database_url) = temp_database_url(&base_database_url, &database_name) else {
+        eprintln!("skip db bootstrap integration test: cannot derive temp database url");
+        drop_temp_database(&admin_pool, &database_name).await;
+        return;
+    };
+
+    let fixed_schema = "credbridge_bootstrap_fixed_tokens";
+    let _env_guard = FixedSchemaEnvGuard::set(fixed_schema);
+
+    let config = DatabaseConfig {
+        url: temp_database_url.clone(),
+        max_connections: 5,
+        min_connections: 1,
+        connect_timeout: 10,
+        idle_timeout: 60,
+    };
+    let database_pool = match DatabasePool::new(config).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            eprintln!("skip db bootstrap integration test: cannot connect temp database: {error}");
+            drop_temp_database(&admin_pool, &database_name).await;
+            return;
+        }
+    };
+
+    sqlx::query(&format!("CREATE SCHEMA \"{fixed_schema}\""))
+        .execute(database_pool.pool())
+        .await
+        .expect("should create fixed schema");
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE "{fixed_schema}".service_accounts (
+            id UUID PRIMARY KEY,
+            tenant_id UUID NOT NULL,
+            name VARCHAR(128) NOT NULL,
+            description TEXT,
+            role VARCHAR(64) NOT NULL DEFAULT 'service_account',
+            scope_ceiling JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status VARCHAR(32) NOT NULL DEFAULT 'active',
+            created_by UUID NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            deleted_at TIMESTAMPTZ
+        )
+        "#
+    ))
+    .execute(database_pool.pool())
+    .await
+    .expect("should create legacy fixed-schema service_accounts table");
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE "{fixed_schema}".api_tokens (
+            id VARCHAR(128) PRIMARY KEY,
+            token_type VARCHAR(64) NOT NULL,
+            subject_type VARCHAR(64) NOT NULL,
+            subject_id UUID NOT NULL,
+            tenant_id UUID NOT NULL,
+            issued_from VARCHAR(64) NOT NULL,
+            session_id UUID,
+            membership_id UUID,
+            display_name VARCHAR(128),
+            scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+            expires_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_used_at TIMESTAMPTZ,
+            token_kind VARCHAR(64) NOT NULL DEFAULT 'user_access_token',
+            token_name VARCHAR(128),
+            token_prefix VARCHAR(64),
+            description TEXT,
+            issued_membership_role_snapshot VARCHAR(64),
+            permission_source VARCHAR(64),
+            created_via VARCHAR(64),
+            revoked_reason TEXT,
+            oauth_client_id VARCHAR(128),
+            oauth_grant_type VARCHAR(64),
+            oauth_subject_mode VARCHAR(64),
+            credential_ids JSONB NOT NULL DEFAULT '[]'::jsonb
+        )
+        "#
+    ))
+    .execute(database_pool.pool())
+    .await
+    .expect("should create legacy fixed-schema api_tokens table");
+
+    ensure_required_tables_on_startup(&database_pool)
+        .await
+        .expect("bootstrap should create fixed-schema api token tables");
+
+    let fixed_tables = fetch_schema_tables(database_pool.pool(), fixed_schema)
+        .await
+        .expect("should list fixed schema tables");
+    assert_tables_present(&fixed_tables, FIXED_SCHEMA_AUTH_TABLES);
+
+    let api_token_columns = fetch_table_columns(database_pool.pool(), fixed_schema, "api_tokens")
+        .await
+        .expect("should fetch fixed-schema api_token columns");
+    assert_columns_present(&api_token_columns, FIXED_SCHEMA_API_TOKEN_COLUMNS);
+
+    database_pool.close().await;
 
     drop_temp_database(&admin_pool, &database_name).await;
     admin_pool.close().await;
@@ -359,6 +612,16 @@ async fn startup_bootstrap_repairs_public_partial_migrations() {
     .await
     .expect("should remove api_tokens migration columns");
 
+    sqlx::query("DROP VIEW IF EXISTS public.sandbox_active_sessions")
+        .execute(database_pool.pool())
+        .await
+        .expect("should remove sandbox_active_sessions before dropping dependent columns");
+
+    sqlx::query("DROP VIEW IF EXISTS public.sandbox_session_stats")
+        .execute(database_pool.pool())
+        .await
+        .expect("should remove sandbox_session_stats before dropping dependent columns");
+
     sqlx::query(
         r#"
         ALTER TABLE public.sandbox_sessions
@@ -429,6 +692,7 @@ async fn startup_bootstrap_repairs_public_partial_migrations() {
 
 #[tokio::test]
 async fn startup_bootstrap_repairs_public_schema_even_when_search_path_is_stale() {
+    let _env_lock = BOOTSTRAP_ENV_LOCK.lock().unwrap();
     let Some(base_database_url) = test_database_url() else {
         eprintln!(
             "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
@@ -468,10 +732,7 @@ async fn startup_bootstrap_repairs_public_schema_even_when_search_path_is_stale(
     };
 
     let fixed_schema = "credbridge_bootstrap_vault";
-    let original_fixed_schema = std::env::var("CREDBRIDGE_PG_SCHEMA").ok();
-    unsafe {
-        std::env::set_var("CREDBRIDGE_PG_SCHEMA", fixed_schema);
-    }
+    let _env_guard = FixedSchemaEnvGuard::set(fixed_schema);
 
     let config = DatabaseConfig {
         url: temp_database_url.clone(),
@@ -532,17 +793,13 @@ async fn startup_bootstrap_repairs_public_schema_even_when_search_path_is_stale(
 
     database_pool.close().await;
 
-    match original_fixed_schema {
-        Some(value) => unsafe { std::env::set_var("CREDBRIDGE_PG_SCHEMA", value) },
-        None => unsafe { std::env::remove_var("CREDBRIDGE_PG_SCHEMA") },
-    }
-
     drop_temp_database(&admin_pool, &database_name).await;
     admin_pool.close().await;
 }
 
 #[tokio::test]
 async fn startup_bootstrap_repairs_fixed_schema_legacy_sandbox_columns() {
+    let _env_lock = BOOTSTRAP_ENV_LOCK.lock().unwrap();
     let Some(base_database_url) = test_database_url() else {
         eprintln!(
             "skip db bootstrap integration test: TEST_DATABASE_URL/DATABASE_URL not configured"
@@ -582,10 +839,7 @@ async fn startup_bootstrap_repairs_fixed_schema_legacy_sandbox_columns() {
     };
 
     let fixed_schema = "credbridge_bootstrap_fixed_sandbox";
-    let original_fixed_schema = std::env::var("CREDBRIDGE_PG_SCHEMA").ok();
-    unsafe {
-        std::env::set_var("CREDBRIDGE_PG_SCHEMA", fixed_schema);
-    }
+    let _env_guard = FixedSchemaEnvGuard::set(fixed_schema);
 
     let config = DatabaseConfig {
         url: temp_database_url.clone(),
@@ -748,11 +1002,6 @@ async fn startup_bootstrap_repairs_fixed_schema_legacy_sandbox_columns() {
 
     database_pool.close().await;
 
-    match original_fixed_schema {
-        Some(value) => unsafe { std::env::set_var("CREDBRIDGE_PG_SCHEMA", value) },
-        None => unsafe { std::env::remove_var("CREDBRIDGE_PG_SCHEMA") },
-    }
-
     drop_temp_database(&admin_pool, &database_name).await;
     admin_pool.close().await;
 }
@@ -816,6 +1065,15 @@ async fn startup_bootstrap_repairs_partial_migrations_with_legacy_sandbox_view_s
     ensure_required_tables_on_startup(&database_pool)
         .await
         .expect("bootstrap should create all required tables");
+
+    sqlx::query("DROP VIEW IF EXISTS public.sandbox_active_sessions")
+        .execute(database_pool.pool())
+        .await
+        .expect("should remove sandbox_active_sessions before dropping original_intent");
+    sqlx::query("DROP VIEW IF EXISTS public.sandbox_session_stats")
+        .execute(database_pool.pool())
+        .await
+        .expect("should remove sandbox_session_stats before dropping original_intent");
 
     sqlx::query("ALTER TABLE public.sandbox_sessions DROP COLUMN IF EXISTS original_intent")
         .execute(database_pool.pool())

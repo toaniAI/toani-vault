@@ -672,7 +672,6 @@ pub enum CredentialType {
     OAuthRefresh,
     ApiKey,
     SessionCookie,
-    KycDocument,
     Certificate,
     SshKey,
     DatabaseConnection,
@@ -741,7 +740,7 @@ impl RequestOptions {
 
 ```rust
 #[derive(Debug, Error, Clone)]
-#[error("ToaniVault error [{code}]: {message}")]
+#[error("CredBridge error [{code}]: {message}")]
 pub struct CredBridgeError {
     pub code: CredBridgeErrorCode,
     pub message: String,
@@ -809,7 +808,7 @@ pub const VERSION: &str;
 
 ### create_client(config)
 
-创建新的 ToaniVault 客户端。
+创建新的 CredBridge 客户端。
 
 ```rust
 pub fn create_client(config: CredBridgeConfig) -> Result<CredBridgeClient>

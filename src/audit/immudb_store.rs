@@ -111,8 +111,6 @@ pub struct AuditReport {
     pub denied_count: u64,
     /// 高风险操作数
     pub high_risk_count: u64,
-    /// Merkle Tree 根哈希
-    pub merkle_root: String,
     /// immudb 状态哈希
     pub state_hash: String,
     /// 开始时间
@@ -463,25 +461,6 @@ impl ImmuDbAuditStore {
         }
     }
 
-    /// 验证特定条目的完整性
-    pub async fn verify_entry(&self, index: u64) -> Result<VerificationResult, RecorderError> {
-        let key = format!("audit:{index}");
-
-        let proof = {
-            let storage = self.storage.lock().await;
-            let client = storage.client();
-            client.verify_entry(&key).await?
-        };
-
-        Ok(VerificationResult {
-            index,
-            verified: proof.verified,
-            transaction_id: proof.transaction_id,
-            root_hash: proof.root_hash,
-            inclusion_proof: proof.inclusion_proof,
-        })
-    }
-
     /// 获取当前 immudb 状态
     pub async fn current_state(&self) -> Result<ImmuDbState, RecorderError> {
         let state = {
@@ -539,7 +518,6 @@ impl ImmuDbAuditStore {
             failure_count,
             denied_count,
             high_risk_count,
-            merkle_root: hex::encode(state.state_hash.as_bytes()),
             state_hash: state.state_hash,
             start_time,
             end_time,
@@ -661,21 +639,6 @@ pub struct StoredAuditEntry {
     pub stored_at: u64,
 }
 
-/// 验证结果
-#[derive(Debug, Clone)]
-pub struct VerificationResult {
-    /// 条目索引
-    pub index: u64,
-    /// 是否验证通过
-    pub verified: bool,
-    /// 事务 ID
-    pub transaction_id: u64,
-    /// Merkle Tree 根哈希
-    pub root_hash: String,
-    /// 包含证明
-    pub inclusion_proof: Vec<String>,
-}
-
 /// 缓存统计
 #[derive(Debug, Clone)]
 pub struct CacheStats {
@@ -732,7 +695,6 @@ mod tests {
             signature: vec![1, 2, 3],
             signer_fingerprint: "test_fp".to_string(),
             log_index: index,
-            merkle_root: [0u8; 32],
         }
     }
 
@@ -744,7 +706,6 @@ mod tests {
             failure_count: 15,
             denied_count: 5,
             high_risk_count: 10,
-            merkle_root: "abc123".to_string(),
             state_hash: "def456".to_string(),
             start_time: Some(1000),
             end_time: Some(2000),
@@ -787,20 +748,5 @@ mod tests {
         let config = ImmuDbStoreConfig::default();
         assert_eq!(config.max_cache_size, 10_000);
         assert_eq!(config.auto_sync_interval_secs, 60);
-    }
-
-    #[test]
-    fn test_verification_result() {
-        let result = VerificationResult {
-            index: 42,
-            verified: true,
-            transaction_id: 100,
-            root_hash: "root123".to_string(),
-            inclusion_proof: vec!["proof1".to_string(), "proof2".to_string()],
-        };
-
-        assert_eq!(result.index, 42);
-        assert!(result.verified);
-        assert_eq!(result.transaction_id, 100);
     }
 }

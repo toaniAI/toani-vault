@@ -30,6 +30,12 @@ const PUBLIC_REQUIRED_TABLES: &[&str] = &[
     "sandbox_operations",
     "service_accounts",
     "api_tokens",
+    "approval_requests",
+    "oauth_provider_definitions",
+    "oauth_bindings",
+    "oauth_binding_policy_snapshots",
+    "oauth_binding_runtime_states",
+    "oauth_auth_transactions",
 ];
 
 const TENANT_REQUIRED_TABLES: &[&str] = &[
@@ -40,7 +46,19 @@ const TENANT_REQUIRED_TABLES: &[&str] = &[
     "user_roles",
 ];
 
-const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &["credentials", "credential_versions", "audit_logs"];
+const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &[
+    "credentials",
+    "credential_versions",
+    "audit_logs",
+    "service_accounts",
+    "api_tokens",
+    "approval_requests",
+    "oauth_provider_definitions",
+    "oauth_bindings",
+    "oauth_binding_policy_snapshots",
+    "oauth_binding_runtime_states",
+    "oauth_auth_transactions",
+];
 const FIXED_SCHEMA_SANDBOX_REQUIRED_TABLES: &[&str] = &["sandbox_sessions", "sandbox_operations"];
 const FIXED_SCHEMA_SANDBOX_OBJECTS: &[&str] = &[
     "sandbox_sessions",
@@ -48,6 +66,14 @@ const FIXED_SCHEMA_SANDBOX_OBJECTS: &[&str] = &[
     "sandbox_active_sessions",
     "sandbox_session_stats",
 ];
+const FIXED_SCHEMA_OAUTH_BROKER_OBJECTS: &[&str] = &[
+    "oauth_provider_definitions",
+    "oauth_bindings",
+    "oauth_binding_policy_snapshots",
+    "oauth_binding_runtime_states",
+    "oauth_auth_transactions",
+];
+const FIXED_SCHEMA_AUTH_TOKEN_OBJECTS: &[&str] = &["service_accounts", "api_tokens"];
 
 const PUBLIC_VERSIONING_AND_AUDIT_SQL: &str = r#"
 BEGIN;
@@ -179,6 +205,15 @@ const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),
     include_str!("../../../migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql"),
     include_str!("../../../migrations/20260413102000_add_api_token_credential_ids.sql"),
+    include_str!("../../../migrations/20260515093000_add_approval_requests.sql"),
+    include_str!("../../../migrations/20260513010000_add_oauth_broker_resource_skeleton.sql"),
+    include_str!(
+        "../../../migrations/20260513020000_add_oauth_provider_registry_validation_metadata.sql"
+    ),
+    include_str!("../../../migrations/20260513030000_add_api_token_binding_handle_fields.sql"),
+    include_str!("../../../migrations/20260513040000_add_oauth_binding_backing_credential_id.sql"),
+    include_str!("../../../migrations/20260513050000_add_oauth_auth_transactions.sql"),
+    include_str!("../../../migrations/20260513173000_add_oauth_broker_lifecycle_metadata.sql"),
     include_str!(
         "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
     ),
@@ -193,6 +228,24 @@ const SANDBOX_BASELINE_SCRIPTS: &[&str] = &[
         "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
     ),
     include_str!("../../../migrations/20260421093000_fix_sandbox_session_status_check.sql"),
+];
+
+const OAUTH_BROKER_BASELINE_SCRIPTS: &[&str] = &[
+    include_str!("../../../migrations/20260515093000_add_approval_requests.sql"),
+    include_str!("../../../migrations/20260513010000_add_oauth_broker_resource_skeleton.sql"),
+    include_str!(
+        "../../../migrations/20260513020000_add_oauth_provider_registry_validation_metadata.sql"
+    ),
+    include_str!("../../../migrations/20260513040000_add_oauth_binding_backing_credential_id.sql"),
+    include_str!("../../../migrations/20260513050000_add_oauth_auth_transactions.sql"),
+    include_str!("../../../migrations/20260513173000_add_oauth_broker_lifecycle_metadata.sql"),
+];
+
+const AUTH_TOKEN_BASELINE_SCRIPTS: &[&str] = &[
+    include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),
+    include_str!("../../../migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql"),
+    include_str!("../../../migrations/20260413102000_add_api_token_credential_ids.sql"),
+    include_str!("../../../migrations/20260513030000_add_api_token_binding_handle_fields.sql"),
 ];
 
 const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
@@ -223,6 +276,60 @@ const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
             "oauth_grant_type",
             "oauth_subject_mode",
             "credential_ids",
+            "token_plane",
+            "binding_handles",
+        ],
+    ),
+    (
+        "oauth_provider_definitions",
+        &["version", "client_auth_method", "adapter_version"],
+    ),
+    ("oauth_bindings", &["backing_credential_id"]),
+    (
+        "oauth_binding_policy_snapshots",
+        &[
+            "validation_status",
+            "last_validation_error_code",
+            "last_validation_error_message",
+            "validated_at",
+            "applied_at",
+        ],
+    ),
+];
+
+const FIXED_SCHEMA_OAUTH_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
+    (
+        "oauth_provider_definitions",
+        &["version", "client_auth_method", "adapter_version"],
+    ),
+    ("oauth_bindings", &["backing_credential_id"]),
+    (
+        "oauth_binding_policy_snapshots",
+        &[
+            "validation_status",
+            "last_validation_error_code",
+            "last_validation_error_message",
+            "validated_at",
+            "applied_at",
+        ],
+    ),
+    (
+        "api_tokens",
+        &[
+            "token_kind",
+            "token_name",
+            "token_prefix",
+            "description",
+            "issued_membership_role_snapshot",
+            "permission_source",
+            "created_via",
+            "revoked_reason",
+            "oauth_client_id",
+            "oauth_grant_type",
+            "oauth_subject_mode",
+            "credential_ids",
+            "token_plane",
+            "binding_handles",
         ],
     ),
 ];
@@ -349,20 +456,28 @@ async fn collect_missing_tables(
                 diff_required_columns(&existing_columns, PUBLIC_REQUIRED_COLUMNS)
             }
             RequiredSchemaKind::Fixed => {
-                if !fixed_schema_has_sandbox_objects(&existing) {
-                    Vec::new()
-                } else {
+                if fixed_schema_has_sandbox_objects(&existing) {
                     missing_tables.extend(diff_required_tables(
                         &existing,
                         FIXED_SCHEMA_SANDBOX_REQUIRED_TABLES,
                     ));
-                    missing_tables.sort();
-                    missing_tables.dedup();
-
-                    let existing_columns =
-                        fetch_existing_columns(pool, &required.schema_name).await?;
-                    diff_required_columns(&existing_columns, SANDBOX_REQUIRED_COLUMNS)
                 }
+
+                let existing_columns = fetch_existing_columns(pool, &required.schema_name).await?;
+                let mut missing_columns =
+                    diff_required_columns(&existing_columns, FIXED_SCHEMA_OAUTH_REQUIRED_COLUMNS);
+                if fixed_schema_has_sandbox_objects(&existing) {
+                    missing_columns.extend(diff_required_columns(
+                        &existing_columns,
+                        SANDBOX_REQUIRED_COLUMNS,
+                    ));
+                }
+
+                missing_tables.sort();
+                missing_tables.dedup();
+                missing_columns.sort();
+                missing_columns.dedup();
+                missing_columns
             }
             RequiredSchemaKind::Tenant => Vec::new(),
         };
@@ -382,6 +497,18 @@ async fn collect_missing_tables(
 
 fn fixed_schema_has_sandbox_objects(existing_tables: &HashSet<String>) -> bool {
     FIXED_SCHEMA_SANDBOX_OBJECTS
+        .iter()
+        .any(|table_name| existing_tables.contains(*table_name))
+}
+
+fn fixed_schema_has_oauth_broker_objects(existing_tables: &HashSet<String>) -> bool {
+    FIXED_SCHEMA_OAUTH_BROKER_OBJECTS
+        .iter()
+        .any(|table_name| existing_tables.contains(*table_name))
+}
+
+fn fixed_schema_has_auth_token_objects(existing_tables: &HashSet<String>) -> bool {
+    FIXED_SCHEMA_AUTH_TOKEN_OBJECTS
         .iter()
         .any(|table_name| existing_tables.contains(*table_name))
 }
@@ -539,7 +666,97 @@ async fn ensure_fixed_schema_baseline(
     PostgresAuditStorageAdapter::ensure_table(pool, schema_name)
         .await
         .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    ensure_fixed_schema_auth_token_compatibility(pool, schema_name).await?;
+    ensure_fixed_schema_oauth_broker_compatibility(pool, schema_name).await?;
     ensure_fixed_schema_sandbox_compatibility(pool, schema_name).await?;
+    Ok(())
+}
+
+async fn ensure_fixed_schema_auth_token_compatibility(
+    pool: &PgPool,
+    schema_name: &str,
+) -> Result<(), DatabaseError> {
+    let existing_tables = fetch_existing_tables(pool, schema_name).await?;
+    if !fixed_schema_has_auth_token_objects(&existing_tables) {
+        tracing::info!(
+            module = "database_bootstrap",
+            schema = %schema_name,
+            "repairing fixed-schema auth token tables"
+        );
+    }
+
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    let set_search_path_sql = format!("SET search_path TO \"{schema_name}\", public");
+
+    sqlx::query(&set_search_path_sql)
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    let apply_result = async {
+        for script in AUTH_TOKEN_BASELINE_SCRIPTS {
+            execute_pg_raw_sql_conn(&mut conn, script)
+                .await
+                .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+        }
+        Ok::<(), DatabaseError>(())
+    }
+    .await;
+
+    let reset_result = sqlx::query("RESET search_path")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()));
+
+    apply_result?;
+    reset_result?;
+    Ok(())
+}
+
+async fn ensure_fixed_schema_oauth_broker_compatibility(
+    pool: &PgPool,
+    schema_name: &str,
+) -> Result<(), DatabaseError> {
+    let existing_tables = fetch_existing_tables(pool, schema_name).await?;
+    if !fixed_schema_has_oauth_broker_objects(&existing_tables) {
+        tracing::info!(
+            module = "database_bootstrap",
+            schema = %schema_name,
+            "repairing fixed-schema oauth broker tables"
+        );
+    }
+
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+    let set_search_path_sql = format!("SET search_path TO \"{schema_name}\", public");
+
+    sqlx::query(&set_search_path_sql)
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+
+    let apply_result = async {
+        for script in OAUTH_BROKER_BASELINE_SCRIPTS {
+            execute_pg_raw_sql_conn(&mut conn, script)
+                .await
+                .map_err(|error| DatabaseError::SchemaError(error.to_string()))?;
+        }
+        Ok::<(), DatabaseError>(())
+    }
+    .await;
+
+    let reset_result = sqlx::query("RESET search_path")
+        .execute(&mut *conn)
+        .await
+        .map_err(|error| DatabaseError::SchemaError(error.to_string()));
+
+    apply_result?;
+    reset_result?;
     Ok(())
 }
 
@@ -700,7 +917,18 @@ mod tests {
 
         assert_eq!(
             missing,
-            vec!["audit_logs".to_string(), "credential_versions".to_string()]
+            vec![
+                "api_tokens".to_string(),
+                "approval_requests".to_string(),
+                "audit_logs".to_string(),
+                "credential_versions".to_string(),
+                "oauth_auth_transactions".to_string(),
+                "oauth_binding_policy_snapshots".to_string(),
+                "oauth_binding_runtime_states".to_string(),
+                "oauth_bindings".to_string(),
+                "oauth_provider_definitions".to_string(),
+                "service_accounts".to_string(),
+            ]
         );
     }
 

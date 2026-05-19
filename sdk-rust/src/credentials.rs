@@ -565,7 +565,7 @@ impl CredentialsService {
     /// #         .with_token("your-api-token")
     /// # )?);
     /// # let credentials = CredentialsService::new(client);
-    /// let (credential_list, total) = credentials.get_by_service("schwab", None).await?;
+    /// let response = credentials.get_by_service("schwab", None).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -573,7 +573,7 @@ impl CredentialsService {
         &self,
         service_id: impl Into<String>,
         options: Option<RequestOptions>,
-    ) -> Result<(Vec<CredentialMetadata>, u32)> {
+    ) -> Result<ListCredentialsResponse> {
         let filter = CredentialFilter {
             service_id: Some(service_id.into()),
             ..Default::default()
@@ -595,7 +595,7 @@ impl CredentialsService {
     /// #         .with_token("your-api-token")
     /// # )?);
     /// # let credentials = CredentialsService::new(client);
-    /// let (credential_list, total) = credentials.get_by_type(CredentialType::ApiKey, None).await?;
+    /// let response = credentials.get_by_type(CredentialType::ApiKey, None).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -603,7 +603,7 @@ impl CredentialsService {
         &self,
         credential_type: CredentialType,
         options: Option<RequestOptions>,
-    ) -> Result<(Vec<CredentialMetadata>, u32)> {
+    ) -> Result<ListCredentialsResponse> {
         let filter = CredentialFilter {
             credential_type: Some(credential_type),
             ..Default::default()
@@ -670,5 +670,7 @@ mod tests {
         assert!(filter.credential_type.is_none());
         assert!(filter.include_deleted.is_none());
         assert!(filter.only_valid.is_none());
+        assert!(filter.page.is_none());
+        assert!(filter.page_size.is_none());
     }
 }

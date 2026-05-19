@@ -21,6 +21,7 @@ describe("TokenManager metadata APIs", () => {
       items: [
         {
           token_id: "token-1",
+          token_name: "daily sync token",
           token_type: "user_access_token",
           subject_type: "user",
           subject_id: "user-1",
@@ -40,6 +41,7 @@ describe("TokenManager metadata APIs", () => {
     const result = await service.list();
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.tokenId).toBe("token-1");
+    expect(result.items[0]?.tokenName).toBe("daily sync token");
     expect(result.items[0]?.subjectType).toBe("user");
   });
 

@@ -413,8 +413,6 @@ pub struct NsjailConfig {
     pub cwd: PathBuf,
     /// 环境变量
     pub env: HashMap<String, String>,
-    /// 为 browser runtime 使用单独的放宽 seccomp 策略，允许 node/playwright/chromium 启动。
-    pub disable_seccomp_for_browser_runtime: bool,
     /// 是否为当前 jail 启用 user namespace 隔离。
     pub enable_user_namespace: bool,
     /// UID 映射
@@ -430,7 +428,6 @@ impl Default for NsjailConfig {
             command: vec!["sh".to_string()],
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
-            disable_seccomp_for_browser_runtime: false,
             enable_user_namespace: true,
             uid_map: UidMap::default(),
             gid_map: GidMap::default(),
@@ -481,9 +478,6 @@ impl Default for GidMap {
 }
 
 impl NsjailConfig {
-    const BROWSER_RUNTIME_RELAXED_SYSCALLS: [&'static str; 5] =
-        ["execve", "execveat", "fork", "vfork", "clone"];
-
     /// 生成 nsjail 命令行参数
     pub fn to_args(&self) -> Vec<String> {
         let mut args = vec!["--mode".to_string(), "o".to_string()]; // One-shot mode
@@ -537,11 +531,7 @@ impl NsjailConfig {
         // Seccomp
         if !self.sandbox.security.privileged {
             args.push("--seccomp_string".to_string());
-            args.push(if self.disable_seccomp_for_browser_runtime {
-                self.generate_browser_runtime_seccomp_bpf()
-            } else {
-                self.generate_seccomp_bpf()
-            });
+            args.push(self.generate_seccomp_bpf());
         }
 
         // Working directory
@@ -579,20 +569,6 @@ impl NsjailConfig {
     /// 生成 seccomp kafel 策略字符串（供 nsjail --seccomp_string 使用）
     fn generate_seccomp_bpf(&self) -> String {
         self.generate_seccomp_bpf_with_denylist(&self.sandbox.security.seccomp.denylist)
-    }
-
-    fn generate_browser_runtime_seccomp_bpf(&self) -> String {
-        let denylist = self
-            .sandbox
-            .security
-            .seccomp
-            .denylist
-            .iter()
-            .filter(|syscall| !Self::BROWSER_RUNTIME_RELAXED_SYSCALLS.contains(&syscall.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        self.generate_seccomp_bpf_with_denylist(&denylist)
     }
 
     fn generate_seccomp_bpf_with_denylist(&self, denylist: &[String]) -> String {
@@ -678,30 +654,6 @@ mod tests {
 
         assert!(args.contains(&"--disable_clone_newns".to_string()));
         assert!(!args.contains(&"--disable_clone_newmnt".to_string()));
-    }
-
-    #[test]
-    fn test_nsjail_config_skips_seccomp_for_browser_runtime() {
-        let config = NsjailConfig {
-            disable_seccomp_for_browser_runtime: true,
-            ..NsjailConfig::default()
-        };
-
-        let args = config.to_args();
-
-        assert!(args.contains(&"--seccomp_string".to_string()));
-        let seccomp_idx = args
-            .iter()
-            .position(|arg| arg == "--seccomp_string")
-            .expect("seccomp string should be present");
-        let seccomp_policy = &args[seccomp_idx + 1];
-        assert!(!seccomp_policy.contains("    execve\n"));
-        assert!(!seccomp_policy.contains("    execveat\n"));
-        assert!(!seccomp_policy.contains("    fork\n"));
-        assert!(!seccomp_policy.contains("    vfork\n"));
-        assert!(!seccomp_policy.contains("    clone\n"));
-        assert!(seccomp_policy.contains("ptrace"));
-        assert!(seccomp_policy.contains("process_vm_writev"));
     }
 
     #[test]

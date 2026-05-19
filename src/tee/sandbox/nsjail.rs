@@ -231,7 +231,6 @@ impl NsjailSandbox {
         command: Vec<String>,
         cwd: PathBuf,
         env: HashMap<String, String>,
-        disable_seccomp_for_browser_runtime: bool,
         extra_mounts: Vec<MountConfig>,
     ) -> Result<Child, SandboxError> {
         if command.is_empty() {
@@ -240,13 +239,7 @@ impl NsjailSandbox {
             ));
         }
 
-        let scoped_config = self.scoped_process_config(
-            command,
-            cwd,
-            env,
-            disable_seccomp_for_browser_runtime,
-            extra_mounts,
-        );
+        let scoped_config = self.scoped_process_config(command, cwd, env, extra_mounts);
 
         let mut cmd = Command::new(&scoped_config.sandbox.nsjail_path);
         cmd.args(scoped_config.to_args())
@@ -272,13 +265,11 @@ impl NsjailSandbox {
         command: Vec<String>,
         cwd: PathBuf,
         env: HashMap<String, String>,
-        disable_seccomp_for_browser_runtime: bool,
         extra_mounts: Vec<MountConfig>,
     ) -> NsjailConfig {
         let mut scoped_config = self.config.clone();
         scoped_config.command = command;
         scoped_config.cwd = cwd;
-        scoped_config.disable_seccomp_for_browser_runtime = disable_seccomp_for_browser_runtime;
 
         let sandbox_work_dir = self.working_dir();
         Self::push_mount_if_missing(
@@ -864,7 +855,6 @@ mod tests {
             command: vec!["sleep".to_string(), "100".to_string()],
             cwd: PathBuf::from("/"),
             env: HashMap::new(),
-            disable_seccomp_for_browser_runtime: false,
             enable_user_namespace: true,
             uid_map: Default::default(),
             gid_map: Default::default(),
@@ -979,7 +969,6 @@ mod tests {
             vec!["/usr/bin/node".to_string(), "script.cjs".to_string()],
             PathBuf::from("/tmp/runtime"),
             HashMap::new(),
-            true,
             vec![extra_mount.clone()],
         );
 

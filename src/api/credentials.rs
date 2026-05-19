@@ -78,32 +78,33 @@ async fn tee_runtime_snapshot(state: &AppState) -> TeeRuntimeSnapshot {
 }
 
 /// 审计日志记录器 trait
+#[async_trait::async_trait]
 pub trait AuditLogger: Send + Sync {
-    fn log_credential_created(
+    async fn log_credential_created(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    );
-    fn log_credential_accessed(
+    ) -> Result<(), String>;
+    async fn log_credential_accessed(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    );
-    fn log_credential_deleted(
+    ) -> Result<(), String>;
+    async fn log_credential_deleted(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    );
-    fn log_decryption_attempt(
+    ) -> Result<(), String>;
+    async fn log_decryption_attempt(
         &self,
         tenant_id: &str,
         user_id: &str,
@@ -111,53 +112,57 @@ pub trait AuditLogger: Send + Sync {
         success: bool,
         jti: &str,
         mrenclave: &str,
-    );
+    ) -> Result<(), String>;
 }
 
 /// 默认审计日志记录器（打印到控制台）
 pub struct DefaultAuditLogger;
 
+#[async_trait::async_trait]
 impl AuditLogger for DefaultAuditLogger {
-    fn log_credential_created(
+    async fn log_credential_created(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         tracing::info!(
             "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
+        Ok(())
     }
 
-    fn log_credential_accessed(
+    async fn log_credential_accessed(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         tracing::info!(
             "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
+        Ok(())
     }
 
-    fn log_credential_deleted(
+    async fn log_credential_deleted(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         tracing::info!(
             "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
         );
+        Ok(())
     }
 
-    fn log_decryption_attempt(
+    async fn log_decryption_attempt(
         &self,
         tenant_id: &str,
         user_id: &str,
@@ -165,10 +170,11 @@ impl AuditLogger for DefaultAuditLogger {
         success: bool,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         tracing::info!(
             "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}, jti: {jti}, mrenclave: {mrenclave}"
         );
+        Ok(())
     }
 }
 
@@ -197,13 +203,12 @@ impl StorageAuditLogger {
     ///
     /// - `jti`: 从 ValidatedToken.token_id 获取的 action token JTI
     /// - `mrenclave`: TEE MRENCLAVE 测量值，软件模式下使用 "software_mode"
-    fn record_to_storage(
+    async fn record_to_storage(
         &self,
         action: AuditAction,
         outcome: Outcome,
         context: CredentialAuditContext<'_>,
-    ) {
-        let storage = Arc::clone(&self.storage);
+    ) -> Result<(), String> {
         let user_id_hash = crate::audit::events::hash_user_id(context.user_id);
         let entry = AuditEntry::new(
             user_id_hash,
@@ -223,23 +228,20 @@ impl StorageAuditLogger {
             RedactedParam::Plain(context.tenant_id.to_string()),
         );
 
-        tokio::spawn(async move {
-            if let Err(error) = storage.record(entry).await {
-                tracing::warn!("[AUDIT] 存储审计日志失败：{error}");
-            }
-        });
+        self.storage.record(entry).await.map(|_| ())
     }
 }
 
+#[async_trait::async_trait]
 impl AuditLogger for StorageAuditLogger {
-    fn log_credential_created(
+    async fn log_credential_created(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
             "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
@@ -256,17 +258,18 @@ impl AuditLogger for StorageAuditLogger {
                 jti,
                 mrenclave,
             },
-        );
+        )
+        .await
     }
 
-    fn log_credential_accessed(
+    async fn log_credential_accessed(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
             "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
@@ -283,17 +286,18 @@ impl AuditLogger for StorageAuditLogger {
                 jti,
                 mrenclave,
             },
-        );
+        )
+        .await
     }
 
-    fn log_credential_deleted(
+    async fn log_credential_deleted(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
             "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
@@ -310,10 +314,11 @@ impl AuditLogger for StorageAuditLogger {
                 jti,
                 mrenclave,
             },
-        );
+        )
+        .await
     }
 
-    fn log_decryption_attempt(
+    async fn log_decryption_attempt(
         &self,
         tenant_id: &str,
         user_id: &str,
@@ -321,7 +326,7 @@ impl AuditLogger for StorageAuditLogger {
         success: bool,
         jti: &str,
         mrenclave: &str,
-    ) {
+    ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
             "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}"
@@ -343,7 +348,8 @@ impl AuditLogger for StorageAuditLogger {
                 jti,
                 mrenclave,
             },
-        );
+        )
+        .await
     }
 }
 
@@ -398,6 +404,7 @@ impl IntoResponse for ApiError {
             "forbidden" => StatusCode::FORBIDDEN,
             "insufficient_scope" => StatusCode::FORBIDDEN,
             "credential_expired" => StatusCode::UNPROCESSABLE_ENTITY,
+            "audit_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
             "internal_error" => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -625,13 +632,24 @@ pub async fn create_credential(
         .map_err(|e| ApiError::new("internal_error", e.to_string()))?;
 
     let tee_snapshot = tee_runtime_snapshot(&state).await;
-    state.audit_logger.log_credential_created(
-        &token.tenant_id,
-        &token.user_id,
-        entry.credential_id.as_str(),
-        &token.token_id,
-        &tee_snapshot.mrenclave_label,
-    );
+    if let Err(error) = state
+        .audit_logger
+        .log_credential_created(
+            &token.tenant_id,
+            &token.user_id,
+            entry.credential_id.as_str(),
+            &token.token_id,
+            &tee_snapshot.mrenclave_label,
+        )
+        .await
+    {
+        tracing::warn!(
+            tenant_id = %token.tenant_id,
+            user_id = %token.user_id,
+            credential_id = %entry.credential_id.as_str(),
+            "credential created but audit write failed: {error}"
+        );
+    }
 
     let response = CreateCredentialResponse {
         credential_id: entry.credential_id.as_str().to_string(),
@@ -720,7 +738,6 @@ fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
         "oauth_refresh" | "oauth_token" | "o_auth_refresh" => Ok(CredentialType::OAuthRefresh),
         "api_key" => Ok(CredentialType::ApiKey),
         "session_cookie" => Ok(CredentialType::SessionCookie),
-        "kyc_document" => Ok(CredentialType::KycDocument),
         "client_certificate" => Ok(CredentialType::ClientCertificate),
         "ssh_key" => Ok(CredentialType::SshKey),
         "database_connection" => Ok(CredentialType::DatabaseConnection),
@@ -730,7 +747,7 @@ fn parse_credential_type(value: &str) -> Result<CredentialType, ApiError> {
         ).with_details(serde_json::json!({
             "field": "credential_type",
             "received": value,
-            "allowed": ["username_password", "oauth_refresh", "oauth_token", "o_auth_refresh", "api_key", "session_cookie", "kyc_document", "client_certificate", "ssh_key", "database_connection"]
+            "allowed": ["username_password", "oauth_refresh", "oauth_token", "o_auth_refresh", "api_key", "session_cookie", "client_certificate", "ssh_key", "database_connection"]
         }))),
     }
 }
@@ -837,13 +854,19 @@ pub async fn get_credential(
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
     // 记录访问审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
-    state.audit_logger.log_credential_accessed(
-        &token.tenant_id,
-        &token.user_id,
-        &metadata.credential_id,
-        &token.token_id,
-        "software_mode",
-    );
+    state
+        .audit_logger
+        .log_credential_accessed(
+            &token.tenant_id,
+            &token.user_id,
+            &metadata.credential_id,
+            &token.token_id,
+            "software_mode",
+        )
+        .await
+        .map_err(|error| {
+            ApiError::new("audit_unavailable", format!("审计日志写入失败: {error}"))
+        })?;
 
     // 计算状态 (deleted > expired > active)
     let status = if metadata.is_deleted {
@@ -943,13 +966,24 @@ pub async fn delete_credential(
     }
 
     // 记录审计日志（jti 从 token_id 获取，mrenclave 软件模式固定值）
-    state.audit_logger.log_credential_deleted(
-        &token.tenant_id,
-        &token.user_id,
-        credential_id.as_str(),
-        &token.token_id,
-        "software_mode",
-    );
+    if let Err(error) = state
+        .audit_logger
+        .log_credential_deleted(
+            &token.tenant_id,
+            &token.user_id,
+            credential_id.as_str(),
+            &token.token_id,
+            "software_mode",
+        )
+        .await
+    {
+        tracing::warn!(
+            tenant_id = %token.tenant_id,
+            user_id = %token.user_id,
+            credential_id = %credential_id.as_str(),
+            "credential deleted but audit write failed: {error}"
+        );
+    }
 
     Ok(Json(DeleteCredentialResponse {
         credential_id: credential_id.as_str().to_string(),

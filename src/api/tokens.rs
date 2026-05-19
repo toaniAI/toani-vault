@@ -34,6 +34,8 @@ pub struct CreateTokenRequest {
     pub credential_ids: Vec<String>,
     #[serde(default)]
     pub token_name: Option<String>,
+    #[serde(default)]
+    pub binding_handles: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,7 +51,9 @@ pub struct CreatedTokenResponse {
     pub expires_in: u64,
     pub scope: String,
     pub granted_scopes: Vec<String>,
+    pub token_plane: String,
     pub credential_ids: Vec<String>,
+    pub binding_handles: Vec<String>,
     pub issued_at: u64,
     pub expires_at: u64,
     pub revoked_at: Option<String>,
@@ -66,12 +70,14 @@ pub struct TokenMetadataResponse {
     pub subject_id: String,
     pub tenant_id: String,
     pub issued_from: String,
+    pub token_plane: String,
     pub session_id: Option<String>,
     pub membership_id: Option<String>,
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub granted_scopes: Vec<String>,
     pub credential_ids: Vec<String>,
+    pub binding_handles: Vec<String>,
     pub issued_membership_role_snapshot: Option<String>,
     pub permission_source: Option<String>,
     pub created_via: Option<String>,
@@ -165,9 +171,9 @@ pub async fn issue_access_token_from_user_token(
         ));
     }
 
-    if request.credential_ids.is_empty() {
+    if request.credential_ids.is_empty() && request.binding_handles.is_empty() {
         return Err(ApiErrorResponse::invalid_request(
-            "At least one credential_id is required",
+            "At least one binding_handle or credential_id is required",
         ));
     }
 
@@ -192,7 +198,16 @@ pub async fn issue_access_token_from_user_token(
         ));
     }
 
-    let credential_ids = resolve_allowed_credential_ids(state, token, &request.credential_ids)?;
+    let credential_ids = if request.credential_ids.is_empty() {
+        Vec::new()
+    } else {
+        resolve_allowed_credential_ids(state, token, &request.credential_ids)?
+    };
+    let binding_handles = if request.binding_handles.is_empty() {
+        Vec::new()
+    } else {
+        resolve_allowed_binding_handles(state, token, &request.binding_handles).await?
+    };
 
     let ttl_seconds = normalize_ttl(request.expires_in);
     let granted_scopes = TokenScope::expand_credential_read_permissions(&requested_scopes)
@@ -208,7 +223,9 @@ pub async fn issue_access_token_from_user_token(
         ttl_seconds,
     )
     .with_subject_type(TOKEN_SUBJECT_TYPE_USER)
-    .with_issued_from(TOKEN_ISSUED_FROM_ACCESS_TOKEN);
+    .with_issued_from(TOKEN_ISSUED_FROM_ACCESS_TOKEN)
+    .with_token_plane("runtime")
+    .with_binding_handles(binding_handles.clone());
 
     if let Some(membership_id) = token.membership_id() {
         claims = claims.with_membership_id(membership_id);
@@ -233,7 +250,9 @@ pub async fn issue_access_token_from_user_token(
     )
     .with_token_kind("user_access_token")
     .with_scopes(granted_scopes.clone())
-    .with_credential_ids(credential_ids.clone());
+    .with_credential_ids(credential_ids.clone())
+    .with_binding_handles(binding_handles.clone())
+    .with_token_plane("runtime");
     let metadata = if let Some(token_name) = token_name {
         metadata.with_token_name(token_name)
     } else {
@@ -256,7 +275,7 @@ pub async fn issue_access_token_from_user_token(
         .await
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
 
-    state
+    if let Err(error) = state
         .record_audit(
             AuditAction::TokenIssue,
             &token.user_id,
@@ -264,15 +283,24 @@ pub async fn issue_access_token_from_user_token(
             Some(json!({
                 "issued_from": TOKEN_ISSUED_FROM_ACCESS_TOKEN,
                 "subject_type": TOKEN_SUBJECT_TYPE_USER,
+                "token_plane": "runtime",
                 "token_id": token_id,
                 "scopes": granted_scopes,
                 "credential_ids": credential_ids,
+                "binding_handles": binding_handles,
                 "expires_in": ttl_seconds,
                 "session_id": token.session_id(),
                 "membership_id": token.membership_id(),
             })),
         )
-        .await;
+        .await
+    {
+        tracing::warn!(
+            user_id = %token.user_id,
+            token_id = %token_id,
+            "token metadata created but audit write failed: {error}"
+        );
+    }
 
     Ok(CreatedTokenResponse {
         token: access_token.clone(),
@@ -282,11 +310,13 @@ pub async fn issue_access_token_from_user_token(
         token_type: "Bearer".to_string(),
         subject_type: TOKEN_SUBJECT_TYPE_USER.to_string(),
         issued_from: TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string(),
+        token_plane: "runtime".to_string(),
         display_name: metadata.display_name.clone(),
         expires_in: ttl_seconds,
         scope: scope_string,
         granted_scopes: granted_scopes.clone(),
         credential_ids,
+        binding_handles,
         issued_at: claims.iat.unwrap_or_else(unix_now),
         expires_at: claims.exp,
         revoked_at: None,
@@ -402,7 +432,7 @@ async fn revoke_token_handler(
         "access_token_revoked"
     };
 
-    state
+    if let Err(error) = state
         .record_audit(
             AuditAction::TokenRevoke,
             audit_user_id,
@@ -415,7 +445,14 @@ async fn revoke_token_handler(
                 "revoked_by": token.user_id,
             })),
         )
-        .await;
+        .await
+    {
+        tracing::warn!(
+            revoked_token_id = %token_id,
+            revoked_by = %token.user_id,
+            "token revoked but audit write failed: {error}"
+        );
+    }
 
     Ok(Json(RevokeTokenResponse {
         revoked: true,
@@ -450,22 +487,37 @@ async fn list_tokens_handler(
     let tenant_id = parse_uuid_str(&token.tenant_id, "tenant_id")?;
     let subject_id = parse_uuid_str(&token.user_id, "user_id")?;
     let is_tenant_admin = token.has_any_scope(&[TokenScope::Admin, TokenScope::TenantAdmin]);
-    let subject_filter = if is_tenant_admin {
-        None
-    } else if token.is_service_account_subject() {
-        Some((ApiTokenSubjectType::ServiceAccount, subject_id))
-    } else {
-        Some((ApiTokenSubjectType::User, subject_id))
-    };
 
-    let (items, total) = state
+    let items = state
         .auth_service
-        .list_api_tokens_paginated(tenant_id, subject_filter, query.page, query.page_size)
+        .list_api_tokens(tenant_id)
         .await
         .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
 
-    let items = items.into_iter().map(map_token_metadata).collect();
+    let visible_items = items
+        .into_iter()
+        .filter(|item| {
+            if is_tenant_admin {
+                return true;
+            }
 
+            match item.subject_type {
+                ApiTokenSubjectType::User => item.subject_id == subject_id,
+                ApiTokenSubjectType::ServiceAccount => {
+                    token.is_service_account_subject() && item.subject_id == subject_id
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let total = visible_items.len();
+    let offset = (query.page - 1) * query.page_size;
+    let items = visible_items
+        .into_iter()
+        .skip(offset)
+        .take(query.page_size)
+        .map(map_token_metadata)
+        .collect();
     Ok(Json(ListTokensResponse::new(
         items,
         query.page,
@@ -627,6 +679,55 @@ fn resolve_allowed_credential_ids(
     Ok(unique_ids)
 }
 
+#[allow(clippy::result_large_err)]
+async fn resolve_allowed_binding_handles(
+    state: &AuthApiState,
+    token: &ValidatedToken,
+    requested_handles: &[String],
+) -> Result<Vec<String>, ApiErrorResponse> {
+    let broker_service = state.oauth_broker_service.as_ref().ok_or_else(|| {
+        ApiErrorResponse::internal_error("OAuth broker service is not configured")
+    })?;
+
+    let tenant_id = parse_uuid_str(&token.tenant_id, "tenant_id")?;
+    let mut unique_handles = Vec::new();
+
+    for requested_handle in requested_handles {
+        let normalized = requested_handle.trim();
+        if normalized.is_empty() {
+            return Err(ApiErrorResponse::invalid_request(
+                "binding_handles must not contain empty values",
+            ));
+        }
+
+        if !token.can_access_binding_handle(normalized) {
+            return Err(ApiErrorResponse::forbidden(
+                "Requested binding_handles must be allowed by the current token",
+            ));
+        }
+
+        let binding = broker_service
+            .get_binding_by_handle(tenant_id, normalized)
+            .await
+            .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+
+        match binding {
+            Some(_) => {
+                if !unique_handles.contains(&normalized.to_string()) {
+                    unique_handles.push(normalized.to_string());
+                }
+            }
+            None => {
+                return Err(ApiErrorResponse::not_found(format!(
+                    "Binding handle not found: {normalized}"
+                )));
+            }
+        }
+    }
+
+    Ok(unique_handles)
+}
+
 fn normalize_ttl(expires_in: Option<u64>) -> u64 {
     expires_in
         .unwrap_or(DEFAULT_TOKEN_TTL_SECONDS)
@@ -660,12 +761,14 @@ pub(crate) fn map_token_metadata(item: ApiTokenMetadata) -> TokenMetadataRespons
         subject_id: item.subject_id.to_string(),
         tenant_id: item.tenant_id.to_string(),
         issued_from: item.issued_from,
+        token_plane: item.token_plane,
         session_id: item.session_id.map(|value| value.to_string()),
         membership_id: item.membership_id.map(|value| value.to_string()),
         display_name: item.display_name,
         description: item.description,
         granted_scopes: item.scopes,
         credential_ids: item.credential_ids,
+        binding_handles: item.binding_handles,
         issued_membership_role_snapshot: item.issued_membership_role_snapshot,
         permission_source: item.permission_source,
         created_via: item.created_via,
@@ -688,6 +791,7 @@ fn unix_now() -> u64 {
 mod tests {
     use super::*;
     use crate::api::{
+        audit::AuditStorage,
         auth::AuthApiState,
         middleware::{TokenScope, ValidatedToken, validate_paseto_token},
         token_blacklist::create_token_store,
@@ -702,6 +806,13 @@ mod tests {
     };
     use crate::crypto::constants;
     use crate::models::CredentialType;
+    use crate::oauth_broker::{
+        AuthTransaction, AuthTransactionStatus, Binding, BindingKind, BindingPolicySnapshot,
+        BindingStatus, CreateBindingInput, CreateProviderDefinitionInput, OAuthBrokerError,
+        OAuthBrokerService, ProviderDefinition, ProviderValidationResult,
+        StartAuthTransactionInput, UpdateProviderDefinitionInput,
+    };
+    use crate::token::TOKEN_ISSUED_FROM_SESSION;
     use crate::vault::{
         models::EncryptedPayload,
         storage::{CredentialVault, create_credential},
@@ -711,7 +822,54 @@ mod tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
-    struct DummyAuthService;
+    #[derive(Default)]
+    struct DummyAuthService {
+        tokens: Vec<ApiTokenMetadata>,
+    }
+
+    struct DummyOAuthBrokerService;
+
+    struct FailingAuditStorage;
+
+    #[async_trait]
+    impl AuditStorage for FailingAuditStorage {
+        async fn record(
+            &self,
+            _entry: crate::audit::AuditEntry,
+        ) -> Result<crate::audit::SignedAuditEntry, String> {
+            Err("forced auth audit failure".to_string())
+        }
+
+        async fn query(
+            &self,
+            _filter: crate::audit::AuditFilter,
+            _offset: usize,
+            _limit: usize,
+        ) -> Result<(Vec<crate::audit::SignedAuditEntry>, u64), String> {
+            unreachable!("unused in token audit failure tests")
+        }
+
+        async fn get_by_id(
+            &self,
+            _id: &str,
+        ) -> Result<Option<crate::audit::SignedAuditEntry>, String> {
+            unreachable!("unused in token audit failure tests")
+        }
+
+        async fn get_by_index(
+            &self,
+            _index: u64,
+        ) -> Result<Option<crate::audit::SignedAuditEntry>, String> {
+            unreachable!("unused in token audit failure tests")
+        }
+
+        async fn get_all(
+            &self,
+            _filter: crate::audit::AuditFilter,
+        ) -> Result<Vec<crate::audit::SignedAuditEntry>, String> {
+            unreachable!("unused in token audit failure tests")
+        }
+    }
 
     #[async_trait]
     impl AuthService for DummyAuthService {
@@ -817,6 +975,186 @@ mod tests {
         async fn get_mfa_status(&self, _user_id: Uuid) -> Result<MfaStatusSnapshot, AuthError> {
             Err(AuthError::InternalError("unused".to_string()))
         }
+
+        async fn list_api_tokens(
+            &self,
+            _tenant_id: Uuid,
+        ) -> Result<Vec<ApiTokenMetadata>, AuthError> {
+            Ok(self.tokens.clone())
+        }
+
+        async fn get_api_token_metadata(
+            &self,
+            token_id: &str,
+        ) -> Result<Option<ApiTokenMetadata>, AuthError> {
+            Ok(self.tokens.iter().find(|item| item.id == token_id).cloned())
+        }
+    }
+
+    #[async_trait]
+    impl OAuthBrokerService for DummyOAuthBrokerService {
+        async fn create_provider_definition(
+            &self,
+            _input: CreateProviderDefinitionInput,
+        ) -> Result<ProviderDefinition, OAuthBrokerError> {
+            Err(OAuthBrokerError::InternalError("unused".to_string()))
+        }
+
+        async fn list_provider_definitions(
+            &self,
+            _tenant_id: Uuid,
+        ) -> Result<Vec<ProviderDefinition>, OAuthBrokerError> {
+            Ok(Vec::new())
+        }
+
+        async fn get_provider_definition(
+            &self,
+            _provider_definition_id: Uuid,
+        ) -> Result<Option<ProviderDefinition>, OAuthBrokerError> {
+            Ok(None)
+        }
+
+        async fn update_provider_definition(
+            &self,
+            _tenant_id: Uuid,
+            _provider_definition_id: Uuid,
+            _input: UpdateProviderDefinitionInput,
+        ) -> Result<ProviderDefinition, OAuthBrokerError> {
+            Err(OAuthBrokerError::InternalError("unused".to_string()))
+        }
+
+        async fn validate_provider_definition(
+            &self,
+            _tenant_id: Uuid,
+            _provider_definition_id: Uuid,
+        ) -> Result<ProviderValidationResult, OAuthBrokerError> {
+            Err(OAuthBrokerError::InternalError("unused".to_string()))
+        }
+
+        async fn create_binding(
+            &self,
+            _input: CreateBindingInput,
+        ) -> Result<Binding, OAuthBrokerError> {
+            Err(OAuthBrokerError::InternalError("unused".to_string()))
+        }
+
+        async fn list_bindings(&self, _tenant_id: Uuid) -> Result<Vec<Binding>, OAuthBrokerError> {
+            Ok(Vec::new())
+        }
+
+        async fn get_binding(
+            &self,
+            _binding_id: Uuid,
+        ) -> Result<Option<Binding>, OAuthBrokerError> {
+            Ok(None)
+        }
+
+        async fn get_binding_by_handle(
+            &self,
+            tenant_id: Uuid,
+            binding_handle: &str,
+        ) -> Result<Option<Binding>, OAuthBrokerError> {
+            if tenant_id != Uuid::parse_str("00000000-0000-0000-0000-000000000123").unwrap() {
+                return Ok(None);
+            }
+
+            if binding_handle == "binding_demo_runtime" {
+                return Ok(Some(Binding {
+                    id: Uuid::nil(),
+                    tenant_id,
+                    provider_definition_id: Uuid::nil(),
+                    binding_handle: binding_handle.to_string(),
+                    alias: "binding-demo".to_string(),
+                    purpose: "demo".to_string(),
+                    binding_kind: BindingKind::ProviderAppCredential,
+                    subject_ref: "tenant_access_token".to_string(),
+                    subject_display_name: Some("Demo Binding".to_string()),
+                    backing_credential_id: None,
+                    status: crate::oauth_broker::BindingStatus::Draft,
+                    health_status: Some("draft".to_string()),
+                    last_error_code: None,
+                    last_error_message: None,
+                    cooldown_until: None,
+                    rebind_required: false,
+                    last_validated_at: None,
+                    created_by: Uuid::nil(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                }));
+            }
+
+            Ok(None)
+        }
+
+        async fn get_latest_binding_policy_snapshot(
+            &self,
+            _binding_id: Uuid,
+        ) -> Result<Option<BindingPolicySnapshot>, OAuthBrokerError> {
+            Ok(None)
+        }
+
+        async fn set_binding_validation_state(
+            &self,
+            binding_id: Uuid,
+            binding_status: BindingStatus,
+            health_status: &str,
+            _last_error_code: Option<&str>,
+            _last_error_message: Option<&str>,
+            validated_at: chrono::DateTime<chrono::Utc>,
+        ) -> Result<Binding, OAuthBrokerError> {
+            Ok(Binding {
+                id: binding_id,
+                tenant_id: Uuid::parse_str("00000000-0000-0000-0000-000000000123").unwrap(),
+                provider_definition_id: Uuid::nil(),
+                binding_handle: "binding_demo_runtime".to_string(),
+                alias: "binding-demo".to_string(),
+                purpose: "demo".to_string(),
+                binding_kind: BindingKind::ProviderAppCredential,
+                subject_ref: "tenant_access_token".to_string(),
+                subject_display_name: Some("Demo Binding".to_string()),
+                backing_credential_id: None,
+                status: binding_status,
+                health_status: Some(health_status.to_string()),
+                last_error_code: None,
+                last_error_message: None,
+                cooldown_until: None,
+                rebind_required: false,
+                last_validated_at: Some(validated_at),
+                created_by: Uuid::nil(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            })
+        }
+
+        async fn start_auth_transaction(
+            &self,
+            _input: StartAuthTransactionInput,
+        ) -> Result<AuthTransaction, OAuthBrokerError> {
+            Err(OAuthBrokerError::InternalError("unused".to_string()))
+        }
+
+        async fn get_auth_transaction(
+            &self,
+            _transaction_id: Uuid,
+        ) -> Result<Option<AuthTransaction>, OAuthBrokerError> {
+            Ok(None)
+        }
+
+        async fn get_auth_transaction_by_state(
+            &self,
+            _state: &str,
+        ) -> Result<Option<AuthTransaction>, OAuthBrokerError> {
+            Ok(None)
+        }
+
+        async fn set_auth_transaction_status(
+            &self,
+            _transaction_id: Uuid,
+            _status: AuthTransactionStatus,
+            _consumed_at: Option<chrono::DateTime<chrono::Utc>>,
+        ) -> Result<AuthTransaction, OAuthBrokerError> {
+            Err(OAuthBrokerError::InternalError("unused".to_string()))
+        }
     }
 
     fn seed_test_state() -> (AuthApiState, String) {
@@ -839,11 +1177,22 @@ mod tests {
             None,
         )
         .expect("test credential should be created");
-        let state =
-            AuthApiState::new_with_token_store(Arc::new(DummyAuthService), create_token_store())
-                .with_vault(vault);
+        let state = AuthApiState::new_with_token_store(
+            Arc::new(DummyAuthService::default()),
+            create_token_store(),
+        )
+        .with_vault(vault)
+        .with_oauth_broker_service(Arc::new(DummyOAuthBrokerService));
 
         (state, entry.credential_id.as_str().to_string())
+    }
+
+    fn seed_test_state_with_failing_audit() -> (AuthApiState, String) {
+        let (state, credential_id) = seed_test_state();
+        (
+            state.with_audit_storage(Arc::new(FailingAuditStorage)),
+            credential_id,
+        )
     }
 
     fn create_token_request(
@@ -856,6 +1205,7 @@ mod tests {
             expires_in,
             credential_ids: vec![credential_id.to_string()],
             token_name: None,
+            binding_handles: Vec::new(),
         }
     }
 
@@ -875,6 +1225,39 @@ mod tests {
         );
         token.membership_id = Some("00000000-0000-0000-0000-000000000321".to_string());
         token
+    }
+
+    fn seed_token_list_state(tokens: Vec<ApiTokenMetadata>) -> AuthApiState {
+        AuthApiState::new_with_token_store(
+            Arc::new(DummyAuthService { tokens }),
+            create_token_store(),
+        )
+        .with_oauth_broker_service(Arc::new(DummyOAuthBrokerService))
+    }
+
+    fn make_token_metadata(index: usize, subject_id: Uuid) -> ApiTokenMetadata {
+        let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000123")
+            .expect("tenant uuid should parse");
+        let session_id = Uuid::parse_str("00000000-0000-0000-0000-000000000789")
+            .expect("session uuid should parse");
+        let membership_id = Uuid::parse_str("00000000-0000-0000-0000-000000000321")
+            .expect("membership uuid should parse");
+
+        ApiTokenMetadata::new(
+            format!("00000000-0000-0000-0000-{:012}", index + 1),
+            ApiTokenType::UserAccessToken,
+            ApiTokenSubjectType::User,
+            subject_id,
+            tenant_id,
+            TOKEN_ISSUED_FROM_SESSION,
+            chrono::Utc::now(),
+        )
+        .with_token_kind("user_access_token")
+        .with_token_plane("management")
+        .with_session_id(session_id)
+        .with_membership_id(membership_id)
+        .with_token_name(format!("token-{index}"))
+        .with_scopes(vec!["tokens:read".to_string()])
     }
 
     #[tokio::test]
@@ -916,7 +1299,54 @@ mod tests {
         assert_eq!(response.expires_in, 3600);
         assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
         assert_eq!(response.issued_from, TOKEN_ISSUED_FROM_ACCESS_TOKEN);
+        assert_eq!(response.token_plane, "runtime");
         assert_eq!(response.credential_ids, vec![credential_id]);
+        assert!(response.binding_handles.is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_token_response_includes_token_name() {
+        let (state, credential_id) = seed_test_state();
+        let mut request = create_token_request(&credential_id, &["credential:read"], Some(3600));
+        request.token_name = Some("daily sync token".to_string());
+
+        let response = create_token_handler(
+            State(state),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(request),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert_eq!(response.token_name.as_deref(), Some("daily sync token"));
+        assert_eq!(response.display_name.as_deref(), Some("daily sync token"));
+    }
+
+    #[tokio::test]
+    async fn create_token_succeeds_when_audit_write_fails_after_persist() {
+        let (state, credential_id) = seed_test_state_with_failing_audit();
+        let response = create_token_handler(
+            State(state),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(3600),
+            )),
+        )
+        .await
+        .expect("token creation should still succeed")
+        .0;
+
+        assert!(!response.token_id.is_empty());
+        assert_eq!(response.subject_type, TOKEN_SUBJECT_TYPE_USER);
     }
 
     #[tokio::test]
@@ -940,53 +1370,6 @@ mod tests {
 
         assert!(!response.token.is_empty());
         assert_eq!(response.token, response.access_token);
-    }
-
-    #[tokio::test]
-    async fn create_token_persists_token_name_as_display_name() {
-        let (state, credential_id) = seed_test_state();
-        let response = create_token_handler(
-            State(state),
-            Extension(session_token(vec![
-                TokenScope::TokensWrite,
-                TokenScope::CredentialRead,
-            ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(3600),
-                credential_ids: vec![credential_id],
-                token_name: Some("daily sync token".to_string()),
-            }),
-        )
-        .await
-        .expect("token creation should succeed")
-        .0;
-
-        assert_eq!(response.token_name.as_deref(), Some("daily sync token"));
-        assert_eq!(response.display_name.as_deref(), Some("daily sync token"));
-    }
-
-    #[tokio::test]
-    async fn create_token_rejects_empty_token_name() {
-        let (state, credential_id) = seed_test_state();
-        let err = create_token_handler(
-            State(state),
-            Extension(session_token(vec![
-                TokenScope::TokensWrite,
-                TokenScope::CredentialRead,
-            ])),
-            Json(CreateTokenRequest {
-                scopes: vec!["credential:read".to_string()],
-                expires_in: Some(3600),
-                credential_ids: vec![credential_id],
-                token_name: Some("   ".to_string()),
-            }),
-        )
-        .await
-        .expect_err("empty token_name must be rejected");
-
-        assert_eq!(err.error, "invalid_request");
-        assert_eq!(err.message, "token_name cannot be empty");
     }
 
     #[tokio::test]
@@ -1054,6 +1437,7 @@ mod tests {
         .0;
 
         assert_eq!(created.expires_in, MIN_TOKEN_TTL_SECONDS);
+        assert_eq!(created.token_plane, "runtime");
 
         let validated = validate_paseto_token(
             &created.access_token,
@@ -1063,6 +1447,8 @@ mod tests {
         .expect("created token should validate");
 
         assert_eq!(validated.token_id, created.token_id);
+        assert_eq!(validated.token_plane(), "runtime");
+        assert_eq!(validated.allowed_binding_handles(), None);
         assert!(validated.has_scope(&TokenScope::CredentialRead));
         assert!(validated.has_scope(&TokenScope::CredentialDecrypt));
         assert!(validated.has_scope(&TokenScope::SandboxWrite));
@@ -1123,6 +1509,124 @@ mod tests {
         assert!(request.scopes.is_empty());
         assert_eq!(request.expires_in, Some(300));
         assert!(request.credential_ids.is_empty());
+        assert!(request.binding_handles.is_empty());
+        assert!(request.token_name.is_none());
+    }
+
+    #[tokio::test]
+    async fn runtime_token_claims_are_explicitly_distinct_from_management_token() {
+        let (state, credential_id) = seed_test_state();
+        let management = session_token(vec![
+            TokenScope::TokensWrite,
+            TokenScope::CredentialRead,
+            TokenScope::TenantAdmin,
+        ]);
+
+        let created = create_token_handler(
+            State(state.clone()),
+            Extension(management.clone()),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(1800),
+                credential_ids: vec![credential_id],
+                token_name: None,
+                binding_handles: vec!["binding_demo_runtime".to_string()],
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        let runtime = validate_paseto_token(
+            &created.access_token,
+            state.token_secret_key.as_slice(),
+            "en",
+        )
+        .expect("runtime token should validate");
+
+        assert_eq!(management.issued_from(), TOKEN_ISSUED_FROM_SESSION);
+        assert_eq!(management.subject_type(), TOKEN_SUBJECT_TYPE_USER);
+        assert_eq!(management.token_plane(), "management");
+        assert_eq!(management.allowed_binding_handles(), None);
+
+        assert_eq!(runtime.issued_from(), TOKEN_ISSUED_FROM_ACCESS_TOKEN);
+        assert_eq!(runtime.subject_type(), TOKEN_SUBJECT_TYPE_USER);
+        assert_eq!(runtime.token_plane(), "runtime");
+        assert_eq!(
+            runtime.allowed_binding_handles(),
+            Some(&["binding_demo_runtime".to_string()][..])
+        );
+        assert_eq!(
+            created.binding_handles,
+            vec!["binding_demo_runtime".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn create_token_accepts_binding_handles_without_credential_ids() {
+        let (state, _credential_id) = seed_test_state();
+
+        let created = create_token_handler(
+            State(state.clone()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+                TokenScope::TenantAdmin,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(1800),
+                credential_ids: Vec::new(),
+                token_name: None,
+                binding_handles: vec!["binding_demo_runtime".to_string()],
+            }),
+        )
+        .await
+        .expect("token creation should succeed")
+        .0;
+
+        assert!(created.credential_ids.is_empty());
+        assert_eq!(
+            created.binding_handles,
+            vec!["binding_demo_runtime".to_string()]
+        );
+
+        let runtime = validate_paseto_token(
+            &created.access_token,
+            state.token_secret_key.as_slice(),
+            "en",
+        )
+        .expect("runtime token should validate");
+        assert_eq!(
+            runtime.allowed_binding_handles(),
+            Some(&["binding_demo_runtime".to_string()][..])
+        );
+    }
+
+    #[tokio::test]
+    async fn create_token_rejects_unknown_binding_handle() {
+        let (state, credential_id) = seed_test_state();
+
+        let err = create_token_handler(
+            State(state),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+                TokenScope::TenantAdmin,
+            ])),
+            Json(CreateTokenRequest {
+                scopes: vec!["credential:read".to_string()],
+                expires_in: Some(1800),
+                credential_ids: vec![credential_id],
+                token_name: None,
+                binding_handles: vec!["binding_not_found".to_string()],
+            }),
+        )
+        .await
+        .expect_err("unknown binding handle must be rejected");
+
+        assert_eq!(err.error, "not_found");
+        assert!(err.message.contains("Binding handle not found"));
     }
 
     #[tokio::test]
@@ -1160,6 +1664,7 @@ mod tests {
                 expires_in: None,
                 credential_ids: vec![credential_id],
                 token_name: None,
+                binding_handles: Vec::new(),
             }),
         )
         .await
@@ -1374,31 +1879,48 @@ mod tests {
 
     #[tokio::test]
     async fn list_tokens_returns_paginated_response() {
-        let (state, _) = seed_test_state();
+        let subject_id = Uuid::parse_str("00000000-0000-0000-0000-000000000456")
+            .expect("subject uuid should parse");
+        let tokens = (0..25)
+            .map(|index| make_token_metadata(index, subject_id))
+            .collect::<Vec<_>>();
         let response = list_tokens_handler(
-            State(state),
+            State(seed_token_list_state(tokens)),
             Extension(session_token(vec![TokenScope::TokensRead])),
             Query(ListTokensQuery {
-                page: 1,
-                page_size: 20,
+                page: 2,
+                page_size: 10,
             }),
         )
         .await
         .expect("list tokens should succeed")
         .0;
 
-        assert_eq!(response.page, 1);
-        assert_eq!(response.page_size, 20);
-        assert_eq!(response.total, 0);
-        assert_eq!(response.total_pages, 0);
-        assert!(response.items.is_empty());
+        assert_eq!(response.page, 2);
+        assert_eq!(response.page_size, 10);
+        assert_eq!(response.total, 25);
+        assert_eq!(response.total_pages, 3);
+        assert_eq!(response.items.len(), 10);
+        assert_eq!(
+            response
+                .items
+                .first()
+                .and_then(|item| item.token_name.as_deref()),
+            Some("token-10")
+        );
+        assert_eq!(
+            response
+                .items
+                .last()
+                .and_then(|item| item.token_name.as_deref()),
+            Some("token-19")
+        );
     }
 
     #[tokio::test]
     async fn list_tokens_page_zero_returns_400_invalid_request() {
-        let (state, _) = seed_test_state();
         let result = list_tokens_handler(
-            State(state),
+            State(seed_token_list_state(Vec::new())),
             Extension(session_token(vec![TokenScope::TokensRead])),
             Query(ListTokensQuery {
                 page: 0,
@@ -1425,12 +1947,14 @@ mod tests {
             subject_id: Uuid::new_v4().to_string(),
             tenant_id: Uuid::new_v4().to_string(),
             issued_from: TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string(),
+            token_plane: "runtime".to_string(),
             session_id: Some(Uuid::new_v4().to_string()),
             membership_id: Some(Uuid::new_v4().to_string()),
             display_name: Some("CredBridge CLI".to_string()),
             description: Some("regression fixture".to_string()),
             granted_scopes: vec!["tokens:read".to_string()],
             credential_ids: vec![Uuid::new_v4().to_string()],
+            binding_handles: vec!["binding_demo_runtime".to_string()],
             issued_membership_role_snapshot: Some("tenant_admin".to_string()),
             permission_source: Some("membership".to_string()),
             created_via: Some("api".to_string()),
@@ -1443,7 +1967,6 @@ mod tests {
 
         let payload = serde_json::to_value(ListTokensResponse::new(vec![item], 1, 20, 1))
             .expect("token list payload should serialize");
-
         let items = payload["items"]
             .as_array()
             .expect("token list payload must include items");

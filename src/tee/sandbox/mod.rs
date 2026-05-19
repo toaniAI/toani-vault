@@ -57,7 +57,6 @@
 //! }
 //! ```
 
-pub mod browser_runtime;
 pub mod config;
 pub mod credential_ns;
 pub mod domain_policy;
@@ -139,8 +138,6 @@ pub struct SandboxHealth {
     pub healthy: bool,
     /// 错误信息
     pub error: Option<String>,
-    /// browser runtime 自检错误
-    pub browser_runtime_probe_error: Option<String>,
     /// 进程树自检异常数量
     pub process_health_issues: usize,
     /// 进程树自检摘要

@@ -17,9 +17,9 @@ use uuid::Uuid;
 
 use super::error::AuthError;
 use super::models::{
-    ApiTokenMetadata, ApiTokenSubjectType, AuthAuditLog, AuthEventType, AuthSession,
-    CreateUserRequest, ExternalIdentity, IdentityProvider, InvitationStatus, InviteeType,
-    MembershipRole, PrivyAuthResponse, ServiceAccount, TenantInvitation, TenantMembership, User,
+    ApiTokenMetadata, AuthAuditLog, AuthEventType, AuthSession, CreateUserRequest,
+    ExternalIdentity, IdentityProvider, InvitationStatus, InviteeType, MembershipRole,
+    PrivyAuthResponse, ServiceAccount, TenantInvitation, TenantMembership, User,
 };
 use crate::audit::AuditRecorder;
 use crate::auth::privy::JwksVerifier;
@@ -302,25 +302,6 @@ pub trait AuthService: Send + Sync {
     async fn list_api_tokens(&self, tenant_id: Uuid) -> Result<Vec<ApiTokenMetadata>, AuthError> {
         let _ = tenant_id;
         Ok(Vec::new())
-    }
-
-    /// 分页列出租户内 API token 元数据。
-    async fn list_api_tokens_paginated(
-        &self,
-        tenant_id: Uuid,
-        subject_filter: Option<(ApiTokenSubjectType, Uuid)>,
-        page: usize,
-        page_size: usize,
-    ) -> Result<(Vec<ApiTokenMetadata>, usize), AuthError> {
-        let mut items = self.list_api_tokens(tenant_id).await?;
-        if let Some((subject_type, subject_id)) = subject_filter {
-            items.retain(|item| item.subject_type == subject_type && item.subject_id == subject_id);
-        }
-
-        let total = items.len();
-        let offset = page.saturating_sub(1) * page_size;
-        let items = items.into_iter().skip(offset).take(page_size).collect();
-        Ok((items, total))
     }
 
     /// 列出某个 service account 的 API token 元数据。
@@ -1100,22 +1081,25 @@ impl AuthServiceImpl {
             serde_json::to_value(&metadata.scopes).map_err(AuthError::SerializationError)?;
         let credential_ids = serde_json::to_value(&metadata.credential_ids)
             .map_err(AuthError::SerializationError)?;
+        let binding_handles = serde_json::to_value(&metadata.binding_handles)
+            .map_err(AuthError::SerializationError)?;
 
         let row = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
             INSERT INTO api_tokens (
-                id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+                id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                 session_id, membership_id, token_name, token_prefix, display_name, description,
-                scopes, credential_ids, issued_membership_role_snapshot, permission_source,
+                scopes, credential_ids, binding_handles, issued_membership_role_snapshot, permission_source,
                 created_via, revoked_reason, oauth_client_id, oauth_grant_type,
                 oauth_subject_mode, expires_at, revoked_at, created_at, last_used_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                    $18, $19, $20, $21, $22, $23, $24, $25, $26)
-            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+                    $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
                       ARRAY(SELECT jsonb_array_elements_text(credential_ids)) AS credential_ids,
+                      ARRAY(SELECT jsonb_array_elements_text(binding_handles)) AS binding_handles,
                       issued_membership_role_snapshot, permission_source, created_via,
                       revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
@@ -1128,6 +1112,7 @@ impl AuthServiceImpl {
         .bind(metadata.subject_id)
         .bind(metadata.tenant_id)
         .bind(&metadata.issued_from)
+        .bind(&metadata.token_plane)
         .bind(metadata.session_id)
         .bind(metadata.membership_id)
         .bind(&metadata.token_name)
@@ -1136,6 +1121,7 @@ impl AuthServiceImpl {
         .bind(&metadata.description)
         .bind(&scopes)
         .bind(&credential_ids)
+        .bind(&binding_handles)
         .bind(&metadata.issued_membership_role_snapshot)
         .bind(&metadata.permission_source)
         .bind(&metadata.created_via)
@@ -1161,10 +1147,11 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let rows = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
-            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(binding_handles)), ARRAY[]::text[]) AS binding_handles,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1181,65 +1168,6 @@ impl AuthServiceImpl {
         Ok(rows)
     }
 
-    async fn list_api_token_metadata_records_paginated(
-        &self,
-        tenant_id: Uuid,
-        subject_filter: Option<(ApiTokenSubjectType, Uuid)>,
-        page: usize,
-        page_size: usize,
-    ) -> Result<(Vec<ApiTokenMetadata>, usize), AuthError> {
-        let pool = self.require_pool()?;
-        let offset = page.saturating_sub(1) * page_size;
-        let (subject_id, subject_type) = match subject_filter {
-            Some((kind, id)) => (Some(id), Some(kind.as_str().to_string())),
-            None => (None, None),
-        };
-
-        let total: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*)
-            FROM api_tokens
-            WHERE tenant_id = $1
-              AND ($2::uuid IS NULL OR subject_id = $2)
-              AND ($3::varchar IS NULL OR subject_type = $3)
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(subject_id)
-        .bind(subject_type.clone())
-        .fetch_one(pool)
-        .await
-        .map_err(AuthError::DatabaseError)?;
-
-        let rows = sqlx::query_as::<_, ApiTokenMetadata>(
-            r#"
-            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
-                   session_id, membership_id, token_name, token_prefix, display_name, description,
-                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
-                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
-                   issued_membership_role_snapshot, permission_source, created_via,
-                   revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
-                   expires_at, revoked_at, created_at, last_used_at
-            FROM api_tokens
-            WHERE tenant_id = $1
-              AND ($2::uuid IS NULL OR subject_id = $2)
-              AND ($3::varchar IS NULL OR subject_type = $3)
-            ORDER BY created_at DESC
-            LIMIT $4 OFFSET $5
-            "#,
-        )
-        .bind(tenant_id)
-        .bind(subject_id)
-        .bind(subject_type)
-        .bind(page_size as i64)
-        .bind(offset as i64)
-        .fetch_all(pool)
-        .await
-        .map_err(AuthError::DatabaseError)?;
-
-        Ok((rows, total as usize))
-    }
-
     async fn list_api_token_metadata_for_service_account(
         &self,
         tenant_id: Uuid,
@@ -1248,10 +1176,11 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let rows = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
-            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(binding_handles)), ARRAY[]::text[]) AS binding_handles,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1278,10 +1207,11 @@ impl AuthServiceImpl {
         let pool = self.require_pool()?;
         let row = sqlx::query_as::<_, ApiTokenMetadata>(
             r#"
-            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+            SELECT id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                    session_id, membership_id, token_name, token_prefix, display_name, description,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(scopes)), ARRAY[]::text[]) AS scopes,
                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(credential_ids)), ARRAY[]::text[]) AS credential_ids,
+                   COALESCE(ARRAY(SELECT jsonb_array_elements_text(binding_handles)), ARRAY[]::text[]) AS binding_handles,
                    issued_membership_role_snapshot, permission_source, created_via,
                    revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                    expires_at, revoked_at, created_at, last_used_at
@@ -1308,10 +1238,11 @@ impl AuthServiceImpl {
             UPDATE api_tokens
             SET revoked_at = $2
             WHERE id = $1
-            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
                       ARRAY(SELECT jsonb_array_elements_text(credential_ids)) AS credential_ids,
+                      ARRAY(SELECT jsonb_array_elements_text(binding_handles)) AS binding_handles,
                       issued_membership_role_snapshot, permission_source, created_via,
                       revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
@@ -1337,10 +1268,11 @@ impl AuthServiceImpl {
             UPDATE api_tokens
             SET last_used_at = $2
             WHERE id = $1
-            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from,
+            RETURNING id, token_kind, token_type, subject_type, subject_id, tenant_id, issued_from, token_plane,
                       session_id, membership_id, token_name, token_prefix, display_name, description,
                       ARRAY(SELECT jsonb_array_elements_text(scopes)) AS scopes,
                       ARRAY(SELECT jsonb_array_elements_text(credential_ids)) AS credential_ids,
+                      ARRAY(SELECT jsonb_array_elements_text(binding_handles)) AS binding_handles,
                       issued_membership_role_snapshot, permission_source, created_via,
                       revoked_reason, oauth_client_id, oauth_grant_type, oauth_subject_mode,
                       expires_at, revoked_at, created_at, last_used_at
@@ -2522,6 +2454,10 @@ impl AuthService for AuthServiceImpl {
         user_id: Option<Uuid>,
         data: Option<JsonValue>,
     ) -> Result<(), AuthError> {
+        if event_type.is_login_flow_event() {
+            return Ok(());
+        }
+
         let log = AuthAuditLog::new(event_type)
             .with_user(user_id.unwrap_or(Uuid::nil()))
             .with_details(data.unwrap_or(JsonValue::Null));
@@ -2826,17 +2762,6 @@ impl AuthService for AuthServiceImpl {
         self.list_api_token_metadata_records(tenant_id).await
     }
 
-    async fn list_api_tokens_paginated(
-        &self,
-        tenant_id: Uuid,
-        subject_filter: Option<(ApiTokenSubjectType, Uuid)>,
-        page: usize,
-        page_size: usize,
-    ) -> Result<(Vec<ApiTokenMetadata>, usize), AuthError> {
-        self.list_api_token_metadata_records_paginated(tenant_id, subject_filter, page, page_size)
-            .await
-    }
-
     async fn list_service_account_api_tokens(
         &self,
         tenant_id: Uuid,
@@ -3059,6 +2984,25 @@ mod tests {
 
         let name = AuthServiceImpl::build_default_tenant_name(&response, &user);
         assert_eq!(name, format!("Default Tenant for {}", user.id));
+    }
+
+    #[tokio::test]
+    async fn test_audit_log_skips_login_flow_events_without_db() {
+        let tenant_manager = crate::tenant::TenantManager::new_simple(
+            crate::tenant::config::MemoryTenantConfigStore::new(),
+        );
+        let service = AuthServiceImpl::new_in_memory(tenant_manager);
+
+        service
+            .audit_log(AuthEventType::SessionCreated, Some(Uuid::nil()), None)
+            .await
+            .expect("login flow events should be ignored without touching auth_audit_logs");
+
+        let error = service
+            .audit_log(AuthEventType::InvitationCreated, Some(Uuid::nil()), None)
+            .await
+            .expect_err("non-login auth events should still reach persistent audit storage");
+        assert!(matches!(error, AuthError::InternalError(_)));
     }
 
     #[test]

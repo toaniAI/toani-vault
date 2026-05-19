@@ -388,11 +388,6 @@ fn test_signed_audit_entry_verification() {
         32,
         "Previous hash should be 32 bytes"
     );
-    assert_eq!(
-        signed.merkle_root.len(),
-        32,
-        "Merkle root should be 32 bytes"
-    );
     assert!(!signed.signature.is_empty(), "Should have signature");
     assert!(
         !signed.signer_fingerprint.is_empty(),
@@ -524,7 +519,6 @@ fn test_audit_report_generation() {
     assert_eq!(report.total_entries, 10);
     assert_eq!(report.success_count, 6); // 1,2,4,5,7,8 (not divisible by 3)
     assert_eq!(report.failure_count, 4); // 0,3,6,9 (divisible by 3)
-    assert!(!report.merkle_root.is_empty(), "Should have merkle root");
 }
 
 /// 测试：带参数的事件记录
@@ -678,16 +672,13 @@ fn test_audit_entry_age() {
     assert!(age < 1000, "Entry age should be less than 1 second");
 }
 
-/// 测试：Merkle Tree 根哈希更新
+/// 测试：链式哈希推进
 #[test]
-fn test_merkle_root_update() {
+fn test_chain_hash_progression() {
     let storage = create_memory_storage().expect("Should create storage");
-    let recorder = storage.recorder();
-
-    let root1 = recorder.merkle_root().expect("Should get merkle root");
 
     // 记录事件
-    let entry = AuditEntry::new(
+    let first_entry = AuditEntry::new(
         "user_hash",
         "session",
         "service",
@@ -696,12 +687,20 @@ fn test_merkle_root_update() {
         "mrenclave",
         "jti",
     );
-    storage.record(entry).unwrap();
+    let first_signed = storage.record(first_entry).unwrap();
 
-    let root2 = recorder.merkle_root().expect("Should get merkle root");
+    let second_entry = AuditEntry::new(
+        "user_hash_2",
+        "session_2",
+        "service",
+        AuditAction::TokenValidate,
+        Outcome::Success,
+        "mrenclave",
+        "jti_2",
+    );
+    let second_signed = storage.record(second_entry).unwrap();
 
-    // Merkle 根应该变化
-    assert_ne!(root1, root2, "Merkle root should change after adding entry");
+    assert_eq!(second_signed.prev_hash, first_signed.content_hash);
 }
 
 /// 测试：大规模审计记录性能
@@ -758,7 +757,6 @@ fn test_signed_entry_json_export() {
     assert!(json.contains("prev_hash"));
     assert!(json.contains("signature"));
     assert!(json.contains("signer_fingerprint"));
-    assert!(json.contains("merkle_root"));
 }
 
 /// 测试：审计条目导出

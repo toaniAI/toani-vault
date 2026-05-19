@@ -616,7 +616,7 @@ async function guidedSetup(baseUrl: string, skipValidate: boolean): Promise<void
   const hasCredential = await select({
     message: "Do you already have a credential set up?",
     options: [
-      { value: "no", label: "No, walk me through it", hint: "~30s in browser" },
+      { value: "no", label: "No, walk me through it", hint: "~30s in Dashboard" },
       { value: "yes", label: "Yes, skip to token", hint: "go straight to /tokens" },
       { value: "unsure", label: "Not sure — what's a credential?" },
     ],
@@ -641,7 +641,7 @@ async function guidedSetup(baseUrl: string, skipValidate: boolean): Promise<void
     await sleep(800);
 
     note(
-      `${pc.bold("In the browser:")}\n  ${pc.cyan("1.")} Click the orange ${pc.green('"+ New credential"')} button (top right)\n  ${pc.cyan("2.")} Fill in:\n       • Name        ${pc.cyan('(e.g. "Gmail")')}\n       • Type        ${pc.cyan("(Username / Password, API key, OAuth...)")}\n       • Username + Password\n       • Expiration  ${pc.cyan("(optional)")}\n  ${pc.cyan("3.")} Click orange ${pc.green('"Create securely"')}\n\n${pc.cyan("The credential is encrypted (AES-256-GCM) and stored in TEE.")}`,
+      `${pc.bold("In Dashboard:")}\n  ${pc.cyan("1.")} Click the orange ${pc.green('"+ New credential"')} button (top right)\n  ${pc.cyan("2.")} Fill in:\n       • Name        ${pc.cyan('(e.g. "Gmail")')}\n       • Type        ${pc.cyan("(Username / Password, API key, OAuth...)")}\n       • Username + Password\n       • Expiration  ${pc.cyan("(optional)")}\n  ${pc.cyan("3.")} Click orange ${pc.green('"Create securely"')}\n\n${pc.cyan("The credential is encrypted (AES-256-GCM) and stored in TEE.")}`,
       pc.cyan("What to do"),
       { format: (value) => value },
     );
@@ -665,7 +665,7 @@ async function guidedSetup(baseUrl: string, skipValidate: boolean): Promise<void
   await sleep(800);
 
   note(
-    `${pc.bold("In the browser:")}\n  ${pc.cyan("1.")} Pick a ${pc.green("scope")}  ${pc.cyan('(start with "Read credentials" / credential:read)')}\n  ${pc.cyan("2.")} Select your credential under ${pc.green('"Allowed credentials"')}\n  ${pc.cyan("3.")} Pick token expiry  ${pc.cyan("(1 hour or 7 days)")}\n  ${pc.cyan("4.")} Click orange ${pc.green('"Generate token"')}\n  ${pc.cyan("5.")} On the right panel, click ${pc.green("[📋 Copy]")}  ${pc.yellow("← only shown ONCE")}\n\n${pc.yellow("I'll detect the copy automatically — no need to paste here.")}`,
+    `${pc.bold("In Dashboard:")}\n  ${pc.cyan("1.")} Pick a ${pc.green("scope")}  ${pc.cyan('(start with "Read credentials" / credential:read)')}\n  ${pc.cyan("2.")} Select your credential under ${pc.green('"Allowed credentials"')}\n  ${pc.cyan("3.")} Pick token expiry  ${pc.cyan("(1 hour or 7 days)")}\n  ${pc.cyan("4.")} Click orange ${pc.green('"Generate token"')}\n  ${pc.cyan("5.")} On the right panel, click ${pc.green("[📋 Copy]")}  ${pc.yellow("← only shown ONCE")}\n\n${pc.yellow("I'll detect the copy automatically — no need to paste here.")}`,
     pc.cyan("What to do"),
     { format: (value) => value },
   );
@@ -722,12 +722,12 @@ export async function runLogin(
       {
         value: "no",
         label: "No, I'll sign up first",
-        hint: "opens sign-up page",
+        hint: "opens Dashboard sign-up",
       },
       {
         value: "paste",
         label: "I already have a token",
-        hint: "skip browser, just paste",
+        hint: "paste token directly",
       },
     ],
   });
@@ -737,13 +737,13 @@ export async function runLogin(
   }
 
   if (accountState === "no") {
-    log.step("Opening Dashboard in your browser...");
+    log.step("Opening Dashboard...");
     log.info(pc.dim(`  → ${DASHBOARD_CREDENTIALS_URL}`));
     await open(DASHBOARD_CREDENTIALS_URL);
     await sleep(800);
 
     note(
-      `${pc.bold("In the browser:")}\n  ${pc.cyan("1.")} If you're not signed in yet, enter your email\n  ${pc.cyan("2.")} Check inbox for OTP from privy.io  ${pc.cyan("(takes ~30s)")}\n  ${pc.cyan("3.")} Paste the 6-digit code\n  ${pc.cyan("4.")} ${pc.cyan("(First time only)")} Set Display Name → Complete Setup\n  ${pc.cyan("5.")} Once signed in, continue on the ${pc.green("Credentials")} page\n\n${pc.yellow("When you're done →")} come back here and press ${pc.green("Enter")} to continue.`,
+      `${pc.bold("In Dashboard:")}\n  ${pc.cyan("1.")} If you're not signed in yet, enter your email\n  ${pc.cyan("2.")} Check inbox for OTP from privy.io  ${pc.cyan("(takes ~30s)")}\n  ${pc.cyan("3.")} Paste the 6-digit code\n  ${pc.cyan("4.")} ${pc.cyan("(First time only)")} Set Display Name → Complete Setup\n  ${pc.cyan("5.")} Once signed in, continue on the ${pc.green("Credentials")} page\n\n${pc.yellow("When you're done →")} come back here and press ${pc.green("Enter")} to continue.`,
       pc.cyan("Step 1 of 3 — Sign in / Sign up"),
       { format: (value) => value },
     );

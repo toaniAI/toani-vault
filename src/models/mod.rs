@@ -21,9 +21,6 @@ pub enum CredentialType {
     /// 会话 Cookie
     #[serde(rename = "session_cookie")]
     SessionCookie,
-    /// KYC 文档
-    #[serde(rename = "kyc_document")]
-    KycDocument,
     /// 客户端证书
     #[serde(rename = "client_certificate")]
     ClientCertificate,
@@ -43,7 +40,6 @@ impl CredentialType {
             CredentialType::OAuthRefresh => "oauth_token",
             CredentialType::ApiKey => "api_key",
             CredentialType::SessionCookie => "session_cookie",
-            CredentialType::KycDocument => "kyc_document",
             CredentialType::ClientCertificate => "client_certificate",
             CredentialType::SshKey => "ssh_key",
             CredentialType::DatabaseConnection => "database_connection",
@@ -172,6 +168,14 @@ mod tests {
         for value in legacy_values {
             let parsed: CredentialType = serde_json::from_str(value).unwrap();
             assert_eq!(parsed, CredentialType::OAuthRefresh);
+        }
+    }
+
+    #[test]
+    fn removed_credential_types_do_not_deserialize() {
+        for value in ["\"kyc_document\"", "\"zk_kyc_credential\""] {
+            let parsed = serde_json::from_str::<CredentialType>(value);
+            assert!(parsed.is_err(), "{value} should be rejected");
         }
     }
 

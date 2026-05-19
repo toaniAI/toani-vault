@@ -257,48 +257,15 @@ pub struct WarmInstanceInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationType {
-    /// 页面导航
-    Navigate,
-    /// 点击元素
-    Click,
-    /// 填写表单
-    Fill,
-    /// 获取文本
-    GetText,
-    /// 导出数据
-    Export,
-    /// 导出 DOM
-    DomExport,
-    /// 执行脚本
-    ExecuteScript,
-    /// 受控页面启动脚本注入
-    BootstrapPage,
-    /// 等待元素
-    Wait,
     /// 直接发起 HTTP 请求
     HttpRequest,
     /// 自定义操作
     Custom,
 }
 
-impl OperationType {
-    pub fn requires_browser(self) -> bool {
-        !matches!(self, OperationType::HttpRequest | OperationType::Custom)
-    }
-}
-
 impl std::fmt::Display for OperationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OperationType::Navigate => write!(f, "navigate"),
-            OperationType::Click => write!(f, "click"),
-            OperationType::Fill => write!(f, "fill"),
-            OperationType::GetText => write!(f, "get_text"),
-            OperationType::Export => write!(f, "export"),
-            OperationType::DomExport => write!(f, "dom_export"),
-            OperationType::ExecuteScript => write!(f, "execute_script"),
-            OperationType::BootstrapPage => write!(f, "bootstrap_page"),
-            OperationType::Wait => write!(f, "wait"),
             OperationType::HttpRequest => write!(f, "http_request"),
             OperationType::Custom => write!(f, "custom"),
         }
@@ -501,9 +468,7 @@ mod tests {
 
     #[test]
     fn test_operation_type_display() {
-        assert_eq!(OperationType::Navigate.to_string(), "navigate");
-        assert_eq!(OperationType::DomExport.to_string(), "dom_export");
-        assert_eq!(OperationType::BootstrapPage.to_string(), "bootstrap_page");
         assert_eq!(OperationType::HttpRequest.to_string(), "http_request");
+        assert_eq!(OperationType::Custom.to_string(), "custom");
     }
 }

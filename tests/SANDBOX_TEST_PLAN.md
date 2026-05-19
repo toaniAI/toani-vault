@@ -1,4 +1,4 @@
-# ToaniVault 沙箱功能测试计划
+# CredBridge 沙箱功能测试计划
 
 > 本文档详细描述了 TEE 安全执行沙箱的测试策略、测试用例和验收标准。
 
@@ -18,7 +18,7 @@
 
 ### 测试目标
 
-对 ToaniVault TEE 安全执行沙箱进行全面测试，确保：
+对 CredBridge TEE 安全执行沙箱进行全面测试，确保：
 
 - 沙箱隔离机制有效（Namespaces + cgroups + seccomp）
 - 会话生命周期管理正确

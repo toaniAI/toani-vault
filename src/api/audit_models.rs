@@ -142,6 +142,12 @@ pub struct AuditLogQueryRequest {
     /// 每页数量
     #[serde(default = "default_page_size")]
     pub page_size: usize,
+    /// 偏移量（与 `limit` 配对，兼容旧分页风格）
+    #[serde(default)]
+    pub offset: Option<usize>,
+    /// 返回条数限制（兼容旧分页风格）
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 fn default_page() -> usize {
@@ -173,7 +179,8 @@ impl AuditLogQueryRequest {
         }
 
         // 验证分页大小
-        if self.page_size == 0 || self.page_size > 1000 {
+        let page_size = self.effective_page_size();
+        if page_size == 0 || page_size > 1000 {
             return Err("分页大小必须在 1-1000 之间".to_string());
         }
 
@@ -182,7 +189,21 @@ impl AuditLogQueryRequest {
 
     /// 获取偏移量
     pub fn offset(&self) -> usize {
-        (self.page - 1) * self.page_size
+        self.offset
+            .unwrap_or_else(|| (self.page - 1) * self.effective_page_size())
+    }
+
+    /// 获取实际分页大小
+    pub fn effective_page_size(&self) -> usize {
+        self.limit.unwrap_or(self.page_size)
+    }
+
+    /// 获取当前页码
+    pub fn current_page(&self) -> usize {
+        match self.offset {
+            Some(offset) => (offset / self.effective_page_size()) + 1,
+            None => self.page,
+        }
     }
 
     /// 设置开始时间
@@ -233,6 +254,13 @@ impl AuditLogQueryRequest {
         self.page_size = page_size;
         self
     }
+
+    /// 设置 offset/limit 分页
+    pub fn with_offset_limit(mut self, offset: usize, limit: usize) -> Self {
+        self.offset = Some(offset);
+        self.limit = Some(limit);
+        self
+    }
 }
 
 impl Default for AuditLogQueryRequest {
@@ -247,6 +275,8 @@ impl Default for AuditLogQueryRequest {
             service: None,
             page: default_page(),
             page_size: default_page_size(),
+            offset: None,
+            limit: None,
         }
     }
 }
@@ -315,8 +345,14 @@ pub struct AuditLogListData {
     pub page: usize,
     /// 每页数量
     pub page_size: usize,
+    /// 分页偏移量
+    pub offset: usize,
+    /// 分页限制
+    pub limit: usize,
     /// 总页数
     pub total_pages: usize,
+    /// 是否存在下一页
+    pub has_more: bool,
 }
 
 impl AuditLogListResponse {
@@ -326,8 +362,14 @@ impl AuditLogListResponse {
         total: u64,
         page: usize,
         page_size: usize,
+        offset: usize,
     ) -> Self {
-        let total_pages = ((total as f64) / (page_size as f64)).ceil() as usize;
+        let total_pages = if total == 0 {
+            0
+        } else {
+            total.div_ceil(page_size as u64) as usize
+        };
+        let has_more = (offset as u64 + items.len() as u64) < total;
         Self {
             success: true,
             data: AuditLogListData {
@@ -335,7 +377,10 @@ impl AuditLogListResponse {
                 total,
                 page,
                 page_size,
+                offset,
+                limit: page_size,
                 total_pages,
+                has_more,
             },
             error: None,
         }
@@ -350,7 +395,10 @@ impl AuditLogListResponse {
                 total: 0,
                 page: 1,
                 page_size: 20,
+                offset: 0,
+                limit: 20,
                 total_pages: 0,
+                has_more: false,
             },
             error: Some(message.into()),
         }
@@ -364,22 +412,6 @@ pub struct AuditLogParamItem {
     pub key: String,
     /// 参数值
     pub value: String,
-}
-
-/// Merkle Tree 证明响应
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct MerkleProofResponse {
-    /// 包含证明
-    pub inclusion_proof: Vec<String>,
-    /// 一致性证明
-    pub consistency_proof: Vec<String>,
-    /// 树大小
-    pub tree_size: u64,
-    /// 根哈希
-    pub root_hash: String,
-    /// 事务 ID
-    pub transaction_id: u64,
 }
 
 /// 审计日志详情响应
@@ -431,13 +463,8 @@ pub struct AuditLogDetailData {
     pub content_hash: String,
     /// 前一哈希
     pub previous_hash: String,
-    /// Merkle 根哈希
-    pub merkle_root: String,
     /// 签名者指纹
     pub signer_fingerprint: String,
-    /// Merkle Tree 证明
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proof: Option<MerkleProofResponse>,
 }
 
 impl AuditLogDetailResponse {
@@ -460,8 +487,8 @@ impl AuditLogDetailResponse {
     }
 }
 
-impl From<(SignedAuditEntry, Option<MerkleProofResponse>)> for AuditLogDetailData {
-    fn from((entry, proof): (SignedAuditEntry, Option<MerkleProofResponse>)) -> Self {
+impl From<SignedAuditEntry> for AuditLogDetailData {
+    fn from(entry: SignedAuditEntry) -> Self {
         let params = entry.entry.params.map(|p| {
             p.into_iter()
                 .map(|(k, v)| AuditLogParamItem {
@@ -487,9 +514,7 @@ impl From<(SignedAuditEntry, Option<MerkleProofResponse>)> for AuditLogDetailDat
             log_index: entry.log_index,
             content_hash: hex::encode(entry.content_hash),
             previous_hash: hex::encode(entry.prev_hash),
-            merkle_root: hex::encode(entry.merkle_root),
             signer_fingerprint: entry.signer_fingerprint.clone(),
-            proof,
         }
     }
 }
@@ -711,8 +736,6 @@ pub struct AuditVerifyData {
     pub content_hash_match: bool,
     /// 签名验证
     pub signature_valid: bool,
-    /// Merkle 证明验证
-    pub merkle_proof_valid: bool,
     /// 验证详情
     pub details: Vec<VerificationDetail>,
     /// 验证时间戳
@@ -770,6 +793,8 @@ mod tests {
         let req = AuditLogQueryRequest::default();
         assert_eq!(req.page, 1);
         assert_eq!(req.page_size, 20);
+        assert_eq!(req.offset, None);
+        assert_eq!(req.limit, None);
         assert!(req.start_time.is_none());
         assert!(req.end_time.is_none());
     }
@@ -790,10 +815,25 @@ mod tests {
         let req = AuditLogQueryRequest::new().with_pagination(1, 1001);
         assert!(req.validate().is_err());
 
+        let req = AuditLogQueryRequest::new().with_offset_limit(0, 1001);
+        assert!(req.validate().is_err());
+
         let req = AuditLogQueryRequest::new()
             .with_start_time(1000)
             .with_end_time(2000)
             .with_pagination(1, 50);
+        assert!(req.validate().is_ok());
+    }
+
+    #[test]
+    fn test_audit_log_query_request_supports_offset_limit() {
+        let req = AuditLogQueryRequest::new()
+            .with_pagination(2, 20)
+            .with_offset_limit(6, 3);
+
+        assert_eq!(req.effective_page_size(), 3);
+        assert_eq!(req.offset(), 6);
+        assert_eq!(req.current_page(), 3);
         assert!(req.validate().is_ok());
     }
 
@@ -811,11 +851,14 @@ mod tests {
             log_index: 0,
         }];
 
-        let response = AuditLogListResponse::success(items, 1, 1, 20);
+        let response = AuditLogListResponse::success(items, 1, 1, 20, 0);
         assert!(response.success);
         assert_eq!(response.data.total, 1);
         assert_eq!(response.data.page, 1);
+        assert_eq!(response.data.offset, 0);
+        assert_eq!(response.data.limit, 20);
         assert_eq!(response.data.total_pages, 1);
+        assert!(!response.data.has_more);
 
         let error_response = AuditLogListResponse::error("测试错误");
         assert!(!error_response.success);

@@ -8,9 +8,6 @@
 //! - POST   /api/v1/sandbox/sessions/:id/pause    - 暂停会话
 //! - POST   /api/v1/sandbox/sessions/:id/resume   - 恢复会话
 //! - DELETE /api/v1/sandbox/sessions/:id          - 关闭会话
-//! - POST   /api/v1/sandbox/sessions/:id/export   - 导出数据
-//! - POST   /api/v1/sandbox/sessions/:id/dom-export - 导出 DOM
-
 use crate::api::context::{ApiContext, RequestContext};
 use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
@@ -43,7 +40,6 @@ use axum::{
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
@@ -357,116 +353,6 @@ pub struct ExecuteOperationResponse {
     pub execution_time_ms: u64,
 }
 
-/// DOM 导出请求
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DomExportRequest {
-    /// 根节点选择器
-    #[serde(default = "default_dom_export_root_selector")]
-    pub root_selector: String,
-    /// 导出格式
-    #[serde(default)]
-    pub format: DomExportFormat,
-    /// 是否包含文本
-    #[serde(default = "default_true")]
-    pub include_text: bool,
-    /// 是否包含元数据
-    #[serde(default = "default_true")]
-    pub include_metadata: bool,
-    /// 额外敏感选择器
-    #[serde(default)]
-    pub extra_sensitive_selectors: Vec<String>,
-    /// 最大返回字节数
-    #[serde(default = "default_dom_export_max_bytes")]
-    pub max_bytes: u64,
-}
-
-/// DOM 导出格式
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum DomExportFormat {
-    /// HTML 字符串
-    #[default]
-    Html,
-    /// 纯文本
-    Text,
-    /// JSON 结构
-    Json,
-}
-
-impl DomExportFormat {
-    fn as_str(self) -> &'static str {
-        match self {
-            DomExportFormat::Html => "html",
-            DomExportFormat::Text => "text",
-            DomExportFormat::Json => "json",
-        }
-    }
-}
-
-/// DOM 导出响应
-#[derive(Debug, Serialize)]
-pub struct DomExportResponse {
-    /// 操作 ID
-    pub operation_id: Uuid,
-    /// 是否成功
-    pub success: bool,
-    /// 导出格式
-    pub format: String,
-    /// 返回数据
-    pub data: Option<serde_json::Value>,
-    /// 是否已截断
-    pub truncated: bool,
-    /// 错误信息
-    pub error: Option<String>,
-    /// 执行时间（毫秒）
-    pub execution_time_ms: u64,
-}
-
-fn default_dom_export_root_selector() -> String {
-    "html".to_string()
-}
-
-fn default_dom_export_max_bytes() -> u64 {
-    262_144
-}
-
-fn default_true() -> bool {
-    true
-}
-
-/// 导出数据请求
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ExportDataRequest {
-    /// 导出格式
-    pub format: ExportFormat,
-    /// 数据选择器
-    pub selectors: Vec<String>,
-}
-
-/// 导出格式
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExportFormat {
-    Json,
-    Csv,
-    Pdf,
-}
-
-/// 导出数据响应
-#[derive(Debug, Serialize)]
-pub struct ExportDataResponse {
-    /// 导出 ID
-    pub export_id: Uuid,
-    /// 导出数据（Base64 编码）
-    pub data_base64: String,
-    /// 格式
-    pub format: String,
-    /// 文件名
-    pub filename: String,
-    /// 大小（字节）
-    pub size_bytes: usize,
-}
-
 /// 会话操作响应
 #[derive(Debug, Serialize)]
 pub struct SessionActionResponse {
@@ -500,7 +386,6 @@ pub struct SandboxStatsApiResponse {
     pub warm_instances: usize,
     pub healthy: bool,
     pub error: Option<String>,
-    pub browser_runtime_probe_error: Option<String>,
     pub process_health_issues: usize,
     pub process_health_summaries: Vec<String>,
 }
@@ -1302,248 +1187,6 @@ pub async fn close_session(
     }
 }
 
-/// POST /api/v1/sandbox/sessions/:id/dom-export - 导出 DOM
-pub async fn dom_export(
-    State(state): State<SandboxState>,
-    OriginalUri(original_uri): OriginalUri,
-    method: Method,
-    headers: HeaderMap,
-    Extension(token): Extension<ValidatedToken>,
-    Path(id_str): Path<String>,
-    Json(request): Json<DomExportRequest>,
-) -> Response {
-    // 验证 Scope: sandbox:execute
-    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
-        return e;
-    }
-
-    // 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
-    let id = Uuid::parse_str(&id_str)
-        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
-    let id = match id {
-        Ok(uuid) => uuid,
-        Err(e) => return e.into_response(),
-    };
-
-    let session_id = SessionId::from(id);
-    let request_body = match serde_json::to_vec(&request) {
-        Ok(body) => body,
-        Err(error) => {
-            return ApiErrorResponse::internal_error(format!(
-                "failed to serialize DOM export request for forwarding: {error}"
-            ))
-            .into_response();
-        }
-    };
-    let session = match resolve_owner_bound_session(
-        &state,
-        &token,
-        session_id,
-        ForwardRequest {
-            method: &method,
-            original_uri: &original_uri,
-            headers: &headers,
-            body: Some(request_body),
-        },
-    )
-    .await
-    {
-        Ok(session) => session,
-        Err(response) => return response,
-    };
-
-    let operation_type = OperationType::DomExport;
-    let mut parameters = HashMap::new();
-    parameters.insert(
-        "root_selector".to_string(),
-        serde_json::Value::String(request.root_selector),
-    );
-    parameters.insert(
-        "format".to_string(),
-        serde_json::Value::String(request.format.as_str().to_string()),
-    );
-    parameters.insert(
-        "include_text".to_string(),
-        serde_json::Value::Bool(request.include_text),
-    );
-    parameters.insert(
-        "include_metadata".to_string(),
-        serde_json::Value::Bool(request.include_metadata),
-    );
-    parameters.insert(
-        "extra_sensitive_selectors".to_string(),
-        serde_json::Value::Array(
-            request
-                .extra_sensitive_selectors
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        ),
-    );
-    parameters.insert(
-        "max_bytes".to_string(),
-        serde_json::Value::Number(request.max_bytes.into()),
-    );
-
-    let (mut audit_parameters, resolved_parameters, _) =
-        match resolve_operation_parameters(&state, session.as_ref(), &operation_type, &parameters)
-            .await
-        {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
-    redact_persisted_parameters(
-        &operation_type,
-        &parameters,
-        &resolved_parameters,
-        &mut audit_parameters,
-    );
-
-    let operation = OperationRequest {
-        operation_id: Uuid::new_v4(),
-        operation_type,
-        description: "DOM export".to_string(),
-        parameters: audit_parameters,
-        resolved_parameters,
-        sensitive_output_values: Vec::new(),
-        created_at: OffsetDateTime::now_utc(),
-    };
-
-    match session.execute_operation(operation.clone()).await {
-        Ok(result) => {
-            let format = result
-                .data
-                .as_ref()
-                .and_then(|data| data.get("format"))
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("html")
-                .to_string();
-            let truncated = result
-                .data
-                .as_ref()
-                .and_then(|data| data.get("truncated"))
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false);
-            let response = DomExportResponse {
-                operation_id: operation.operation_id,
-                success: result.success,
-                format,
-                data: result.data,
-                truncated,
-                error: result.error,
-                execution_time_ms: result.execution_time_ms,
-            };
-
-            Json(ApiSuccessResponse::new(response)).into_response()
-        }
-        Err(e) => map_sandbox_error(e).into_response(),
-    }
-}
-
-/// POST /api/v1/sandbox/sessions/:id/export - 导出数据
-pub async fn export_data(
-    State(state): State<SandboxState>,
-    OriginalUri(original_uri): OriginalUri,
-    method: Method,
-    headers: HeaderMap,
-    Extension(token): Extension<ValidatedToken>,
-    Path(id_str): Path<String>,
-    Json(request): Json<ExportDataRequest>,
-) -> Response {
-    // 验证 Scope: sandbox:execute
-    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
-        return e;
-    }
-
-    // 手动解析 UUID，确保非 UUID 路径参数返回标准 JSON 错误
-    let id = Uuid::parse_str(&id_str)
-        .map_err(|_| ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID"));
-    let id = match id {
-        Ok(uuid) => uuid,
-        Err(e) => return e.into_response(),
-    };
-
-    let session_id = SessionId::from(id);
-    let request_body = match serde_json::to_vec(&request) {
-        Ok(body) => body,
-        Err(error) => {
-            return ApiErrorResponse::internal_error(format!(
-                "failed to serialize export request for forwarding: {error}"
-            ))
-            .into_response();
-        }
-    };
-    let session = match resolve_owner_bound_session(
-        &state,
-        &token,
-        session_id,
-        ForwardRequest {
-            method: &method,
-            original_uri: &original_uri,
-            headers: &headers,
-            body: Some(request_body),
-        },
-    )
-    .await
-    {
-        Ok(session) => session,
-        Err(response) => return response,
-    };
-
-    // 构建导出操作参数
-    let mut parameters = HashMap::new();
-    parameters.insert(
-        "format".to_string(),
-        serde_json::Value::String(format!("{:?}", request.format).to_lowercase()),
-    );
-    parameters.insert(
-        "selectors".to_string(),
-        serde_json::Value::Array(
-            request
-                .selectors
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        ),
-    );
-
-    // 构建导出操作
-    let operation = OperationRequest {
-        operation_id: Uuid::new_v4(),
-        operation_type: OperationType::Export,
-        description: "Export data".to_string(),
-        parameters,
-        resolved_parameters: HashMap::new(),
-        sensitive_output_values: Vec::new(),
-        created_at: OffsetDateTime::now_utc(),
-    };
-
-    match session.execute_operation(operation).await {
-        Ok(result) => {
-            let export_id = Uuid::new_v4();
-            let format_str = format!("{:?}", request.format).to_lowercase();
-
-            // 从执行结果中提取导出数据
-            let export_data = result
-                .data
-                .map(|d| d.to_string().into_bytes())
-                .unwrap_or_default();
-            let base64_data = STANDARD.encode(&export_data);
-
-            let response = ExportDataResponse {
-                export_id,
-                data_base64: base64_data,
-                format: format_str.clone(),
-                filename: format!("export_{export_id}. {format_str}"),
-                size_bytes: export_data.len(),
-            };
-
-            Json(ApiSuccessResponse::new(response)).into_response()
-        }
-        Err(e) => map_sandbox_error(e).into_response(),
-    }
-}
-
 /// GET /api/v1/sandbox/operations/:operation_id - 获取操作详情
 pub async fn get_operation(
     State(state): State<SandboxState>,
@@ -1613,7 +1256,6 @@ pub async fn get_stats(
         warm_instances: health.warm_instances,
         healthy: health.healthy,
         error: health.error,
-        browser_runtime_probe_error: health.browser_runtime_probe_error,
         process_health_issues: health.process_health_issues,
         process_health_summaries: health.process_health_summaries,
     };
@@ -1632,11 +1274,24 @@ async fn check_scope(token: &ValidatedToken, required: TokenScope) -> Result<(),
     Ok(())
 }
 
+fn is_binding_handle_only_runtime_token(token: &ValidatedToken) -> bool {
+    token.issued_from() == TOKEN_ISSUED_FROM_ACCESS_TOKEN
+        && token.allowed_credential_ids().is_none()
+        && token.allowed_binding_handles().is_some()
+}
+
 async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Response> {
     check_scope(token, TokenScope::CredentialRead).await?;
     check_scope(token, TokenScope::CredentialDecrypt).await?;
 
     if token.issued_from() == TOKEN_ISSUED_FROM_ACCESS_TOKEN {
+        if is_binding_handle_only_runtime_token(token) {
+            return Err(ApiErrorResponse::forbidden(
+                "binding_handle-scoped runtime tokens cannot access legacy credential-centric sandbox routes",
+            )
+            .into_response());
+        }
+
         return Ok(());
     }
 
@@ -1813,41 +1468,15 @@ fn redact_persisted_parameters(
     resolved_parameters: &HashMap<String, serde_json::Value>,
     persisted_parameters: &mut HashMap<String, serde_json::Value>,
 ) {
-    match operation_type {
-        OperationType::Fill => {
-            let is_sensitive = original_parameters
-                .get("sensitive")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or_else(|| {
-                    original_parameters
-                        .get("value")
-                        .and_then(|value| parse_credential_reference(value).ok().flatten())
-                        .is_some()
-                });
-
-            if is_sensitive
-                && let Some(value) = persisted_parameters.get_mut("value")
-                && value.is_string()
-            {
-                *value = serde_json::Value::String("[REDACTED]".to_string());
-            }
+    if operation_type == &OperationType::HttpRequest {
+        for (key, persisted_value) in persisted_parameters.iter_mut() {
+            redact_http_request_value(
+                key,
+                original_parameters.get(key),
+                resolved_parameters.get(key),
+                persisted_value,
+            );
         }
-        OperationType::ExecuteScript => {
-            if let Some(bindings) = persisted_parameters.get_mut("bindings") {
-                redact_nested_strings(bindings);
-            }
-        }
-        OperationType::HttpRequest => {
-            for (key, persisted_value) in persisted_parameters.iter_mut() {
-                redact_http_request_value(
-                    key,
-                    original_parameters.get(key),
-                    resolved_parameters.get(key),
-                    persisted_value,
-                );
-            }
-        }
-        _ => {}
     }
 }
 
@@ -1966,32 +1595,6 @@ fn is_credential_reference_value(value: &serde_json::Value) -> bool {
         .is_some_and(|field| !field.trim().is_empty())
 }
 
-fn redact_nested_strings(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::String(_) => {
-            *value = serde_json::Value::String("[REDACTED]".to_string());
-        }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                redact_nested_strings(item);
-            }
-        }
-        serde_json::Value::Object(map) => {
-            for nested in map.values_mut() {
-                if nested
-                    .get("$credential")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some()
-                {
-                    continue;
-                }
-                redact_nested_strings(nested);
-            }
-        }
-        _ => {}
-    }
-}
-
 async fn resolve_parameter_value(
     state: &SandboxState,
     session: &dyn SandboxSession,
@@ -1999,22 +1602,6 @@ async fn resolve_parameter_value(
     value: &serde_json::Value,
 ) -> Result<(serde_json::Value, serde_json::Value), Response> {
     if let Some(reference) = parse_credential_reference(value)? {
-        if matches!(
-            operation_type,
-            OperationType::BootstrapPage | OperationType::ExecuteScript
-        ) {
-            return Err(ApiErrorResponse::invalid_request(match operation_type {
-                OperationType::BootstrapPage => {
-                    "bootstrap_page does not accept credential references"
-                }
-                OperationType::ExecuteScript => {
-                    "execute_script does not accept credential references"
-                }
-                _ => unreachable!(),
-            })
-            .into_response());
-        }
-
         let material = load_session_credential_material(state, session)
             .await
             .map_err(|error| map_sandbox_error(error).into_response())?;
@@ -2275,6 +1862,12 @@ fn ensure_credential_exists(
     token: &ValidatedToken,
     credential_id: Uuid,
 ) -> Result<(), SandboxError> {
+    if is_binding_handle_only_runtime_token(token) {
+        return Err(SandboxError::Other(
+            "forbidden: binding_handle-scoped runtime tokens cannot access legacy credential-centric sandbox routes".to_string(),
+        ));
+    }
+
     if !token.can_access_credential(&credential_id.to_string()) {
         return Err(SandboxError::Other(
             "forbidden: credential is not allowed by the current token whitelist".to_string(),
@@ -2457,15 +2050,6 @@ fn parse_uuid(s: &str) -> Uuid {
 /// 解析操作类型
 fn parse_operation_type(s: &str) -> Option<OperationType> {
     match s.to_lowercase().as_str() {
-        "navigate" => Some(OperationType::Navigate),
-        "click" => Some(OperationType::Click),
-        "fill" => Some(OperationType::Fill),
-        "get_text" => Some(OperationType::GetText),
-        "export" => Some(OperationType::Export),
-        "domexport" | "dom-export" | "dom_export" => Some(OperationType::DomExport),
-        "execute_script" => Some(OperationType::ExecuteScript),
-        "bootstrappage" | "bootstrap-page" | "bootstrap_page" => Some(OperationType::BootstrapPage),
-        "wait" => Some(OperationType::Wait),
         "http_request" => Some(OperationType::HttpRequest),
         "custom" => Some(OperationType::Custom),
         _ => None,
@@ -2618,44 +2202,6 @@ async fn execute_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
     )
 }
 
-/// 兜底处理器：POST /sandbox/sessions/export 缺少会话ID时返回404
-/// 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn export_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "success": false,
-            "error": {
-                "code": "SESSION_NOT_FOUND",
-                "message": "沙箱会话不存在"
-            },
-            "meta": {
-                "request_id": uuid::Uuid::now_v7().to_string(),
-                "timestamp": chrono::Utc::now().to_rfc3339()
-            }
-        })),
-    )
-}
-
-/// 兜底处理器：POST /sandbox/sessions/dom-export 缺少会话ID时返回404
-/// 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn dom_export_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "success": false,
-            "error": {
-                "code": "SESSION_NOT_FOUND",
-                "message": "沙箱会话不存在"
-            },
-            "meta": {
-                "request_id": uuid::Uuid::now_v7().to_string(),
-                "timestamp": chrono::Utc::now().to_rfc3339()
-            }
-        })),
-    )
-}
-
 /// 兜底处理器：DELETE /sandbox/sessions 缺少会话ID时返回404
 /// BUG-18225: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
 async fn close_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
@@ -2687,11 +2233,6 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
             "/sandbox/sessions/execute",
             post(execute_missing_id_handler),
         )
-        .route("/sandbox/sessions/export", post(export_missing_id_handler))
-        .route(
-            "/sandbox/sessions/dom-export",
-            post(dom_export_missing_id_handler),
-        )
         // 带动态段的路由（必须在静态兜底路由之后）
         .route("/sandbox/sessions/:id", get(get_session))
         .route("/sandbox/sessions/:id/execute", post(execute_operation))
@@ -2699,8 +2240,6 @@ pub fn sandbox_routes() -> axum::Router<SandboxState> {
         .route("/sandbox/sessions/:id/pause", post(pause_session))
         .route("/sandbox/sessions/:id/resume", post(resume_session))
         .route("/sandbox/sessions/:id", delete(close_session))
-        .route("/sandbox/sessions/:id/export", post(export_data))
-        .route("/sandbox/sessions/:id/dom-export", post(dom_export))
         .route("/sandbox/stats", get(get_stats))
         // WebSocket 实时连接
         .route(
@@ -2933,7 +2472,6 @@ mod tests {
                 warm_instances: 0,
                 healthy: true,
                 error: None,
-                browser_runtime_probe_error: None,
                 process_health_issues: 0,
                 process_health_summaries: Vec::new(),
             }
@@ -3097,43 +2635,17 @@ mod tests {
     #[test]
     fn test_parse_operation_type() {
         assert!(matches!(
-            parse_operation_type("navigate"),
-            Some(OperationType::Navigate)
-        ));
-        assert!(matches!(
-            parse_operation_type("click"),
-            Some(OperationType::Click)
-        ));
-        assert!(matches!(
-            parse_operation_type("dom_export"),
-            Some(OperationType::DomExport)
-        ));
-        assert!(matches!(
             parse_operation_type("http_request"),
             Some(OperationType::HttpRequest)
         ));
         assert!(matches!(
-            parse_operation_type("bootstrap_page"),
-            Some(OperationType::BootstrapPage)
+            parse_operation_type("custom"),
+            Some(OperationType::Custom)
         ));
-        assert!(matches!(
-            parse_operation_type("bootstrap-page"),
-            Some(OperationType::BootstrapPage)
-        ));
+        assert!(parse_operation_type("navigate").is_none());
+        assert!(parse_operation_type("dom_export").is_none());
         assert!(parse_operation_type("screenshot").is_none());
         assert!(parse_operation_type("invalid").is_none());
-    }
-
-    #[test]
-    fn test_dom_export_request_defaults() {
-        let request: DomExportRequest = serde_json::from_str("{}").unwrap();
-
-        assert_eq!(request.root_selector, "html");
-        assert!(matches!(request.format, DomExportFormat::Html));
-        assert!(request.include_text);
-        assert!(request.include_metadata);
-        assert!(request.extra_sensitive_selectors.is_empty());
-        assert_eq!(request.max_bytes, 262_144);
     }
 
     #[test]
@@ -3404,6 +2916,36 @@ mod tests {
             .expect("dashboard-issued access token with decrypt scope should pass");
     }
 
+    #[tokio::test]
+    async fn test_check_create_session_scopes_rejects_binding_handle_only_runtime_token() {
+        let mut token = create_mock_token(
+            "tenant_123",
+            "user_456",
+            vec![TokenScope::CredentialRead, TokenScope::CredentialDecrypt],
+        );
+        token.issued_from = TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string();
+        token.allowed_binding_handles = Some(vec!["binding_demo_runtime".to_string()]);
+
+        let response = check_create_session_scopes(&token).await.expect_err(
+            "binding_handle-only runtime token must be rejected for legacy sandbox routes",
+        );
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body_bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
+
+        assert_eq!(body["error"], "forbidden");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("binding_handle-scoped runtime tokens"),
+            "message should explain the legacy credential-centric boundary"
+        );
+    }
+
     #[test]
     fn test_ensure_credential_exists_returns_credential_not_found() {
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxWrite]);
@@ -3487,6 +3029,28 @@ mod tests {
                 );
             }
             other => panic!("expected invalid_request Other error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_ensure_credential_exists_rejects_binding_handle_only_runtime_token() {
+        let mut token = create_mock_token(
+            "tenant_123",
+            "user_456",
+            vec![TokenScope::CredentialRead, TokenScope::CredentialDecrypt],
+        );
+        token.issued_from = TOKEN_ISSUED_FROM_ACCESS_TOKEN.to_string();
+        token.allowed_binding_handles = Some(vec!["binding_demo_runtime".to_string()]);
+
+        let error = ensure_credential_exists(None, &token, Uuid::new_v4()).expect_err(
+            "binding_handle-only runtime token must not enter legacy credential routes",
+        );
+
+        match error {
+            SandboxError::Other(message) => {
+                assert!(message.contains("binding_handle-scoped runtime tokens"));
+            }
+            other => panic!("expected forbidden Other error, got {other:?}"),
         }
     }
 
@@ -3599,34 +3163,6 @@ mod tests {
         }))
         .expect_err("non-string suffix should fail");
         assert_eq!(suffix_response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn test_resolve_parameter_value_rejects_execute_script_credential_references() {
-        let config = SandboxConfig::default();
-        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState::new_with_pool(pool, config);
-        let session = create_stub_session();
-
-        let response = resolve_parameter_value(
-            &state,
-            &session,
-            &OperationType::ExecuteScript,
-            &serde_json::json!({ "$credential": "password" }),
-        )
-        .await
-        .expect_err("execute_script should not accept credential references");
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body_bytes = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("response body");
-        let body: Value = serde_json::from_slice(&body_bytes).expect("json body");
-        assert_eq!(
-            body["message"],
-            "execute_script does not accept credential references"
-        );
     }
 
     #[tokio::test]
@@ -4426,35 +3962,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_dom_export_missing_session_id_returns_not_found() {
-        // POST /sandbox/sessions/dom-export 缺少会话ID应返回404，
-        // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-        // 注意：兜底处理器不依赖状态，因此使用空状态即可测试路由匹配
-        let config = SandboxConfig::default();
-        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
-        let state = SandboxState::new_with_pool(pool, config);
-        let app = sandbox_routes().with_state(state);
-
-        let request = Request::builder()
-            .method("POST")
-            .uri("/sandbox/sessions/dom-export")
-            .header("content-type", "application/json")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(
-            response.status(),
-            StatusCode::NOT_FOUND,
-            "POST /sandbox/sessions/dom-export 应返回 404 Not Found"
-        );
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let payload: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(payload["error"]["code"], "SESSION_NOT_FOUND");
-    }
-
-    #[tokio::test]
     async fn test_pause_missing_session_id_returns_not_found() {
         // BUG-18223 回归测试：POST /sandbox/sessions/pause 缺少会话ID应返回404，
         // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
@@ -4662,13 +4169,6 @@ mod tests {
     #[test]
     fn test_resume_session_invalid_uuid_returns_invalid_request() {
         // BUG-18224: POST /sandbox/sessions/not-a-uuid/resume 应返回 400 invalid_request
-        let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
-        assert_eq!(error.error, "invalid_request");
-    }
-
-    #[test]
-    fn test_dom_export_invalid_uuid_returns_invalid_request() {
-        // POST /sandbox/sessions/not-a-uuid/dom-export 非UUID路径参数返回 400
         let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
         assert_eq!(error.error, "invalid_request");
     }
