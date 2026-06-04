@@ -490,6 +490,7 @@ impl CredentialVault {
             encrypted_payload,
             request.expires_at,
             CredentialTransportConfig {
+                requires_approval: request.requires_approval,
                 provider: request.provider,
                 allowed_domains: request.allowed_domains,
                 custom_functions: request.custom_functions,
@@ -531,6 +532,7 @@ impl CredentialVault {
             encrypted_payload,
             request.expires_at,
             CredentialTransportConfig {
+                requires_approval: request.requires_approval,
                 provider: request.provider,
                 allowed_domains: request.allowed_domains,
                 custom_functions: request.custom_functions,
@@ -793,6 +795,7 @@ impl CredentialVault {
             entry.version,
             entry.encrypted_payload.clone(),
             CredentialTransportConfig {
+                requires_approval: entry.requires_approval,
                 provider: entry.provider,
                 allowed_domains: entry.allowed_domains.clone(),
                 custom_functions: entry.custom_functions.clone(),
@@ -894,6 +897,7 @@ impl CredentialVault {
             entry.version,
             entry.encrypted_payload.clone(),
             CredentialTransportConfig {
+                requires_approval: entry.requires_approval,
                 provider: entry.provider,
                 allowed_domains: entry.allowed_domains.clone(),
                 custom_functions: entry.custom_functions.clone(),
@@ -906,6 +910,7 @@ impl CredentialVault {
 
         // 复制目标版本的加密载荷到当前凭证
         entry.encrypted_payload = target_record.encrypted_payload;
+        entry.requires_approval = target_record.requires_approval;
         entry.provider = target_record.provider;
         entry.allowed_domains = target_record.allowed_domains;
         entry.custom_functions = target_record.custom_functions;
@@ -979,6 +984,7 @@ pub fn create_credential(
         service_id: ServiceId::new(service_id),
         credential_type,
         expires_at,
+        requires_approval: false,
         provider: None,
         allowed_domains: Vec::new(),
         custom_functions: Vec::new(),
@@ -1200,6 +1206,7 @@ mod tests {
             service_id: ServiceId::new("schwab"),
             credential_type: CredentialType::UsernamePassword,
             expires_at: None,
+            requires_approval: false,
             provider: None,
             allowed_domains: Vec::new(),
             custom_functions: Vec::new(),
@@ -1467,6 +1474,7 @@ mod tests {
             service_id: ServiceId::new("okx-service"),
             credential_type: CredentialType::ApiKey,
             expires_at: None,
+            requires_approval: false,
             provider: Some(CredentialProvider::Okx),
             allowed_domains: vec!["www.okx.com:443".to_string()],
             custom_functions: vec![CredentialCustomFunction {

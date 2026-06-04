@@ -96,7 +96,7 @@ describe("isDirectExecution", () => {
   it("treats a symlinked CLI entry as direct execution", () => {
     const realEntry = path.resolve("src/index.ts");
     const tempDir = mkdtempSync(path.join(os.tmpdir(), "toani-cli-"));
-    const symlinkPath = path.join(tempDir, "toani");
+    const symlinkPath = path.join(tempDir, "toani-vault");
     symlinkSync(realEntry, symlinkPath);
     tempPaths.push(symlinkPath);
 

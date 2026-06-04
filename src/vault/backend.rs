@@ -130,6 +130,7 @@ impl VaultStorageBackend {
             entry.encrypted_payload.auth_tag.clone(),
         );
         data.is_deleted = entry.is_deleted;
+        data.requires_approval = entry.requires_approval;
         // 修正：当 updated_at 为 0 时表示未更新，使用 None 而非 Some(0)
         // 避免审计记录显示为 1970 年
         data.updated_at = if entry.updated_at == 0 {
@@ -181,6 +182,7 @@ impl VaultStorageBackend {
             expires_at: data.expires_at,
             encrypted_payload,
             is_deleted: data.is_deleted,
+            requires_approval: data.requires_approval,
             provider,
             allowed_domains: data.allowed_domains.clone(),
             custom_functions: data.custom_functions.clone(),

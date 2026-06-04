@@ -1602,12 +1602,12 @@ pub async fn complete_onboarding_handler(
 }
 
 fn validate_display_name(display_name: Option<&str>) -> Option<ApiErrorResponse> {
-    if let Some(display_name) = display_name {
-        if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
-            return Some(ApiErrorResponse::invalid_request(
-                "display_name must be 128 characters or fewer",
-            ));
-        }
+    if let Some(display_name) = display_name
+        && display_name.chars().count() > MAX_DISPLAY_NAME_CHARS
+    {
+        return Some(ApiErrorResponse::invalid_request(
+            "display_name must be 128 characters or fewer",
+        ));
     }
 
     None

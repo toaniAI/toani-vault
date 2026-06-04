@@ -51,6 +51,7 @@ const PUBLIC_REQUIRED_TABLES: &[&str] = &[
     "credential_versions",
     "sandbox_sessions",
     "sandbox_operations",
+    "http_request_operations",
     "service_accounts",
     "api_tokens",
     "oauth_provider_definitions",

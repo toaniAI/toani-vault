@@ -9,17 +9,20 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tower::ServiceExt;
 
 use tokio::sync::Mutex;
+use vault_service::api::audit::MemoryAuditStorageAdapter;
 use vault_service::api::credentials::{
-    AppState, AuditLogger, DefaultAuditLogger, UpdateCredentialApiRequest, create_credential,
-    decrypt_credential_endpoint, delete_credential, get_credential, list_credentials,
-    update_credential,
+    AppState, AuditLogger, DefaultAuditLogger, StorageAuditLogger, UpdateCredentialApiRequest,
+    create_credential, decrypt_credential_endpoint, delete_credential, get_credential,
+    list_credentials, update_credential,
 };
 use vault_service::api::middleware::{TokenScope, ValidatedToken};
 use vault_service::api::versions::{get_version_detail, get_version_history};
+use vault_service::audit::{AuditAction, MemoryAuditStorage};
 use vault_service::crypto::EncryptedBlob;
 use vault_service::crypto::constants;
 use vault_service::crypto::hkdf::KeyHierarchy;
@@ -40,6 +43,7 @@ impl AuditLogger for FailingAuditLogger {
         _tenant_id: &str,
         _user_id: &str,
         _credential_id: &str,
+        _credential_name: &str,
         _jti: &str,
         _mrenclave: &str,
     ) -> Result<(), String> {
@@ -51,10 +55,23 @@ impl AuditLogger for FailingAuditLogger {
         _tenant_id: &str,
         _user_id: &str,
         _credential_id: &str,
+        _credential_name: &str,
         _jti: &str,
         _mrenclave: &str,
     ) -> Result<(), String> {
         Err("forced credential access audit failure".to_string())
+    }
+
+    async fn log_credential_updated(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        _credential_id: &str,
+        _credential_name: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        Err("forced credential update audit failure".to_string())
     }
 
     async fn log_credential_deleted(
@@ -62,6 +79,7 @@ impl AuditLogger for FailingAuditLogger {
         _tenant_id: &str,
         _user_id: &str,
         _credential_id: &str,
+        _credential_name: &str,
         _jti: &str,
         _mrenclave: &str,
     ) -> Result<(), String> {
@@ -73,6 +91,7 @@ impl AuditLogger for FailingAuditLogger {
         _tenant_id: &str,
         _user_id: &str,
         _credential_id: &str,
+        _credential_name: &str,
         _success: bool,
         _jti: &str,
         _mrenclave: &str,
@@ -83,6 +102,17 @@ impl AuditLogger for FailingAuditLogger {
 
 /// 设置测试状态
 async fn setup_test_state() -> AppState {
+    setup_test_state_with_audit_logger(Arc::new(DefaultAuditLogger)).await
+}
+
+fn temp_sealed_storage_path(test_name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "credbridge-credentials-api-{test_name}-{}",
+        uuid::Uuid::new_v4()
+    ))
+}
+
+async fn setup_test_state_with_audit_logger(audit_logger: Arc<dyn AuditLogger>) -> AppState {
     let vault = CredentialVault::new_in_memory();
     let mut hierarchy = KeyHierarchy::new();
     let l0 = HardwareRootKey::for_simulation().expect("failed to create simulation hardware root");
@@ -92,18 +122,118 @@ async fn setup_test_state() -> AppState {
     let key_hierarchy = Arc::new(RwLock::new(hierarchy));
     let mut enclave = Enclave::new(EnclaveConfig {
         debug_mode: true,
+        sealed_storage_path: temp_sealed_storage_path("state")
+            .to_string_lossy()
+            .to_string(),
         ..Default::default()
     });
     enclave
         .initialize()
         .expect("failed to initialize test enclave");
-    let audit_logger: Arc<dyn AuditLogger> = Arc::new(DefaultAuditLogger);
 
     AppState {
         vault: Arc::new(vault),
         key_hierarchy,
         enclave: Arc::new(Mutex::new(enclave)),
         audit_logger,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AuditCall {
+    action: &'static str,
+    credential_id: String,
+    credential_name: String,
+}
+
+#[derive(Default)]
+struct RecordingAuditLogger {
+    calls: std::sync::Mutex<Vec<AuditCall>>,
+}
+
+impl RecordingAuditLogger {
+    fn snapshot(&self) -> Vec<AuditCall> {
+        self.calls.lock().expect("audit call lock poisoned").clone()
+    }
+
+    fn push(&self, action: &'static str, credential_id: &str, credential_name: &str) {
+        self.calls
+            .lock()
+            .expect("audit call lock poisoned")
+            .push(AuditCall {
+                action,
+                credential_id: credential_id.to_string(),
+                credential_name: credential_name.to_string(),
+            });
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditLogger for RecordingAuditLogger {
+    async fn log_credential_created(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        self.push("created", credential_id, credential_name);
+        Ok(())
+    }
+
+    async fn log_credential_accessed(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        self.push("accessed", credential_id, credential_name);
+        Ok(())
+    }
+
+    async fn log_credential_updated(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        self.push("updated", credential_id, credential_name);
+        Ok(())
+    }
+
+    async fn log_credential_deleted(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        self.push("deleted", credential_id, credential_name);
+        Ok(())
+    }
+
+    async fn log_decryption_attempt(
+        &self,
+        _tenant_id: &str,
+        _user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        _success: bool,
+        _jti: &str,
+        _mrenclave: &str,
+    ) -> Result<(), String> {
+        self.push("decrypt", credential_id, credential_name);
+        Ok(())
     }
 }
 
@@ -217,6 +347,48 @@ async fn test_create_credential_success_with_write_scope() {
     assert_ne!(response.status(), StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn test_create_credential_logs_credential_name() {
+    let audit_logger = Arc::new(RecordingAuditLogger::default());
+    let state = setup_test_state_with_audit_logger(audit_logger.clone()).await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let (status, response) = create_credential(
+        axum::extract::State(state),
+        axum::Extension(token),
+        Ok(axum::Json(
+            vault_service::api::credentials::CreateCredentialApiRequest {
+                service_id: "test_service".to_string(),
+                credential_type: "username_password".to_string(),
+                plaintext_data: serde_json::json!({
+                    "username": "test_user",
+                    "password": "secret123"
+                }),
+                expires_at: None,
+                requires_approval: false,
+                provider: None,
+                allowed_domains: None,
+                custom_functions: None,
+            },
+        )),
+    )
+    .await
+    .expect("create should succeed");
+
+    assert_eq!(status, StatusCode::CREATED);
+
+    let calls = audit_logger.snapshot();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0],
+        AuditCall {
+            action: "created",
+            credential_id: response.credential_id.clone(),
+            credential_name: "test_service".to_string(),
+        }
+    );
+}
+
 /// 测试创建凭证缺少 write scope
 #[tokio::test]
 async fn test_create_credential_missing_scope() {
@@ -264,6 +436,7 @@ async fn test_create_credential_succeeds_when_audit_write_fails_after_persist() 
                     "password": "secret123"
                 }),
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: None,
                 custom_functions: None,
@@ -299,6 +472,7 @@ async fn test_create_credential_rejects_past_expires_at() {
                     "password": "secret123"
                 }),
                 expires_at: Some(past_expires_at),
+                requires_approval: false,
                 provider: None,
                 allowed_domains: None,
                 custom_functions: None,
@@ -341,7 +515,8 @@ async fn test_create_credential_rejects_invalid_credential_type() {
                 "credential_type": "invalid_credential_type_xyz",
                 "plaintext_data": {
                     "dsn": "postgres://user:pass@localhost:5432/app"
-                }
+                },
+                "allowed_domains": ["api.example.com"]
             })
             .to_string(),
         ))
@@ -454,6 +629,280 @@ async fn test_create_credential_rejects_invalid_allowed_domains() {
 }
 
 #[tokio::test]
+async fn test_create_credential_allows_missing_allowed_domains_for_username_password() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "approval-default-service",
+                "credential_type": "username_password",
+                "plaintext_data": {
+                    "username": "test_user",
+                    "password": "secret123"
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["credential_type"].as_str(), Some("username_password"));
+    assert_eq!(json["allowed_domains"].as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
+async fn test_create_credential_rejects_missing_allowed_domains_for_api_key() {
+    let state = setup_test_state().await;
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "api-key-service",
+                "credential_type": "api_key",
+                "plaintext_data": {
+                    "api_key": "ak_test",
+                    "secret_key": "sk_test"
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["error"].as_str(), Some("invalid_request"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("allowed_domains")
+    );
+}
+
+#[tokio::test]
+async fn test_create_credential_defaults_requires_approval_to_false() {
+    let state = setup_test_state().await;
+    let token = create_test_token(
+        "tenant_123",
+        "user_456",
+        vec![TokenScope::CredentialWrite, TokenScope::CredentialRead],
+    );
+    let app = test_router(state, token);
+
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "approval-default-service",
+                "credential_type": "username_password",
+                "plaintext_data": {
+                    "username": "test_user",
+                    "password": "secret123"
+                },
+                "allowed_domains": ["api.example.com"]
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let create_body = axum::body::to_bytes(create_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let create_json: serde_json::Value = serde_json::from_slice(&create_body).unwrap();
+    assert_eq!(create_json["requires_approval"].as_bool(), Some(false));
+
+    let credential_id = create_json["credential_id"]
+        .as_str()
+        .expect("create response should include credential_id");
+
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.clone().oneshot(list_request).await.unwrap();
+    assert_eq!(list_response.status(), StatusCode::OK);
+
+    let list_body = axum::body::to_bytes(list_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+    let list_items = list_json["items"].as_array().unwrap();
+    let created_item = list_items
+        .iter()
+        .find(|item| item["credential_id"].as_str() == Some(credential_id))
+        .expect("created credential should appear in list");
+    assert_eq!(created_item["requires_approval"].as_bool(), Some(false));
+
+    let detail_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/credentials/{credential_id}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let detail_response = app.oneshot(detail_request).await.unwrap();
+    assert_eq!(detail_response.status(), StatusCode::OK);
+
+    let detail_body = axum::body::to_bytes(detail_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let detail_json: serde_json::Value = serde_json::from_slice(&detail_body).unwrap();
+    assert_eq!(detail_json["requires_approval"].as_bool(), Some(false));
+}
+
+#[tokio::test]
+async fn test_create_credential_persists_requires_approval_in_list_and_detail() {
+    let state = setup_test_state().await;
+    let token = create_test_token(
+        "tenant_123",
+        "user_456",
+        vec![TokenScope::CredentialWrite, TokenScope::CredentialRead],
+    );
+    let app = test_router(state, token);
+
+    let create_request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::json!({
+                "service_id": "approval-required-service",
+                "credential_type": "api_key",
+                "plaintext_data": {
+                    "api_key": "ak_test"
+                },
+                "requires_approval": true,
+                "allowed_domains": ["api.example.com"]
+            })
+            .to_string(),
+        ))
+        .unwrap();
+
+    let create_response = app.clone().oneshot(create_request).await.unwrap();
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+
+    let create_body = axum::body::to_bytes(create_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let create_json: serde_json::Value = serde_json::from_slice(&create_body).unwrap();
+    assert_eq!(create_json["requires_approval"].as_bool(), Some(true));
+
+    let credential_id = create_json["credential_id"]
+        .as_str()
+        .expect("create response should include credential_id");
+
+    let list_request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials")
+        .body(Body::empty())
+        .unwrap();
+
+    let list_response = app.clone().oneshot(list_request).await.unwrap();
+    assert_eq!(list_response.status(), StatusCode::OK);
+
+    let list_body = axum::body::to_bytes(list_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+    let list_items = list_json["items"].as_array().unwrap();
+    let created_item = list_items
+        .iter()
+        .find(|item| item["credential_id"].as_str() == Some(credential_id))
+        .expect("created credential should appear in list");
+    assert_eq!(created_item["requires_approval"].as_bool(), Some(true));
+
+    let detail_request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/credentials/{credential_id}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let detail_response = app.oneshot(detail_request).await.unwrap();
+    assert_eq!(detail_response.status(), StatusCode::OK);
+
+    let detail_body = axum::body::to_bytes(detail_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let detail_json: serde_json::Value = serde_json::from_slice(&detail_body).unwrap();
+    assert_eq!(detail_json["requires_approval"].as_bool(), Some(true));
+}
+
+#[tokio::test]
+async fn test_update_credential_rejects_empty_allowed_domains() {
+    let state = setup_test_state().await;
+    let tenant_id = TenantId::new("tenant_123");
+    let user_id = UserId::new("user_456");
+    let created = state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: tenant_id.clone(),
+                user_id: user_id.clone(),
+                service_id: ServiceId::new("update-allowed-domains-service"),
+                credential_type: CredentialType::ApiKey,
+                expires_at: None,
+                requires_approval: false,
+                provider: None,
+                allowed_domains: vec!["api.example.com".to_string()],
+                custom_functions: Vec::new(),
+            },
+            create_test_payload(),
+        )
+        .expect("credential should be created");
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+    let error = update_credential(
+        axum::extract::State(state),
+        axum::Extension(token),
+        axum::extract::Path(created.credential_id.as_str().to_string()),
+        Ok(axum::Json(UpdateCredentialApiRequest {
+            plaintext_data: serde_json::json!({
+                "api_key": "ak_updated"
+            }),
+            change_reason: Some("reject empty allowlist".to_string()),
+            provider: None,
+            allowed_domains: Some(Vec::new()),
+            custom_functions: None,
+        })),
+    )
+    .await
+    .expect_err("empty allowed_domains should be rejected");
+
+    assert_eq!(error.error, "invalid_request");
+    assert!(error.message.contains("allowed_domains"));
+}
+
+#[tokio::test]
 async fn test_update_credential_normalizes_oauth_plaintext_before_encrypting() {
     let state = setup_test_state().await;
     let tenant_id = TenantId::new("tenant_123");
@@ -467,6 +916,7 @@ async fn test_update_credential_normalizes_oauth_plaintext_before_encrypting() {
                 service_id: ServiceId::new("oauth-service"),
                 credential_type: CredentialType::OAuthRefresh,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -509,6 +959,121 @@ async fn test_update_credential_normalizes_oauth_plaintext_before_encrypting() {
     assert_eq!(plaintext["note"], "preserved");
 }
 
+#[tokio::test]
+async fn test_update_credential_logs_credential_name() {
+    let audit_logger = Arc::new(RecordingAuditLogger::default());
+    let state = setup_test_state_with_audit_logger(audit_logger.clone()).await;
+    let tenant_id = TenantId::new("tenant_123");
+    let user_id = UserId::new("user_456");
+    let created = state
+        .vault
+        .create_credential(
+            CreateCredentialRequest {
+                tenant_id: tenant_id.clone(),
+                user_id: user_id.clone(),
+                service_id: ServiceId::new("oauth-service"),
+                credential_type: CredentialType::OAuthRefresh,
+                expires_at: None,
+                requires_approval: false,
+                provider: None,
+                allowed_domains: Vec::new(),
+                custom_functions: Vec::new(),
+            },
+            create_test_payload(),
+        )
+        .expect("credential should be created");
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialWrite]);
+
+    let _ = update_credential(
+        axum::extract::State(state),
+        axum::Extension(token),
+        axum::extract::Path(created.credential_id.as_str().to_string()),
+        Ok(axum::Json(UpdateCredentialApiRequest {
+            plaintext_data: serde_json::json!({
+                "refresh_token": "rt_updated",
+                "note": "preserved"
+            }),
+            change_reason: Some("normalize oauth payload".to_string()),
+            provider: None,
+            allowed_domains: None,
+            custom_functions: None,
+        })),
+    )
+    .await
+    .expect("update should succeed");
+
+    let calls = audit_logger.snapshot();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0],
+        AuditCall {
+            action: "updated",
+            credential_id: created.credential_id.as_str().to_string(),
+            credential_name: "oauth-service".to_string(),
+        }
+    );
+}
+
+#[tokio::test]
+async fn test_storage_audit_logger_records_credential_name_for_update() {
+    let shared_storage = Arc::new(tokio::sync::Mutex::new(
+        MemoryAuditStorage::new(1000).expect("memory audit storage should initialize"),
+    ));
+    let audit_storage = Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
+        shared_storage.clone(),
+    ));
+    let audit_logger = StorageAuditLogger::new(audit_storage);
+
+    audit_logger
+        .log_credential_updated(
+            "tenant_123",
+            "user_456",
+            "cred_123",
+            "svc-name",
+            "jti_123",
+            "mrenclave_test",
+        )
+        .await
+        .expect("credential update audit should succeed");
+
+    let recorded = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let entries = {
+                let storage = shared_storage.lock().await;
+                storage
+                    .query_recent(10)
+                    .expect("audit entries should be queryable")
+            };
+
+            if let Some(entry) = entries.into_iter().next() {
+                return entry;
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("audit entry should be recorded");
+
+    assert_eq!(recorded.entry.action, AuditAction::CredentialUpdate);
+
+    let params = recorded
+        .entry
+        .params
+        .expect("audit entry should include params");
+    assert!(
+        params
+            .iter()
+            .any(|(key, value)| { key == "credential_id" && value.to_string() == "cred_123" })
+    );
+    assert!(
+        params
+            .iter()
+            .any(|(key, value)| { key == "credential_name" && value.to_string() == "svc-name" })
+    );
+}
+
 /// 测试获取凭证列表
 #[tokio::test]
 async fn test_list_credentials() {
@@ -541,6 +1106,7 @@ async fn test_list_credentials_applies_real_pagination() {
                     service_id: ServiceId::new(service_id),
                     credential_type: CredentialType::ApiKey,
                     expires_at: None,
+                    requires_approval: false,
                     provider: None,
                     allowed_domains: Vec::new(),
                     custom_functions: Vec::new(),
@@ -575,6 +1141,59 @@ async fn test_list_credentials_applies_real_pagination() {
     assert_eq!(credentials.len(), 1);
 }
 
+#[tokio::test]
+async fn test_list_credentials_page_two_preserves_requires_approval_field() {
+    let state = setup_test_state().await;
+
+    for index in 0..11 {
+        state
+            .vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new("tenant_123"),
+                    user_id: UserId::new("user_456"),
+                    service_id: ServiceId::new(format!("paged-service-{index}")),
+                    credential_type: CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: index == 0,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                create_test_payload(),
+            )
+            .unwrap();
+    }
+
+    let token = create_test_token("tenant_123", "user_456", vec![TokenScope::CredentialRead]);
+    let app = test_router(state, token);
+
+    let request = Request::builder()
+        .method("GET")
+        .uri("/api/v1/credentials?page=2&page_size=10")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let credentials = json["items"].as_array().unwrap();
+
+    assert_eq!(json["page"].as_u64(), Some(2));
+    assert_eq!(json["page_size"].as_u64(), Some(10));
+    assert_eq!(json["total"].as_u64(), Some(11));
+    assert_eq!(json["total_pages"].as_u64(), Some(2));
+    assert_eq!(credentials.len(), 1);
+    assert!(
+        credentials[0]["requires_approval"].is_boolean(),
+        "page 2 list item should include boolean requires_approval field"
+    );
+}
+
 /// 测试获取凭证列表时保留已过期但未删除的凭证
 #[tokio::test]
 async fn test_list_credentials_includes_expired_entries() {
@@ -594,6 +1213,7 @@ async fn test_list_credentials_includes_expired_entries() {
                 service_id: ServiceId::new("expired_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -654,6 +1274,7 @@ async fn test_list_credentials_filters_by_service_id() {
                 service_id: ServiceId::new("github-prod"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -671,6 +1292,7 @@ async fn test_list_credentials_filters_by_service_id() {
                 service_id: ServiceId::new("aws-dev"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -716,6 +1338,7 @@ async fn test_list_credentials_filters_by_credential_type() {
                 service_id: ServiceId::new("github-prod"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -733,6 +1356,7 @@ async fn test_list_credentials_filters_by_credential_type() {
                 service_id: ServiceId::new("aws-dev"),
                 credential_type: CredentialType::UsernamePassword,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -783,6 +1407,7 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
                 service_id: ServiceId::new("expired-service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -800,6 +1425,7 @@ async fn test_list_credentials_only_valid_filters_expired_entries() {
                 service_id: ServiceId::new("valid-service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -1017,6 +1643,7 @@ async fn test_decrypt_endpoint_is_disabled_for_expired_credentials_too() {
                 service_id: ServiceId::new("expired_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: Some(expired_at),
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -1093,6 +1720,7 @@ async fn test_decrypt_cross_tenant_credential_returns_forbidden() {
                 service_id: ServiceId::new("test_service"),
                 credential_type: CredentialType::ApiKey,
                 expires_at: None,
+                requires_approval: false,
                 provider: None,
                 allowed_domains: Vec::new(),
                 custom_functions: Vec::new(),
@@ -1227,7 +1855,8 @@ async fn test_create_credential_empty_service_id_returns_400() {
                 "credential_type": "api_key",
                 "plaintext_data": {
                     "key": "test_key"
-                }
+                },
+                "allowed_domains": ["api.example.com"]
             })
             .to_string(),
         ))

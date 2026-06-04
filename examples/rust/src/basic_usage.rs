@@ -68,6 +68,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 credential_type: CredentialType::ApiKey,
                 plaintext_data: okx_plaintext,
                 expires_at: Some(chrono::Utc::now().timestamp() + 86400 * 90),
+                requires_approval: Some(false),
                 provider: Some(CredentialProvider::Okx),
                 allowed_domains: vec![
                     "www.okx.com:443".to_string(),

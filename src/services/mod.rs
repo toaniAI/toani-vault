@@ -21,6 +21,7 @@ pub mod vault_service {
         pub service_id: String,
         pub plaintext: Vec<u8>,
         pub expires_at: Option<u64>,
+        pub requires_approval: bool,
     }
 
     /// 创建凭证响应

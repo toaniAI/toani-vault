@@ -198,6 +198,22 @@ impl NsjailSandbox {
         *self.status.read().await
     }
 
+    /// 获取进程健康状态
+    pub fn process_health(&self) -> Option<SandboxProcessHealth> {
+        let pid = self.pid()?;
+        let health = Self::inspect_process_tree(pid);
+        if !health.is_healthy() {
+            warn!(
+                sandbox_id = %self.id,
+                pid = pid,
+                zombie_count = health.zombie_count,
+                zombie_pids = ?health.zombie_pids,
+                "Sandbox process tree unhealthy"
+            );
+        }
+        Some(health)
+    }
+
     /// 获取进程 ID
     pub fn pid(&self) -> Option<u32> {
         self.process.as_ref().and_then(|p| p.id())
@@ -464,55 +480,66 @@ impl NsjailSandbox {
     }
 
     fn check_process_running(pid: u32) -> bool {
-        // 检查进程是否存在
-        unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-
-    pub fn process_health(&self) -> Option<SandboxProcessHealth> {
-        self.pid().map(Self::inspect_process_tree)
+        platform_process_running(pid)
     }
 
     async fn read_process_stats(pid: u32) -> Result<SandboxStats, SandboxError> {
-        let stat_path = format!("/proc/{pid}/stat");
-        let stat_content = tokio::fs::read_to_string(&stat_path)
-            .await
-            .map_err(SandboxError::Io)?;
-
-        // 解析 /proc/PID/stat
-        // 格式: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime priority nice num_threads itrealvalue starttime vsize rss rsslim ...
-        let parts: Vec<&str> = stat_content.split_whitespace().collect();
-
-        if parts.len() < 24 {
-            return Err(SandboxError::process("Invalid stat format"));
+        #[cfg(not(target_os = "linux"))]
+        {
+            Ok(SandboxStats {
+                pid,
+                memory_usage_bytes: 0,
+                virtual_memory_bytes: 0,
+                cpu_time_ms: 0,
+                fd_count: 0,
+                process_health: Self::inspect_process_tree(pid),
+            })
         }
 
-        // 解析内存使用 (RSS in pages, convert to bytes)
-        let rss_pages: u64 = parts[23].parse().unwrap_or(0);
-        let page_size = unsafe { libc::sysconf(libc::_SC_PAGE_SIZE) as u64 };
-        let memory_usage_bytes = rss_pages * page_size;
+        #[cfg(target_os = "linux")]
+        {
+            let stat_path = format!("/proc/{pid}/stat");
+            let stat_content = tokio::fs::read_to_string(&stat_path)
+                .await
+                .map_err(SandboxError::Io)?;
 
-        // 解析虚拟内存 (vsize in bytes)
-        let virtual_memory: u64 = parts[22].parse().unwrap_or(0);
+            // 解析 /proc/PID/stat
+            // 格式: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime priority nice num_threads itrealvalue starttime vsize rss rsslim ...
+            let parts: Vec<&str> = stat_content.split_whitespace().collect();
 
-        // 解析 CPU 时间 (utime + stime in clock ticks)
-        let utime: u64 = parts[13].parse().unwrap_or(0);
-        let stime: u64 = parts[14].parse().unwrap_or(0);
-        let clock_ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) as u64 };
-        let cpu_time_ms = ((utime + stime) * 1000) / clock_ticks;
+            if parts.len() < 24 {
+                return Err(SandboxError::process("Invalid stat format"));
+            }
 
-        // 读取打开的文件描述符数
-        let fd_count = Self::count_open_fds(pid).await.unwrap_or(0);
+            // 解析内存使用 (RSS in pages, convert to bytes)
+            let rss_pages: u64 = parts[23].parse().unwrap_or(0);
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGE_SIZE) as u64 };
+            let memory_usage_bytes = rss_pages * page_size;
 
-        Ok(SandboxStats {
-            pid,
-            memory_usage_bytes,
-            virtual_memory_bytes: virtual_memory,
-            cpu_time_ms,
-            fd_count,
-            process_health: Self::inspect_process_tree(pid),
-        })
+            // 解析虚拟内存 (vsize in bytes)
+            let virtual_memory: u64 = parts[22].parse().unwrap_or(0);
+
+            // 解析 CPU 时间 (utime + stime in clock ticks)
+            let utime: u64 = parts[13].parse().unwrap_or(0);
+            let stime: u64 = parts[14].parse().unwrap_or(0);
+            let clock_ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) as u64 };
+            let cpu_time_ms = ((utime + stime) * 1000) / clock_ticks;
+
+            // 读取打开的文件描述符数
+            let fd_count = Self::count_open_fds(pid).await.unwrap_or(0);
+
+            Ok(SandboxStats {
+                pid,
+                memory_usage_bytes,
+                virtual_memory_bytes: virtual_memory,
+                cpu_time_ms,
+                fd_count,
+                process_health: Self::inspect_process_tree(pid),
+            })
+        }
     }
 
+    #[cfg(target_os = "linux")]
     async fn count_open_fds(pid: u32) -> Result<usize, std::io::Error> {
         let fd_dir = format!("/proc/{pid}/fd");
         let mut entries = tokio::fs::read_dir(&fd_dir).await?;
@@ -523,6 +550,12 @@ impl NsjailSandbox {
         }
 
         Ok(count)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[allow(dead_code)]
+    async fn count_open_fds(_pid: u32) -> Result<usize, std::io::Error> {
+        Ok(0)
     }
 
     fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
@@ -590,34 +623,47 @@ pub(crate) fn spawn_child_reaper(mut child: Child, label: String, kill_first: bo
         warn!("Failed to signal child reaper target {label}: {error}");
     }
 
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => {
-            handle.spawn(reap_child(child, label, pid));
-        }
-        Err(error) => {
-            warn!(
-                "No Tokio runtime available for child reaper {label} pid={pid:?}; starting fallback runtime: {error}"
-            );
-            let thread_label = label.clone();
-            if let Err(spawn_error) = std::thread::Builder::new()
-                .name("credbridge-child-reaper".to_string())
-                .spawn(move || {
-                    match tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(runtime) => runtime.block_on(reap_child(child, label, pid)),
-                        Err(runtime_error) => warn!(
-                            "Failed to build fallback runtime for child reaper {label} pid={pid:?}: {runtime_error}"
-                        ),
-                    }
-                })
+    let thread_label = label.clone();
+    if let Err(spawn_error) = std::thread::Builder::new()
+        .name("credbridge-child-reaper".to_string())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
             {
-                warn!(
-                    "Failed to start fallback child reaper thread {thread_label} pid={pid:?}: {spawn_error}"
-                );
-            }
-        }
+                Ok(runtime) => runtime,
+                Err(runtime_error) => {
+                    warn!(
+                        "Failed to build child reaper runtime {label} pid={pid:?}: {runtime_error}"
+                    );
+                    return;
+                }
+            };
+
+            runtime.block_on(async move {
+                if pid.is_some() {
+                    let start = std::time::Instant::now();
+                    while start.elapsed() < std::time::Duration::from_secs(CHILD_REAP_TIMEOUT_SECS)
+                    {
+                        if child
+                            .try_wait()
+                            .map_err(SandboxError::Io)
+                            .ok()
+                            .flatten()
+                            .is_some()
+                        {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                    }
+                }
+                reap_child(child, label, pid).await;
+            });
+        })
+    {
+        warn!(
+            "Failed to start fallback child reaper thread {thread_label} pid={pid:?}: {spawn_error}"
+        );
     }
 }
 
@@ -726,6 +772,16 @@ fn inspect_process_tree(root_pid: u32) -> SandboxProcessHealth {
     SandboxProcessHealth::unchecked(root_pid)
 }
 
+#[cfg(unix)]
+fn platform_process_running(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[cfg(not(unix))]
+fn platform_process_running(_pid: u32) -> bool {
+    false
+}
+
 #[cfg(target_os = "linux")]
 #[derive(Debug)]
 struct ProcProcess {
@@ -826,8 +882,7 @@ impl WarmNsjailInstance {
     /// 检查实例是否健康
     pub fn is_healthy(&self) -> bool {
         // 检查进程是否仍在运行
-        (unsafe { libc::kill(self.info.pid as i32, 0) == 0 })
-            && inspect_process_tree(self.info.pid).is_healthy()
+        platform_process_running(self.info.pid) && inspect_process_tree(self.info.pid).is_healthy()
     }
 
     /// 检查是否过期

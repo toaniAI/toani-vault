@@ -274,6 +274,9 @@ pub struct CreateCredentialRequest {
     /// Custom TypeScript template helper functions
     #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
     pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+    /// Whether runtime approval is required before use
+    #[serde(rename = "requires_approval", skip_serializing_if = "Option::is_none")]
+    pub requires_approval: Option<bool>,
     /// 过期时间（Unix 时间戳，可选）
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
@@ -303,6 +306,9 @@ pub struct CreateCredentialResponse {
     /// Custom functions
     #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
     pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+    /// Whether runtime approval is required before use
+    #[serde(rename = "requires_approval", default)]
+    pub requires_approval: bool,
     /// 过期时间
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
@@ -338,6 +344,9 @@ pub struct CredentialMetadata {
     /// Custom functions
     #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
     pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+    /// Whether runtime approval is required before use
+    #[serde(rename = "requires_approval", default)]
+    pub requires_approval: bool,
     /// 过期时间
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
@@ -387,6 +396,9 @@ pub struct GetCredentialResponse {
     /// Custom functions
     #[serde(rename = "custom_functions", skip_serializing_if = "Option::is_none")]
     pub custom_functions: Option<Vec<CredentialCustomFunction>>,
+    /// Whether runtime approval is required before use
+    #[serde(rename = "requires_approval", default)]
+    pub requires_approval: bool,
     /// 过期时间
     #[serde(rename = "expires_at", skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,

@@ -7,12 +7,17 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::{
+    approvals::{
+        acquire_runtime_credential_approval, consume_runtime_credential_approval,
+        release_runtime_credential_approval,
+    },
     audit::AuditStorage,
     middleware::{TokenScope, ValidatedToken},
     response::{ApiErrorResponse, ApiSuccessResponse},
@@ -47,6 +52,7 @@ pub struct OAuthBrokerApiState {
     service: Arc<dyn OAuthBrokerService>,
     audit_storage: Option<Arc<dyn AuditStorage>>,
     credential_runtime: Option<OAuthBrokerCredentialRuntime>,
+    approval_pool: Option<PgPool>,
 }
 
 impl OAuthBrokerApiState {
@@ -55,6 +61,7 @@ impl OAuthBrokerApiState {
             service,
             audit_storage: None,
             credential_runtime: None,
+            approval_pool: None,
         }
     }
 
@@ -78,6 +85,11 @@ impl OAuthBrokerApiState {
             key_hierarchy,
             enclave,
         });
+        self
+    }
+
+    pub fn with_approval_pool(mut self, pool: PgPool) -> Self {
+        self.approval_pool = Some(pool);
         self
     }
 
@@ -190,6 +202,8 @@ pub struct UpdateProviderDefinitionRequest {
 #[derive(Debug, Deserialize)]
 pub struct RuntimeInvokeRequest {
     pub binding_handle: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
     pub request: GovernedHttpRequestSpec,
 }
 
@@ -691,12 +705,12 @@ async fn validate_binding_handler(
     let validated_at = chrono::Utc::now();
     let mut checks = Vec::new();
     let credential_payload = match load_binding_secret_payload(&state, &binding).await {
-        Ok(payload) => {
+        Ok(secret) => {
             checks.push(ProviderValidationCheck::passed(
                 "backing_credential",
                 "backing credential is present and decryptable",
             ));
-            payload
+            secret.payload
         }
         Err(error) => {
             checks.push(ProviderValidationCheck::failed(
@@ -916,7 +930,8 @@ async fn revalidate_staged_binding_policy_handler(
         .ok_or_else(|| ApiErrorResponse::not_found("Provider definition not found"))?;
     let credential_payload = load_binding_secret_payload(&state, &binding)
         .await
-        .map_err(map_oauth_broker_error)?;
+        .map_err(map_oauth_broker_error)?
+        .payload;
 
     let mut checks = Vec::new();
     let scopes_ok = staged
@@ -1445,13 +1460,46 @@ async fn runtime_invoke_handler(
         url.query_pairs_mut().append_pair(key, value);
     }
 
-    let credential_payload = load_binding_secret_payload(&state, &binding)
+    let secret = load_binding_secret_payload(&state, &binding)
         .await
         .map_err(map_oauth_broker_error)?;
+    let approval_reservation = if secret.requires_approval {
+        let request_id = request
+            .request_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ApiErrorResponse::invalid_request(
+                    "request_id is required when backing credential requires approval",
+                )
+            })?;
+        let Some(pool) = &state.approval_pool else {
+            return Err(ApiErrorResponse::internal_error(
+                "Approval runtime storage is not configured",
+            ));
+        };
+        Some(
+            acquire_runtime_credential_approval(pool, tenant_id, &token.user_id, request_id)
+                .await?,
+        )
+    } else {
+        None
+    };
+
+    let credential_payload = secret.payload;
     let token_response = match exchange_provider_access_token(&provider, &credential_payload).await
     {
         Ok(token_response) => token_response,
         Err(error) => {
+            if let Some(reservation) = approval_reservation.as_ref() {
+                let Some(pool) = &state.approval_pool else {
+                    return Err(ApiErrorResponse::internal_error(
+                        "Approval runtime storage is not configured",
+                    ));
+                };
+                release_runtime_credential_approval(pool, reservation).await?;
+            }
             let now = chrono::Utc::now();
             let runtime_state = classify_runtime_exchange_failure(&provider, &error, now);
             state
@@ -1481,6 +1529,14 @@ async fn runtime_invoke_handler(
     for (key, value) in &request.request.headers {
         let normalized = key.to_ascii_lowercase();
         if matches!(normalized.as_str(), "authorization" | "host" | "cookie") {
+            if let Some(reservation) = approval_reservation.as_ref() {
+                let Some(pool) = &state.approval_pool else {
+                    return Err(ApiErrorResponse::internal_error(
+                        "Approval runtime storage is not configured",
+                    ));
+                };
+                release_runtime_credential_approval(pool, reservation).await?;
+            }
             return Err(ApiErrorResponse::forbidden(format!(
                 "request.headers may not override reserved header: {key}"
             )));
@@ -1495,7 +1551,31 @@ async fn runtime_invoke_handler(
     let response = outbound
         .send()
         .await
-        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()))?;
+        .map_err(|error| ApiErrorResponse::internal_error(error.to_string()));
+    let response = match response {
+        Ok(response) => {
+            if let Some(reservation) = approval_reservation.as_ref() {
+                let Some(pool) = &state.approval_pool else {
+                    return Err(ApiErrorResponse::internal_error(
+                        "Approval runtime storage is not configured",
+                    ));
+                };
+                consume_runtime_credential_approval(pool, reservation).await?;
+            }
+            response
+        }
+        Err(error) => {
+            if let Some(reservation) = approval_reservation.as_ref() {
+                let Some(pool) = &state.approval_pool else {
+                    return Err(ApiErrorResponse::internal_error(
+                        "Approval runtime storage is not configured",
+                    ));
+                };
+                release_runtime_credential_approval(pool, reservation).await?;
+            }
+            return Err(error);
+        }
+    };
     let status_code = response.status().as_u16();
     let provider_request_id = response
         .headers()
@@ -1553,10 +1633,15 @@ struct LarkTokenProbeResponse {
     app_access_token: Option<String>,
 }
 
+struct LoadedBindingSecret {
+    payload: serde_json::Value,
+    requires_approval: bool,
+}
+
 async fn load_binding_secret_payload(
     state: &OAuthBrokerApiState,
     binding: &Binding,
-) -> Result<serde_json::Value, OAuthBrokerError> {
+) -> Result<LoadedBindingSecret, OAuthBrokerError> {
     let runtime = state.credential_runtime.as_ref().ok_or_else(|| {
         OAuthBrokerError::InternalError(
             "OAuth broker credential runtime is not configured".to_string(),
@@ -1615,8 +1700,13 @@ async fn load_binding_secret_payload(
         }
     };
 
-    serde_json::from_slice(&plaintext).map_err(|error| {
+    let payload = serde_json::from_slice(&plaintext).map_err(|error| {
         OAuthBrokerError::InvalidRequest(format!("credential plaintext is not valid JSON: {error}"))
+    })?;
+
+    Ok(LoadedBindingSecret {
+        payload,
+        requires_approval: entry.requires_approval,
     })
 }
 
@@ -2323,6 +2413,7 @@ async fn load_transaction_backing_credential_payload(
     };
     load_binding_secret_payload(state, &binding)
         .await
+        .map(|secret| secret.payload)
         .map_err(|error| error.to_string())
 }
 
@@ -2595,6 +2686,7 @@ async fn store_binding_secret_payload(
         service_id: ServiceId::new(format!("oauth_broker:{alias}")),
         credential_type: CredentialType::OAuthRefresh,
         expires_at: None,
+        requires_approval: false,
         provider: None,
         allowed_domains: Vec::new(),
         custom_functions: Vec::new(),

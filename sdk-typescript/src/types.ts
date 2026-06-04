@@ -92,6 +92,8 @@ export interface CreateCredentialRequest {
   allowedDomains?: string[];
   /** Custom TypeScript template helper functions */
   customFunctions?: CredentialCustomFunction[];
+  /** Whether runtime approval is required before use */
+  requiresApproval?: boolean;
   /** 过期时间（Unix 时间戳，可选） */
   expiresAt?: number;
 }
@@ -112,6 +114,8 @@ export interface CreateCredentialResponse {
   allowed_domains?: string[];
   /** Custom functions */
   custom_functions?: CredentialCustomFunction[];
+  /** Whether runtime approval is required before use */
+  requires_approval: boolean;
   /** 过期时间 */
   expires_at?: string;
 }
@@ -125,6 +129,7 @@ export type CreateCredentialResponseCamel = {
   provider?: CredentialProvider;
   allowedDomains?: string[];
   customFunctions?: CredentialCustomFunction[];
+  requiresApproval: boolean;
   expiresAt?: string;
 };
 
@@ -148,6 +153,8 @@ export interface CredentialMetadata {
   allowedDomains?: string[];
   /** Custom functions */
   customFunctions?: CredentialCustomFunction[];
+  /** Whether runtime approval is required before use */
+  requiresApproval: boolean;
   /** 过期时间 */
   expiresAt?: string;
   /** 是否已删除 */
@@ -173,6 +180,8 @@ export interface GetCredentialResponse {
   allowedDomains?: string[];
   /** Custom functions */
   customFunctions?: CredentialCustomFunction[];
+  /** Whether runtime approval is required before use */
+  requiresApproval: boolean;
   /** 过期时间 */
   expiresAt?: string;
   /** 是否已删除 */
@@ -205,6 +214,58 @@ export interface DeleteCredentialResponse {
   credentialId: string;
   /** 是否已删除 */
   deleted: boolean;
+}
+
+/** 发起审批请求 */
+export interface CreateApprovalRequest {
+  /** 业务类型 */
+  businessType: string;
+  /** 业务主键 */
+  businessId: string;
+}
+
+/** 异步发起审批响应 */
+export interface ApprovalInitiationResponse {
+  /** 审批 ID */
+  approval_id: string;
+  /** 当前状态 */
+  status: string;
+  /** 业务类型 */
+  business_type: string;
+  /** 业务主键 */
+  business_id: string;
+}
+
+/** 审批详情响应 */
+export interface ApprovalDetailResponse {
+  /** 审批 ID */
+  approval_id: string;
+  /** 租户 ID */
+  tenant_id: string;
+  /** 发起人 */
+  requested_by: string;
+  /** 业务类型 */
+  business_type: string;
+  /** 业务主键 */
+  business_id: string;
+  /** 当前状态 */
+  status: string;
+  /** 创建时间 */
+  created_at: string;
+  /** 更新时间 */
+  updated_at: string;
+  /** 处理人 */
+  processed_by?: string;
+  /** 处理时间 */
+  processed_at?: string;
+  /** 备注 */
+  remark?: string;
+  /** 业务结果码 */
+  result_code?: string;
+  /** 业务结果负载 */
+  result_payload?: Record<string, unknown>;
+  /** 业务写回时间 */
+  business_result_written_at?: string;
 }
 
 /** 加密载荷结构 */
@@ -990,6 +1051,12 @@ export interface SandboxCredentialReference {
 export interface ExecuteOperationRequest {
   /** 操作类型 */
   operationType: OperationType;
+  /** 顶层 credential_id，供 broker 路由定位受控凭证。 */
+  credentialId?: string;
+  /** 顶层 service_id，供 broker 路由按服务解析受控凭证。 */
+  serviceId?: string;
+  /** 审批业务 ID；当凭证 requires_approval=true 时必填。 */
+  requestId?: string;
   /** 操作描述 */
   description?: string;
   /** 原始操作参数 */

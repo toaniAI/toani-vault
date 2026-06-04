@@ -1,5 +1,6 @@
 import { ToaniVaultSDK } from "../../../sdk-typescript/src/index.js";
 import type { CliConfig, ParsedOptions } from "../types/cli.js";
+import { randomUUID } from "node:crypto";
 import {
   DASHBOARD_LOGIN_URL,
   DASHBOARD_TOKENS_URL,
@@ -31,8 +32,8 @@ function missingTokenMessage(config: CliConfig): string {
     "No usable API token was found for the CLI.",
     `First sign up or sign in through the Dashboard: ${DASHBOARD_LOGIN_URL}`,
     `After signing in, create or copy an access token from the Dashboard Tokens page: ${DASHBOARD_TOKENS_URL}`,
-    "Recommended command: toani login",
-    `Compatibility path: toani config init --url ${config.baseUrl} --token <BEARER_TOKEN>`,
+    "Recommended command: toani-vault login",
+    `Compatibility path: toani-vault config init --url ${config.baseUrl} --token <BEARER_TOKEN>`,
   ].join("\n");
 }
 
@@ -45,6 +46,10 @@ export function createSdk(config: CliConfig): ToaniVaultSDK {
     token: config.token,
     timeout: config.timeout,
   });
+}
+
+export function generateRequestId(): string {
+  return randomUUID();
 }
 
 export function requireArg(

@@ -50,6 +50,6 @@ export async function runConfig(
       return;
     }
     default:
-      throw new Error("Usage: toani config <init|show> [options]");
+      throw new Error("Usage: toani-vault config <init|show> [options]");
   }
 }

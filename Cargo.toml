@@ -6,6 +6,11 @@ edition = "2024"
 [lib]
 doctest = false
 
+[[bin]]
+name = "bug18208_repro"
+path = "src/bin/bug18208_repro.rs"
+test = false
+
 [dependencies]
 # 加密库
 ring = "0.17"
@@ -132,8 +137,6 @@ tee-hardware = []
 rls-tests = []
 # RLS 性能基准测试
 rls-benchmark = []
-# 保留空特性名以兼容历史 cfg 标记；默认不启用任何浏览器截图能力
-screenshot-cdp = []
 
 [[test]]
 name = "paseto_tests"
@@ -182,10 +185,6 @@ path = "tests/rls_integration.rs"
 required-features = []
 
 [[test]]
-name = "sandbox_export_tests"
-path = "tests/tee/sandbox_export_tests.rs"
-
-[[test]]
 name = "sandbox_performance"
 path = "tests/tee/sandbox_performance.rs"
 
@@ -204,6 +203,10 @@ path = "tests/integration/auth_flow_tests.rs"
 [[test]]
 name = "sandbox_persistence_tests"
 path = "tests/integration/sandbox_persistence_tests.rs"
+
+[[test]]
+name = "http_request_broker_persistence_tests"
+path = "tests/integration/http_request_broker_persistence_tests.rs"
 
 [[test]]
 name = "tenant_config_persistence_tests"

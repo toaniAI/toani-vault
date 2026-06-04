@@ -1,10 +1,10 @@
 {
   "name": "@toani/vault-cli",
-  "version": "0.0.21",
+  "version": "0.0.23",
   "description": "Toani Vault CLI",
   "type": "module",
   "bin": {
-    "toani": "dist/index.js"
+    "toani-vault": "dist/index.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

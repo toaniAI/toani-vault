@@ -177,14 +177,12 @@ pub async fn issue_access_token_from_user_token(
         ));
     }
 
-    let requested_scopes = request
-        .scopes
-        .iter()
-        .map(|scope| {
-            TokenScope::parse(scope)
-                .ok_or_else(|| ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}")))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut requested_scopes = Vec::with_capacity(request.scopes.len());
+    for scope in &request.scopes {
+        let parsed = TokenScope::parse(scope)
+            .ok_or_else(|| ApiErrorResponse::invalid_request(format!("Invalid scope: {scope}")))?;
+        requested_scopes.push(parsed);
+    }
 
     if requested_scopes != vec![TokenScope::CredentialRead] {
         return Err(ApiErrorResponse::invalid_request(
@@ -814,7 +812,7 @@ mod tests {
     };
     use crate::token::TOKEN_ISSUED_FROM_SESSION;
     use crate::vault::{
-        models::EncryptedPayload,
+        models::{CreateCredentialRequest, EncryptedPayload, ServiceId, TenantId, UserId},
         storage::{CredentialVault, create_credential},
     };
     use async_trait::async_trait;
@@ -1193,6 +1191,42 @@ mod tests {
             state.with_audit_storage(Arc::new(FailingAuditStorage)),
             credential_id,
         )
+    }
+
+    fn seed_test_state_with_runtime_approval_credential() -> (AuthApiState, String) {
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let payload = EncryptedPayload::new(
+            constants::PROTOCOL_VERSION,
+            constants::ALGORITHM_AES_256_GCM,
+            constants::KDF_HKDF_SHA256,
+            vec![0u8; constants::NONCE_LENGTH],
+            vec![0u8; constants::AUTH_TAG_LENGTH],
+            vec![1, 2, 3, 4],
+        );
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new("00000000-0000-0000-0000-000000000123"),
+                    user_id: UserId::new("00000000-0000-0000-0000-000000000456"),
+                    service_id: ServiceId::new("sandbox-runtime-approval"),
+                    credential_type: CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: true,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                payload,
+            )
+            .expect("runtime approval credential should be created");
+        let state = AuthApiState::new_with_token_store(
+            Arc::new(DummyAuthService::default()),
+            create_token_store(),
+        )
+        .with_vault(vault)
+        .with_oauth_broker_service(Arc::new(DummyOAuthBrokerService));
+
+        (state, entry.credential_id.as_str().to_string())
     }
 
     fn create_token_request(
@@ -1601,6 +1635,42 @@ mod tests {
             runtime.allowed_binding_handles(),
             Some(&["binding_demo_runtime".to_string()][..])
         );
+    }
+
+    #[tokio::test]
+    async fn create_token_accepts_runtime_approval_credentials_without_special_casing_issue_stage()
+    {
+        let (state, credential_id) = seed_test_state_with_runtime_approval_credential();
+
+        let created = create_token_handler(
+            State(state.clone()),
+            Extension(session_token(vec![
+                TokenScope::TokensWrite,
+                TokenScope::CredentialRead,
+            ])),
+            Json(create_token_request(
+                &credential_id,
+                &["credential:read"],
+                Some(1800),
+            )),
+        )
+        .await
+        .expect("runtime approval credentials should still issue tokens")
+        .0;
+
+        assert_eq!(created.credential_ids, vec![credential_id.clone()]);
+        assert!(created.binding_handles.is_empty());
+        assert_eq!(created.token_plane, "runtime");
+        assert!(created.access_token.starts_with("v4.local."));
+
+        let runtime = validate_paseto_token(
+            &created.access_token,
+            state.token_secret_key.as_slice(),
+            "en",
+        )
+        .expect("runtime token should validate");
+        assert_eq!(runtime.token_plane(), "runtime");
+        assert!(runtime.has_scope(&TokenScope::CredentialRead));
     }
 
     #[tokio::test]

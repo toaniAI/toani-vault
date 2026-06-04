@@ -185,24 +185,31 @@ async function confetti(durationMs = 1200): Promise<void> {
 }
 
 function cancel(): never {
-  outro(pc.dim("Cancelled. Run `toani login` to try again."));
+  outro(pc.dim("Cancelled. Run `toani-vault login` to try again."));
   process.exit(0);
 }
 
 function handleValidationError(result: ValidationResult, baseUrl: string): void {
   if (result.reason === "invalid_or_expired") {
     note(
-      `The token was rejected by the server (HTTP 401).\n\nPossible causes:\n  • Token expired\n  • Token revoked by your admin\n  • Wrong / partial token\n\n${pc.bold("Fix:")} generate a new token at\n  ${DASHBOARD_TOKENS_URL}\n\nThen run ${pc.green("toani login")} again.`,
+      `The token was rejected by the server (HTTP 401).\n\nPossible causes:\n  • Token expired\n  • Token revoked by your admin\n  • Wrong / partial token\n\n${pc.bold("Fix:")} generate a new token at\n  ${DASHBOARD_TOKENS_URL}\n\nThen run ${pc.green("toani-vault login")} again.`,
       pc.red("Token invalid"),
     );
   } else if (result.reason === "insufficient_scope") {
     const required = String(result.body?.required_scope ?? "<unknown>");
     const current = Array.isArray(result.body?.current_scopes)
       ? (result.body?.current_scopes as unknown[]).join(", ")
+      : typeof result.body?.current_scopes === "string"
+        ? result.body.current_scopes
       : "<unknown>";
     note(
       `Token is valid but missing required scope (HTTP 403).\n\n  Required:  ${required}\n  Current:   ${current}\n\n${pc.bold("Fix:")} re-issue with broader scope at\n  ${DASHBOARD_TOKENS_URL}`,
       pc.yellow("Insufficient scope"),
+    );
+  } else if (result.reason === "insufficient_permissions") {
+    note(
+      `The token reached the service, but it does not match the expected token type for the probed endpoint.\n\nTypical causes:\n  • Usage/API tokens do not support the web-session profile endpoint\n  • Management tokens may still lack the specific CLI capability you want\n\n${pc.bold("Fix:")} pick a token that matches your task, then run ${pc.green("toani-vault doctor")} to confirm whether it is in usage mode or management mode.`,
+      pc.yellow("Token type mismatch"),
     );
   } else if (result.reason === "dns") {
     note(
@@ -268,7 +275,7 @@ async function processToken(
     saving.stop(pc.yellow(`⚠ Could not write to keychain: ${rendered}`));
     log.warn(
       pc.dim(
-        "Token was not persisted. Re-run `toani login` when keychain access is available or use TOANI_VAULT_TOKEN explicitly.",
+        "Token was not persisted. Re-run `toani-vault login` when keychain access is available or use TOANI_VAULT_TOKEN explicitly.",
       ),
     );
   }
@@ -277,7 +284,7 @@ async function processToken(
   await logoFlash();
   await confetti(1200);
 
-  outro(`${pc.green(pc.bold("🎉 Connected!"))}\n\n  ${pc.dim("Storage:")}  OS Keychain (encrypted by macOS / libsecret / Windows Credential Manager)\n  ${pc.dim("API:")}      ${baseUrl}\n\n  ${pc.bold("What's next?")}\n    ${pc.dim("$")} ${pc.green("toani sandbox stats")}          ${pc.dim("— test connectivity")}\n    ${pc.dim("$")} ${pc.green("toani sandbox create-session")} ${pc.dim('--service-id <id> --original-intent "..."')}\n    ${pc.dim("$")} ${pc.green("toani --help")}                  ${pc.dim("— see all commands")}\n\n  ${pc.dim("Token expired? Just run `toani login` again.")}`);
+  outro(`${pc.green(pc.bold("🎉 Connected!"))}\n\n  ${pc.dim("Storage:")}  OS Keychain (encrypted by macOS / libsecret / Windows Credential Manager)\n  ${pc.dim("API:")}      ${baseUrl}\n\n  ${pc.bold("What's next?")}\n    ${pc.dim("$")} ${pc.green("toani-vault sandbox request --operation-type http_request --params '{\"url\":\"https://api.example.com/health\",\"method\":\"GET\"}'")} ${pc.dim("— submit broker request")}\n    ${pc.dim("$")} ${pc.green("toani-vault sandbox get-request <operationId>")} ${pc.dim("— fetch broker request detail")}\n    ${pc.dim("$")} ${pc.green("toani-vault --help")}                  ${pc.dim("— see all commands")}\n\n  ${pc.dim("Token expired? Just run `toani-vault login` again.")}`);
 }
 
 async function maybeInstallBundledSkill(): Promise<void> {
@@ -425,7 +432,7 @@ async function requestTokenInput(
       );
     }
 
-    outro(pc.dim("Too many retries. Check .env format then rerun `toani login`."));
+    outro(pc.dim("Too many retries. Check .env format then rerun `toani-vault login`."));
     return;
   }
 
@@ -507,7 +514,7 @@ async function waitForClipboard(
       if (cancelRequested) {
         status.stop(pc.dim("Cancelled."));
         cleanup();
-        outro(pc.dim("Run `toani login` to try again."));
+        outro(pc.dim("Run `toani-vault login` to try again."));
         return;
       }
 
@@ -572,7 +579,7 @@ async function waitForClipboard(
       if (elapsedMs > timeoutMs) {
         status.stop(pc.yellow("⏱  Timeout — no token in 5 minutes"));
         cleanup();
-        outro(pc.dim("Run `toani login` to try again."));
+        outro(pc.dim("Run `toani-vault login` to try again."));
         return;
       }
 
@@ -652,7 +659,7 @@ async function guidedSetup(baseUrl: string, skipValidate: boolean): Promise<void
     });
 
     if (!done || isCancel(done)) {
-      outro(pc.dim("Cancelled. Run `toani login` to resume later."));
+      outro(pc.dim("Cancelled. Run `toani-vault login` to resume later."));
       return;
     }
   }
@@ -754,7 +761,7 @@ export async function runLogin(
     });
 
     if (!ready || isCancel(ready)) {
-      outro(pc.dim("Cancelled. Run `toani login` to try again after signing up."));
+      outro(pc.dim("Cancelled. Run `toani-vault login` to try again after signing up."));
       return;
     }
   }

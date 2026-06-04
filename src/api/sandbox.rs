@@ -8,13 +8,20 @@
 //! - POST   /api/v1/sandbox/sessions/:id/pause    - 暂停会话
 //! - POST   /api/v1/sandbox/sessions/:id/resume   - 恢复会话
 //! - DELETE /api/v1/sandbox/sessions/:id          - 关闭会话
-use crate::api::context::{ApiContext, RequestContext};
+use crate::api::approvals::{
+    acquire_runtime_credential_approval, consume_runtime_credential_approval,
+    release_runtime_credential_approval,
+};
 use crate::api::middleware::{TokenScope, ValidatedToken, require_scope};
 use crate::api::response::{ApiErrorResponse, ApiSuccessResponse, ErrorCode};
 use crate::api::sandbox_owner::{SandboxOwnerRecord, SandboxOwnerRegistry};
-use crate::api::websocket::handle_socket;
 use crate::crypto::hkdf::KeyHierarchy;
 use crate::crypto::{CredentialCryptoContext, EncryptedBlob};
+use crate::http_request_broker::{
+    HttpRequestBroker, HttpRequestBrokerSubmitInput, HttpRequestOperationRecord,
+    PersistentHttpRequestBroker, PgHttpRequestOperationStore, ReqwestHttpRequestTransport,
+    VaultHttpRequestCredentialResolver,
+};
 use crate::models::{CredentialMetadata, CredentialType};
 use crate::tee::SharedEnclave;
 use crate::tee::sandbox::{
@@ -36,7 +43,7 @@ use crate::vault::models::{
 use crate::vault::storage::CredentialVault;
 use axum::{
     Extension, Json,
-    extract::{OriginalUri, Path, Query, State, WebSocketUpgrade},
+    extract::{OriginalUri, Path, Query, State},
     http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -80,6 +87,10 @@ pub struct SandboxState {
     forwarding_client: reqwest::Client,
     /// 会话级凭证缓存
     credential_cache: Arc<RwLock<HashMap<Uuid, SessionCredentialMaterial>>>,
+    /// 无需 session 的直接 HTTP 请求 broker
+    pub http_request_broker: Option<Arc<dyn HttpRequestBroker>>,
+    /// 运行时审批门控存储
+    pub approval_pool: Option<PgPool>,
 }
 
 #[derive(Clone)]
@@ -99,9 +110,24 @@ impl SandboxState {
         enclave: Option<SharedEnclave>,
         owner_runtime: SandboxOwnerRuntime,
     ) -> Result<Self, SandboxError> {
-        let repository: Option<Arc<dyn SandboxRepository>> = database_pool.map(|pool| {
-            Arc::new(PostgresSandboxRepository::new(pool)) as Arc<dyn SandboxRepository>
+        let repository: Option<Arc<dyn SandboxRepository>> = database_pool.as_ref().map(|pool| {
+            Arc::new(PostgresSandboxRepository::new(pool.clone())) as Arc<dyn SandboxRepository>
         });
+        let http_request_broker: Option<Arc<dyn HttpRequestBroker>> =
+            match (&database_pool, vault.as_ref(), key_hierarchy.as_ref()) {
+                (Some(pool), Some(vault), Some(key_hierarchy)) => {
+                    Some(Arc::new(PersistentHttpRequestBroker::new(
+                        Arc::new(VaultHttpRequestCredentialResolver::new(
+                            vault.clone(),
+                            key_hierarchy.clone(),
+                            enclave.clone(),
+                        )),
+                        Arc::new(ReqwestHttpRequestTransport::new()),
+                        Arc::new(PgHttpRequestOperationStore::new(pool.clone())),
+                    )) as Arc<dyn HttpRequestBroker>)
+                }
+                _ => None,
+            };
         let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new_with_repository(
             config.clone(),
             repository.clone(),
@@ -125,6 +151,8 @@ impl SandboxState {
             owner_registry: owner_runtime.owner_registry,
             forwarding_client: reqwest::Client::new(),
             credential_cache: Arc::new(RwLock::new(HashMap::new())),
+            http_request_broker,
+            approval_pool: database_pool,
         })
     }
 
@@ -142,6 +170,8 @@ impl SandboxState {
             owner_registry: None,
             forwarding_client: reqwest::Client::new(),
             credential_cache: Arc::new(RwLock::new(HashMap::new())),
+            http_request_broker: None,
+            approval_pool: None,
         }
     }
 
@@ -353,6 +383,19 @@ pub struct ExecuteOperationResponse {
     pub execution_time_ms: u64,
 }
 
+/// 直接 HTTP 请求 broker 请求
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CreateHttpRequestOperationRequest {
+    #[serde(default)]
+    pub credential_id: Option<Uuid>,
+    #[serde(default)]
+    pub service_id: Option<String>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    pub description: String,
+    pub parameters: HashMap<String, serde_json::Value>,
+}
+
 /// 会话操作响应
 #[derive(Debug, Serialize)]
 pub struct SessionActionResponse {
@@ -376,6 +419,20 @@ pub struct OperationDetailResponse {
     pub started_at: String,
     pub completed_at: Option<String>,
     pub execution_time_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HttpRequestOperationDetailResponse {
+    pub operation_id: Uuid,
+    pub credential_id: Uuid,
+    pub description: String,
+    pub operation_type: String,
+    pub status: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub execution_time_ms: Option<u64>,
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
 }
 
 /// 沙箱统计响应
@@ -736,10 +793,10 @@ pub async fn list_sessions(
             }
             // 如果指定了 status 过滤，只返回匹配的会话
             let session_status = session.status().await.to_string();
-            if let Some(ref filter) = status_filter {
-                if session_status.to_lowercase() != *filter {
-                    continue;
-                }
+            if let Some(ref filter) = status_filter
+                && session_status.to_lowercase() != *filter
+            {
+                continue;
             }
             live_session_ids.insert(context.session_id);
             sessions.push(SessionSummary {
@@ -997,6 +1054,153 @@ pub async fn execute_operation(
             error!("Operation execution failed: {}", e);
             map_sandbox_error(e).into_response()
         }
+    }
+}
+
+/// POST /api/v1/sandbox/http-requests - 直接执行一个无 session 的 HTTP 请求
+pub async fn create_http_request_operation(
+    State(state): State<SandboxState>,
+    Extension(token): Extension<ValidatedToken>,
+    Json(request): Json<CreateHttpRequestOperationRequest>,
+) -> Response {
+    if let Err(e) = check_http_request_broker_scopes(&token).await {
+        return e;
+    }
+
+    let credential_id = match resolve_create_session_credential(
+        state.vault.as_ref(),
+        &token,
+        request.credential_id,
+        request.service_id.as_deref(),
+    ) {
+        Ok(credential_id) => credential_id,
+        Err(CreateSessionCredentialError::MissingReference(message)) => {
+            return ApiErrorResponse::unprocessable_entity(message).into_response();
+        }
+        Err(CreateSessionCredentialError::InvalidReference(message)) => {
+            return ApiErrorResponse::invalid_request(message).into_response();
+        }
+        Err(CreateSessionCredentialError::Sandbox(error)) => return map_sandbox_error(error),
+    };
+
+    let credential_metadata =
+        match load_credential_metadata(state.vault.as_ref(), &token, credential_id) {
+            Ok(metadata) => metadata,
+            Err(error) => return map_sandbox_error(error),
+        };
+    let Some(broker) = &state.http_request_broker else {
+        return ApiErrorResponse::service_unavailable("HTTP request broker is not configured")
+            .into_response();
+    };
+
+    let approval_reservation = if credential_metadata.requires_approval {
+        let request_id = request
+            .request_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let Some(request_id) = request_id else {
+            return ApiErrorResponse::invalid_request(
+                "request_id is required when credential requires approval",
+            )
+            .into_response();
+        };
+        let Some(pool) = &state.approval_pool else {
+            return ApiErrorResponse::internal_error("Approval runtime storage is not configured")
+                .into_response();
+        };
+        match acquire_runtime_credential_approval(
+            pool,
+            parse_uuid(&token.tenant_id),
+            &token.user_id,
+            request_id,
+        )
+        .await
+        {
+            Ok(reservation) => Some(reservation),
+            Err(error) => return error.into_response(),
+        }
+    } else {
+        None
+    };
+
+    match broker
+        .submit(HttpRequestBrokerSubmitInput {
+            tenant_id: parse_uuid(&token.tenant_id),
+            user_id: parse_uuid(&token.user_id),
+            credential_id,
+            description: request.description,
+            parameters: request.parameters,
+        })
+        .await
+    {
+        Ok(result) => {
+            if let Some(reservation) = approval_reservation.as_ref() {
+                let Some(pool) = &state.approval_pool else {
+                    return ApiErrorResponse::internal_error(
+                        "Approval runtime storage is not configured",
+                    )
+                    .into_response();
+                };
+                if let Err(error) = consume_runtime_credential_approval(pool, reservation).await {
+                    return error.into_response();
+                }
+            }
+
+            Json(ApiSuccessResponse::new(ExecuteOperationResponse {
+                operation_id: result.operation_id,
+                success: result.success,
+                data: result.data,
+                error: result.error,
+                execution_time_ms: result.execution_time_ms,
+            }))
+            .into_response()
+        }
+        Err(error) => {
+            if let Some(reservation) = approval_reservation.as_ref() {
+                let Some(pool) = &state.approval_pool else {
+                    return ApiErrorResponse::internal_error(
+                        "Approval runtime storage is not configured",
+                    )
+                    .into_response();
+                };
+                if let Err(release_error) =
+                    release_runtime_credential_approval(pool, reservation).await
+                {
+                    return release_error.into_response();
+                }
+            }
+
+            map_sandbox_error(error)
+        }
+    }
+}
+
+/// GET /api/v1/sandbox/http-requests/:operation_id - 查询直接 HTTP 请求详情
+pub async fn get_http_request_operation(
+    State(state): State<SandboxState>,
+    Extension(token): Extension<ValidatedToken>,
+    Path(operation_id): Path<Uuid>,
+) -> Response {
+    if let Err(e) = check_scope(&token, TokenScope::SandboxRead).await {
+        return e;
+    }
+
+    let Some(broker) = &state.http_request_broker else {
+        return ApiErrorResponse::service_unavailable("HTTP request broker is not configured")
+            .into_response();
+    };
+
+    match broker
+        .get_operation(parse_uuid(&token.tenant_id), operation_id)
+        .await
+    {
+        Ok(Some(record)) => Json(ApiSuccessResponse::new(map_http_request_operation_record(
+            record,
+        )))
+        .into_response(),
+        Ok(None) => ApiErrorResponse::not_found("HTTP request operation not found").into_response(),
+        Err(error) => map_sandbox_error(error),
     }
 }
 
@@ -1298,6 +1502,24 @@ async fn check_create_session_scopes(token: &ValidatedToken) -> Result<(), Respo
     check_scope(token, TokenScope::SandboxWrite).await
 }
 
+async fn check_http_request_broker_scopes(token: &ValidatedToken) -> Result<(), Response> {
+    check_scope(token, TokenScope::CredentialRead).await?;
+    check_scope(token, TokenScope::CredentialDecrypt).await?;
+
+    if token.issued_from() == TOKEN_ISSUED_FROM_ACCESS_TOKEN {
+        if is_binding_handle_only_runtime_token(token) {
+            return Err(ApiErrorResponse::forbidden(
+                "binding_handle-scoped runtime tokens cannot access legacy credential-centric sandbox routes",
+            )
+            .into_response());
+        }
+
+        return Ok(());
+    }
+
+    check_scope(token, TokenScope::SandboxExecute).await
+}
+
 async fn check_sandbox_control_scope(
     token: &ValidatedToken,
     required_scope: TokenScope,
@@ -1562,12 +1784,11 @@ fn redact_http_request_value(
                 }
             }
         }
-        serde_json::Value::String(_) => {
+        serde_json::Value::String(_)
             if (sensitive_key || credential_backed)
-                && matches!(resolved_value, Some(serde_json::Value::String(_)))
-            {
-                *persisted_value = serde_json::Value::String("[REDACTED]".to_string());
-            }
+                && matches!(resolved_value, Some(serde_json::Value::String(_))) =>
+        {
+            *persisted_value = serde_json::Value::String("[REDACTED]".to_string());
         }
         _ => {}
     }
@@ -1862,6 +2083,14 @@ fn ensure_credential_exists(
     token: &ValidatedToken,
     credential_id: Uuid,
 ) -> Result<(), SandboxError> {
+    load_credential_metadata(vault, token, credential_id).map(|_| ())
+}
+
+fn load_credential_metadata(
+    vault: Option<&Arc<CredentialVault>>,
+    token: &ValidatedToken,
+    credential_id: Uuid,
+) -> Result<CredentialMetadata, SandboxError> {
     if is_binding_handle_only_runtime_token(token) {
         return Err(SandboxError::Other(
             "forbidden: binding_handle-scoped runtime tokens cannot access legacy credential-centric sandbox routes".to_string(),
@@ -1885,7 +2114,7 @@ fn ensure_credential_exists(
 
     match vault.get_credential_metadata(&credential_id_model, &tenant_id, &user_id) {
         Ok(Some(metadata)) => match metadata.status.as_str() {
-            "active" => Ok(()),
+            "active" => Ok(metadata),
             "expired" => Err(SandboxError::Other(
                 "invalid_request: Credential is expired, refresh or rebind a valid token before creating a sandbox session".to_string(),
             )),
@@ -2068,6 +2297,23 @@ fn map_operation_record(record: SandboxOperationRecord) -> OperationDetailRespon
     }
 }
 
+fn map_http_request_operation_record(
+    record: HttpRequestOperationRecord,
+) -> HttpRequestOperationDetailResponse {
+    HttpRequestOperationDetailResponse {
+        operation_id: record.operation_id,
+        credential_id: record.credential_id,
+        description: record.description,
+        operation_type: record.operation_type,
+        status: record.status,
+        started_at: record.started_at.to_rfc3339(),
+        completed_at: record.completed_at.map(|value| value.to_rfc3339()),
+        execution_time_ms: record.execution_duration_ms.map(|value| value as u64),
+        data: record.response_data,
+        error: record.error_message,
+    }
+}
+
 /// 将 SandboxError 映射为 API 响应
 fn map_sandbox_error(error: SandboxError) -> Response {
     let (code, message, status) = match &error {
@@ -2153,62 +2399,15 @@ fn map_sandbox_error(error: SandboxError) -> Response {
 
 // ==================== 兜底处理器 ====================
 
-/// 兜底处理器：POST /sandbox/sessions/pause 缺少会话ID时返回404
-/// BUG-18223: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn pause_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
+/// 旧 Session 生命周期 API 已退役：统一返回 410 Gone。
+async fn legacy_session_api_gone_handler() -> (StatusCode, Json<serde_json::Value>) {
     (
-        StatusCode::NOT_FOUND,
+        StatusCode::GONE,
         Json(serde_json::json!({
-            "success": false,
             "error": {
-                "code": "SESSION_NOT_FOUND",
-                "message": "沙箱会话不存在"
-            },
-            "meta": {
-                "request_id": uuid::Uuid::now_v7().to_string(),
-                "timestamp": chrono::Utc::now().to_rfc3339()
+                "code": "legacy_session_api_retired",
+                "message": "Legacy sandbox session lifecycle API has been retired. Use broker routes: /sandbox/http-requests and /sandbox/http-requests/:operation_id."
             }
-        })),
-    )
-}
-
-/// 兜底处理器：POST /sandbox/sessions/resume 缺少会话ID时返回404
-/// BUG-18224: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn resume_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "error": "not_found"
-        })),
-    )
-}
-
-/// 兜底处理器：POST /sandbox/sessions/execute 缺少会话ID时返回404
-/// 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn execute_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "success": false,
-            "error": {
-                "code": "SESSION_NOT_FOUND",
-                "message": "沙箱会话不存在"
-            },
-            "meta": {
-                "request_id": uuid::Uuid::now_v7().to_string(),
-                "timestamp": chrono::Utc::now().to_rfc3339()
-            }
-        })),
-    )
-}
-
-/// 兜底处理器：DELETE /sandbox/sessions 缺少会话ID时返回404
-/// BUG-18225: 防止被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
-async fn close_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({
-            "error": "not_found"
         })),
     )
 }
@@ -2218,55 +2417,70 @@ async fn close_missing_id_handler() -> (StatusCode, Json<serde_json::Value>) {
 /// 构建沙箱 API 路由
 pub fn sandbox_routes() -> axum::Router<SandboxState> {
     use axum::routing::{delete, get, post};
+    // Keep legacy handlers referenced for compile-time checks while routes are retired.
+    let _ = (
+        create_session,
+        list_sessions,
+        get_session,
+        execute_operation,
+        pause_session,
+        resume_session,
+        close_session,
+        get_stats,
+    );
 
     axum::Router::new()
-        // 会话管理
-        .route("/sandbox/sessions", post(create_session))
-        .route("/sandbox/sessions", get(list_sessions))
-        // BUG-18225: 缺少会话ID的DELETE路径兜底，返回404而非405
-        .route("/sandbox/sessions", delete(close_missing_id_handler))
-        // 缺少会话ID的子路径兜底路由必须在动态路由之前注册
-        // 否则静态路径会被动态段 :id 优先捕获并返回405 Method Not Allowed
-        .route("/sandbox/sessions/pause", post(pause_missing_id_handler))
-        .route("/sandbox/sessions/resume", post(resume_missing_id_handler))
+        // broker-only 路由（Slice 4）
+        .route(
+            "/sandbox/http-requests",
+            post(create_http_request_operation),
+        )
+        .route(
+            "/sandbox/http-requests/:operation_id",
+            get(get_http_request_operation),
+        )
+        .route("/sandbox/operations/:operation_id", get(get_operation))
+        // 旧 Session 生命周期路径退役：统一返回 410 Gone
+        .route("/sandbox/sessions", get(legacy_session_api_gone_handler))
+        .route("/sandbox/sessions", post(legacy_session_api_gone_handler))
+        .route("/sandbox/sessions", delete(legacy_session_api_gone_handler))
+        .route(
+            "/sandbox/sessions/pause",
+            post(legacy_session_api_gone_handler),
+        )
+        .route(
+            "/sandbox/sessions/resume",
+            post(legacy_session_api_gone_handler),
+        )
         .route(
             "/sandbox/sessions/execute",
-            post(execute_missing_id_handler),
+            post(legacy_session_api_gone_handler),
         )
-        // 带动态段的路由（必须在静态兜底路由之后）
-        .route("/sandbox/sessions/:id", get(get_session))
-        .route("/sandbox/sessions/:id/execute", post(execute_operation))
-        .route("/sandbox/operations/:operation_id", get(get_operation))
-        .route("/sandbox/sessions/:id/pause", post(pause_session))
-        .route("/sandbox/sessions/:id/resume", post(resume_session))
-        .route("/sandbox/sessions/:id", delete(close_session))
-        .route("/sandbox/stats", get(get_stats))
-        // WebSocket 实时连接
+        .route(
+            "/sandbox/sessions/:id",
+            get(legacy_session_api_gone_handler),
+        )
+        .route(
+            "/sandbox/sessions/:id",
+            delete(legacy_session_api_gone_handler),
+        )
+        .route(
+            "/sandbox/sessions/:id/execute",
+            post(legacy_session_api_gone_handler),
+        )
+        .route(
+            "/sandbox/sessions/:id/pause",
+            post(legacy_session_api_gone_handler),
+        )
+        .route(
+            "/sandbox/sessions/:id/resume",
+            post(legacy_session_api_gone_handler),
+        )
+        .route("/sandbox/stats", get(legacy_session_api_gone_handler))
         .route(
             "/sandbox/sessions/:id/ws/:credential_id",
-            get(websocket_upgrade),
+            get(legacy_session_api_gone_handler),
         )
-}
-
-/// WebSocket 升级处理器
-async fn websocket_upgrade(
-    Path((session_id, credential_id)): Path<(String, String)>,
-    State(_state): State<SandboxState>,
-    ws: WebSocketUpgrade,
-    Extension(token): Extension<ValidatedToken>,
-) -> Response {
-    // 验证 Scope: sandbox:execute
-    if let Err(e) = check_sandbox_control_scope(&token, TokenScope::SandboxExecute).await {
-        return e;
-    }
-
-    // 直接使用 WebSocketUpgrade 的 on_upgrade 方法
-    ws.on_upgrade(move |socket| async move {
-        // 创建简化的 ApiContext
-        let ctx = ApiContext::from_request_context(&RequestContext::from_validated_token(&token));
-
-        handle_socket(socket, ctx, session_id, credential_id, token).await;
-    })
 }
 
 // ==================== 测试 ====================
@@ -2276,6 +2490,8 @@ mod tests {
     use super::*;
     use crate::api::middleware::{TokenScope, tests::create_mock_token};
     use crate::api::sandbox_owner::{SandboxOwnerRecord, SandboxOwnerRegistry};
+    use crate::http_request_broker::HttpRequestBrokerSubmitResult;
+    use crate::services::db::{DatabaseConfig, DatabasePool, ensure_required_tables_on_startup};
     use crate::tee::sandbox::error::SessionError;
     use crate::tee::sandbox::{
         SessionId,
@@ -2291,6 +2507,7 @@ mod tests {
     };
     use chrono::{Duration as ChronoDuration, Utc};
     use serde_json::Value;
+    use sqlx::postgres::PgPoolOptions;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::net::TcpListener;
@@ -2583,6 +2800,36 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct StubHttpRequestBroker {
+        submit_result: HttpRequestBrokerSubmitResult,
+        operation_record: Option<HttpRequestOperationRecord>,
+        submit_calls: Arc<RwLock<Vec<HttpRequestBrokerSubmitInput>>>,
+        submit_error_message: Option<String>,
+    }
+
+    #[async_trait]
+    impl HttpRequestBroker for StubHttpRequestBroker {
+        async fn submit(
+            &self,
+            input: HttpRequestBrokerSubmitInput,
+        ) -> Result<HttpRequestBrokerSubmitResult, SandboxError> {
+            self.submit_calls.write().await.push(input);
+            if let Some(message) = &self.submit_error_message {
+                return Err(SandboxError::Other(message.clone()));
+            }
+            Ok(self.submit_result.clone())
+        }
+
+        async fn get_operation(
+            &self,
+            _tenant_id: Uuid,
+            _operation_id: Uuid,
+        ) -> Result<Option<HttpRequestOperationRecord>, SandboxError> {
+            Ok(self.operation_record.clone())
+        }
+    }
+
     fn make_owner_routing_state_with_base_url(
         pool: Arc<dyn SandboxPool>,
         repository: Option<Arc<dyn crate::tee::sandbox::repository::SandboxRepository>>,
@@ -2601,6 +2848,8 @@ mod tests {
             owner_registry,
             forwarding_client: reqwest::Client::new(),
             credential_cache: Arc::new(RwLock::new(HashMap::new())),
+            http_request_broker: None,
+            approval_pool: None,
         }
     }
 
@@ -2610,6 +2859,117 @@ mod tests {
         owner_registry: Option<Arc<dyn SandboxOwnerRegistry>>,
     ) -> SandboxState {
         make_owner_routing_state_with_base_url(pool, repository, owner_registry, "http://127.0.0.1")
+    }
+
+    fn make_http_request_broker_state(
+        vault: Arc<CredentialVault>,
+        broker: Arc<dyn HttpRequestBroker>,
+    ) -> SandboxState {
+        make_http_request_broker_state_with_approval_pool(vault, broker, None)
+    }
+
+    fn make_http_request_broker_state_with_approval_pool(
+        vault: Arc<CredentialVault>,
+        broker: Arc<dyn HttpRequestBroker>,
+        approval_pool: Option<PgPool>,
+    ) -> SandboxState {
+        SandboxState {
+            pool: Arc::new(OwnerRoutingPool::missing()),
+            config: SandboxConfig::default(),
+            repository: None,
+            vault: Some(vault),
+            key_hierarchy: None,
+            enclave: None,
+            owner_id: "owner-a".to_string(),
+            owner_base_url: "http://127.0.0.1".to_string(),
+            owner_registry: None,
+            forwarding_client: reqwest::Client::new(),
+            credential_cache: Arc::new(RwLock::new(HashMap::new())),
+            http_request_broker: Some(broker),
+            approval_pool,
+        }
+    }
+
+    fn test_database_url() -> Option<String> {
+        std::env::var("TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .ok()
+    }
+
+    fn postgres_admin_url(database_url: &str) -> Option<String> {
+        let (prefix, database_name) = database_url.rsplit_once('/')?;
+        let query = database_name
+            .find('?')
+            .map(|idx| &database_name[idx..])
+            .unwrap_or("");
+        Some(format!("{prefix}/postgres{query}"))
+    }
+
+    fn temp_database_url(database_url: &str, database_name: &str) -> Option<String> {
+        let (prefix, current_database) = database_url.rsplit_once('/')?;
+        let query = current_database
+            .find('?')
+            .map(|idx| &current_database[idx..])
+            .unwrap_or("");
+        Some(format!("{prefix}/{database_name}{query}"))
+    }
+
+    async fn create_temp_database(
+        admin_pool: &sqlx::PgPool,
+        database_name: &str,
+    ) -> Result<(), sqlx::Error> {
+        let create_sql = format!("CREATE DATABASE \"{database_name}\"");
+        sqlx::query(&create_sql).execute(admin_pool).await?;
+        Ok(())
+    }
+
+    async fn drop_temp_database(admin_pool: &sqlx::PgPool, database_name: &str) {
+        let terminate_sql = r#"
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = $1
+              AND pid <> pg_backend_pid()
+        "#;
+        let _ = sqlx::query(terminate_sql)
+            .bind(database_name)
+            .execute(admin_pool)
+            .await;
+
+        let drop_sql = format!("DROP DATABASE IF EXISTS \"{database_name}\"");
+        let _ = sqlx::query(&drop_sql).execute(admin_pool).await;
+    }
+
+    async fn setup_postgres_approval_pool() -> Option<(sqlx::PgPool, sqlx::PgPool, String)> {
+        let base_database_url = test_database_url()?;
+        let admin_database_url = postgres_admin_url(&base_database_url)?;
+        let admin_pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&admin_database_url)
+            .await
+            .ok()?;
+
+        let database_name = format!(
+            "credbridge_sandbox_runtime_approval_{}",
+            &Uuid::new_v4().simple().to_string()[..12]
+        );
+        create_temp_database(&admin_pool, &database_name)
+            .await
+            .ok()?;
+
+        let temp_url = temp_database_url(&base_database_url, &database_name)?;
+        let config = DatabaseConfig {
+            url: temp_url,
+            max_connections: 5,
+            min_connections: 1,
+            connect_timeout: 5,
+            idle_timeout: 60,
+        };
+        let database_pool = DatabasePool::new(config).await.ok()?;
+        ensure_required_tables_on_startup(&database_pool)
+            .await
+            .ok()?;
+
+        Some((database_pool.pool().clone(), admin_pool, database_name))
     }
 
     fn make_session_record(session_id: SessionId, tenant_id: Uuid) -> SandboxSessionRecord {
@@ -2818,6 +3178,727 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_http_request_broker_routes_work_without_session_pool() {
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let operation_id = Uuid::new_v4();
+        let submit_calls = Arc::new(RwLock::new(Vec::new()));
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxExecute,
+                TokenScope::SandboxRead,
+            ],
+        );
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new(tenant_id.to_string()),
+                    user_id: UserId::new(user_id.to_string()),
+                    service_id: ServiceId::new("svc-http-broker"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: false,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                create_test_payload(),
+            )
+            .expect("should create test credential");
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let broker = Arc::new(StubHttpRequestBroker {
+            submit_result: HttpRequestBrokerSubmitResult {
+                operation_id,
+                success: true,
+                data: Some(serde_json::json!({"status": 200, "body": {"balance": "42"}})),
+                error: None,
+                execution_time_ms: 8,
+            },
+            operation_record: Some(HttpRequestOperationRecord {
+                operation_id,
+                tenant_id,
+                user_id,
+                credential_id,
+                description: "Fetch broker payload".to_string(),
+                operation_type: "http_request".to_string(),
+                status: "completed".to_string(),
+                request_parameters: serde_json::json!({
+                    "method": "GET",
+                    "url": "https://api.example.com/balance"
+                }),
+                response_data: Some(serde_json::json!({
+                    "status": 200,
+                    "body": {"balance": "42"}
+                })),
+                error_message: None,
+                started_at: Utc::now(),
+                completed_at: Some(Utc::now()),
+                execution_duration_ms: Some(8),
+            }),
+            submit_calls: submit_calls.clone(),
+            submit_error_message: None,
+        });
+        let state = make_http_request_broker_state(vault, broker);
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let post_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/http-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "credential_id": credential_id,
+                            "description": "Fetch broker payload",
+                            "parameters": {
+                                "method": "GET",
+                                "url": "https://api.example.com/balance"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(post_response.status(), StatusCode::OK);
+        let post_body = to_bytes(post_response.into_body(), usize::MAX)
+            .await
+            .expect("post response body");
+        let post_payload: Value = serde_json::from_slice(&post_body).expect("post json body");
+        assert_eq!(
+            post_payload["data"]["operation_id"],
+            operation_id.to_string()
+        );
+        assert_eq!(post_payload["data"]["success"], true);
+        assert_eq!(post_payload["data"]["data"]["body"]["balance"], "42");
+
+        let submit_calls = submit_calls.read().await;
+        assert_eq!(
+            submit_calls.len(),
+            1,
+            "broker route should submit exactly once"
+        );
+        assert_eq!(submit_calls[0].credential_id, credential_id);
+        assert_eq!(submit_calls[0].tenant_id, tenant_id);
+        assert_eq!(submit_calls[0].user_id, user_id);
+        drop(submit_calls);
+
+        let get_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/sandbox/http-requests/{operation_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(get_response.status(), StatusCode::OK);
+        let get_body = to_bytes(get_response.into_body(), usize::MAX)
+            .await
+            .expect("get response body");
+        let get_payload: Value = serde_json::from_slice(&get_body).expect("get json body");
+        assert_eq!(
+            get_payload["data"]["operation_id"],
+            operation_id.to_string()
+        );
+        assert_eq!(
+            get_payload["data"]["credential_id"],
+            credential_id.to_string()
+        );
+        assert_eq!(get_payload["data"]["status"], "completed");
+        assert_eq!(get_payload["data"]["data"]["body"]["balance"], "42");
+    }
+
+    #[tokio::test]
+    async fn test_http_request_broker_requires_request_id_for_approval_credentials() {
+        let Some((approval_pool, admin_pool, database_name)) = setup_postgres_approval_pool().await
+        else {
+            eprintln!(
+                "skip sandbox runtime approval test: TEST_DATABASE_URL/DATABASE_URL not configured"
+            );
+            return;
+        };
+
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let submit_calls = Arc::new(RwLock::new(Vec::new()));
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxExecute,
+            ],
+        );
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new(tenant_id.to_string()),
+                    user_id: UserId::new(user_id.to_string()),
+                    service_id: ServiceId::new("svc-http-approval"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: true,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                create_test_payload(),
+            )
+            .expect("should create approval credential");
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let broker = Arc::new(StubHttpRequestBroker {
+            submit_result: HttpRequestBrokerSubmitResult {
+                operation_id: Uuid::new_v4(),
+                success: true,
+                data: None,
+                error: None,
+                execution_time_ms: 1,
+            },
+            operation_record: None,
+            submit_calls: submit_calls.clone(),
+            submit_error_message: None,
+        });
+        let state = make_http_request_broker_state_with_approval_pool(
+            vault,
+            broker,
+            Some(approval_pool.clone()),
+        );
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/http-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "credential_id": credential_id,
+                            "description": "Fetch broker payload",
+                            "parameters": {
+                                "method": "GET",
+                                "url": "https://api.example.com/balance"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(submit_calls.read().await.is_empty());
+
+        drop_temp_database(&admin_pool, &database_name).await;
+    }
+
+    #[tokio::test]
+    async fn test_http_request_broker_blocks_pending_approval_credentials_before_submit() {
+        let Some((approval_pool, admin_pool, database_name)) = setup_postgres_approval_pool().await
+        else {
+            eprintln!(
+                "skip sandbox runtime approval test: TEST_DATABASE_URL/DATABASE_URL not configured"
+            );
+            return;
+        };
+
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let submit_calls = Arc::new(RwLock::new(Vec::new()));
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxExecute,
+            ],
+        );
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new(tenant_id.to_string()),
+                    user_id: UserId::new(user_id.to_string()),
+                    service_id: ServiceId::new("svc-http-approval"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: true,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                create_test_payload(),
+            )
+            .expect("should create approval credential");
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let broker = Arc::new(StubHttpRequestBroker {
+            submit_result: HttpRequestBrokerSubmitResult {
+                operation_id: Uuid::new_v4(),
+                success: true,
+                data: None,
+                error: None,
+                execution_time_ms: 1,
+            },
+            operation_record: None,
+            submit_calls: submit_calls.clone(),
+            submit_error_message: None,
+        });
+        let state = make_http_request_broker_state_with_approval_pool(
+            vault,
+            broker,
+            Some(approval_pool.clone()),
+        );
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/http-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "credential_id": credential_id,
+                            "request_id": "req-pending",
+                            "description": "Fetch broker payload",
+                            "parameters": {
+                                "method": "GET",
+                                "url": "https://api.example.com/balance"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert!(submit_calls.read().await.is_empty());
+
+        let approval_row = sqlx::query_as::<_, (String, String)>(
+            r#"
+            SELECT business_id, status
+            FROM approval_requests
+            WHERE tenant_id = $1
+            "#,
+        )
+        .bind(tenant_id)
+        .fetch_one(&approval_pool)
+        .await
+        .expect("pending approval row should exist");
+        assert_eq!(approval_row.0, "req-pending");
+        assert_eq!(approval_row.1, "pending");
+
+        drop_temp_database(&admin_pool, &database_name).await;
+    }
+
+    #[tokio::test]
+    async fn test_http_request_broker_consumes_preapproved_runtime_access_and_requires_reapproval()
+    {
+        let Some((approval_pool, admin_pool, database_name)) = setup_postgres_approval_pool().await
+        else {
+            eprintln!(
+                "skip sandbox runtime approval test: TEST_DATABASE_URL/DATABASE_URL not configured"
+            );
+            return;
+        };
+
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let submit_calls = Arc::new(RwLock::new(Vec::new()));
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxExecute,
+            ],
+        );
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new(tenant_id.to_string()),
+                    user_id: UserId::new(user_id.to_string()),
+                    service_id: ServiceId::new("svc-http-approval"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: true,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                create_test_payload(),
+            )
+            .expect("should create approval credential");
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let approval_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO approval_requests (
+                approval_id,
+                tenant_id,
+                requested_by,
+                business_type,
+                business_id,
+                status
+            )
+            VALUES ($1, $2, $3, $4, $5, 'approved')
+            "#,
+        )
+        .bind(approval_id)
+        .bind(tenant_id)
+        .bind(user_id)
+        .bind("credential_runtime_access")
+        .bind("req-approved")
+        .execute(&approval_pool)
+        .await
+        .expect("approved runtime request should insert");
+        sqlx::query(
+            r#"
+            INSERT INTO approval_business_results (
+                tenant_id,
+                business_type,
+                business_id,
+                approval_id,
+                status,
+                result_code,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, 'approved', 'approved', NOW())
+            "#,
+        )
+        .bind(tenant_id)
+        .bind("credential_runtime_access")
+        .bind("req-approved")
+        .bind(approval_id)
+        .execute(&approval_pool)
+        .await
+        .expect("approved runtime business result should insert");
+
+        let broker = Arc::new(StubHttpRequestBroker {
+            submit_result: HttpRequestBrokerSubmitResult {
+                operation_id: Uuid::new_v4(),
+                success: true,
+                data: Some(serde_json::json!({"status": 200})),
+                error: None,
+                execution_time_ms: 1,
+            },
+            operation_record: None,
+            submit_calls: submit_calls.clone(),
+            submit_error_message: None,
+        });
+        let state = make_http_request_broker_state_with_approval_pool(
+            vault,
+            broker,
+            Some(approval_pool.clone()),
+        );
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/http-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "credential_id": credential_id,
+                            "request_id": "req-approved",
+                            "description": "Fetch broker payload",
+                            "parameters": {
+                                "method": "GET",
+                                "url": "https://api.example.com/balance"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(submit_calls.read().await.len(), 1);
+
+        let consumed_row =
+            sqlx::query_as::<_, (Option<chrono::DateTime<chrono::Utc>>, Option<Uuid>)>(
+                r#"
+            SELECT consumed_at, reservation_id
+            FROM approval_business_results
+            WHERE tenant_id = $1
+              AND business_type = 'credential_runtime_access'
+              AND business_id = $2
+            "#,
+            )
+            .bind(tenant_id)
+            .bind("req-approved")
+            .fetch_one(&approval_pool)
+            .await
+            .expect("approval result should be consumed after successful submit");
+        assert!(consumed_row.0.is_some());
+        assert!(consumed_row.1.is_none());
+
+        let second_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/http-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "credential_id": credential_id,
+                            "request_id": "req-approved",
+                            "description": "Fetch broker payload again",
+                            "parameters": {
+                                "method": "GET",
+                                "url": "https://api.example.com/balance"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second_response.status(), StatusCode::CONFLICT);
+        let second_body = to_bytes(second_response.into_body(), usize::MAX)
+            .await
+            .expect("second response body should be readable");
+        let second_body: Value =
+            serde_json::from_slice(&second_body).expect("second response body should be json");
+        assert!(
+            second_body["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("waiting for approval")
+        );
+        assert_eq!(submit_calls.read().await.len(), 1);
+
+        let pending_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM approval_requests
+            WHERE tenant_id = $1
+              AND business_type = 'credential_runtime_access'
+              AND business_id = $2
+              AND status = 'pending'
+            "#,
+        )
+        .bind(tenant_id)
+        .bind("req-approved")
+        .fetch_one(&approval_pool)
+        .await
+        .expect("pending approval count query should succeed");
+        assert_eq!(pending_count, 1);
+
+        drop_temp_database(&admin_pool, &database_name).await;
+    }
+
+    #[tokio::test]
+    async fn test_http_request_broker_releases_approval_when_submit_fails() {
+        let Some((approval_pool, admin_pool, database_name)) = setup_postgres_approval_pool().await
+        else {
+            eprintln!(
+                "skip sandbox runtime approval release test: TEST_DATABASE_URL/DATABASE_URL not configured"
+            );
+            return;
+        };
+
+        let tenant_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let submit_calls = Arc::new(RwLock::new(Vec::new()));
+        let vault = Arc::new(CredentialVault::new_in_memory());
+        let token = create_mock_token(
+            tenant_id.to_string().as_str(),
+            user_id.to_string().as_str(),
+            vec![
+                TokenScope::CredentialRead,
+                TokenScope::CredentialDecrypt,
+                TokenScope::SandboxExecute,
+            ],
+        );
+
+        let entry = vault
+            .create_credential(
+                CreateCredentialRequest {
+                    tenant_id: TenantId::new(tenant_id.to_string()),
+                    user_id: UserId::new(user_id.to_string()),
+                    service_id: ServiceId::new("svc-http-approval-release"),
+                    credential_type: crate::models::CredentialType::ApiKey,
+                    expires_at: None,
+                    requires_approval: true,
+                    provider: None,
+                    allowed_domains: Vec::new(),
+                    custom_functions: Vec::new(),
+                },
+                create_test_payload(),
+            )
+            .expect("should create approval credential");
+        let credential_id =
+            Uuid::parse_str(entry.credential_id.as_str()).expect("credential id should be uuid");
+
+        let approval_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO approval_requests (
+                approval_id,
+                tenant_id,
+                requested_by,
+                business_type,
+                business_id,
+                status
+            )
+            VALUES ($1, $2, $3, $4, $5, 'approved')
+            "#,
+        )
+        .bind(approval_id)
+        .bind(tenant_id)
+        .bind(user_id)
+        .bind("credential_runtime_access")
+        .bind("req-release")
+        .execute(&approval_pool)
+        .await
+        .expect("approved runtime request should insert");
+        sqlx::query(
+            r#"
+            INSERT INTO approval_business_results (
+                tenant_id,
+                business_type,
+                business_id,
+                approval_id,
+                status,
+                result_code,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, 'approved', 'approved', NOW())
+            "#,
+        )
+        .bind(tenant_id)
+        .bind("credential_runtime_access")
+        .bind("req-release")
+        .bind(approval_id)
+        .execute(&approval_pool)
+        .await
+        .expect("approved runtime business result should insert");
+
+        let broker = Arc::new(StubHttpRequestBroker {
+            submit_result: HttpRequestBrokerSubmitResult {
+                operation_id: Uuid::new_v4(),
+                success: false,
+                data: None,
+                error: Some("submit failed".to_string()),
+                execution_time_ms: 1,
+            },
+            operation_record: None,
+            submit_calls: submit_calls.clone(),
+            submit_error_message: Some("submit failed".to_string()),
+        });
+        let state = make_http_request_broker_state_with_approval_pool(
+            vault,
+            broker,
+            Some(approval_pool.clone()),
+        );
+        let app = sandbox_routes()
+            .layer(axum::Extension(token))
+            .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/sandbox/http-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "credential_id": credential_id,
+                            "request_id": "req-release",
+                            "description": "Fetch broker payload",
+                            "parameters": {
+                                "method": "GET",
+                                "url": "https://api.example.com/balance"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(submit_calls.read().await.len(), 1);
+
+        let reservation_row = sqlx::query_as::<
+            _,
+            (
+                Option<Uuid>,
+                Option<chrono::DateTime<chrono::Utc>>,
+                Option<chrono::DateTime<chrono::Utc>>,
+            ),
+        >(
+            r#"
+            SELECT reservation_id, reserved_at, consumed_at
+            FROM approval_business_results
+            WHERE tenant_id = $1
+              AND business_type = 'credential_runtime_access'
+              AND business_id = $2
+            "#,
+        )
+        .bind(tenant_id)
+        .bind("req-release")
+        .fetch_one(&approval_pool)
+        .await
+        .expect("approval result should remain reusable after submit failure");
+        assert!(reservation_row.0.is_none());
+        assert!(reservation_row.1.is_none());
+        assert!(reservation_row.2.is_none());
+
+        drop_temp_database(&admin_pool, &database_name).await;
+    }
+
+    #[tokio::test]
     async fn test_check_scope_returns_insufficient_scope_error_shape() {
         let token = create_mock_token("tenant_123", "user_456", vec![TokenScope::SandboxExecute]);
 
@@ -2975,6 +4056,7 @@ mod tests {
                     service_id: ServiceId::new("svc-1"),
                     credential_type: crate::models::CredentialType::ApiKey,
                     expires_at: None,
+                    requires_approval: false,
                     provider: None,
                     allowed_domains: Vec::new(),
                     custom_functions: Vec::new(),
@@ -3003,6 +4085,7 @@ mod tests {
                     service_id: ServiceId::new("svc-1"),
                     credential_type: crate::models::CredentialType::ApiKey,
                     expires_at: Some(Utc::now().timestamp() as u64 - 3600),
+                    requires_approval: false,
                     provider: None,
                     allowed_domains: Vec::new(),
                     custom_functions: Vec::new(),
@@ -3067,6 +4150,7 @@ mod tests {
                     service_id: ServiceId::new("svc-1"),
                     credential_type: crate::models::CredentialType::ApiKey,
                     expires_at: Some(Utc::now().timestamp() as u64 - 3600),
+                    requires_approval: false,
                     provider: None,
                     allowed_domains: Vec::new(),
                     custom_functions: Vec::new(),
@@ -3461,6 +4545,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_close_session_deletes_owner_mapping_after_release() {
         let session = create_stub_session();
         let session_id = session.id();
@@ -3517,6 +4602,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_execute_operation_returns_retryable_503_when_owner_missing_but_db_record_exists()
     {
         let tenant_id = Uuid::new_v4();
@@ -3573,6 +4659,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_execute_operation_clears_stale_local_owner_mapping_before_retryable_response() {
         let tenant_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
@@ -3641,6 +4728,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_execute_operation_preserves_local_expired_error_and_owner_mapping() {
         let mut session = create_stub_session();
         session.context.expires_at = OffsetDateTime::now_utc() - time::Duration::minutes(1);
@@ -3710,6 +4798,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_execute_operation_forwards_to_registered_owner() {
         let tenant_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
@@ -3801,6 +4890,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_forward_loop_header_returns_session_not_local_retryable_error() {
         let tenant_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
@@ -3962,6 +5052,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_legacy_session_routes_return_gone() {
+        let config = SandboxConfig::default();
+        let pool: Arc<dyn SandboxPool> = Arc::new(NsjailSandboxPool::new(config.clone()));
+        let state = SandboxState::new_with_pool(pool, config);
+        let app = sandbox_routes().with_state(state);
+
+        let legacy_cases = [
+            ("GET", "/sandbox/sessions"),
+            ("POST", "/sandbox/sessions"),
+            ("DELETE", "/sandbox/sessions"),
+            (
+                "GET",
+                "/sandbox/sessions/550e8400-e29b-41d4-a716-446655440000",
+            ),
+            (
+                "POST",
+                "/sandbox/sessions/550e8400-e29b-41d4-a716-446655440000/execute",
+            ),
+            (
+                "POST",
+                "/sandbox/sessions/550e8400-e29b-41d4-a716-446655440000/pause",
+            ),
+            (
+                "POST",
+                "/sandbox/sessions/550e8400-e29b-41d4-a716-446655440000/resume",
+            ),
+            ("GET", "/sandbox/stats"),
+            (
+                "GET",
+                "/sandbox/sessions/550e8400-e29b-41d4-a716-446655440000/ws/550e8400-e29b-41d4-a716-446655440000",
+            ),
+        ];
+
+        for (method, uri) in legacy_cases {
+            let request = Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(Body::empty())
+                .expect("build request");
+            let response = app.clone().oneshot(request).await.expect("send request");
+            assert_eq!(
+                response.status(),
+                StatusCode::GONE,
+                "{method} {uri} should return 410"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_pause_missing_session_id_returns_not_found() {
         // BUG-18223 回归测试：POST /sandbox/sessions/pause 缺少会话ID应返回404，
         // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
@@ -3990,6 +5130,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_resume_missing_session_id_returns_not_found() {
         // BUG-18224 回归测试：POST /sandbox/sessions/resume 缺少会话ID应返回404，
         // 而不是被 /sandbox/sessions/:id 动态段误匹配为 405 Method Not Allowed
@@ -4020,6 +5161,7 @@ mod tests {
     // ==================== BUG-18225 回归测试：缺少会话ID返回404而非405 ====================
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_close_missing_session_id_returns_not_found() {
         // BUG-18225 回归测试：DELETE /sandbox/sessions 缺少会话ID应返回404，
         // 而不是被框架拦截返回 405 Method Not Allowed
@@ -4051,6 +5193,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_close_missing_session_id_with_trailing_slash_returns_not_found() {
         // BUG-18225 回归测试：DELETE /sandbox/sessions/ 带尾随斜杠应同样返回404
         // 需要使用 NormalizePathLayer 模拟真实服务器的尾随斜杠归一化行为
@@ -4089,6 +5232,7 @@ mod tests {
     // ==================== BUG-18226 回归测试：非UUID路径参数返回400 invalid_request ====================
 
     #[test]
+    #[ignore = "legacy session API retired in Slice 4"]
     fn test_close_session_invalid_uuid_returns_invalid_request() {
         // BUG-18226 回归测试：DELETE /sandbox/sessions/not-a-uuid 应返回 400 + {"error":"invalid_request"}
         let invalid_uuids = [
@@ -4108,6 +5252,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_close_session_invalid_uuid_route_returns_invalid_request() {
         // BUG-18226 回归测试：真实路由 DELETE /sandbox/sessions/not-a-uuid 应返回
         // 400 + {"error":"invalid_request"}，且不会进入会话关闭逻辑
@@ -4148,6 +5293,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "legacy session API retired in Slice 4"]
     fn test_get_session_invalid_uuid_returns_invalid_request() {
         // BUG-18222: GET /sandbox/sessions/not-a-uuid 应返回 400 invalid_request
         let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
@@ -4160,6 +5306,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "legacy session API retired in Slice 4"]
     fn test_pause_session_invalid_uuid_returns_invalid_request() {
         // BUG-18223: POST /sandbox/sessions/not-a-uuid/pause 应返回 400 invalid_request
         let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
@@ -4167,6 +5314,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "legacy session API retired in Slice 4"]
     fn test_resume_session_invalid_uuid_returns_invalid_request() {
         // BUG-18224: POST /sandbox/sessions/not-a-uuid/resume 应返回 400 invalid_request
         let error = ApiErrorResponse::invalid_request("Invalid session_id: must be a valid UUID");
@@ -4174,6 +5322,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_get_session_invalid_uuid_route_returns_invalid_request() {
         // BUG-18222 回归测试：GET /sandbox/sessions/not-a-uuid 应返回
         // 400 + {"error":"invalid_request"}，且不会进入会话查询逻辑
@@ -4216,6 +5365,7 @@ mod tests {
     // ==================== BUG-18221 回归测试：路径缺少ID时返回404而非200 ====================
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_list_sessions_trailing_slash_returns_not_found() {
         // BUG-18221 回归测试：GET /sandbox/sessions/ 被 NormalizePathLayer 归一化为
         // /sandbox/sessions 后，不应被路由到 list_sessions 返回 200。
@@ -4258,6 +5408,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "legacy session API retired in Slice 4"]
     async fn test_list_sessions_normal_path_returns_success() {
         // 正常列表请求（无尾斜杠）仍应返回成功响应
         // 这是 BUG-18221 修复的回归测试：确保正常的列表功能不受影响

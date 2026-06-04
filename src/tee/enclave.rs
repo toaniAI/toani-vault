@@ -315,10 +315,11 @@ impl Enclave {
         self.state = EnclaveState::ShuttingDown;
 
         // 1. 密封 L1 Master Key
-        if self.key_manager.is_some() && self.key_hierarchy.export_master_key_material().is_some() {
-            if let Err(e) = self.seal_master_key() {
-                tracing::error!("密封主密钥失败: {}", e);
-            }
+        if self.key_manager.is_some()
+            && self.key_hierarchy.export_master_key_material().is_some()
+            && let Err(e) = self.seal_master_key()
+        {
+            tracing::error!("密封主密钥失败: {}", e);
         }
 
         // 2. 清理用户密钥缓存

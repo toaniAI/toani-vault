@@ -1,20 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as common from "../src/commands/common.js";
 import { runSandbox } from "../src/commands/sandbox.js";
 import type { CliConfig } from "../src/types/cli.js";
 
 const sandboxMock = vi.hoisted(() => ({
-  createSession: vi.fn(),
-  listSessions: vi.fn(),
-  getSession: vi.fn(),
-  closeSession: vi.fn(),
-  pauseSession: vi.fn(),
-  resumeSession: vi.fn(),
-  bootstrapPage: vi.fn(),
-  executeOperation: vi.fn(),
-  exportDom: vi.fn(),
-  exportData: vi.fn(),
-  getOperation: vi.fn(),
-  getStats: vi.fn(),
+  request: vi.fn(),
+  getRequest: vi.fn(),
 }));
 
 vi.mock("../src/commands/common.js", async (importOriginal) => {
@@ -41,260 +32,129 @@ describe("runSandbox", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes execute params through to preserve backend operation fields", async () => {
+  it("auto-generates a request id when omitted", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.executeOperation.mockResolvedValue({
+    vi.spyOn(common, "generateRequestId").mockReturnValue("auto-uuid-111");
+    sandboxMock.request.mockResolvedValue({
+      operationId: "op-auto",
+      status: "success",
+      executionTimeMs: 2,
+    });
+
+    await runSandbox(testConfig, [
+      "request",
+      "--operation-type",
+      "http_request",
+      "--credential-id",
+      "cred-1",
+      "--params",
+      '{"url":"https://api.example.com/health","method":"GET"}',
+    ]);
+
+    expect(sandboxMock.request).toHaveBeenCalledWith({
+      operationType: "http_request",
+      credentialId: "cred-1",
+      serviceId: undefined,
+      requestId: "auto-uuid-111",
+      description: undefined,
+      parameters: {
+        url: "https://api.example.com/health",
+        method: "GET",
+      },
+      method: "GET",
+      headers: undefined,
+      body: undefined,
+      timeout: undefined,
+    });
+  });
+
+  it("submits broker request payload without session lifecycle fields", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    sandboxMock.request.mockResolvedValue({
       operationId: "op-1",
       status: "success",
       executionTimeMs: 1,
     });
 
     await runSandbox(testConfig, [
-      "execute",
-      "session-1",
+      "request",
       "--operation-type",
-      "export",
+      "http_request",
       "--description",
-      "export selectors",
+      "check upstream",
       "--params",
-      '{"selectors":[".row"],"duration_ms":250,"sensitive":true}',
+      '{"credential_id":"cred-from-params","service_id":"svc-from-params","request_id":"req-from-params","url":"https://api.example.com/health","method":"GET","headers":{"x-api-key":{"$credential":"api_key"}}}',
     ]);
 
-    expect(sandboxMock.executeOperation).toHaveBeenCalledWith("session-1", {
-      operationType: "export",
-      description: "export selectors",
+    expect(sandboxMock.request).toHaveBeenCalledWith({
+      operationType: "http_request",
+      credentialId: "cred-from-params",
+      serviceId: "svc-from-params",
+      requestId: "req-from-params",
+      description: "check upstream",
       parameters: {
-        selectors: [".row"],
-        duration_ms: 250,
-        sensitive: true,
+        url: "https://api.example.com/health",
+        method: "GET",
+        headers: { "x-api-key": { $credential: "api_key" } },
       },
-      selector: undefined,
-      value: undefined,
-      url: undefined,
-      method: undefined,
-      headers: undefined,
+      method: "GET",
+      headers: { "x-api-key": { $credential: "api_key" } },
       body: undefined,
-      script: undefined,
-      bindings: undefined,
-      attribute: undefined,
       timeout: undefined,
-      waitCondition: undefined,
     });
   });
 
-  it("preserves credential references for top-level fill values", async () => {
+  it("prefers explicit credential flags over params payload", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.executeOperation.mockResolvedValue({
-      operationId: "op-fill",
+    sandboxMock.request.mockResolvedValue({
+      operationId: "op-2",
       status: "success",
       executionTimeMs: 1,
     });
 
     await runSandbox(testConfig, [
-      "execute",
-      "session-1",
+      "request",
       "--operation-type",
-      "fill",
+      "http_request",
+      "--credential-id",
+      "cred-from-flag",
+      "--service-id",
+      "svc-from-flag",
+      "--request-id",
+      "req-from-flag",
       "--params",
-      '{"selector":"input[name=password]","value":{"$credential":"password"}}',
+      '{"credential_id":"cred-from-params","service_id":"svc-from-params","request_id":"req-from-params","url":"https://api.example.com/health","method":"GET"}',
     ]);
 
-    expect(sandboxMock.executeOperation).toHaveBeenCalledWith("session-1", {
-      operationType: "fill",
+    expect(sandboxMock.request).toHaveBeenCalledWith({
+      operationType: "http_request",
+      credentialId: "cred-from-flag",
+      serviceId: "svc-from-flag",
+      requestId: "req-from-flag",
       description: undefined,
       parameters: {
-        selector: "input[name=password]",
-        value: { $credential: "password" },
+        url: "https://api.example.com/health",
+        method: "GET",
       },
-      selector: "input[name=password]",
-      value: { $credential: "password" },
-      url: undefined,
-      method: undefined,
+      method: "GET",
       headers: undefined,
       body: undefined,
-      script: undefined,
-      bindings: undefined,
-      attribute: undefined,
       timeout: undefined,
-      waitCondition: undefined,
     });
   });
 
-  it("preserves plain-string execute_script bindings", async () => {
+  it("supports get-request command", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.executeOperation.mockResolvedValue({
-      operationId: "op-script",
-      status: "success",
-      executionTimeMs: 1,
-    });
+    sandboxMock.getRequest.mockResolvedValue({ operationId: "op-1" });
 
-    await runSandbox(testConfig, [
-      "execute",
-      "session-1",
-      "--operation-type",
-      "execute_script",
-      "--params",
-      '{"script":"return document.querySelector(bindings.selector)?.textContent ?? null","bindings":{"selector":"h1"}}',
-    ]);
+    await runSandbox(testConfig, ["get-request", "op-1"]);
 
-    expect(sandboxMock.executeOperation).toHaveBeenCalledWith("session-1", {
-      operationType: "execute_script",
-      description: undefined,
-      parameters: {
-        script:
-          "return document.querySelector(bindings.selector)?.textContent ?? null",
-        bindings: { selector: "h1" },
-      },
-      selector: undefined,
-      value: undefined,
-      url: undefined,
-      method: undefined,
-      headers: undefined,
-      body: undefined,
-      script:
-        "return document.querySelector(bindings.selector)?.textContent ?? null",
-      bindings: { selector: "h1" },
-      attribute: undefined,
-      timeout: undefined,
-      waitCondition: undefined,
-    });
+    expect(sandboxMock.getRequest).toHaveBeenCalledWith("op-1");
   });
 
-  it("exposes pause and resume session commands", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.pauseSession.mockResolvedValue({ sessionId: "session-1" });
-    sandboxMock.resumeSession.mockResolvedValue({ sessionId: "session-1" });
-
-    await runSandbox(testConfig, ["pause", "session-1"]);
-    await runSandbox(testConfig, ["resume", "session-1"]);
-
-    expect(sandboxMock.pauseSession).toHaveBeenCalledWith("session-1");
-    expect(sandboxMock.resumeSession).toHaveBeenCalledWith("session-1");
-  });
-
-  it("builds a fixed bootstrap_page request body from the dedicated subcommand", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.bootstrapPage.mockResolvedValue({
-      operationId: "op-bootstrap",
-      status: "success",
-      executionTimeMs: 1,
-    });
-
-    await runSandbox(testConfig, [
-      "bootstrap-page",
-      "--session-id",
-      "session-1",
-      "--mode",
-      "rocket_loader",
-      "--script-selectors",
-      '["script[src][type$=\\"-text/javascript\\"]"]',
-      "--include-plain-scripts",
-      "false",
-      "--replay-lifecycle-events",
-      "true",
-      "--wait-selector",
-      'input[name="email"]',
-      "--wait-timeout-ms",
-      "15000",
-    ]);
-
-    expect(sandboxMock.bootstrapPage).toHaveBeenCalledWith("session-1", {
-      mode: "rocket_loader",
-      scriptSelectors: ['script[src][type$="-text/javascript"]'],
-      includePlainScripts: false,
-      replayLifecycleEvents: true,
-      waitSelector: 'input[name="email"]',
-      waitTimeoutMs: 15000,
-    });
-  });
-
-  it("leaves bootstrap script discovery defaults to the backend when selectors are omitted", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.bootstrapPage.mockResolvedValue({
-      operationId: "op-bootstrap",
-      status: "success",
-      executionTimeMs: 1,
-    });
-
-    await runSandbox(testConfig, [
-      "bootstrap-page",
-      "session-1",
-      "--mode",
-      "rocket_loader",
-      "--include-plain-scripts",
-      "true",
-    ]);
-
-    expect(sandboxMock.bootstrapPage).toHaveBeenCalledWith("session-1", {
-      mode: "rocket_loader",
-      scriptSelectors: undefined,
-      includePlainScripts: true,
-      replayLifecycleEvents: undefined,
-      waitSelector: undefined,
-      waitTimeoutMs: undefined,
-    });
-  });
-
-  it("prints bootstrap-page failures instead of throwing when the backend returns success false", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.bootstrapPage.mockResolvedValue({
-      operationId: "op-bootstrap",
-      success: false,
-      error: "bootstrap_failed: selector_not_found",
-      executionTimeMs: 1,
-    });
-
-    await expect(
-      runSandbox(testConfig, [
-        "bootstrap-page",
-        "session-1",
-        "--mode",
-        "rocket_loader",
-      ]),
-    ).resolves.toBeUndefined();
-
-    expect(logSpy).toHaveBeenCalled();
-  });
-
-  it("rejects raw params and bindings for bootstrap-page", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await expect(
-      runSandbox(testConfig, [
-        "bootstrap-page",
-        "session-1",
-        "--mode",
-        "rocket_loader",
-        "--params",
-        '{"script":"alert(1)"}',
-      ]),
-    ).rejects.toThrow(
-      "bootstrap-page only accepts fixed bootstrap flags; raw scripts, bindings, and --params are not supported",
+  it("rejects unknown legacy sandbox subcommands", async () => {
+    await expect(runSandbox(testConfig, ["stats"])).rejects.toThrow(
+      "Usage: toani-vault sandbox <request|get-request> [options]",
     );
-  });
-
-  it("exposes export-data using the backend selectors contract", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    sandboxMock.exportData.mockResolvedValue({
-      exportId: "export-1",
-      dataBase64: "e30=",
-      format: "json",
-      filename: "export.json",
-      sizeBytes: 2,
-    });
-
-    await runSandbox(testConfig, [
-      "export-data",
-      "session-1",
-      "--format",
-      "json",
-      "--selectors",
-      '[".balance",".status"]',
-    ]);
-
-    expect(sandboxMock.exportData).toHaveBeenCalledWith("session-1", {
-      format: "json",
-      selectors: [".balance", ".status"],
-    });
   });
 });

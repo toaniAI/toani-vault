@@ -332,8 +332,7 @@ async fn setup_postgres_backed_broker_app() -> Option<(axum::Router, sqlx::PgPoo
 
     let app = oauth_broker_routes(OAuthBrokerApiState::new(std::sync::Arc::new(
         PgOAuthBrokerService::new(database_pool.pool().clone()),
-    )))
-    .layer(axum::Extension(create_admin_token()));
+    )));
 
     Some((app, database_pool.pool().clone(), admin_pool))
 }
@@ -656,6 +655,7 @@ async fn provider_registry_update_persists_version_in_postgres_when_database_is_
         eprintln!("skip provider registry postgres test: database not available");
         return;
     };
+    let app = app.layer(axum::Extension(create_admin_token()));
 
     let create_request = Request::builder()
         .method("POST")
@@ -734,6 +734,7 @@ async fn provider_validation_returns_structured_success_and_failure_against_mock
         eprintln!("skip provider validation test: database not available");
         return;
     };
+    let app = app.layer(axum::Extension(create_admin_token()));
 
     let create_ok_request = Request::builder()
         .method("POST")

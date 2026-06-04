@@ -39,17 +39,16 @@ API base path: `/api/v1`.
 
 ### Sandbox
 
-- `POST /sandbox/sessions`
-- `GET /sandbox/sessions`
-- `GET /sandbox/sessions/:id`
-- `POST /sandbox/sessions/:id/execute`
-- `GET /sandbox/operations/:operation_id`
-- `POST /sandbox/sessions/:id/pause`
-- `POST /sandbox/sessions/:id/resume`
-- `DELETE /sandbox/sessions/:id`
-- `POST /sandbox/sessions/:id/screenshot`
-- `POST /sandbox/sessions/:id/export`
-- `GET /sandbox/stats`
+- `POST /sandbox/http-requests`
+- `GET /sandbox/http-requests/:operation_id`
+
+### Approvals
+
+- `POST /approvals`
+- `GET /approvals/:approval_id`
+- `POST /approvals/:approval_id/approve`
+- `POST /approvals/:approval_id/reject`
+- `POST /approvals/:approval_id/cancel`
 
 ### Audit
 
@@ -64,14 +63,15 @@ API base path: `/api/v1`.
 
 - Credentials: create/list/get/decrypt/delete
 - Tokens: verify/revoke
-- Sandbox: create/list/get/execute/pause/resume/close/export/dom-export
+- Sandbox: request/get-request (broker-only)
+- Approvals: create/get
 
 ### Missing Before Migration
 
 - Auth service: `session/me/logout/memberships`
 - Audit service: `logs/export/verify`
 - Token service: `create/stats`
-- Sandbox service: `get operation` and `stats`
+- Sandbox service: legacy session lifecycle methods retired in Slice 4
 
 ## 3) Current npm CLI Coverage Snapshot
 
@@ -81,6 +81,7 @@ API base path: `/api/v1`.
 - `doctor`
 - `config`
 - `credentials`
+- `approvals`
 - `sandbox`
 
 ### Known drift
@@ -88,15 +89,14 @@ API base path: `/api/v1`.
 - CLI surface drift:
   - Current npm CLI exposes `login`, `doctor`, `config`, read-only `credentials` (`list`, `get`), `sandbox`, plus global flags/version
   - Historical docs still referenced broader unshipped `auth`, mutating `credentials`, `tokens`, and `audit` groups
-- Sandbox terminate naming drift:
-  - Real close-session route is `DELETE /sandbox/sessions/:id`
-  - Some historical constants still referenced `/sandbox/sessions/:id/terminate`
-  - Screenshot is not exposed by the current backend sandbox router
+- Sandbox lifecycle drift:
+  - Legacy session-lifecycle and stats sandbox APIs are retired (`410 Gone`)
+  - Current CLI/SDK only use broker routes: `POST /sandbox/http-requests` and `GET /sandbox/http-requests/:operation_id`
 - Auth status/login behavior drift:
-  - Current `login` / `doctor` validation is based on `GET /sandbox/stats`, not `auth/session` or `auth/me`
+  - Current `login` / `doctor` validation is based on `GET /auth/me`
 
 ## 4) Migration Rules
 
 - Do not trust old route constants or old CLI behavior over backend mounted routes.
 - CLI adapter layer should call SDK services, not duplicate raw HTTP logic.
-- Keep command names aligned to `toani` branding and npm package `@toani/vault-cli`.
+- Keep command names aligned to `toani-vault` branding and npm package `@toani/vault-cli`.

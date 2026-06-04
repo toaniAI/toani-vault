@@ -20,10 +20,11 @@ use uuid::Uuid;
 // ============================================================================
 
 /// 用户状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum UserStatus {
     /// 活跃状态
+    #[default]
     Active,
     /// 未激活状态
     Inactive,
@@ -31,12 +32,6 @@ pub enum UserStatus {
     Suspended,
     /// 待删除状态
     PendingDeletion,
-}
-
-impl Default for UserStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 impl UserStatus {
@@ -155,7 +150,7 @@ impl std::str::FromStr for IdentityProvider {
 // ============================================================================
 
 /// 租户成员角色
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MembershipRole {
     /// 租户所有者
@@ -163,15 +158,10 @@ pub enum MembershipRole {
     /// 租户管理员
     Admin,
     /// 普通成员
+    #[default]
     Member,
     /// 只读成员
     Readonly,
-}
-
-impl Default for MembershipRole {
-    fn default() -> Self {
-        Self::Member
-    }
 }
 
 impl MembershipRole {
@@ -314,23 +304,18 @@ impl std::str::FromStr for MembershipRole {
 // ============================================================================
 
 /// 租户成员资格状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MembershipStatus {
     /// 活跃状态
     Active,
     /// 待确认状态（等待用户接受邀请）
+    #[default]
     Pending,
     /// 已暂停状态
     Suspended,
     /// 已失效状态（用户已离开租户）
     Inactive,
-}
-
-impl Default for MembershipStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 impl MembershipStatus {
@@ -416,10 +401,11 @@ impl InviteeType {
 // ============================================================================
 
 /// 邀请状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum InvitationStatus {
     /// 待接受
+    #[default]
     Pending,
     /// 已接受
     Consumed,
@@ -427,12 +413,6 @@ pub enum InvitationStatus {
     Expired,
     /// 已撤销
     Revoked,
-}
-
-impl Default for InvitationStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 impl InvitationStatus {
@@ -456,7 +436,7 @@ impl InvitationStatus {
 // ============================================================================
 
 /// MFA 验证状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MfaStatus {
     /// 待验证
@@ -464,13 +444,8 @@ pub enum MfaStatus {
     /// 已验证
     Verified,
     /// 不需要验证
+    #[default]
     NotRequired,
-}
-
-impl Default for MfaStatus {
-    fn default() -> Self {
-        Self::NotRequired
-    }
 }
 
 impl MfaStatus {
@@ -1195,17 +1170,12 @@ impl AuthSession {
 // Service Account 与 API Token 元数据
 // ============================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceAccountStatus {
+    #[default]
     Active,
     Inactive,
-}
-
-impl Default for ServiceAccountStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 impl ServiceAccountStatus {

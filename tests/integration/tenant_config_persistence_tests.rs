@@ -121,11 +121,12 @@ async fn postgres_tenant_config_survives_store_restart() {
 
     let tenant_uuid = Uuid::new_v4();
     let tenant_id = TenantId::from_string(tenant_uuid.to_string());
+    let tenant_name = format!("tenant-config-persistence-{tenant_uuid}");
     sqlx::query(
         "INSERT INTO tenants (id, name, description, status, config) VALUES ($1, $2, $3, $4, '{}'::jsonb)",
     )
     .bind(tenant_uuid)
-    .bind("tenant-config-persistence")
+    .bind(tenant_name)
     .bind("integration test tenant")
     .bind("active")
     .execute(&pool)

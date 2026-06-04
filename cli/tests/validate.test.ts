@@ -64,25 +64,80 @@ describe("validateToken", () => {
     delete process.env.TOANI_VAULT_DASHBOARD_BASE_URL;
   });
 
-  it("classifies 401 and 403 responses", async () => {
+  it("classifies an expired token from API probes", async () => {
     const { validateToken } = await import("../src/lib/validate.js");
 
     fetchMock.mockResolvedValueOnce({ status: 401 });
-    fetchMock.mockResolvedValueOnce({
-      status: 403,
-      json: vi.fn().mockResolvedValue({ required_scope: "credential:read" }),
-    });
+    fetchMock.mockResolvedValueOnce({ status: 401 });
+    fetchMock.mockResolvedValueOnce({ status: 401 });
 
     await expect(
       validateToken("https://api.example.com", "v4.local.token"),
     ).resolves.toMatchObject({ ok: false, reason: "invalid_or_expired" });
+  });
+
+  it("treats non-session credential tokens as valid usage tokens", async () => {
+    const { validateToken } = await import("../src/lib/validate.js");
+
+    fetchMock.mockResolvedValueOnce({
+      status: 403,
+      json: vi.fn().mockResolvedValue({ error: "forbidden" }),
+    });
+    fetchMock.mockResolvedValueOnce({ status: 200 });
+    fetchMock.mockResolvedValueOnce({
+      status: 403,
+      json: vi.fn().mockResolvedValue({
+        error: "forbidden",
+        message: "Missing required scope: tokens:read",
+      }),
+    });
+
+    await expect(
+      validateToken("https://api.example.com", "v4.local.token"),
+    ).resolves.toMatchObject({
+      ok: true,
+      mode: "usage",
+      tokenKind: "api_access",
+      probes: {
+        authMe: { reason: "insufficient_permissions", status: 403 },
+        credentials: { ok: true, status: 200 },
+      },
+    });
+  });
+
+  it("distinguishes missing capability scope from session-only endpoints", async () => {
+    const { validateToken } = await import("../src/lib/validate.js");
+
+    fetchMock.mockResolvedValueOnce({
+      status: 403,
+      json: vi.fn().mockResolvedValue({ error: "forbidden" }),
+    });
+    fetchMock.mockResolvedValueOnce({
+      status: 403,
+      json: vi.fn().mockResolvedValue({
+        error: "insufficient_scope",
+        required_scope: "credential:read",
+        current_scopes: "audit:read",
+      }),
+    });
+    fetchMock.mockResolvedValueOnce({
+      status: 403,
+      json: vi.fn().mockResolvedValue({
+        error: "forbidden",
+        message: "Missing required scope: tokens:read",
+      }),
+    });
 
     await expect(
       validateToken("https://api.example.com", "v4.local.token"),
     ).resolves.toMatchObject({
       ok: false,
       reason: "insufficient_scope",
-      body: { required_scope: "credential:read" },
+      body: {
+        current_scopes: "audit:read",
+        error: "insufficient_scope",
+        required_scope: "credential:read",
+      },
     });
   });
 
@@ -90,19 +145,30 @@ describe("validateToken", () => {
     const { validateToken } = await import("../src/lib/validate.js");
 
     fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
-    fetchMock.mockRejectedValueOnce({ cause: { code: "ECONNREFUSED" } });
-    fetchMock.mockRejectedValueOnce({ name: "TimeoutError" });
-    fetchMock.mockRejectedValueOnce({ code: "EOTHER" });
+    fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
+    fetchMock.mockRejectedValueOnce({ code: "ENOTFOUND" });
 
     await expect(
       validateToken("https://api.example.com", "v4.local.token"),
     ).resolves.toMatchObject({ reason: "dns" });
+
+    fetchMock.mockRejectedValueOnce({ cause: { code: "ECONNREFUSED" } });
+    fetchMock.mockRejectedValueOnce({ cause: { code: "ECONNREFUSED" } });
+    fetchMock.mockRejectedValueOnce({ cause: { code: "ECONNREFUSED" } });
     await expect(
       validateToken("https://api.example.com", "v4.local.token"),
     ).resolves.toMatchObject({ reason: "refused" });
+
+    fetchMock.mockRejectedValueOnce({ name: "TimeoutError" });
+    fetchMock.mockRejectedValueOnce({ name: "TimeoutError" });
+    fetchMock.mockRejectedValueOnce({ name: "TimeoutError" });
     await expect(
       validateToken("https://api.example.com", "v4.local.token"),
     ).resolves.toMatchObject({ reason: "timeout" });
+
+    fetchMock.mockRejectedValueOnce({ code: "EOTHER" });
+    fetchMock.mockRejectedValueOnce({ code: "EOTHER" });
+    fetchMock.mockRejectedValueOnce({ code: "EOTHER" });
     await expect(
       validateToken("https://api.example.com", "v4.local.token"),
     ).resolves.toMatchObject({ reason: "network" });
@@ -163,7 +229,7 @@ describe("checkBaseUrlReachability", () => {
     ).resolves.toMatchObject({
       ok: true,
       status: 401,
-      url: "https://api.example.com/api/v1/sandbox/stats",
+      url: "https://api.example.com/api/v1/auth/me",
     });
   });
 
@@ -179,7 +245,7 @@ describe("checkBaseUrlReachability", () => {
     ).resolves.toMatchObject({
       ok: false,
       reason: "dns",
-      url: "https://api.example.com/api/v1/sandbox/stats",
+      url: "https://api.example.com/api/v1/auth/me",
     });
   });
 
@@ -195,7 +261,7 @@ describe("checkBaseUrlReachability", () => {
     ).resolves.toMatchObject({
       ok: true,
       status: 404,
-      url: "https://api.example.com/api/v1/sandbox/stats",
+      url: "https://api.example.com/api/v1/auth/me",
     });
   });
 });

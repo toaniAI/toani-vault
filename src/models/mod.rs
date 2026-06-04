@@ -98,6 +98,9 @@ pub struct CredentialMetadata {
     pub version: u32,
     /// 凭证状态 (active/expired/deleted)
     pub status: String,
+    /// 是否需要运行时审批
+    #[serde(default)]
+    pub requires_approval: bool,
     /// 交易所 / 自定义 Provider
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<CredentialProvider>,

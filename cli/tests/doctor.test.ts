@@ -54,7 +54,7 @@ describe("runDoctor", () => {
     await runDoctor(baseConfig, []);
 
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining("Quick fix:"));
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("toani login"));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("toani-vault login"));
   });
 
   it("warns when only a legacy plaintext token is available", async () => {
@@ -89,7 +89,48 @@ describe("runDoctor", () => {
       expect.stringContaining("HTTP 401"),
     );
     expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining("Run `toani login`"),
+      expect.stringContaining("Run `toani-vault login`"),
+    );
+  });
+
+  it("shows usage-mode focus for credential tokens", async () => {
+    keychainMock.get.mockReturnValue(`v4.local.${"u".repeat(120)}`);
+    validateTokenMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      mode: "usage",
+      tokenKind: "api_access",
+      probes: {
+        authMe: {
+          ok: false,
+          path: "/api/v1/auth/me",
+          reason: "insufficient_permissions",
+          status: 403,
+        },
+        credentials: {
+          ok: true,
+          path: "/api/v1/credentials?page=1&page_size=1",
+          status: 200,
+        },
+        tokens: {
+          ok: false,
+          path: "/api/v1/tokens?page=1&page_size=1",
+          reason: "insufficient_permissions",
+          status: 403,
+        },
+      },
+    });
+
+    await runDoctor(baseConfig, []);
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("Usage permissions"),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("API access token"),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("credential and sandbox access"),
     );
   });
 

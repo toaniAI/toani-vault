@@ -61,7 +61,6 @@ pub mod config;
 pub mod credential_ns;
 pub mod domain_policy;
 pub mod error;
-pub mod export;
 pub mod function_runtime;
 pub mod http_template;
 pub mod nsjail;

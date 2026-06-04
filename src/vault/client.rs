@@ -461,6 +461,10 @@ pub struct VaultCredentialData {
     /// 是否已删除
     pub is_deleted: bool,
 
+    /// 是否需要运行时审批
+    #[serde(default)]
+    pub requires_approval: bool,
+
     /// 最后更新时间戳（可选，Unix 秒）
     #[serde(default)]
     pub updated_at: Option<u64>,
@@ -588,6 +592,7 @@ impl VaultCredentialDataBuilder {
             nonce: self.nonce,
             auth_tag: self.auth_tag,
             is_deleted: false,
+            requires_approval: false,
             updated_at: None,
             provider: None,
             allowed_domains: Vec::new(),
@@ -631,6 +636,7 @@ impl VaultCredentialData {
             nonce,
             auth_tag,
             is_deleted: false,
+            requires_approval: false,
             updated_at: None,
             provider: None,
             allowed_domains: Vec::new(),

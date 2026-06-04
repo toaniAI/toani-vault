@@ -6,11 +6,11 @@ use crate::{
     client::CredBridgeClient,
     types::{
         CreateCredentialRequest, CreateCredentialResponse, CredentialCustomFunction,
-        CredentialFilter, CredentialMetadata, CredentialProvider, CredentialType,
-        DecryptCredentialRequest, DecryptCredentialResponse, DeleteCredentialResponse,
-        GetCredentialResponse, ListCredentialsResponse, RequestOptions, Result,
-        RollbackCredentialRequest, RollbackCredentialResponse, UpdateCredentialRequest,
-        UpdateCredentialResponse, VersionDetail, VersionHistory,
+        CredentialFilter, CredentialProvider, CredentialType, DecryptCredentialRequest,
+        DecryptCredentialResponse, DeleteCredentialResponse, GetCredentialResponse,
+        ListCredentialsResponse, RequestOptions, Result, RollbackCredentialRequest,
+        RollbackCredentialResponse, UpdateCredentialRequest, UpdateCredentialResponse,
+        VersionDetail, VersionHistory,
     },
 };
 use serde_json::Value;
@@ -98,6 +98,7 @@ impl CredentialsService {
             credential_type,
             plaintext_data,
             expires_at,
+            requires_approval: None,
             provider: None,
             allowed_domains: None,
             custom_functions: None,
@@ -224,6 +225,7 @@ impl CredentialsService {
             credential_type: CredentialType::ApiKey,
             plaintext_data,
             expires_at: options.expires_at,
+            requires_approval: None,
             provider: Some(provider),
             allowed_domains: options.allowed_domains,
             custom_functions: options.custom_functions,

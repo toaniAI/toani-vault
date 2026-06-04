@@ -359,8 +359,23 @@ fn shell_command(command: &str) -> Result<Command, String> {
         return Err("hardware backend command must not be empty".to_string());
     }
 
-    let mut shell = Command::new("/bin/sh");
-    shell.arg("-lc").arg(command);
+    #[cfg(windows)]
+    let shell = {
+        let mut command_builder = Command::new("powershell.exe");
+        command_builder
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(command);
+        command_builder
+    };
+
+    #[cfg(not(windows))]
+    let shell = {
+        let mut command_builder = Command::new("/bin/sh");
+        command_builder.arg("-lc").arg(command);
+        command_builder
+    };
+
     Ok(shell)
 }
 
@@ -901,11 +916,13 @@ mod tests {
     #[test]
     fn verify_quote_backend_accepts_json_metadata() {
         let _guard = env_lock().lock().unwrap();
+        let mock_verify_cmd = if cfg!(windows) {
+            "Write-Output '{\"subject\":\"CN=test\",\"issuer\":\"CN=issuer\",\"fingerprint\":\"abc123\"}'"
+        } else {
+            "printf '{\"subject\":\"CN=test\",\"issuer\":\"CN=issuer\",\"fingerprint\":\"abc123\"}'"
+        };
         unsafe {
-            env::set_var(
-                TEE_SGX_QUOTE_VERIFY_CMD_ENV,
-                "printf '{\"subject\":\"CN=test\",\"issuer\":\"CN=issuer\",\"fingerprint\":\"abc123\"}'",
-            );
+            env::set_var(TEE_SGX_QUOTE_VERIFY_CMD_ENV, mock_verify_cmd);
         }
 
         let evidence = verify_quote_with_backend(b"quote-bytes", Some(b"nonce")).unwrap();

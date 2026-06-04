@@ -398,11 +398,11 @@ fn get_trusted_public_key(fingerprint: &str) -> Option<Vec<u8>> {
     }
 
     // 方案2：回退到默认公钥（适用于单密钥配置）
-    if let Ok(key_b64) = std::env::var("TRUSTED_PUBLIC_KEY_DEFAULT") {
-        if let Ok(key_bytes) = decode_base64_key(&key_b64) {
-            tracing::debug!("Using default trusted public key for fingerprint {fingerprint}");
-            return Some(key_bytes);
-        }
+    if let Ok(key_b64) = std::env::var("TRUSTED_PUBLIC_KEY_DEFAULT")
+        && let Ok(key_bytes) = decode_base64_key(&key_b64)
+    {
+        tracing::debug!("Using default trusted public key for fingerprint {fingerprint}");
+        return Some(key_bytes);
     }
 
     // 未找到公钥
@@ -422,17 +422,17 @@ fn decode_base64_key(b64: &str) -> Result<Vec<u8>, String> {
     let trimmed = b64.trim();
 
     // 尝试标准 Base64
-    if let Ok(bytes) = general_purpose::STANDARD.decode(trimmed) {
-        if !bytes.is_empty() {
-            return Ok(bytes);
-        }
+    if let Ok(bytes) = general_purpose::STANDARD.decode(trimmed)
+        && !bytes.is_empty()
+    {
+        return Ok(bytes);
     }
 
     // 尝试 URL-safe Base64（无填充）
-    if let Ok(bytes) = general_purpose::URL_SAFE_NO_PAD.decode(trimmed) {
-        if !bytes.is_empty() {
-            return Ok(bytes);
-        }
+    if let Ok(bytes) = general_purpose::URL_SAFE_NO_PAD.decode(trimmed)
+        && !bytes.is_empty()
+    {
+        return Ok(bytes);
     }
 
     Err(format!(

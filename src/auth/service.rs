@@ -519,12 +519,12 @@ impl AuthServiceImpl {
     }
 
     fn validate_display_name(display_name: Option<&str>) -> Result<(), AuthError> {
-        if let Some(display_name) = display_name {
-            if display_name.chars().count() > MAX_DISPLAY_NAME_CHARS {
-                return Err(AuthError::InvalidRequest(
-                    "display_name must be 128 characters or fewer".to_string(),
-                ));
-            }
+        if let Some(display_name) = display_name
+            && display_name.chars().count() > MAX_DISPLAY_NAME_CHARS
+        {
+            return Err(AuthError::InvalidRequest(
+                "display_name must be 128 characters or fewer".to_string(),
+            ));
         }
 
         Ok(())
@@ -661,10 +661,10 @@ impl AuthServiceImpl {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.constraint() == Some("users_pkey") {
-                    return AuthError::UserAlreadyExists { user_id: user.id };
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.constraint() == Some("users_pkey")
+            {
+                return AuthError::UserAlreadyExists { user_id: user.id };
             }
             AuthError::DatabaseError(e)
         })?;
@@ -708,14 +708,13 @@ impl AuthServiceImpl {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.constraint() == Some("external_identities_provider_provider_subject_key")
-                {
-                    return AuthError::ExternalIdentityAlreadyExists {
-                        provider: identity.provider,
-                        subject: identity.provider_subject.clone(),
-                    };
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.constraint() == Some("external_identities_provider_provider_subject_key")
+            {
+                return AuthError::ExternalIdentityAlreadyExists {
+                    provider: identity.provider,
+                    subject: identity.provider_subject.clone(),
+                };
             }
             AuthError::DatabaseError(e)
         })?;
@@ -824,13 +823,13 @@ impl AuthServiceImpl {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.constraint() == Some("tenant_memberships_tenant_id_user_id_key") {
-                    return AuthError::MembershipAlreadyExists {
-                        user_id: membership.user_id,
-                        tenant_id: membership.tenant_id,
-                    };
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.constraint() == Some("tenant_memberships_tenant_id_user_id_key")
+            {
+                return AuthError::MembershipAlreadyExists {
+                    user_id: membership.user_id,
+                    tenant_id: membership.tenant_id,
+                };
             }
             AuthError::DatabaseError(e)
         })?;
@@ -880,10 +879,10 @@ impl AuthServiceImpl {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.constraint() == Some("tenant_invitations_token_hash_key") {
-                    return AuthError::InternalError("Invitation token hash collision".to_string());
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.constraint() == Some("tenant_invitations_token_hash_key")
+            {
+                return AuthError::InternalError("Invitation token hash collision".to_string());
             }
             AuthError::DatabaseError(e)
         })?;
@@ -929,10 +928,10 @@ impl AuthServiceImpl {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.constraint() == Some("auth_sessions_session_token_hash_key") {
-                    return AuthError::InternalError("Session token hash collision".to_string());
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.constraint() == Some("auth_sessions_session_token_hash_key")
+            {
+                return AuthError::InternalError("Session token hash collision".to_string());
             }
             AuthError::DatabaseError(e)
         })?;
@@ -974,13 +973,13 @@ impl AuthServiceImpl {
         .fetch_one(pool)
         .await
         .map_err(|e| {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.constraint() == Some("uq_service_accounts_tenant_name") {
-                    return AuthError::ServiceAccountAlreadyExists {
-                        tenant_id: service_account.tenant_id,
-                        name: service_account.name.clone(),
-                    };
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.constraint() == Some("uq_service_accounts_tenant_name")
+            {
+                return AuthError::ServiceAccountAlreadyExists {
+                    tenant_id: service_account.tenant_id,
+                    name: service_account.name.clone(),
+                };
             }
             AuthError::DatabaseError(e)
         })?;
@@ -1938,10 +1937,10 @@ impl AuthServiceImpl {
         privy_token: &str,
     ) -> Result<MfaStatusSnapshot, AuthError> {
         // 检查是否启用 Mock 模式
-        if let Some(ref config) = self.privy_config {
-            if config.mock_enabled {
-                return Ok(MfaStatusSnapshot::default());
-            }
+        if let Some(ref config) = self.privy_config
+            && config.mock_enabled
+        {
+            return Ok(MfaStatusSnapshot::default());
         }
 
         // 获取 Privy 配置
@@ -2026,11 +2025,11 @@ impl AuthService for AuthServiceImpl {
 
         // 3. 如果外部身份已存在，返回关联用户
         if let Some(identity) = existing_identity {
-            if let Some(email) = resolved_email.as_deref() {
-                if identity.email.as_deref() != Some(email) {
-                    self.update_external_identity_email(identity.id, email)
-                        .await?;
-                }
+            if let Some(email) = resolved_email.as_deref()
+                && identity.email.as_deref() != Some(email)
+            {
+                self.update_external_identity_email(identity.id, email)
+                    .await?;
             }
 
             if let Some(user) = self.query_user(identity.user_id).await? {

@@ -643,12 +643,12 @@ impl BlueGreenUpgradeManager {
             {
                 Ok(Ok(n)) if n > 0 => {
                     let first_line = response_line.trim();
-                    if let Some(status_str) = first_line.split_whitespace().nth(1) {
-                        if let Ok(status) = status_str.parse::<u16>() {
-                            let is_healthy = (200..300).contains(&status);
-                            tracing::debug!("Health check {url} returned HTTP {status}");
-                            return is_healthy;
-                        }
+                    if let Some(status_str) = first_line.split_whitespace().nth(1)
+                        && let Ok(status) = status_str.parse::<u16>()
+                    {
+                        let is_healthy = (200..300).contains(&status);
+                        tracing::debug!("Health check {url} returned HTTP {status}");
+                        return is_healthy;
                     }
                 }
                 Ok(Ok(_)) => {
@@ -725,12 +725,12 @@ impl BlueGreenUpgradeManager {
                     // 解析状态行：HTTP/1.1 2xx ...
                     let first_line = response_line.trim();
                     // 状态行格式：HTTP/x.x STATUS_CODE REASON
-                    if let Some(status_str) = first_line.split_whitespace().nth(1) {
-                        if let Ok(status) = status_str.parse::<u16>() {
-                            let is_healthy = (200..300).contains(&status);
-                            tracing::debug!("Health check {url} returned HTTP {status}");
-                            return is_healthy;
-                        }
+                    if let Some(status_str) = first_line.split_whitespace().nth(1)
+                        && let Ok(status) = status_str.parse::<u16>()
+                    {
+                        let is_healthy = (200..300).contains(&status);
+                        tracing::debug!("Health check {url} returned HTTP {status}");
+                        return is_healthy;
                     }
                 }
                 Ok(Ok(_)) => {
@@ -859,35 +859,35 @@ impl BlueGreenUpgradeManager {
 
                 // 尝试向旧版本发送停止信号
                 // 通过环境变量 TEE_OLD_ENCLAVE_PID 获取旧进程 PID（可选）
-                if let Ok(pid_str) = std::env::var("TEE_OLD_ENCLAVE_PID") {
-                    if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                        // 安全地发送 SIGTERM 信号（优雅停止）
-                        #[cfg(unix)]
+                if let Ok(pid_str) = std::env::var("TEE_OLD_ENCLAVE_PID")
+                    && let Ok(pid) = pid_str.trim().parse::<u32>()
+                {
+                    // 安全地发送 SIGTERM 信号（优雅停止）
+                    #[cfg(unix)]
+                    {
+                        use std::process::Command;
+                        match Command::new("kill")
+                            .args(["-TERM", &pid.to_string()])
+                            .status()
                         {
-                            use std::process::Command;
-                            match Command::new("kill")
-                                .args(["-TERM", &pid.to_string()])
-                                .status()
-                            {
-                                Ok(s) if s.success() => {
-                                    tracing::info!("Sent SIGTERM to old enclave PID {pid}");
-                                }
-                                Ok(s) => {
-                                    tracing::warn!("kill -TERM {pid} exited with status: {s}");
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to send SIGTERM to PID {pid}: {e}");
-                                }
+                            Ok(s) if s.success() => {
+                                tracing::info!("Sent SIGTERM to old enclave PID {pid}");
+                            }
+                            Ok(s) => {
+                                tracing::warn!("kill -TERM {pid} exited with status: {s}");
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to send SIGTERM to PID {pid}: {e}");
                             }
                         }
-                        #[cfg(not(unix))]
-                        {
-                            tracing::warn!(
-                                "SIGTERM not supported on this platform. \
-                                 Old enclave PID {} must be terminated manually.",
-                                pid
-                            );
-                        }
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        tracing::warn!(
+                            "SIGTERM not supported on this platform. \
+                             Old enclave PID {} must be terminated manually.",
+                            pid
+                        );
                     }
                 }
             }

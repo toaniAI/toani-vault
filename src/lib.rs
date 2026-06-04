@@ -27,6 +27,7 @@ pub mod auth;
 pub mod config;
 pub mod connector;
 pub mod crypto;
+pub mod http_request_broker;
 pub mod models;
 pub mod oauth_broker;
 pub mod services;

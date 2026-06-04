@@ -91,6 +91,7 @@ impl PostgresStorageBackend {
                 service_id VARCHAR(64) NOT NULL,
                 credential_type VARCHAR(32) NOT NULL,
                 encrypted_payload JSONB NOT NULL,
+                requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
                 provider VARCHAR(32),
                 allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb,
                 custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -116,6 +117,7 @@ impl PostgresStorageBackend {
                 credential_id VARCHAR(64) NOT NULL REFERENCES {schema}.credentials(credential_id) ON DELETE CASCADE,
                 version INTEGER NOT NULL,
                 encrypted_payload JSONB NOT NULL,
+                requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
                 provider VARCHAR(32),
                 allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb,
                 custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -147,9 +149,11 @@ impl PostgresStorageBackend {
             pool,
             &format!(
                 r#"
+                ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS requires_approval BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS provider VARCHAR(32);
                 ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
                 ALTER TABLE {schema}.credentials ADD COLUMN IF NOT EXISTS custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb;
+                ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS requires_approval BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS provider VARCHAR(32);
                 ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS allowed_domains JSONB NOT NULL DEFAULT '[]'::jsonb;
                 ALTER TABLE {schema}.credential_versions ADD COLUMN IF NOT EXISTS custom_functions JSONB NOT NULL DEFAULT '[]'::jsonb;
@@ -273,6 +277,9 @@ impl PostgresStorageBackend {
             is_deleted: row
                 .try_get("is_deleted")
                 .map_err(|e| VaultError::StorageError(format!("读取 is_deleted 失败: {e}")))?,
+            requires_approval: row.try_get("requires_approval").map_err(|e| {
+                VaultError::StorageError(format!("读取 requires_approval 失败: {e}"))
+            })?,
             provider,
             allowed_domains,
             custom_functions,
@@ -319,6 +326,9 @@ impl PostgresStorageBackend {
                 .map_err(|e| VaultError::StorageError(format!("读取版本号失败: {e}")))?
                 as u32,
             encrypted_payload,
+            requires_approval: row.try_get("requires_approval").map_err(|e| {
+                VaultError::StorageError(format!("读取版本 requires_approval 失败: {e}"))
+            })?,
             provider,
             allowed_domains,
             custom_functions,
@@ -344,15 +354,16 @@ impl StorageBackend for PostgresStorageBackend {
             r#"
             INSERT INTO {schema}.credentials (
                 credential_id, tenant_id, user_id_hash, service_id, credential_type,
-                encrypted_payload, provider, allowed_domains, custom_functions,
+                encrypted_payload, requires_approval, provider, allowed_domains, custom_functions,
                 version, created_at, updated_at, expires_at, is_deleted
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             ON CONFLICT (credential_id) DO UPDATE SET
                 tenant_id = EXCLUDED.tenant_id,
                 user_id_hash = EXCLUDED.user_id_hash,
                 service_id = EXCLUDED.service_id,
                 credential_type = EXCLUDED.credential_type,
                 encrypted_payload = EXCLUDED.encrypted_payload,
+                requires_approval = EXCLUDED.requires_approval,
                 provider = EXCLUDED.provider,
                 allowed_domains = EXCLUDED.allowed_domains,
                 custom_functions = EXCLUDED.custom_functions,
@@ -386,6 +397,7 @@ impl StorageBackend for PostgresStorageBackend {
                 .bind(entry.service_id.as_str())
                 .bind(entry.credential_type.as_str())
                 .bind(payload)
+                .bind(entry.requires_approval)
                 .bind(entry.provider.map(|provider| provider.as_str().to_string()))
                 .bind(allowed_domains)
                 .bind(custom_functions)
@@ -616,13 +628,14 @@ impl StorageBackend for PostgresStorageBackend {
                 service_id = $4,
                 credential_type = $5,
                 encrypted_payload = $6,
-                provider = $7,
-                allowed_domains = $8,
-                custom_functions = $9,
-                version = $10,
-                updated_at = $11,
-                expires_at = $12,
-                is_deleted = $13
+                requires_approval = $7,
+                provider = $8,
+                allowed_domains = $9,
+                custom_functions = $10,
+                version = $11,
+                updated_at = $12,
+                expires_at = $13,
+                is_deleted = $14
             WHERE credential_id = $1
             "#,
             schema = self.schema
@@ -649,6 +662,7 @@ impl StorageBackend for PostgresStorageBackend {
                     .bind(entry.service_id.as_str())
                     .bind(entry.credential_type.as_str())
                     .bind(payload)
+                    .bind(entry.requires_approval)
                     .bind(entry.provider.map(|provider| provider.as_str().to_string()))
                     .bind(allowed_domains)
                     .bind(custom_functions)
@@ -676,9 +690,9 @@ impl StorageBackend for PostgresStorageBackend {
         let sql = format!(
             r#"
             INSERT INTO {schema}.credential_versions (
-                credential_id, version, encrypted_payload, provider, allowed_domains,
+                credential_id, version, encrypted_payload, requires_approval, provider, allowed_domains,
                 custom_functions, change_reason, changed_by, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (credential_id, version) DO NOTHING
             "#,
             schema = self.schema
@@ -701,6 +715,7 @@ impl StorageBackend for PostgresStorageBackend {
                 .bind(&version.credential_id)
                 .bind(version.version as i32)
                 .bind(payload)
+                .bind(version.requires_approval)
                 .bind(
                     version
                         .provider
@@ -725,7 +740,7 @@ impl StorageBackend for PostgresStorageBackend {
     ) -> Result<Vec<CredentialVersion>, VaultError> {
         let sql = format!(
             r#"
-            SELECT credential_id, version, encrypted_payload, provider, allowed_domains,
+            SELECT credential_id, version, encrypted_payload, requires_approval, provider, allowed_domains,
                    custom_functions, change_reason, changed_by, created_at
             FROM {schema}.credential_versions
             WHERE credential_id = $1
@@ -753,7 +768,7 @@ impl StorageBackend for PostgresStorageBackend {
     ) -> Result<Option<CredentialVersion>, VaultError> {
         let sql = format!(
             r#"
-            SELECT credential_id, version, encrypted_payload, provider, allowed_domains,
+            SELECT credential_id, version, encrypted_payload, requires_approval, provider, allowed_domains,
                    custom_functions, change_reason, changed_by, created_at
             FROM {schema}.credential_versions
             WHERE credential_id = $1 AND version = $2

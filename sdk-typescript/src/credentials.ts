@@ -8,7 +8,6 @@ import type { CredBridgeClient } from "./client.js";
 import {
   type CreateCredentialRequest,
   type CreateCredentialResponse,
-  type CredentialMetadata,
   type GetCredentialResponse,
   type ListCredentialsResponse,
   type DecryptCredentialRequest,
@@ -63,6 +62,7 @@ export class CredentialsService {
         provider: request.provider,
         allowed_domains: request.allowedDomains,
         custom_functions: request.customFunctions,
+        requires_approval: request.requiresApproval,
         expires_at: request.expiresAt,
       },
       options,

@@ -165,17 +165,8 @@ let credential = sdk.credentials()
 use serde_json::json;
 use std::collections::HashMap;
 use toani_vault_sdk::{
-    CreateSandboxSessionRequest, ExecuteSandboxOperationRequest, SandboxOperationType,
+    ExecuteSandboxOperationRequest, SandboxOperationType,
 };
-
-let session = sdk.sandbox().create_session(
-    CreateSandboxSessionRequest {
-        credential_id: credential.credential_id.clone(),
-        original_intent: "Query OKX account balance".to_string(),
-        metadata: None,
-    },
-    None,
-).await?;
 
 let request = ExecuteSandboxOperationRequest {
     operation_type: SandboxOperationType::HttpRequest,
@@ -199,7 +190,7 @@ let request = ExecuteSandboxOperationRequest {
 };
 
 let response = sdk.sandbox()
-    .execute(&session.data.session_id, request, None)
+    .request(request, None)
     .await?;
 
 println!("OKX response: {:?}", response.data.data);

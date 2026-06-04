@@ -132,6 +132,13 @@ fn temp_database_url(database_url: &str, database_name: &str) -> Option<String> 
     Some(format!("{prefix}/{database_name}{query}"))
 }
 
+fn is_valid_pkce_code_verifier(value: &str) -> bool {
+    (43..=128).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~'))
+}
+
 async fn create_temp_database(
     admin_pool: &sqlx::PgPool,
     database_name: &str,
@@ -950,10 +957,12 @@ async fn delegated_callback_success_creates_ready_binding_and_replay_is_rejected
                     "https://credbridge.dev/oauth/callback/lark"
                 );
                 assert!(
-                    payload["code_verifier"]
-                        .as_str()
-                        .expect("code_verifier should be present")
-                        .starts_with("pkce_")
+                    is_valid_pkce_code_verifier(
+                        payload["code_verifier"]
+                            .as_str()
+                            .expect("code_verifier should be present")
+                    ),
+                    "code_verifier should satisfy RFC 7636"
                 );
                 axum::Json(json!({
                     "code": 0,

@@ -74,8 +74,9 @@ Primary implementation areas:
 - Developer guides: [docs/07-developer-guide/README.md](docs/07-developer-guide/README.md)
 - SGX runner runbook: [docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
-Private planning inputs, requirement captures, and QA evidence remain on the internal `master`
-branch and are not published in this public mirror.
+Internal requirement captures and acceptance evidence live under `docs/requirements/` and
+`docs/qa_reports/`. Those directories are maintained for product and QA handoff, not as the public
+onboarding path.
 
 ## CLI Usage Guide
 
@@ -101,22 +102,22 @@ npm pack
 npm install -g ./toani-vault-cli-*.tgz
 
 # Verify installation
-toani --version
+toani-vault --version
 ```
 
 ### Quick Start
 
 ```bash
 # Recommended first-run flow
-toani login
-toani doctor
+toani-vault login
+toani-vault doctor
 
 # Read-only credential metadata lookup
-toani --output json credentials list
+toani-vault --output json credentials list
 
-# Sandbox connectivity / session checks
-toani sandbox stats
-toani sandbox list-sessions
+# Sandbox broker flow
+toani-vault sandbox request --operation-type http_request --params '{"url":"https://api.example.com/health","method":"GET"}'
+toani-vault sandbox get-request <operationId>
 ```
 
 ### CLI Commands Overview
@@ -139,20 +140,10 @@ version, Node.js, token storage, token format, base URL reachability, and token 
 `credentials` is read-only. It lists or fetches credential metadata only; it does not create,
 update, decrypt, or delete credentials.
 
-`sandbox` supports:
+`sandbox` supports broker-only commands:
 
-- `create-session`
-- `list-sessions`
-- `get-session`
-- `terminate`
-- `pause`
-- `resume`
-- `bootstrap-page`
-- `execute`
-- `export-dom`
-- `export-data`
-- `get-operation`
-- `stats`
+- `request`
+- `get-request`
 
 For the exact command matrix and examples, use [cli/README.md](cli/README.md) as the detailed
 source of truth.
@@ -180,8 +171,8 @@ source of truth.
 ### Configuration File
 
 The CLI stores configuration in `~/.toani/config.json`. Base URL, output mode, and timeout are
-saved there. Tokens are stored in the OS Keychain when configured through `toani login` or
-`toani config init --token`, with legacy plaintext token reads retained only for compatibility.
+saved there. Tokens are stored in the OS Keychain when configured through `toani-vault login` or
+`toani-vault config init --token`, with legacy plaintext token reads retained only for compatibility.
 
 ---
 
@@ -216,6 +207,12 @@ export TEE_MODE=hardware
 export TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so
 ```
 
+Sealed key persistence is required across restarts:
+
+- Keep `SEALED_STORAGE_PATH=/app/data/sealed` unless you have an explicit compatibility reason to override it.
+- Persist the whole `/app/data/sealed` directory, not just a single file.
+- This directory contains both the audit signing key file and the TEE sealed master key material.
+
 Reference material:
 
 - [docker/sgx/README.md](docker/sgx/README.md)
@@ -223,16 +220,3 @@ Reference material:
 - [cli/README.md](cli/README.md)
 - [sdk-rust/README.md](sdk-rust/README.md)
 - [sdk-typescript/README.md](sdk-typescript/README.md)
-
-## Acknowledgements
-
-Some of Toani Vault's sandbox and browser-related design work is informed by the following
-open-source projects:
-
-- [google/nsjail](https://github.com/google/nsjail), a lightweight Linux isolation sandbox based on
-  namespaces, cgroups, rlimits, and seccomp-bpf
-- [lightpanda-io/browser](https://github.com/lightpanda-io/browser), a headless browser project
-  designed for AI and automation workloads
-
-We appreciate the maintainers and contributors of these projects for their open-source work, which
-helps accelerate secure sandboxing and browser automation exploration across the ecosystem.

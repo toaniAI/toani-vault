@@ -609,23 +609,23 @@ pub async fn get_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 'st
 
     // BUG-18259: 全零 UUID 是保留的系统租户标识，外部 API 应视作不存在并返回 404
     // 防止数据库中存在的 system tenant (id=00000000-...) 被误当作普通租户返回
-    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str()) {
-        if uuid == uuid::Uuid::nil() {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": {
-                        "code": "TENANT_NOT_FOUND",
-                        "message": "租户不存在"
-                    },
-                    "meta": {
-                        "request_id": uuid::Uuid::now_v7().to_string(),
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    }
-                })),
-            ));
-        }
+    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str())
+        && uuid == uuid::Uuid::nil()
+    {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "error": {
+                    "code": "TENANT_NOT_FOUND",
+                    "message": "租户不存在"
+                },
+                "meta": {
+                    "request_id": uuid::Uuid::now_v7().to_string(),
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            })),
+        ));
     }
 
     match state.tenant_service.get_tenant(&tenant_id).await {
@@ -677,23 +677,23 @@ pub async fn get_tenant_config_handler<S: TenantConfigStore + Clone + Send + Syn
 
     // BUG-18265: 全零 UUID 是保留的系统租户标识，外部 API 应视作不存在并返回 404
     // 防止数据库中存在的 system tenant (id=00000000-...) 被误当作普通租户返回
-    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str()) {
-        if uuid == uuid::Uuid::nil() {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": {
-                        "code": "TENANT_NOT_FOUND",
-                        "message": "租户不存在"
-                    },
-                    "meta": {
-                        "request_id": uuid::Uuid::now_v7().to_string(),
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    }
-                })),
-            ));
-        }
+    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str())
+        && uuid == uuid::Uuid::nil()
+    {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "error": {
+                    "code": "TENANT_NOT_FOUND",
+                    "message": "租户不存在"
+                },
+                "meta": {
+                    "request_id": uuid::Uuid::now_v7().to_string(),
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            })),
+        ));
     }
 
     match state.tenant_manager.get_config(&tenant_id).await {
@@ -992,23 +992,23 @@ pub async fn delete_tenant_handler<S: TenantConfigStore + Clone + Send + Sync + 
 
     // BUG-18262: 全零 UUID 是保留的系统租户标识，外部 API 应视作不存在并返回 404
     // 防止数据库中存在的 system tenant (id=00000000-...) 被误当作普通租户删除
-    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str()) {
-        if uuid == uuid::Uuid::nil() {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": {
-                        "code": "TENANT_NOT_FOUND",
-                        "message": "租户不存在"
-                    },
-                    "meta": {
-                        "request_id": uuid::Uuid::now_v7().to_string(),
-                        "timestamp": chrono::Utc::now().to_rfc3339()
-                    }
-                })),
-            ));
-        }
+    if let Ok(uuid) = uuid::Uuid::parse_str(tenant_id.as_str())
+        && uuid == uuid::Uuid::nil()
+    {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "error": {
+                    "code": "TENANT_NOT_FOUND",
+                    "message": "租户不存在"
+                },
+                "meta": {
+                    "request_id": uuid::Uuid::now_v7().to_string(),
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                }
+            })),
+        ));
     }
 
     match state
@@ -1797,10 +1797,10 @@ mod tests {
             .unwrap();
         // 框架 404 通常没有 JSON body 或无 TENANT_NOT_FOUND code
         // 如果有 JSON，不应包含我们定义的 TENANT_NOT_FOUND
-        if !body.is_empty() {
-            if let Ok(payload) = serde_json::from_slice::<Value>(&body) {
-                assert_ne!(payload["error"]["code"], "TENANT_NOT_FOUND");
-            }
+        if !body.is_empty()
+            && let Ok(payload) = serde_json::from_slice::<Value>(&body)
+        {
+            assert_ne!(payload["error"]["code"], "TENANT_NOT_FOUND");
         }
     }
 

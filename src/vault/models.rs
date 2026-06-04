@@ -408,6 +408,9 @@ pub struct VaultEntry {
     /// 是否已删除（软删除）
     pub is_deleted: bool,
 
+    /// 是否需要运行时审批
+    pub requires_approval: bool,
+
     /// 交易所 / 自定义 Provider
     pub provider: Option<CredentialProvider>,
 
@@ -420,6 +423,7 @@ pub struct VaultEntry {
 
 #[derive(Debug, Clone, Default)]
 pub struct CredentialTransportConfig {
+    pub requires_approval: bool,
     pub provider: Option<CredentialProvider>,
     pub allowed_domains: Vec<String>,
     pub custom_functions: Vec<CredentialCustomFunction>,
@@ -470,6 +474,7 @@ impl VaultEntry {
             expires_at,
             encrypted_payload,
             is_deleted: false,
+            requires_approval: config.requires_approval,
             provider: config.provider,
             allowed_domains: config.allowed_domains,
             custom_functions: config.custom_functions,
@@ -526,6 +531,7 @@ impl VaultEntry {
             expires_at,
             encrypted_payload,
             is_deleted: false,
+            requires_approval: config.requires_approval,
             provider: config.provider,
             allowed_domains: config.allowed_domains,
             custom_functions: config.custom_functions,
@@ -568,6 +574,7 @@ impl VaultEntry {
             is_deleted: self.is_deleted,
             version: self.version,
             status,
+            requires_approval: self.requires_approval,
             provider: self.provider,
             allowed_domains: self.allowed_domains.clone(),
             custom_functions: self.custom_functions.clone(),
@@ -660,6 +667,9 @@ pub struct CreateCredentialRequest {
 
     /// 过期时间（可选）
     pub expires_at: Option<u64>,
+
+    /// 是否需要运行时审批
+    pub requires_approval: bool,
 
     /// 交易所 / 自定义 Provider
     pub provider: Option<CredentialProvider>,

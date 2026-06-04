@@ -218,7 +218,7 @@ const oauthCred = await sdk.credentials.createOAuthRefresh(
 ```typescript
 import { OperationType } from "@toani/vault-sdk";
 
-await sdk.sandbox.executeOperation("session-id", {
+await sdk.sandbox.request({
   operationType: OperationType.HttpRequest,
   method: "GET",
   url: "https://www.okx.com/api/v5/account/balance",
@@ -230,7 +230,7 @@ await sdk.sandbox.executeOperation("session-id", {
   },
 });
 
-await sdk.sandbox.executeOperation("session-id", {
+await sdk.sandbox.request({
   operationType: OperationType.HttpRequest,
   method: "GET",
   url: "https://api.binance.com/api/v3/account",
@@ -305,7 +305,7 @@ const exists = await sdk.credentials.exists("credential-id");
 ### Sandbox `http_request` 模板示例
 
 ```typescript
-const result = await sdk.sandbox.executeOperation("session-id", {
+const result = await sdk.sandbox.request({
   operationType: OperationType.HttpRequest,
   description: "Query OKX balances",
   parameters: {

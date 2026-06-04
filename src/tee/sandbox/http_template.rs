@@ -52,6 +52,14 @@ pub async fn render_http_request_parameters(
     parameters: &HashMap<String, Value>,
     material: &HttpTemplateCredentialMaterial,
 ) -> Result<RenderedHttpRequestParameters, SandboxError> {
+    render_http_request_parameters_with_policy(parameters, material, true).await
+}
+
+pub async fn render_http_request_parameters_with_policy(
+    parameters: &HashMap<String, Value>,
+    material: &HttpTemplateCredentialMaterial,
+    enforce_allowed_domains: bool,
+) -> Result<RenderedHttpRequestParameters, SandboxError> {
     validate_custom_functions(&material.custom_functions)?;
 
     let method = required_string(parameters, "method")?
@@ -152,7 +160,18 @@ pub async fn render_http_request_parameters(
     .await?;
     let parsed_url = Url::parse(&final_url)
         .map_err(|_| SandboxError::Other(format!("invalid_request: invalid url {final_url}")))?;
-    ensure_url_allowed(&parsed_url, &material.allowed_domains)?;
+    if enforce_allowed_domains {
+        ensure_url_allowed(&parsed_url, &material.allowed_domains).map_err(
+            |error| match error {
+                SandboxError::Other(message) if message.contains("allowed_domains policy") => {
+                    SandboxError::Other(format!(
+                        "forbidden: url target is not in credential allowed_domains: {parsed_url}"
+                    ))
+                }
+                other => other,
+            },
+        )?;
+    }
 
     let final_query = match rendered_query.as_ref() {
         Some(value) => Some(
@@ -781,8 +800,16 @@ mod tests {
             .await
             .expect_err("disallowed domains should be blocked");
 
-        assert!(error.to_string().contains("allowed_domains policy"));
-        assert!(error.to_string().contains("api.binance.com:443"));
+        assert!(
+            error
+                .to_string()
+                .contains("forbidden: url target is not in credential allowed_domains")
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("https://api.binance.com/api/v3/account")
+        );
     }
 
     #[tokio::test]

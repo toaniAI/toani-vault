@@ -14,6 +14,7 @@ import {
   type EventListener,
   type TokenInfo,
 } from "./types.js";
+import { generateCanonicalRequestId } from "./request-id.js";
 
 /** 默认配置 */
 const DEFAULT_CONFIG: Partial<CredBridgeConfig> = {
@@ -35,7 +36,7 @@ function sleep(ms: number): Promise<void> {
 
 /** 生成请求 ID */
 function generateRequestId(): string {
-  return `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  return generateCanonicalRequestId();
 }
 
 /** 解析 API 错误码 */

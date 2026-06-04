@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig } from "./config/store.js";
 import { runCredentials } from "./commands/credentials.js";
+import { runApprovals } from "./commands/approvals.js";
 import { runConfig } from "./commands/config.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runLogin } from "./commands/login.js";
@@ -14,17 +15,18 @@ const BASE_URL_ENV_KEYS = ["TOANI_BASE_URL", "CREDBRIDGE_BASE_URL"] as const;
 const TOKEN_ENV_KEYS = ["TOANI_VAULT_TOKEN", "CREDBRIDGE_TOKEN"] as const;
 const PACKAGE_JSON_URL = new URL("../package.json", import.meta.url);
 
-export const HELP_TEXT = `toani - Toani Vault CLI
+export const HELP_TEXT = `toani-vault - Toani Vault CLI
 
 Usage:
-  toani [--output json|table] [--base-url URL] [--token TOKEN] <group> <command> [options]
+  toani-vault [--output json|table] [--base-url URL] [--token TOKEN] <group> <command> [options]
 
 Groups:
   login        interactive onboarding with browser assist + keychain storage
   doctor       health checks for CLI, token storage, and API reachability
   config       init/show
   credentials  list/get
-  sandbox      create-session/list-sessions/get-session/terminate/pause/resume/bootstrap-page/execute/export-dom/export-data/get-operation/stats
+  approvals    create/status/wait/generate-request-id
+  sandbox      request/get-request
 `;
 
 export function getCliVersion(): string {
@@ -53,6 +55,22 @@ export function resolveVersionOutputFormat(
 
 function printHelp(): void {
   console.log(HELP_TEXT);
+}
+
+const REQUEST_ID_HINT =
+  "Tip: this command can auto-generate one with UUID, or pass it explicitly with --request-id when you need to reuse the same ID for retries and audit correlation.";
+
+function enhanceErrorMessage(error: unknown): string {
+  const rendered =
+    error instanceof Error
+      ? error.message || error.stack || error.name || "Unknown CLI error"
+      : String(error);
+
+  if (rendered.toLowerCase().includes("request_id is required")) {
+    return `${rendered}\n${REQUEST_ID_HINT}`;
+  }
+
+  return rendered;
 }
 
 function resolveBaseUrlFromEnv(): string | undefined {
@@ -153,6 +171,9 @@ async function main(): Promise<void> {
     case "credentials":
       await runCredentials(runtimeConfig, subArgs);
       return;
+    case "approvals":
+      await runApprovals(runtimeConfig, subArgs);
+      return;
     case "sandbox":
       await runSandbox(runtimeConfig, subArgs);
       return;
@@ -190,11 +211,7 @@ export function isDirectExecution(
 
 if (isDirectExecution(process.argv[1], import.meta.url)) {
   main().catch((error) => {
-    const rendered =
-      error instanceof Error
-        ? error.message || error.stack || error.name || "Unknown CLI error"
-        : String(error);
-    console.error(rendered);
+    console.error(enhanceErrorMessage(error));
     process.exit(1);
   });
 }

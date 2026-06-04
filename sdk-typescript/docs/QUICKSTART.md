@@ -142,7 +142,7 @@ console.log(decrypted.plaintextData.password);
 ```typescript
 import { OperationType } from "@toani/vault-sdk";
 
-await client.sandbox.executeOperation("session-id", {
+await client.sandbox.request({
   operationType: OperationType.HttpRequest,
   method: "GET",
   url: "https://www.okx.com/api/v5/account/balance",
@@ -154,7 +154,7 @@ await client.sandbox.executeOperation("session-id", {
   },
 });
 
-await client.sandbox.executeOperation("session-id", {
+await client.sandbox.request({
   operationType: OperationType.HttpRequest,
   method: "GET",
   url: "https://api.binance.com/api/v3/account",

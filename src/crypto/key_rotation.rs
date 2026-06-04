@@ -577,7 +577,7 @@ impl KeyRotationManager {
             })
             .collect();
 
-        historical_keys.sort_by(|a, b| b.1.created_at.cmp(&a.1.created_at));
+        historical_keys.sort_by_key(|entry| std::cmp::Reverse(entry.1.created_at));
 
         if historical_keys.len() > self.config.max_historical_keys {
             for (_, key) in historical_keys

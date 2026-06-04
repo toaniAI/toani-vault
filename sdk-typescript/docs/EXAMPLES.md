@@ -109,7 +109,7 @@ async function createCustomCredential() {
 
 ```typescript
 async function fetchOkxBalance(sessionId: string) {
-  return client.sandbox.executeOperation(sessionId, {
+  return client.sandbox.request({
     operationType: OperationType.HttpRequest,
     method: "GET",
     url: "https://www.okx.com/api/v5/account/balance",
@@ -123,7 +123,7 @@ async function fetchOkxBalance(sessionId: string) {
 }
 
 async function fetchBinanceAccount(sessionId: string) {
-  return client.sandbox.executeOperation(sessionId, {
+  return client.sandbox.request({
     operationType: OperationType.HttpRequest,
     method: "GET",
     url: "https://api.binance.com/api/v3/account",

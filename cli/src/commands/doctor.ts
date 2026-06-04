@@ -9,6 +9,8 @@ import {
   checkBaseUrlReachability,
   DEFAULT_API_BASE_URL,
   isPasetoToken,
+  type ValidationProbeResult,
+  type ValidationResult,
   validateToken,
 } from "../lib/validate.js";
 import { parseOptions } from "./common.js";
@@ -41,6 +43,98 @@ function row(
     info: pc.dim("ⓘ"),
   };
   console.log(`  ${icons[status]} ${label.padEnd(22)} ${pc.dim(detail)}`);
+}
+
+function probeStatus(
+  probe: ValidationProbeResult | undefined,
+): "ok" | "warn" | "info" {
+  if (probe?.ok) {
+    return "ok";
+  }
+
+  if (
+    probe?.reason === "insufficient_scope" ||
+    probe?.reason === "insufficient_permissions"
+  ) {
+    return "info";
+  }
+
+  return "warn";
+}
+
+function describeProbe(probe: ValidationProbeResult | undefined): string {
+  if (!probe) {
+    return "Not checked";
+  }
+
+  if (probe.ok) {
+    return `OK (${probe.path})`;
+  }
+
+  if (probe.reason === "insufficient_scope") {
+    const required = String(probe.body?.required_scope ?? "<unknown>");
+    return `Missing scope for ${probe.path} (${required})`;
+  }
+
+  if (probe.reason === "insufficient_permissions") {
+    return `Not applicable for this token type (${probe.path})`;
+  }
+
+  if (probe.reason === "invalid_or_expired") {
+    return `Rejected by server (${probe.path})`;
+  }
+
+  return `Unexpected response at ${probe.path}`;
+}
+
+function describeAccessMode(result: ValidationResult): {
+  focus: string;
+  label: string;
+} {
+  switch (result.mode) {
+    case "usage":
+      return {
+        focus:
+          "Emphasize credential and sandbox access; web-session profile checks are secondary.",
+        label: "Usage permissions",
+      };
+    case "management":
+      return {
+        focus:
+          "Emphasize token and tenant management APIs; credential access may need a separate runtime token.",
+        label: "Management permissions",
+      };
+    case "mixed":
+      return {
+        focus:
+          "Emphasize both credential usage and token administration because this token can do both.",
+        label: "Mixed permissions",
+      };
+    case "session_profile":
+      return {
+        focus:
+          "Emphasize web-session profile health first; usage and token-management scopes are limited.",
+        label: "Session profile only",
+      };
+    default:
+      return {
+        focus:
+          "Token reached the service, but this CLI cannot confirm useful usage or management permissions yet.",
+        label: "Unclear permissions",
+      };
+  }
+}
+
+function describeTokenKind(result: ValidationResult): string {
+  if (result.tokenKind === "web_session") {
+    return "Web session token";
+  }
+
+  if (result.tokenKind === "api_access") {
+    return "API access token";
+  }
+
+  return "Unknown token type";
 }
 
 async function readLegacyToken(): Promise<string | null> {
@@ -183,16 +277,49 @@ export async function runDoctor(
 
     if (result.ok) {
       row("ok", "Server reachable", `${duration}ms`);
-      row("ok", "Token valid", "HTTP 200");
+      row("ok", "Token valid", "Accepted by API probes");
+      row("ok", "Token type", describeTokenKind(result));
+      const accessMode = describeAccessMode(result);
+      row("ok", "Access mode", accessMode.label);
+      row("info", "Doctor focus", accessMode.focus);
+      row(
+        probeStatus(result.probes?.authMe),
+        "Web session APIs",
+        describeProbe(result.probes?.authMe),
+      );
+      row(
+        probeStatus(result.probes?.credentials),
+        "Usage APIs",
+        describeProbe(result.probes?.credentials),
+      );
+      row(
+        probeStatus(result.probes?.tokens),
+        "Management APIs",
+        describeProbe(result.probes?.tokens),
+      );
       pass += 2;
     } else if (result.reason === "invalid_or_expired") {
       row("ok", "Server reachable", `${duration}ms`);
-      row("err", "Token valid", "HTTP 401 — expired or revoked. Run `toani login`");
+      row("err", "Token valid", "HTTP 401 — expired or revoked. Run `toani-vault login`");
       pass += 1;
       fail += 1;
     } else if (result.reason === "insufficient_scope") {
       row("ok", "Server reachable", `${duration}ms`);
       row("warn", "Token valid", "HTTP 403 — insufficient scope (token works but limited)");
+      pass += 1;
+      warn += 1;
+    } else if (result.reason === "insufficient_permissions") {
+      row("ok", "Server reachable", `${duration}ms`);
+      row(
+        "warn",
+        "Token valid",
+        "HTTP 403 — token reached the service but does not match the required token type",
+      );
+      row(
+        "info",
+        "Hint",
+        "Usage/API tokens commonly skip /auth/me; run a usage or management probe instead.",
+      );
       pass += 1;
       warn += 1;
     } else if (result.reason === "dns") {
@@ -237,7 +364,7 @@ export async function runDoctor(
       `  ${pc.red(`✗ ${fail} check${fail > 1 ? "s" : ""} failed.`)}  ${pc.dim("See suggestions above to fix.")}`,
     );
     if (!token) {
-      console.log(`\n  ${pc.bold("Quick fix:")}  ${pc.green("toani login")}`);
+      console.log(`\n  ${pc.bold("Quick fix:")}  ${pc.green("toani-vault login")}`);
     }
   }
   console.log("");

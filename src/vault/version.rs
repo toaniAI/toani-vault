@@ -26,6 +26,9 @@ pub struct CredentialVersion {
     /// 加密的凭证载荷
     pub encrypted_payload: EncryptedPayload,
 
+    /// 是否需要运行时审批
+    pub requires_approval: bool,
+
     /// 交易所 / 自定义 Provider
     pub provider: Option<CredentialProvider>,
 
@@ -60,6 +63,7 @@ impl CredentialVersion {
             credential_id,
             version,
             encrypted_payload,
+            requires_approval: transport.requires_approval,
             provider: transport.provider,
             allowed_domains: transport.allowed_domains,
             custom_functions: transport.custom_functions,
@@ -271,6 +275,7 @@ mod tests {
             1,
             create_test_payload(),
             CredentialTransportConfig {
+                requires_approval: true,
                 provider: Some(CredentialProvider::Okx),
                 allowed_domains: vec!["www.okx.com:443".to_string()],
                 custom_functions: vec![CredentialCustomFunction {
@@ -286,6 +291,7 @@ mod tests {
 
         assert_eq!(version.credential_id, "test-credential-id");
         assert_eq!(version.version, 1);
+        assert!(version.requires_approval);
         assert_eq!(version.provider, Some(CredentialProvider::Okx));
         assert_eq!(version.allowed_domains, vec!["www.okx.com:443".to_string()]);
         assert_eq!(version.custom_functions.len(), 1);

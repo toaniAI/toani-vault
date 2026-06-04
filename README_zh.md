@@ -61,7 +61,7 @@ L0: SGX Sealing Key
 - 开发者指南：[docs/07-developer-guide/README.md](docs/07-developer-guide/README.md)
 - SGX Runner 手册：[docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md](docs/07-developer-guide/test-strategy/SGX_RUNNER_RUNBOOK.md)
 
-内部规划输入、需求补充和 QA 验收材料保留在私有 `master` 分支，不随当前 public 镜像发布。
+内部需求补充和验收证据分别维护在 `docs/requirements/` 与 `docs/qa_reports/`，它们面向产品 / QA 交接，不作为公开 onboarding 路径。
 
 ## CLI 使用指南
 
@@ -86,22 +86,22 @@ npm pack
 npm install -g ./toani-vault-cli-*.tgz
 
 # 验证安装
-toani --version
+toani-vault --version
 ```
 
 ### 快速开始
 
 ```bash
 # 推荐首跑流程
-toani login
-toani doctor
+toani-vault login
+toani-vault doctor
 
 # 只读查询凭证元数据
-toani --output json credentials list
+toani-vault --output json credentials list
 
-# 查看 sandbox 连通性 / 会话状态
-toani sandbox stats
-toani sandbox list-sessions
+# Sandbox broker 调用
+toani-vault sandbox request --operation-type http_request --params '{"url":"https://api.example.com/health","method":"GET"}'
+toani-vault sandbox get-request <operationId>
 ```
 
 ### CLI 命令概览
@@ -122,20 +122,10 @@ toani sandbox list-sessions
 
 `credentials` 当前只提供只读元数据查询，不负责创建、更新、解密或删除凭证。
 
-`sandbox` 当前支持：
+`sandbox` 当前仅支持 broker-only 命令：
 
-- `create-session`
-- `list-sessions`
-- `get-session`
-- `terminate`
-- `pause`
-- `resume`
-- `bootstrap-page`
-- `execute`
-- `export-dom`
-- `export-data`
-- `get-operation`
-- `stats`
+- `request`
+- `get-request`
 
 详细命令矩阵、参数和示例请以 [cli/README.md](cli/README.md) 为准。
 
@@ -161,7 +151,7 @@ toani sandbox list-sessions
 
 ### 配置文件
 
-CLI 将配置存储在 `~/.toani/config.json`。`baseUrl`、`output` 和 `timeout` 会写入这里；通过 `toani login` 或 `toani config init --token` 配置的 token 会优先写入 OS Keychain，明文 token 只保留兼容读取路径。
+CLI 将配置存储在 `~/.toani/config.json`。`baseUrl`、`output` 和 `timeout` 会写入这里；通过 `toani-vault login` 或 `toani-vault config init --token` 配置的 token 会优先写入 OS Keychain，明文 token 只保留兼容读取路径。
 
 ---
 
@@ -203,15 +193,3 @@ export TEE_ENCLAVE_PATH=/path/to/credbridge_enclave.signed.so
 - [cli/README.md](cli/README.md)
 - [sdk-rust/README.md](sdk-rust/README.md)
 - [sdk-typescript/README.md](sdk-typescript/README.md)
-
-## 致谢与引用说明
-
-Toani Vault 的部分沙箱与浏览器相关设计，参考并受到了以下开源项目的启发：
-
-- [google/nsjail](https://github.com/google/nsjail)：一个基于 Linux namespaces、cgroups、
-  rlimits 与 seccomp-bpf 的轻量级隔离沙箱
-- [lightpanda-io/browser](https://github.com/lightpanda-io/browser)：一个面向 AI 与自动化场景
-  的 headless browser 开源项目
-
-感谢这两个项目的维护者与贡献者持续投入开源工作，为安全沙箱和浏览器自动化方向的实践与探索
-提供了重要参考。

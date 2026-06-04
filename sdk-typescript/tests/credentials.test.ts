@@ -62,6 +62,7 @@ describe("CredentialsService", () => {
           provider: undefined,
           allowed_domains: undefined,
           custom_functions: undefined,
+          requires_approval: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -123,8 +124,37 @@ describe("CredentialsService", () => {
                 "export default function func(input) { return `Bearer ${input}`; }",
             },
           ],
+          requires_approval: undefined,
           expires_at: undefined,
         },
+        undefined,
+      );
+    });
+
+    it("应该透传 requiresApproval", async () => {
+      vi.spyOn(client, "post").mockResolvedValue({
+        credential_id: "cred-approval",
+        service_id: "schwab",
+        credential_type: "username_password",
+        created_at: "1704067200",
+        requires_approval: true,
+      });
+
+      await service.create({
+        serviceId: "schwab",
+        credentialType: CredentialType.UsernamePassword,
+        plaintextData: {
+          username: "approver@example.com",
+          password: "secret",
+        },
+        requiresApproval: true,
+      });
+
+      expect(client.post).toHaveBeenCalledWith(
+        "/credentials",
+        expect.objectContaining({
+          requires_approval: true,
+        }),
         undefined,
       );
     });
@@ -188,6 +218,7 @@ describe("CredentialsService", () => {
           provider: undefined,
           allowed_domains: undefined,
           custom_functions: undefined,
+          requires_approval: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -224,6 +255,7 @@ describe("CredentialsService", () => {
           provider: undefined,
           allowed_domains: undefined,
           custom_functions: undefined,
+          requires_approval: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -251,6 +283,7 @@ describe("CredentialsService", () => {
           provider: undefined,
           allowed_domains: undefined,
           custom_functions: undefined,
+          requires_approval: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -300,6 +333,7 @@ describe("CredentialsService", () => {
                 "export default function func(input) { return `Bearer ${input}`; }",
             },
           ],
+          requires_approval: undefined,
           expires_at: undefined,
         },
         undefined,
@@ -330,6 +364,7 @@ describe("CredentialsService", () => {
           provider: undefined,
           allowed_domains: undefined,
           custom_functions: undefined,
+          requires_approval: undefined,
           expires_at: undefined,
         },
         undefined,

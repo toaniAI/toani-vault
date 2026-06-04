@@ -29,10 +29,10 @@ describe("createSdk", () => {
       /create or copy an access token from the Dashboard Tokens page: https:\/\/dashboard\.toani\.ai\/tokens/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /Recommended command: toani login/,
+      /Recommended command: toani-vault login/,
     );
     expect(() => createSdk(config)).toThrowError(
-      /Compatibility path: toani config init --url https:\/\/api\.example\.com --token <BEARER_TOKEN>/,
+      /Compatibility path: toani-vault config init --url https:\/\/api\.example\.com --token <BEARER_TOKEN>/,
     );
   });
 });

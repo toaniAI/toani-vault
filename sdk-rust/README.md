@@ -223,17 +223,8 @@ OKX 查询余额：
 use serde_json::json;
 use std::collections::HashMap;
 use toani_vault_sdk::{
-    CreateSandboxSessionRequest, ExecuteSandboxOperationRequest, SandboxOperationType,
+    ExecuteSandboxOperationRequest, SandboxOperationType,
 };
-
-let session = sdk.sandbox().create_session(
-    CreateSandboxSessionRequest {
-        credential_id: "okx-credential-id".to_string(),
-        original_intent: "Fetch OKX balance via template-rendered REST request".to_string(),
-        metadata: None,
-    },
-    None,
-).await?;
 
 let request = ExecuteSandboxOperationRequest {
     operation_type: SandboxOperationType::HttpRequest,
@@ -257,7 +248,7 @@ let request = ExecuteSandboxOperationRequest {
 };
 
 let response = sdk.sandbox()
-    .execute(&session.data.session_id, request, None)
+    .request(request, None)
     .await?;
 println!("OKX response: {:?}", response.data.data);
 ```

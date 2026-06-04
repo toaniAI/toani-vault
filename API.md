@@ -195,7 +195,7 @@ Authorization: Bearer <paseto_v4_local_token>
 | `plaintext_data`   | object | 是   | 加密存储的敏感字段。OKX 常见字段为 `api_key`、`secret_key`、`passphrase`；Binance 常见字段为 `api_key`、`secret_key` |
 | `expires_at`       | u64    | 否   | 必须是未来时间的 Unix 秒时间戳 |
 | `provider`         | string | 否   | 仅支持 `okx`、`binance`、`custom` |
-| `allowed_domains`  | array  | 否   | `http_request` 最终 URL 的域名白名单；空数组表示不额外限制 |
+| `allowed_domains`  | array  | 否   | `http_request` 最终 URL 的域名白名单；非 `api_key` 凭证可省略或传空数组表示不额外限制，`api_key` create 请求仍要求提供非空白名单 |
 | `custom_functions` | array  | 否   | 模板函数列表。每项包含 `function_name`、可选 `function_description`、必填 `function_body` |
 
 **响应 (201 Created)**:
@@ -222,6 +222,7 @@ Authorization: Bearer <paseto_v4_local_token>
 **白名单规则**:
 
 - 校验发生在模板渲染完成之后，按最终 URL 的 `host:port` 判断。
+- `api_key` create 请求必须提供非空 `allowed_domains`；其它凭证类型省略或传空数组时，表示不额外限制。
 - `allowed_domains` 条目可带或不带 scheme；未显式写端口时默认按 `443` 处理。
 - 仅支持前导子域通配，例如 `*.okx.com:443`。
 - `*.okx.com:443` 允许 `www.okx.com:443`，但不允许 `okx.com:443`、`evil-okx.com:443`、`www.okx.com.evil.com:443`。
@@ -380,17 +381,11 @@ Authorization: Bearer <paseto_v4_local_token>
 
 ### 执行沙箱操作
 
-对已创建的 sandbox session 执行操作。交易所 REST API 调用使用 `operation_type=http_request`。
+通过 broker 接口提交无会话沙箱操作。交易所 REST API 调用使用 `operation_type=http_request`。
 
-**Endpoint**: `POST /api/v1/sandbox/sessions/:id/execute`
+**Endpoint**: `POST /api/v1/sandbox/http-requests`
 
 **Scope**: `sandbox:execute`
-
-**路径参数**:
-
-| 参数 | 类型   | 说明 |
-| ---- | ------ | ---- |
-| `id` | string | sandbox 会话 ID |
 
 **请求体通用结构**:
 
@@ -414,6 +409,16 @@ Authorization: Bearer <paseto_v4_local_token>
 - 内置函数包括 `${functions.okx_timestamp()}`、`${functions.okx_sign()}`、`${functions.binance_timestamp()}`、`${functions.binance_sign()}`。
 - 自定义函数通过凭证上的 `custom_functions` 提供，必须返回字符串。
 - 模板渲染完成后才执行 `allowed_domains` 校验。
+
+**运行态审批说明**:
+
+- 当所用 Credential 配置了 `requires_approval=true` 时，请求体必须提供 `request_id`。
+- 推荐先运行 `toani-vault approvals generate-request-id`，使用 canonical 格式 `req_<timestamp_ms>_<uuid_v7>` 生成 `request_id`。
+- 运行态审批的固定映射为 `business_type=credential_runtime_access`、`business_id=request_id`。
+- 同一 `request_id` 的并发未审批访问会复用同一个 pending `approval_id`。
+- 同一 `request_id` 的已审批结果为单次消费；一次成功访问后，再次使用同一 `request_id` 会重新创建 pending 审批。
+- 已成功消费过的 `request_id` 不应复用；下一次运行态审批应重新生成新的 `request_id`。
+- 审批等待中返回 `409 conflict`，消息形如 `Runtime access is waiting for approval: <approval_id>`；若另一条并发请求已占用本次已审批结果，则返回 `Runtime access approval already in use`。
 
 **OKX 示例**:
 

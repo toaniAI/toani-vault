@@ -186,6 +186,11 @@ describe("CredBridgeClient", () => {
           }),
         }),
       );
+
+      const requestHeaders = mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>;
+      expect(requestHeaders["X-Request-ID"]).toMatch(
+        /^req_\d{13}_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
     });
 
     it("应该发送带有正确体的 POST 请求", async () => {
@@ -217,6 +222,44 @@ describe("CredBridgeClient", () => {
           body: JSON.stringify(body),
         }),
       );
+    });
+
+    it("应该为连续请求生成唯一的 canonical request id", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Map([["content-type", "application/json"]]),
+        json: async () => ({
+          success: true,
+          data: { ok: true },
+          meta: { requestId: "req_123", timestamp: new Date().toISOString() },
+        }),
+      } as unknown as Response);
+
+      global.fetch = mockFetch;
+
+      const client = new CredBridgeClient({
+        baseUrl: mockBaseUrl,
+        token: mockToken,
+      });
+
+      await client.get("/test-one");
+      await client.get("/test-two");
+
+      const firstRequestId = (mockFetch.mock.calls[0]?.[1]?.headers as Record<string, string>)[
+        "X-Request-ID"
+      ];
+      const secondRequestId = (mockFetch.mock.calls[1]?.[1]?.headers as Record<string, string>)[
+        "X-Request-ID"
+      ];
+
+      expect(firstRequestId).toMatch(
+        /^req_\d{13}_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(secondRequestId).toMatch(
+        /^req_\d{13}_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(firstRequestId).not.toBe(secondRequestId);
     });
 
     it("应该在 404 时抛出 NotFound 错误", async () => {

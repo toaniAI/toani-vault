@@ -247,9 +247,7 @@ describe("runLogin", () => {
     await runLogin(baseConfig, []);
 
     expect(openMock).toHaveBeenCalledWith("https://dashboard.toani.ai/credentials");
-    expect(promptState.log.step).toHaveBeenCalledWith(
-      "Opening Dashboard in your browser...",
-    );
+    expect(promptState.log.step).toHaveBeenCalledWith("Opening Dashboard...");
   });
 
   it("rechecks .env through the shared token entry flow", async () => {

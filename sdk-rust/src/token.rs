@@ -31,9 +31,10 @@
 use crate::{
     client::CredBridgeClient,
     types::{
-        CreateAccessTokenResponse, CreateTokenRequest, CreateTokenResponse, CredBridgeError,
-        CredBridgeErrorCode, ListTokensResponse, RequestOptions, Result,
-        RevokeTokenResponse, TokenInfo, TokenScope, TokenStatsResponse,
+        ApiTokenMetadata, CreateAccessTokenResponse, CreateTokenRequest,
+        CreateTokenResponse, CredBridgeError, CredBridgeErrorCode, ListTokensResponse,
+        RequestOptions, Result, RevokeTokenResponse, TokenInfo, TokenScope,
+        TokenStatsResponse,
     },
 };
 use std::sync::Arc;

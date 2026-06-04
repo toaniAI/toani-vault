@@ -44,6 +44,6 @@ export async function runAudit(
       return;
     }
     default:
-      throw new Error("Usage: toani audit <logs|export|verify> [options]");
+      throw new Error("Usage: toani-vault audit <logs|export|verify> [options]");
   }
 }

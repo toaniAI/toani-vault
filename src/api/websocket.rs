@@ -602,10 +602,6 @@ mod tests {
             OperationType::Custom
         ));
         assert!(matches!(
-            parse_operation_type("screenshot"),
-            OperationType::Custom
-        ));
-        assert!(matches!(
             parse_operation_type("unknown"),
             OperationType::Custom
         ));

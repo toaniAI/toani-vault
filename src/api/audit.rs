@@ -29,7 +29,7 @@ use serde_json::json;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
 use std::env;
 use std::fs;
-use std::path::{Path as FsPath, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::api::audit_models::*;
@@ -126,10 +126,8 @@ impl PostgresAuditStorageAdapter {
     }
 
     pub(crate) fn schema_from_env() -> Result<String, RecorderError> {
-        const DEFAULT_SCHEMA: &str = "credbridge_vault";
-
         let schema =
-            env::var("CREDBRIDGE_PG_SCHEMA").unwrap_or_else(|_| DEFAULT_SCHEMA.to_string());
+            env::var("CREDBRIDGE_PG_SCHEMA").unwrap_or_else(|_| DEFAULT_AUDIT_SCHEMA.to_string());
         if schema.is_empty() {
             return Err(RecorderError::StorageError(
                 "CREDBRIDGE_PG_SCHEMA 不能为空".to_string(),
@@ -223,44 +221,32 @@ impl PostgresAuditStorageAdapter {
         Ok(())
     }
 
-    fn configured_signing_key_path() -> Option<PathBuf> {
-        env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
-            .ok()
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-    }
-
-    fn load_or_create_file_signing_key(path: &FsPath) -> Result<SigningKeyPair, RecorderError> {
-        if path.exists() {
-            let bytes = fs::read(path).map_err(|error| {
-                RecorderError::StorageError(format!(
-                    "读取审计签名密钥失败 {}: {error}",
-                    path.display()
-                ))
-            })?;
-            let persisted: PersistedSigningKey = serde_json::from_slice(&bytes)
-                .map_err(|error| RecorderError::SerializationError(error.to_string()))?;
-            return SigningKeyPair::from_pkcs8(persisted.private_key);
+    async fn load_or_create_signing_key(
+        pool: &PgPool,
+        schema: &str,
+    ) -> Result<SigningKeyPair, RecorderError> {
+        if let Ok(explicit_path) = env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
+            && !explicit_path.trim().is_empty()
+        {
+            let path = PathBuf::from(explicit_path);
+            let (signing_key, loaded_existing) = load_or_create_signing_key_at_path(&path)?;
+            if loaded_existing {
+                tracing::info!(
+                    module = "audit",
+                    signing_key_path = %path.display(),
+                    "已加载已有审计签名密钥文件"
+                );
+            } else {
+                tracing::info!(
+                    module = "audit",
+                    signing_key_path = %path.display(),
+                    "首次生成审计签名密钥文件"
+                );
+            }
+            return Ok(signing_key);
         }
 
-        let signing_key = SigningKeyPair::generate()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                RecorderError::StorageError(format!(
-                    "创建审计签名密钥目录失败 {}: {error}",
-                    parent.display()
-                ))
-            })?;
-        }
-        let payload = serde_json::to_vec(&PersistedSigningKey {
-            private_key: signing_key.private_key().to_vec(),
-        })
-        .map_err(|error| RecorderError::SerializationError(error.to_string()))?;
-        fs::write(path, payload).map_err(|error| {
-            RecorderError::StorageError(format!("写入审计签名密钥失败 {}: {error}", path.display()))
-        })?;
-
-        Ok(signing_key)
+        Self::load_or_create_db_signing_key(pool, schema).await
     }
 
     async fn load_or_create_db_signing_key(
@@ -311,17 +297,6 @@ impl PostgresAuditStorageAdapter {
             .map_err(|error| RecorderError::StorageError(error.to_string()))?;
 
         Ok(signing_key)
-    }
-
-    async fn load_or_create_signing_key(
-        pool: &PgPool,
-        schema: &str,
-    ) -> Result<SigningKeyPair, RecorderError> {
-        if let Some(path) = Self::configured_signing_key_path() {
-            return Self::load_or_create_file_signing_key(&path);
-        }
-
-        Self::load_or_create_db_signing_key(pool, schema).await
     }
 
     fn apply_filters<'a>(builder: &mut QueryBuilder<'a, sqlx::Postgres>, filter: &'a AuditFilter) {
@@ -442,6 +417,76 @@ impl PostgresAuditStorageAdapter {
 
         Ok(signed_entry)
     }
+}
+
+const DEFAULT_AUDIT_SCHEMA: &str = "credbridge_vault";
+
+#[allow(dead_code)]
+pub(crate) fn signing_key_path(
+    schema: &str,
+    explicit_path: Option<&str>,
+    sealed_storage_path: Option<&str>,
+) -> PathBuf {
+    if let Some(path) = explicit_path
+        && !path.trim().is_empty()
+    {
+        return PathBuf::from(path);
+    }
+
+    let env_override = env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
+        .ok()
+        .filter(|path| !path.trim().is_empty());
+    if let Some(path) = env_override {
+        return PathBuf::from(path);
+    }
+
+    let sealed_storage_path = sealed_storage_path
+        .filter(|path| !path.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            env::var("SEALED_STORAGE_PATH")
+                .ok()
+                .filter(|path| !path.trim().is_empty())
+        })
+        .unwrap_or_else(|| ".sealed".to_string());
+    PathBuf::from(sealed_storage_path).join(format!("{schema}.audit-signing-key.json"))
+}
+
+fn load_or_create_signing_key_at_path(
+    path: &std::path::Path,
+) -> Result<(SigningKeyPair, bool), RecorderError> {
+    if path.exists() {
+        let bytes = fs::read(path).map_err(|error| {
+            RecorderError::StorageError(format!("读取审计签名密钥失败 {}: {error}", path.display()))
+        })?;
+        let persisted: PersistedSigningKey = serde_json::from_slice(&bytes).map_err(|error| {
+            RecorderError::SerializationError(format!(
+                "解析审计签名密钥失败 {}: {error}",
+                path.display()
+            ))
+        })?;
+        let signing_key = SigningKeyPair::from_pkcs8(persisted.private_key)?;
+        return Ok((signing_key, true));
+    }
+
+    let signing_key = SigningKeyPair::generate()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            RecorderError::StorageError(format!(
+                "创建审计签名密钥目录失败 {}: {error}",
+                parent.display()
+            ))
+        })?;
+    }
+    let payload = serde_json::to_vec(&PersistedSigningKey {
+        private_key: signing_key.private_key().to_vec(),
+    })
+    .map_err(|error| RecorderError::SerializationError(error.to_string()))?;
+    fs::write(path, payload).map_err(|error| {
+        RecorderError::StorageError(format!("写入审计签名密钥失败 {}: {error}", path.display()))
+    })?;
+
+    Ok((signing_key, false))
 }
 
 #[async_trait::async_trait]
@@ -1351,6 +1396,22 @@ fn current_timestamp_millis() -> u64 {
 mod tests {
     use super::*;
     use crate::audit::events::{AuditAction, AuditEntry, Outcome};
+    use std::fs;
+    use std::sync::{Mutex, OnceLock};
+    use uuid::Uuid;
+
+    static FS_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn fs_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        FS_TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("fs test lock poisoned")
+    }
+
+    fn unique_temp_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("credbridge-audit-{name}-{}", Uuid::now_v7()))
+    }
 
     fn create_test_token() -> ValidatedToken {
         ValidatedToken {
@@ -1490,5 +1551,47 @@ mod tests {
         };
         // id 非空，参数校验应通过
         assert!(!req.id.trim().is_empty());
+    }
+
+    #[test]
+    fn test_load_or_create_signing_key_reuses_existing_file() {
+        let _guard = fs_test_lock();
+        let temp_dir = unique_temp_dir("signing-key-reuse");
+        let path = temp_dir.join("credbridge_vault.audit-signing-key.json");
+
+        let (first_key, loaded_existing_first) =
+            load_or_create_signing_key_at_path(&path).expect("first key init should succeed");
+        let first_public_key = first_key.public_key().to_vec();
+        let first_file_bytes = fs::read(&path).expect("first key file should exist");
+
+        let (second_key, loaded_existing_second) =
+            load_or_create_signing_key_at_path(&path).expect("second key init should succeed");
+        let second_public_key = second_key.public_key().to_vec();
+        let second_file_bytes = fs::read(&path).expect("second key file should exist");
+
+        assert!(!loaded_existing_first);
+        assert!(loaded_existing_second);
+        assert_eq!(first_public_key, second_public_key);
+        assert_eq!(first_file_bytes, second_file_bytes);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_load_or_create_signing_key_fails_on_corrupt_existing_file() {
+        let _guard = fs_test_lock();
+        let temp_dir = unique_temp_dir("signing-key-corrupt");
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let path = temp_dir.join("credbridge_vault.audit-signing-key.json");
+        fs::write(&path, b"not-valid-json").expect("corrupt key file should be written");
+
+        let message = match load_or_create_signing_key_at_path(&path) {
+            Ok(_) => panic!("corrupt signing key file should fail"),
+            Err(error) => error.to_string(),
+        };
+        assert!(message.contains("解析审计签名密钥失败"));
+        assert!(message.contains(path.to_string_lossy().as_ref()));
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

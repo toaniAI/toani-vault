@@ -22,17 +22,14 @@
  *   },
  * });
  *
- * // 使用手工签发 token 创建 sandbox 会话
- * const session = await sdk.sandbox.createSession({
- *   serviceId: 'schwab',
- *   originalIntent: 'sign in to dashboard',
+ * // 提交无会话 sandbox broker 请求
+ * const op = await sdk.sandbox.request({
+ *   operationType: OperationType.HttpRequest,
+ *   description: 'health check',
+ *   parameters: { url: 'https://api.example.com/health', method: 'GET' },
  * });
- * console.log(session.sessionId);
- * await sdk.sandbox.navigate(session.sessionId, 'https://dashboard.zk.me/login');
- * await sdk.sandbox.bootstrapPage(session.sessionId, {
- *   mode: 'rocket_loader',
- *   waitSelector: 'input[name=email]',
- * });
+ * const detail = await sdk.sandbox.getRequest(op.operationId);
+ * console.log(detail.status);
  * ```
  */
 
@@ -44,7 +41,7 @@ export { CredentialsService } from "./credentials.js";
 export { TokenManager } from "./token.js";
 export { ServiceAccountsService } from "./service-accounts.js";
 export { SandboxService } from "./sandbox.js";
-export { SandboxWebSocketClient } from "./websocket.js";
+export { ApprovalsService } from "./approvals.js";
 
 // 导出所有类型
 export {
@@ -76,6 +73,9 @@ export {
   type DeleteCredentialResponse,
   type EncryptedPayload,
   type CredentialFilter,
+  type CreateApprovalRequest,
+  type ApprovalInitiationResponse,
+  type ApprovalDetailResponse,
 
   // Token 类型
   type TokenClaims,
@@ -138,46 +138,10 @@ export {
   type ServiceAccountTokenMetadata,
 
   // Sandbox 类型
-  type CreateSessionRequest,
-  type CreateSessionResponse,
-  type SessionInfo,
-  type BootstrapPageMode,
-  type BootstrapPageOptions,
-  type BootstrapPageResult,
-  type BootstrapPageResponse,
   type ExecuteOperationRequest,
   type ExecuteOperationResponse,
-  type DomExportFormat,
-  type DomExportRequest,
-  type DomExportResponse,
-  type ExportDataRequest,
-  type ExportDataResponse,
-  type ListSessionsResponse,
-  type SandboxConfig,
   type SandboxOperationInfo,
-  type SandboxStats,
 } from "./types.js";
-
-// 重新导出 WebSocket 类型
-export type {
-  WebSocketConfig,
-  ClientMessage,
-  ServerMessage,
-  ExecuteMessage,
-  HeartbeatMessage,
-  CloseMessage,
-  ConnectedMessage,
-  OperationProgressMessage,
-  OperationCompletedMessage,
-  HeartbeatAckMessage,
-  SessionStatusUpdateMessage,
-  ErrorMessage,
-  ExecuteOperationOptions,
-  ExecuteOperationResult,
-} from "./websocket.js";
-
-// 导出 WebSocket 状态枚举
-export { WebSocketState } from "./websocket.js";
 
 import { AuthService } from "./auth.js";
 import { AuditService } from "./audit.js";
@@ -186,6 +150,7 @@ import { CredentialsService } from "./credentials.js";
 import { TokenManager } from "./token.js";
 import { ServiceAccountsService } from "./service-accounts.js";
 import { SandboxService } from "./sandbox.js";
+import { ApprovalsService } from "./approvals.js";
 import type { CredBridgeConfig } from "./types.js";
 
 /**
@@ -208,6 +173,8 @@ export class ToaniVaultSDK {
   public readonly serviceAccounts: ServiceAccountsService;
   /** Sandbox 服务 */
   public readonly sandbox: SandboxService;
+  /** Approvals 服务 */
+  public readonly approvals: ApprovalsService;
 
   /**
    * 创建 Toani Vault SDK 实例
@@ -249,6 +216,7 @@ export class ToaniVaultSDK {
     this.token = new TokenManager(this.client);
     this.serviceAccounts = new ServiceAccountsService(this.client);
     this.sandbox = new SandboxService(this.client);
+    this.approvals = new ApprovalsService(this.client);
   }
 
   /**

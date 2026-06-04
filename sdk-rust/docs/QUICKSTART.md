@@ -132,17 +132,8 @@ let cred4 = sdk.credentials()
 use serde_json::json;
 use std::collections::HashMap;
 use toani_vault_sdk::{
-    CreateSandboxSessionRequest, ExecuteSandboxOperationRequest, SandboxOperationType,
+    ExecuteSandboxOperationRequest, SandboxOperationType,
 };
-
-let session = sdk.sandbox().create_session(
-    CreateSandboxSessionRequest {
-        credential_id: "okx-credential-id".to_string(),
-        original_intent: "Call an exchange REST API from the sandbox".to_string(),
-        metadata: None,
-    },
-    None,
-).await?;
 
 let okx_request = ExecuteSandboxOperationRequest {
     operation_type: SandboxOperationType::HttpRequest,
@@ -166,7 +157,7 @@ let okx_request = ExecuteSandboxOperationRequest {
 };
 
 let _okx_response = sdk.sandbox()
-    .execute(&session.data.session_id, okx_request, None)
+    .request(okx_request, None)
     .await?;
 
 let binance_request = ExecuteSandboxOperationRequest {

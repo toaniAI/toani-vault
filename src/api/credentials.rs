@@ -78,6 +78,7 @@ async fn tee_runtime_snapshot(state: &AppState) -> TeeRuntimeSnapshot {
 }
 
 /// 审计日志记录器 trait
+#[allow(clippy::too_many_arguments)]
 #[async_trait::async_trait]
 pub trait AuditLogger: Send + Sync {
     async fn log_credential_created(
@@ -85,6 +86,7 @@ pub trait AuditLogger: Send + Sync {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String>;
@@ -93,6 +95,16 @@ pub trait AuditLogger: Send + Sync {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) -> Result<(), String>;
+    async fn log_credential_updated(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String>;
@@ -101,6 +113,7 @@ pub trait AuditLogger: Send + Sync {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String>;
@@ -109,6 +122,7 @@ pub trait AuditLogger: Send + Sync {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         success: bool,
         jti: &str,
         mrenclave: &str,
@@ -125,11 +139,12 @@ impl AuditLogger for DefaultAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         tracing::info!(
-            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
+            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}, jti: {jti}, mrenclave: {mrenclave}"
         );
         Ok(())
     }
@@ -139,11 +154,27 @@ impl AuditLogger for DefaultAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         tracing::info!(
-            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
+            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}, jti: {jti}, mrenclave: {mrenclave}"
+        );
+        Ok(())
+    }
+
+    async fn log_credential_updated(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) -> Result<(), String> {
+        tracing::info!(
+            "[AUDIT] Credential updated - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}, jti: {jti}, mrenclave: {mrenclave}"
         );
         Ok(())
     }
@@ -153,11 +184,12 @@ impl AuditLogger for DefaultAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         tracing::info!(
-            "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, jti: {jti}, mrenclave: {mrenclave}"
+            "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}, jti: {jti}, mrenclave: {mrenclave}"
         );
         Ok(())
     }
@@ -167,12 +199,13 @@ impl AuditLogger for DefaultAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         success: bool,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         tracing::info!(
-            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}, jti: {jti}, mrenclave: {mrenclave}"
+            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}, success: {success}, jti: {jti}, mrenclave: {mrenclave}"
         );
         Ok(())
     }
@@ -189,6 +222,7 @@ struct CredentialAuditContext<'a> {
     tenant_id: &'a str,
     user_id: &'a str,
     credential_id: &'a str,
+    credential_name: &'a str,
     jti: &'a str,
     mrenclave: &'a str,
 }
@@ -226,6 +260,10 @@ impl StorageAuditLogger {
         .with_param(
             "tenant_id",
             RedactedParam::Plain(context.tenant_id.to_string()),
+        )
+        .with_param(
+            "credential_name",
+            RedactedParam::Plain(context.credential_name.to_string()),
         );
 
         self.storage.record(entry).await.map(|_| ())
@@ -239,12 +277,13 @@ impl AuditLogger for StorageAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
-            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
+            "[AUDIT] Credential created - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}"
         );
 
         // 写入存储
@@ -255,6 +294,7 @@ impl AuditLogger for StorageAuditLogger {
                 tenant_id,
                 user_id,
                 credential_id,
+                credential_name,
                 jti,
                 mrenclave,
             },
@@ -267,12 +307,13 @@ impl AuditLogger for StorageAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
-            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
+            "[AUDIT] Credential accessed - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}"
         );
 
         // 写入存储
@@ -283,6 +324,37 @@ impl AuditLogger for StorageAuditLogger {
                 tenant_id,
                 user_id,
                 credential_id,
+                credential_name,
+                jti,
+                mrenclave,
+            },
+        )
+        .await
+    }
+
+    async fn log_credential_updated(
+        &self,
+        tenant_id: &str,
+        user_id: &str,
+        credential_id: &str,
+        credential_name: &str,
+        jti: &str,
+        mrenclave: &str,
+    ) -> Result<(), String> {
+        // 打印到控制台
+        tracing::info!(
+            "[AUDIT] Credential updated - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}"
+        );
+
+        // 写入存储
+        self.record_to_storage(
+            AuditAction::CredentialUpdate,
+            Outcome::Success,
+            CredentialAuditContext {
+                tenant_id,
+                user_id,
+                credential_id,
+                credential_name,
                 jti,
                 mrenclave,
             },
@@ -295,12 +367,13 @@ impl AuditLogger for StorageAuditLogger {
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
-            "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}"
+            "[AUDIT] Credential deleted - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}"
         );
 
         // 写入存储
@@ -311,25 +384,26 @@ impl AuditLogger for StorageAuditLogger {
                 tenant_id,
                 user_id,
                 credential_id,
+                credential_name,
                 jti,
                 mrenclave,
             },
         )
         .await
     }
-
     async fn log_decryption_attempt(
         &self,
         tenant_id: &str,
         user_id: &str,
         credential_id: &str,
+        credential_name: &str,
         success: bool,
         jti: &str,
         mrenclave: &str,
     ) -> Result<(), String> {
         // 打印到控制台
         tracing::info!(
-            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, success: {success}"
+            "[AUDIT] Decryption attempt - tenant: {tenant_id}, user: {user_id}, credential: {credential_id}, credential_name: {credential_name}, success: {success}"
         );
 
         // 写入存储
@@ -345,6 +419,7 @@ impl AuditLogger for StorageAuditLogger {
                 tenant_id,
                 user_id,
                 credential_id,
+                credential_name,
                 jti,
                 mrenclave,
             },
@@ -440,6 +515,9 @@ pub struct CreateCredentialApiRequest {
     pub plaintext_data: serde_json::Value,
     /// 过期时间（Unix 时间戳，可选）
     pub expires_at: Option<u64>,
+    /// 是否需要运行时审批
+    #[serde(default)]
+    pub requires_approval: bool,
     /// Provider（okx / binance / custom）
     #[serde(default)]
     pub provider: Option<String>,
@@ -471,10 +549,10 @@ fn normalize_oauth_plaintext_data(
         return normalized;
     };
 
-    if !map.contains_key("refreshToken") {
-        if let Some(legacy_value) = map.get("refresh_token").cloned() {
-            map.insert("refreshToken".to_string(), legacy_value);
-        }
+    if !map.contains_key("refreshToken")
+        && let Some(legacy_value) = map.get("refresh_token").cloned()
+    {
+        map.insert("refreshToken".to_string(), legacy_value);
     }
 
     map.remove("refresh_token");
@@ -496,6 +574,7 @@ pub struct CreateCredentialResponse {
     pub credential_type: String,
     pub created_at: String,
     pub expires_at: Option<String>,
+    pub requires_approval: bool,
     pub provider: Option<String>,
     pub allowed_domains: Vec<String>,
     pub custom_functions: Vec<CredentialCustomFunction>,
@@ -536,7 +615,36 @@ fn parse_credential_provider(provider: &str) -> Result<CredentialProvider, ApiEr
 }
 
 #[allow(clippy::result_large_err)]
+fn normalize_allowed_domains_for_create(
+    credential_type: &str,
+    allowed_domains: Option<Vec<String>>,
+) -> Result<Vec<String>, ApiError> {
+    let requires_allowed_domains = credential_type.trim() == "api_key";
+    let allowed_domains = match allowed_domains {
+        Some(allowed_domains) => {
+            if requires_allowed_domains && allowed_domains.is_empty() {
+                return Err(ApiError::new(
+                    "invalid_request",
+                    "allowed_domains must not be empty",
+                ));
+            }
+            allowed_domains
+        }
+        None if requires_allowed_domains => {
+            return Err(ApiError::new(
+                "invalid_request",
+                "allowed_domains must not be empty",
+            ));
+        }
+        None => Vec::new(),
+    };
+
+    Ok(allowed_domains)
+}
+
+#[allow(clippy::result_large_err)]
 fn parse_create_credential_config(
+    credential_type: &str,
     provider: Option<String>,
     allowed_domains: Option<Vec<String>>,
     custom_functions: Option<Vec<CredentialCustomFunction>>,
@@ -544,7 +652,7 @@ fn parse_create_credential_config(
     let provider = provider
         .map(|value| parse_credential_provider(&value))
         .transpose()?;
-    let allowed_domains = allowed_domains.unwrap_or_default();
+    let allowed_domains = normalize_allowed_domains_for_create(credential_type, allowed_domains)?;
     validate_allowed_domains(&allowed_domains)
         .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
     let custom_functions = custom_functions.unwrap_or_default();
@@ -573,6 +681,7 @@ pub async fn create_credential(
 
     validate_expires_at(request.expires_at)?;
     let credential_config = parse_create_credential_config(
+        &request.credential_type,
         request.provider.clone(),
         request.allowed_domains.clone(),
         request.custom_functions.clone(),
@@ -620,6 +729,7 @@ pub async fn create_credential(
         service_id: ServiceId::new(&request.service_id),
         credential_type,
         expires_at: request.expires_at,
+        requires_approval: request.requires_approval,
         provider: credential_config.provider,
         allowed_domains: credential_config.allowed_domains,
         custom_functions: credential_config.custom_functions,
@@ -638,6 +748,7 @@ pub async fn create_credential(
             &token.tenant_id,
             &token.user_id,
             entry.credential_id.as_str(),
+            entry.service_id.as_str(),
             &token.token_id,
             &tee_snapshot.mrenclave_label,
         )
@@ -657,6 +768,7 @@ pub async fn create_credential(
         credential_type: entry.credential_type.as_str().to_string(),
         created_at: entry.created_at.to_string(),
         expires_at: entry.expires_at.map(|t| t.to_string()),
+        requires_approval: entry.requires_approval,
         provider: entry.provider.map(|provider| provider.as_str().to_string()),
         allowed_domains: entry.allowed_domains.clone(),
         custom_functions: entry.custom_functions.clone(),
@@ -827,6 +939,7 @@ pub struct GetCredentialResponse {
     pub expires_at: Option<String>,
     pub is_deleted: bool,
     pub status: String,
+    pub requires_approval: bool,
     pub provider: Option<String>,
     pub allowed_domains: Vec<String>,
     pub custom_functions: Vec<CredentialCustomFunction>,
@@ -860,6 +973,7 @@ pub async fn get_credential(
             &token.tenant_id,
             &token.user_id,
             &metadata.credential_id,
+            &metadata.service_id,
             &token.token_id,
             "software_mode",
         )
@@ -895,6 +1009,7 @@ pub async fn get_credential(
         expires_at: metadata.expires_at,
         is_deleted: metadata.is_deleted,
         status,
+        requires_approval: metadata.requires_approval,
         provider: metadata
             .provider
             .map(|provider| provider.as_str().to_string()),
@@ -955,6 +1070,11 @@ pub async fn delete_credential(
 
     let tenant_id = TenantId::new(&token.tenant_id);
     let user_id = UserId::new(&token.user_id);
+    let credential_metadata = state
+        .vault
+        .get_credential_metadata(&credential_id, &tenant_id, &user_id)
+        .map_err(vault_error_to_api_error)?
+        .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
 
     let deleted = state
         .vault
@@ -972,6 +1092,7 @@ pub async fn delete_credential(
             &token.tenant_id,
             &token.user_id,
             credential_id.as_str(),
+            &credential_metadata.service_id,
             &token.token_id,
             "software_mode",
         )
@@ -1039,19 +1160,25 @@ pub async fn update_credential(
 
     let credential_id = CredentialId::from_string(id.clone())
         .map_err(|e| ApiError::new("invalid_request", e.to_string()))?;
+    let provider = match request.provider {
+        Some(provider) => Some(match provider {
+            Some(value) => Some(parse_credential_provider(&value)?),
+            None => None,
+        }),
+        None => None,
+    };
     let config_update = CredentialConfigUpdate {
-        provider: request
-            .provider
-            .map(|provider| {
-                provider
-                    .map(|value| parse_credential_provider(&value))
-                    .transpose()
-            })
-            .transpose()?,
+        provider,
         allowed_domains: request.allowed_domains.clone(),
         custom_functions: request.custom_functions.clone(),
     };
     if let Some(allowed_domains) = &config_update.allowed_domains {
+        if allowed_domains.is_empty() {
+            return Err(ApiError::new(
+                "invalid_request",
+                "allowed_domains must not be empty",
+            ));
+        }
         validate_allowed_domains(allowed_domains)
             .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
     }
@@ -1100,6 +1227,26 @@ pub async fn update_credential(
         .get_credential_metadata(&credential_id, &tenant_id, &user_id)
         .map_err(vault_error_to_api_error)?
         .ok_or_else(|| ApiError::new("not_found", "凭证不存在"))?;
+    let tee_snapshot = tee_runtime_snapshot(&state).await;
+    if let Err(error) = state
+        .audit_logger
+        .log_credential_updated(
+            &token.tenant_id,
+            &token.user_id,
+            credential_id.as_str(),
+            &metadata.service_id,
+            &token.token_id,
+            &tee_snapshot.mrenclave_label,
+        )
+        .await
+    {
+        tracing::warn!(
+            tenant_id = %token.tenant_id,
+            user_id = %token.user_id,
+            credential_id = %credential_id.as_str(),
+            "credential updated but audit write failed: {error}"
+        );
+    }
 
     Ok(Json(UpdateCredentialApiResponse {
         credential_id: id,
@@ -1333,8 +1480,13 @@ mod tests {
 
     #[test]
     fn test_parse_create_credential_config_rejects_invalid_provider() {
-        let error = parse_create_credential_config(Some("kraken".to_string()), None, None)
-            .expect_err("unsupported provider should be rejected");
+        let error = parse_create_credential_config(
+            "username_password",
+            Some("kraken".to_string()),
+            None,
+            None,
+        )
+        .expect_err("unsupported provider should be rejected");
 
         assert_eq!(error.error, "invalid_request");
         assert!(error.message.contains("unsupported provider"));
@@ -1343,11 +1495,47 @@ mod tests {
     #[test]
     fn test_parse_create_credential_config_rejects_invalid_allowed_domains() {
         let error = parse_create_credential_config(
+            "api_key",
             Some("okx".to_string()),
             Some(vec!["https://www.okx.com/path".to_string()]),
             None,
         )
         .expect_err("allowed_domains entries with paths should be rejected");
+
+        assert_eq!(error.error, "invalid_request");
+        assert!(error.message.contains("allowed_domains"));
+    }
+
+    #[test]
+    fn test_parse_create_credential_config_allows_missing_allowed_domains_for_non_api_key() {
+        let parsed = parse_create_credential_config(
+            "username_password",
+            Some("okx".to_string()),
+            None,
+            None,
+        )
+        .expect("non api_key credentials should allow omitted allowed_domains");
+
+        assert!(parsed.allowed_domains.is_empty());
+    }
+
+    #[test]
+    fn test_parse_create_credential_config_allows_empty_allowed_domains_for_non_api_key() {
+        let parsed = parse_create_credential_config(
+            "username_password",
+            Some("okx".to_string()),
+            Some(Vec::new()),
+            None,
+        )
+        .expect("non api_key credentials should allow empty allowed_domains");
+
+        assert!(parsed.allowed_domains.is_empty());
+    }
+
+    #[test]
+    fn test_parse_create_credential_config_rejects_missing_allowed_domains_for_api_key() {
+        let error = parse_create_credential_config("api_key", Some("okx".to_string()), None, None)
+            .expect_err("api_key should still require allowed_domains");
 
         assert_eq!(error.error, "invalid_request");
         assert!(error.message.contains("allowed_domains"));

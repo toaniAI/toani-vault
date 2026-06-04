@@ -127,20 +127,7 @@ impl NsjailSandboxPool {
     pub async fn initialize(&self) -> Result<(), SandboxError> {
         info!("Initializing NsjailSandboxPool");
 
-        // 创建最小数量的热实例
-        let min_instances = self.config.min_warm_instances;
-        for i in 0..min_instances {
-            match self.create_warm_instance().await {
-                Ok(instance) => {
-                    let mut warm_instances = self.warm_instances.lock().await;
-                    warm_instances.push_back(instance);
-                    debug!("Created warm instance {}/{}", i + 1, min_instances);
-                }
-                Err(e) => {
-                    warn!("Failed to create warm instance {}: {}", i, e);
-                }
-            }
-        }
+        self.ensure_min_warm_instances("startup").await;
 
         // 启动清理任务
         self.start_cleanup_task().await;
@@ -156,6 +143,8 @@ impl NsjailSandboxPool {
                 );
             }
         }
+
+        self.ensure_min_warm_instances("post-recovery").await;
 
         *self.status.write().await = PoolStatus::Running;
         info!("NsjailSandboxPool initialized successfully");
@@ -204,11 +193,54 @@ impl NsjailSandboxPool {
         sandbox.start().await?;
 
         let pid = sandbox.pid().unwrap_or(0);
+        let health = sandbox
+            .process_health()
+            .unwrap_or_else(|| crate::tee::sandbox::nsjail::SandboxProcessHealth::unchecked(pid));
+        if !health.is_healthy() {
+            let detail = health.summary();
+            warn!(sandbox_id = %sandbox_id, pid = pid, "Warm instance preflight failed: {}", detail);
+            if let Err(error) = sandbox.stop().await {
+                warn!(sandbox_id = %sandbox_id, pid = pid, "Failed to stop unhealthy warm sandbox after preflight failure: {}", error);
+            }
+            return Err(SandboxError::Process(format!(
+                "warm sandbox preflight failed for {sandbox_id}: {detail}"
+            )));
+        }
 
         let mut instance = WarmNsjailInstance::new(sandbox_id, pid);
         instance.sandbox = Some(sandbox);
 
         Ok(instance)
+    }
+
+    async fn ensure_min_warm_instances(&self, reason: &str) {
+        let current = self.warm_instance_count().await;
+        let target = self.config.min_warm_instances;
+        if current >= target {
+            return;
+        }
+
+        let missing = target - current;
+        warn!(
+            current,
+            target, missing, reason, "Warm instance pool below minimum; attempting to replenish"
+        );
+
+        for _ in 0..missing {
+            match self.create_warm_instance().await {
+                Ok(instance) => {
+                    let mut warm_instances = self.warm_instances.lock().await;
+                    warm_instances.push_back(instance);
+                    debug!(
+                        current = warm_instances.len(),
+                        target, reason, "Replenished warm instance pool"
+                    );
+                }
+                Err(error) => {
+                    warn!(reason, error = %error, "Failed to replenish warm instance");
+                }
+            }
+        }
     }
 
     /// 创建 nsjail 配置
@@ -305,37 +337,59 @@ impl NsjailSandboxPool {
                     }
                 }
 
-                // 清理过期的会话
+                // 清理过期或已损坏的会话
                 {
-                    let sessions = active_sessions.read().await;
-                    let expired_sessions: Vec<SessionId> = sessions
-                        .iter()
-                        .filter(|(_, session)| session.context().is_expired())
-                        .map(|(id, _)| *id)
-                        .collect();
-                    drop(sessions);
+                    let session_candidates: Vec<(SessionId, ActiveNsjailSession)> = {
+                        let sessions = active_sessions.read().await;
+                        sessions
+                            .iter()
+                            .map(|(id, session)| (*id, session.clone()))
+                            .collect()
+                    };
 
-                    for session_id in expired_sessions {
-                        warn!("Session {} has expired, cleaning up", session_id);
+                    let mut stale_sessions: Vec<(SessionId, &'static str)> = Vec::new();
+                    for (session_id, session) in session_candidates {
+                        if session.context().is_expired() {
+                            stale_sessions.push((session_id, "expired"));
+                            continue;
+                        }
+
+                        if let Some(health) = session.sandbox_process_health().await
+                            && !health.is_healthy()
+                        {
+                            warn!(
+                                session_id = %session_id,
+                                health = %health.summary(),
+                                "Detected unhealthy sandbox session during cleanup"
+                            );
+                            stale_sessions.push((session_id, "unhealthy"));
+                        }
+                    }
+
+                    for (session_id, termination_reason) in stale_sessions {
+                        warn!(
+                            session_id = %session_id,
+                            termination_reason,
+                            "Cleaning up stale sandbox session"
+                        );
                         let mut sessions = active_sessions.write().await;
                         if let Some(session) = sessions.remove(&session_id) {
-                            // 尝试关闭会话
                             if let Err(e) = session.close().await {
-                                error!("Failed to close expired session {}: {}", session_id, e);
+                                error!("Failed to close stale session {}: {}", session_id, e);
                             }
                             if let Some(repo) = &repository {
                                 let now = chrono::Utc::now();
                                 if let Err(error) = repo
                                     .mark_session_terminated(
                                         session_id,
-                                        "expired",
-                                        Some("expired_by_cleanup_task".to_string()),
+                                        termination_reason,
+                                        Some(format!("{termination_reason}_by_cleanup_task")),
                                         now,
                                     )
                                     .await
                                 {
                                     error!(
-                                        "Failed to persist expired session {} status: {}",
+                                        "Failed to persist stale session {} status: {}",
                                         session_id, error
                                     );
                                 }
@@ -619,6 +673,16 @@ impl SandboxPool for NsjailSandboxPool {
                 let nsjail_config = self.create_nsjail_config();
                 let mut sandbox = NsjailSandbox::new(nsjail_config);
                 sandbox.start().await?;
+                if let Some(health) = sandbox.process_health()
+                    && !health.is_healthy()
+                {
+                    warn!(
+                        sandbox_id = %sandbox.id,
+                        pid = sandbox.pid().unwrap_or(0),
+                        "Fresh sandbox started with degraded process health: {}",
+                        health.summary()
+                    );
+                }
                 sandbox
             }
         };
@@ -776,6 +840,25 @@ impl SandboxPool for NsjailSandboxPool {
             ));
         }
         errors.extend(process_health_summaries.iter().cloned());
+
+        if !healthy {
+            error!(
+                warm_instances,
+                active_sessions,
+                process_health_issues,
+                status = ?status,
+                "Sandbox pool health check failed"
+            );
+
+            if warm_instances < self.config.min_warm_instances {
+                let reason = if process_health_issues > 0 {
+                    "health-check"
+                } else {
+                    "readiness"
+                };
+                self.ensure_min_warm_instances(reason).await;
+            }
+        }
 
         SandboxHealth {
             pool_status: status,

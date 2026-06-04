@@ -18,6 +18,7 @@ use tokio::sync::{Mutex, RwLock};
 use tower::ServiceExt;
 use uuid::Uuid;
 
+use vault_service::api::approvals::{ApprovalApiState, approval_routes};
 use vault_service::api::audit::MemoryAuditStorageAdapter;
 use vault_service::api::credentials::{
     AppState as CredentialAppState, AuditLogger, DefaultAuditLogger, routes as credential_routes,
@@ -222,6 +223,7 @@ async fn setup_postgres_backed_app() -> Option<(Router, sqlx::PgPool, sqlx::PgPo
     .with_audit_storage(Arc::new(MemoryAuditStorageAdapter::from_shared_storage(
         shared_audit_storage,
     )))
+    .with_approval_pool(database_pool.pool().clone())
     .with_credential_runtime(
         credential_state.vault.clone(),
         credential_state.key_hierarchy.clone(),
@@ -230,7 +232,11 @@ async fn setup_postgres_backed_app() -> Option<(Router, sqlx::PgPool, sqlx::PgPo
 
     let app = Router::new()
         .merge(credential_routes().with_state(credential_state))
-        .merge(oauth_broker_routes(broker_state));
+        .merge(oauth_broker_routes(broker_state))
+        .nest(
+            "/api/v1",
+            approval_routes(ApprovalApiState::new(database_pool.pool().clone())),
+        );
 
     Some((app, database_pool.pool().clone(), admin_pool))
 }
@@ -860,6 +866,1229 @@ async fn oauth_openid_runtime_invoke_reuses_fresh_token_and_refreshes_expired_to
 }
 
 #[tokio::test]
+async fn oauth_runtime_invoke_requires_approval_creates_pending_request_and_retries_after_approval()
+{
+    let token_exchange_attempts = Arc::new(AtomicUsize::new(0));
+    let resource_call_attempts = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("mock oauth listener should bind");
+    let addr = listener.local_addr().unwrap();
+    let token_exchange_for_route = token_exchange_attempts.clone();
+    let resource_call_for_route = resource_call_attempts.clone();
+    let mock_app = Router::new()
+        .route(
+            "/token",
+            post(move || {
+                let token_exchange_for_route = token_exchange_for_route.clone();
+                async move {
+                    token_exchange_for_route.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({
+                        "access_token": "runtime_approval_access_token",
+                        "token_type": "Bearer",
+                        "expires_in": 3600
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/drive/v3/about",
+            get(move || {
+                let resource_call_for_route = resource_call_for_route.clone();
+                async move {
+                    resource_call_for_route.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({ "ok": true }))
+                }
+            }),
+        );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let Some((app, pool, admin_pool)) = setup_postgres_backed_app().await else {
+        server.abort();
+        eprintln!("skip oauth runtime approval test: database not available");
+        return;
+    };
+
+    let admin_app = app.clone().layer(axum::Extension(create_admin_token()));
+    let create_credential_request = Request::builder()
+        .method("POST")
+        .uri("/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "service_id": "oauth-runtime-approval-secret",
+                "credential_type": "oauth_refresh",
+                "requires_approval": true,
+                "plaintext_data": {
+                    "refreshToken": "1//runtime_approval_refresh",
+                    "client_id": "google-client-id",
+                    "client_secret": "google-client-secret",
+                    "token_uri": format!("http://127.0.0.1:{}/token", addr.port())
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let credential_response = admin_app
+        .clone()
+        .oneshot(create_credential_request)
+        .await
+        .unwrap();
+    let credential_created = read_json(credential_response).await;
+    let backing_credential_id = credential_created["credential_id"]
+        .as_str()
+        .expect("credential id should be present")
+        .to_string();
+
+    let create_provider_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/providers")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "alias": "google-runtime-approval",
+                "display_name": "Google Runtime Approval",
+                "provider_family": "google_workspace",
+                "binding_kind": "delegated_user",
+                "grant_family": "authorization_code_pkce",
+                "authorization_endpoint": format!("http://127.0.0.1:{}/authorize", addr.port()),
+                "token_endpoint": format!("http://127.0.0.1:{}/token", addr.port()),
+                "client_id": "google-client-id",
+                "client_auth_method": "client_secret_post",
+                "callback_mode": "query",
+                "adapter_key": "oauth_openid",
+                "adapter_version": "v1",
+                "scope_template": ["openid", "email", "profile"],
+                "runtime_config": {
+                    "redirect_uri": "http://localhost:8080/oauth-broker/callback/google",
+                    "allowed_domains": ["127.0.0.1"],
+                    "allowed_methods": ["GET"],
+                    "allowed_path_prefixes": ["/drive/v3/about"]
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let provider_response = admin_app
+        .clone()
+        .oneshot(create_provider_request)
+        .await
+        .unwrap();
+    let provider_created = read_json(provider_response).await;
+    let provider_definition_id = provider_created["data"]["id"]
+        .as_str()
+        .expect("provider id should be present");
+
+    let create_binding_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/bindings")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "provider_definition_id": provider_definition_id,
+                "alias": "google-runtime-approval-binding",
+                "purpose": "Google runtime approval coverage",
+                "subject_ref": "google-user-approval",
+                "subject_display_name": "Google Runtime Approval User",
+                "backing_credential_id": backing_credential_id
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let binding_response = admin_app
+        .clone()
+        .oneshot(create_binding_request)
+        .await
+        .unwrap();
+    let binding_created = read_json(binding_response).await;
+    let binding_id = binding_created["data"]["id"]
+        .as_str()
+        .expect("binding id should be present")
+        .to_string();
+    let binding_handle = binding_created["data"]["binding_handle"]
+        .as_str()
+        .expect("binding handle should be present")
+        .to_string();
+
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_bindings
+        SET status = 'ready', updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark binding ready");
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_binding_runtime_states
+        SET health_status = 'ready',
+            last_error_code = NULL,
+            last_error_message = NULL,
+            cooldown_until = NULL,
+            rebind_required = FALSE,
+            updated_at = NOW()
+        WHERE binding_id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark runtime state ready");
+
+    let runtime_request_id = "runtime-request-approval-001";
+    let runtime_app = app
+        .clone()
+        .layer(axum::Extension(create_runtime_token(&binding_handle)));
+    let invoke_request = || {
+        Request::builder()
+            .method("POST")
+            .uri("/oauth-broker/runtime/invoke")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "binding_handle": binding_handle.clone(),
+                    "request_id": runtime_request_id,
+                    "request": {
+                        "method": "GET",
+                        "url": format!("http://127.0.0.1:{}/drive/v3/about", addr.port()),
+                        "headers": {}
+                    }
+                })
+                .to_string(),
+            ))
+            .unwrap()
+    };
+
+    let first_fut = runtime_app.clone().oneshot(invoke_request());
+    let replay_fut = runtime_app.clone().oneshot(invoke_request());
+    let (first_response, replay_response) = tokio::join!(first_fut, replay_fut);
+    let first_response = first_response.unwrap();
+    let replay_response = replay_response.unwrap();
+
+    assert_eq!(first_response.status(), StatusCode::CONFLICT);
+    assert_eq!(replay_response.status(), StatusCode::CONFLICT);
+
+    let first_error = read_json(first_response).await;
+    let replay_error = read_json(replay_response).await;
+    assert_eq!(first_error["success"], false);
+    assert_eq!(replay_error["success"], false);
+    assert_eq!(first_error["error"], "conflict");
+    assert_eq!(replay_error["error"], "conflict");
+    assert!(
+        first_error["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("waiting for approval"),
+        "first invoke should be blocked by approval gate: {}",
+        first_error
+    );
+    assert!(
+        replay_error["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("waiting for approval"),
+        "replay invoke should reuse pending approval instead of 500: {}",
+        replay_error
+    );
+    assert_eq!(token_exchange_attempts.load(Ordering::SeqCst), 0);
+    assert_eq!(resource_call_attempts.load(Ordering::SeqCst), 0);
+
+    let pending_request = sqlx::query_as::<_, (Uuid, String)>(
+        r#"
+        SELECT approval_id, status
+        FROM approval_requests
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+        ORDER BY created_at DESC, approval_id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(runtime_request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("pending runtime approval request should exist");
+    assert_eq!(pending_request.1, "pending");
+    let pending_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM approval_requests
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+          AND status = 'pending'
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(runtime_request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("pending runtime approval request count query should succeed");
+    assert_eq!(pending_count, 1);
+
+    let approve_response = admin_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/approvals/{}/approve", pending_request.0))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    json!({ "remark": "approved by runtime test" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(approve_response.status(), StatusCode::OK);
+    let approved = read_json(approve_response).await;
+    assert_eq!(approved["data"]["status"], "approved");
+
+    let retry_response = runtime_app.clone().oneshot(invoke_request()).await.unwrap();
+    assert_eq!(retry_response.status(), StatusCode::OK);
+    let retried = read_json(retry_response).await;
+    assert_eq!(retried["success"], true);
+    assert_eq!(token_exchange_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(resource_call_attempts.load(Ordering::SeqCst), 1);
+
+    let business_result = sqlx::query_as::<
+        _,
+        (
+            String,
+            Option<String>,
+            Option<chrono::DateTime<chrono::Utc>>,
+            Option<Uuid>,
+        ),
+    >(
+        r#"
+        SELECT status, result_code, consumed_at, reservation_id
+        FROM approval_business_results
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(runtime_request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("runtime approval business writeback should exist");
+    assert_eq!(business_result.0, "approved");
+    assert_eq!(business_result.1.as_deref(), Some("approved"));
+    assert!(business_result.2.is_some());
+    assert!(business_result.3.is_none());
+
+    let second_retry_response = runtime_app.clone().oneshot(invoke_request()).await.unwrap();
+    assert_eq!(second_retry_response.status(), StatusCode::CONFLICT);
+    let second_retry_error = read_json(second_retry_response).await;
+    assert_eq!(second_retry_error["success"], false);
+    assert_eq!(second_retry_error["error"], "conflict");
+    assert!(
+        second_retry_error["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("waiting for approval"),
+        "second invoke after successful runtime access should require reapproval: {}",
+        second_retry_error
+    );
+
+    let second_pending_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM approval_requests
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+          AND status = 'pending'
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(runtime_request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("second pending runtime approval request count query should succeed");
+    assert_eq!(second_pending_count, 1);
+
+    let db_name: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .expect("should read temp database name");
+    pool.close().await;
+    drop_temp_database(&admin_pool, &db_name).await;
+    admin_pool.close().await;
+    server.abort();
+}
+
+#[tokio::test]
+async fn oauth_runtime_invoke_reject_and_cancel_make_original_request_fail() {
+    let token_exchange_attempts = Arc::new(AtomicUsize::new(0));
+    let resource_call_attempts = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("mock oauth listener should bind");
+    let addr = listener.local_addr().unwrap();
+    let token_exchange_for_route = token_exchange_attempts.clone();
+    let resource_call_for_route = resource_call_attempts.clone();
+    let mock_app = Router::new()
+        .route(
+            "/token",
+            post(move || {
+                let token_exchange_for_route = token_exchange_for_route.clone();
+                async move {
+                    token_exchange_for_route.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({
+                        "access_token": "runtime_terminal_access_token",
+                        "token_type": "Bearer",
+                        "expires_in": 3600
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/drive/v3/about",
+            get(move || {
+                let resource_call_for_route = resource_call_for_route.clone();
+                async move {
+                    resource_call_for_route.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({ "ok": true }))
+                }
+            }),
+        );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let Some((app, pool, admin_pool)) = setup_postgres_backed_app().await else {
+        server.abort();
+        eprintln!("skip oauth runtime terminal approval test: database not available");
+        return;
+    };
+
+    let admin_app = app.clone().layer(axum::Extension(create_admin_token()));
+    let create_credential_request = Request::builder()
+        .method("POST")
+        .uri("/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "service_id": "oauth-runtime-terminal-secret",
+                "credential_type": "oauth_refresh",
+                "requires_approval": true,
+                "plaintext_data": {
+                    "refreshToken": "1//runtime_terminal_refresh",
+                    "client_id": "google-client-id",
+                    "client_secret": "google-client-secret",
+                    "token_uri": format!("http://127.0.0.1:{}/token", addr.port())
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let credential_response = admin_app
+        .clone()
+        .oneshot(create_credential_request)
+        .await
+        .unwrap();
+    let credential_created = read_json(credential_response).await;
+    let backing_credential_id = credential_created["credential_id"]
+        .as_str()
+        .expect("credential id should be present")
+        .to_string();
+
+    let create_provider_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/providers")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "alias": "google-runtime-terminal",
+                "display_name": "Google Runtime Terminal",
+                "provider_family": "google_workspace",
+                "binding_kind": "delegated_user",
+                "grant_family": "authorization_code_pkce",
+                "authorization_endpoint": format!("http://127.0.0.1:{}/authorize", addr.port()),
+                "token_endpoint": format!("http://127.0.0.1:{}/token", addr.port()),
+                "client_id": "google-client-id",
+                "client_auth_method": "client_secret_post",
+                "callback_mode": "query",
+                "adapter_key": "oauth_openid",
+                "adapter_version": "v1",
+                "scope_template": ["openid", "email", "profile"],
+                "runtime_config": {
+                    "redirect_uri": "http://localhost:8080/oauth-broker/callback/google",
+                    "allowed_domains": ["127.0.0.1"],
+                    "allowed_methods": ["GET"],
+                    "allowed_path_prefixes": ["/drive/v3/about"]
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let provider_response = admin_app
+        .clone()
+        .oneshot(create_provider_request)
+        .await
+        .unwrap();
+    let provider_created = read_json(provider_response).await;
+    let provider_definition_id = provider_created["data"]["id"]
+        .as_str()
+        .expect("provider id should be present");
+
+    let create_binding_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/bindings")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "provider_definition_id": provider_definition_id,
+                "alias": "google-runtime-terminal-binding",
+                "purpose": "Google runtime terminal coverage",
+                "subject_ref": "google-user-terminal",
+                "subject_display_name": "Google Runtime Terminal User",
+                "backing_credential_id": backing_credential_id
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let binding_response = admin_app
+        .clone()
+        .oneshot(create_binding_request)
+        .await
+        .unwrap();
+    let binding_created = read_json(binding_response).await;
+    let binding_id = binding_created["data"]["id"]
+        .as_str()
+        .expect("binding id should be present")
+        .to_string();
+    let binding_handle = binding_created["data"]["binding_handle"]
+        .as_str()
+        .expect("binding handle should be present")
+        .to_string();
+
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_bindings
+        SET status = 'ready', updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark binding ready");
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_binding_runtime_states
+        SET health_status = 'ready',
+            last_error_code = NULL,
+            last_error_message = NULL,
+            cooldown_until = NULL,
+            rebind_required = FALSE,
+            updated_at = NOW()
+        WHERE binding_id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark runtime state ready");
+
+    let runtime_app = app
+        .clone()
+        .layer(axum::Extension(create_runtime_token(&binding_handle)));
+
+    for (request_id, transition_action, terminal_status, remark) in [
+        (
+            "runtime-request-rejected-001",
+            "reject",
+            "rejected",
+            "rejected by runtime terminal test",
+        ),
+        (
+            "runtime-request-cancelled-001",
+            "cancel",
+            "cancelled",
+            "cancelled by runtime terminal test",
+        ),
+    ] {
+        let first_response = runtime_app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth-broker/runtime/invoke")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "binding_handle": binding_handle.clone(),
+                            "request_id": request_id,
+                            "request": {
+                                "method": "GET",
+                                "url": format!("http://127.0.0.1:{}/drive/v3/about", addr.port()),
+                                "headers": {}
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first_response.status(), StatusCode::CONFLICT);
+        let first_error = read_json(first_response).await;
+        assert_eq!(first_error["success"], false);
+        assert_eq!(first_error["error"], "conflict");
+        assert!(
+            first_error["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("waiting for approval"),
+            "runtime request should be blocked by pending approval: {}",
+            first_error
+        );
+
+        let pending_request = sqlx::query_as::<_, (Uuid, String)>(
+            r#"
+            SELECT approval_id, status
+            FROM approval_requests
+            WHERE tenant_id = $1
+              AND business_type = 'credential_runtime_access'
+              AND business_id = $2
+            ORDER BY created_at DESC, approval_id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(Uuid::nil())
+        .bind(request_id)
+        .fetch_one(&pool)
+        .await
+        .expect("pending runtime approval request should exist");
+        assert_eq!(pending_request.1, "pending");
+
+        let transition_response = admin_app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/approvals/{}/{}",
+                        pending_request.0, transition_action
+                    ))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(json!({ "remark": remark }).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(transition_response.status(), StatusCode::OK);
+        let transitioned = read_json(transition_response).await;
+        assert_eq!(transitioned["data"]["status"], terminal_status);
+        assert_eq!(transitioned["data"]["remark"], remark);
+
+        let persisted_terminal_state = sqlx::query_as::<_, (String, Option<String>)>(
+            r#"
+            SELECT status, remark
+            FROM approval_requests
+            WHERE approval_id = $1
+            "#,
+        )
+        .bind(pending_request.0)
+        .fetch_one(&pool)
+        .await
+        .expect("terminal approval request should persist");
+        assert_eq!(persisted_terminal_state.0, terminal_status);
+        assert_eq!(persisted_terminal_state.1.as_deref(), Some(remark));
+
+        let business_result = sqlx::query_as::<
+            _,
+            (
+                String,
+                Option<String>,
+                Option<chrono::DateTime<chrono::Utc>>,
+                Option<Uuid>,
+            ),
+        >(
+            r#"
+            SELECT status, result_code, consumed_at, reservation_id
+            FROM approval_business_results
+            WHERE tenant_id = $1
+              AND business_type = 'credential_runtime_access'
+              AND business_id = $2
+            "#,
+        )
+        .bind(Uuid::nil())
+        .bind(request_id)
+        .fetch_one(&pool)
+        .await
+        .expect("runtime approval business writeback should exist");
+        assert_eq!(business_result.0, terminal_status);
+        assert_eq!(business_result.1.as_deref(), Some(terminal_status));
+        assert!(business_result.2.is_none());
+        assert!(business_result.3.is_none());
+
+        let retry_response = runtime_app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/oauth-broker/runtime/invoke")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "binding_handle": binding_handle.clone(),
+                            "request_id": request_id,
+                            "request": {
+                                "method": "GET",
+                                "url": format!("http://127.0.0.1:{}/drive/v3/about", addr.port()),
+                                "headers": {}
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(retry_response.status(), StatusCode::CONFLICT);
+        let retry_error = read_json(retry_response).await;
+        assert_eq!(retry_error["success"], false);
+        assert_eq!(retry_error["error"], "conflict");
+        assert!(
+            retry_error["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("waiting for approval"),
+            "runtime retry after terminal decision should create a new pending approval: {}",
+            retry_error
+        );
+        assert_eq!(token_exchange_attempts.load(Ordering::SeqCst), 0);
+        assert_eq!(resource_call_attempts.load(Ordering::SeqCst), 0);
+
+        let pending_after_terminal: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM approval_requests
+            WHERE tenant_id = $1
+              AND business_type = 'credential_runtime_access'
+              AND business_id = $2
+              AND status = 'pending'
+            "#,
+        )
+        .bind(Uuid::nil())
+        .bind(request_id)
+        .fetch_one(&pool)
+        .await
+        .expect("pending runtime approval request count after terminal retry should succeed");
+        assert_eq!(pending_after_terminal, 1);
+    }
+
+    let db_name: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .expect("should read temp database name");
+    pool.close().await;
+    drop_temp_database(&admin_pool, &db_name).await;
+    admin_pool.close().await;
+    server.abort();
+}
+
+#[tokio::test]
+async fn oauth_runtime_invoke_releases_approval_when_token_exchange_fails() {
+    let unused_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("unused listener should bind");
+    let unused_port = unused_listener.local_addr().unwrap().port();
+    drop(unused_listener);
+
+    let Some((app, pool, admin_pool)) = setup_postgres_backed_app().await else {
+        eprintln!("skip oauth runtime approval release test: database not available");
+        return;
+    };
+
+    let admin_app = app.clone().layer(axum::Extension(create_admin_token()));
+    let create_credential_request = Request::builder()
+        .method("POST")
+        .uri("/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "service_id": "oauth-runtime-release-secret",
+                "credential_type": "oauth_refresh",
+                "requires_approval": true,
+                "plaintext_data": {
+                    "refreshToken": "1//runtime_release_refresh",
+                    "client_id": "google-client-id",
+                    "client_secret": "google-client-secret",
+                    "token_uri": format!("http://127.0.0.1:{unused_port}/token")
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let credential_response = admin_app
+        .clone()
+        .oneshot(create_credential_request)
+        .await
+        .unwrap();
+    let credential_created = read_json(credential_response).await;
+    let backing_credential_id = credential_created["credential_id"]
+        .as_str()
+        .expect("credential id should be present")
+        .to_string();
+
+    let create_provider_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/providers")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "alias": "google-runtime-release",
+                "display_name": "Google Runtime Release",
+                "provider_family": "google_workspace",
+                "binding_kind": "delegated_user",
+                "grant_family": "authorization_code_pkce",
+                "authorization_endpoint": format!("http://127.0.0.1:{unused_port}/authorize"),
+                "token_endpoint": format!("http://127.0.0.1:{unused_port}/token"),
+                "client_id": "google-client-id",
+                "client_auth_method": "client_secret_post",
+                "callback_mode": "query",
+                "adapter_key": "oauth_openid",
+                "adapter_version": "v1",
+                "scope_template": ["openid", "email", "profile"],
+                "runtime_config": {
+                    "redirect_uri": "http://localhost:8080/oauth-broker/callback/google",
+                    "allowed_domains": ["127.0.0.1"],
+                    "allowed_methods": ["GET"],
+                    "allowed_path_prefixes": ["/drive/v3/about"]
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let provider_response = admin_app
+        .clone()
+        .oneshot(create_provider_request)
+        .await
+        .unwrap();
+    let provider_created = read_json(provider_response).await;
+    let provider_definition_id = provider_created["data"]["id"]
+        .as_str()
+        .expect("provider id should be present");
+
+    let create_binding_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/bindings")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "provider_definition_id": provider_definition_id,
+                "alias": "google-runtime-release-binding",
+                "purpose": "Google runtime approval release coverage",
+                "subject_ref": "google-user-release",
+                "subject_display_name": "Google Runtime Release User",
+                "backing_credential_id": backing_credential_id
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let binding_response = admin_app
+        .clone()
+        .oneshot(create_binding_request)
+        .await
+        .unwrap();
+    let binding_created = read_json(binding_response).await;
+    let binding_id = binding_created["data"]["id"]
+        .as_str()
+        .expect("binding id should be present")
+        .to_string();
+    let binding_handle = binding_created["data"]["binding_handle"]
+        .as_str()
+        .expect("binding handle should be present")
+        .to_string();
+
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_bindings
+        SET status = 'ready', updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark binding ready");
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_binding_runtime_states
+        SET health_status = 'ready',
+            last_error_code = NULL,
+            last_error_message = NULL,
+            cooldown_until = NULL,
+            rebind_required = FALSE,
+            updated_at = NOW()
+        WHERE binding_id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark runtime state ready");
+
+    let request_id = "runtime-request-release-001";
+    let runtime_app = app
+        .clone()
+        .layer(axum::Extension(create_runtime_token(&binding_handle)));
+    let invoke_request = || {
+        Request::builder()
+            .method("POST")
+            .uri("/oauth-broker/runtime/invoke")
+            .header("Content-Type", "application/json")
+            .body(Body::from(
+                json!({
+                    "binding_handle": binding_handle.clone(),
+                    "request_id": request_id,
+                    "request": {
+                        "method": "GET",
+                        "url": format!("http://127.0.0.1:{unused_port}/drive/v3/about"),
+                        "headers": {}
+                    }
+                })
+                .to_string(),
+            ))
+            .unwrap()
+    };
+
+    let first_response = runtime_app.clone().oneshot(invoke_request()).await.unwrap();
+    assert_eq!(first_response.status(), StatusCode::CONFLICT);
+    let first_error = read_json(first_response).await;
+    assert!(
+        first_error["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("waiting for approval")
+    );
+
+    let pending_request = sqlx::query_as::<_, (Uuid,)>(
+        r#"
+        SELECT approval_id
+        FROM approval_requests
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+          AND status = 'pending'
+        ORDER BY created_at DESC, approval_id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("pending runtime approval request should exist");
+
+    let approve_response = admin_app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/approvals/{}/approve", pending_request.0))
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    json!({ "remark": "approved before token exchange failure" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(approve_response.status(), StatusCode::OK);
+
+    let failed_response = runtime_app.clone().oneshot(invoke_request()).await.unwrap();
+    assert_eq!(failed_response.status(), StatusCode::CONFLICT);
+
+    let released_business_result = sqlx::query_as::<
+        _,
+        (
+            String,
+            Option<chrono::DateTime<chrono::Utc>>,
+            Option<Uuid>,
+            Option<chrono::DateTime<chrono::Utc>>,
+        ),
+    >(
+        r#"
+        SELECT status, consumed_at, reservation_id, reserved_at
+        FROM approval_business_results
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("runtime approval business result should remain reusable after token exchange failure");
+    assert_eq!(released_business_result.0, "approved");
+    assert!(released_business_result.1.is_none());
+    assert!(released_business_result.2.is_none());
+    assert!(released_business_result.3.is_none());
+
+    let retry_response = runtime_app.clone().oneshot(invoke_request()).await.unwrap();
+    assert_eq!(retry_response.status(), StatusCode::CONFLICT);
+
+    let pending_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM approval_requests
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+          AND status = 'pending'
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("token exchange failure should not create a new pending approval");
+    assert_eq!(pending_count, 0);
+
+    let db_name: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .expect("should read temp database name");
+    pool.close().await;
+    drop_temp_database(&admin_pool, &db_name).await;
+    admin_pool.close().await;
+}
+
+#[tokio::test]
+async fn oauth_runtime_invoke_without_approval_flag_skips_approval_request_creation() {
+    let token_exchange_attempts = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("mock oauth listener should bind");
+    let addr = listener.local_addr().unwrap();
+    let token_exchange_for_route = token_exchange_attempts.clone();
+    let mock_app = Router::new()
+        .route(
+            "/token",
+            post(move || {
+                let token_exchange_for_route = token_exchange_for_route.clone();
+                async move {
+                    token_exchange_for_route.fetch_add(1, Ordering::SeqCst);
+                    axum::Json(json!({
+                        "access_token": "runtime_no_approval_access_token",
+                        "token_type": "Bearer",
+                        "expires_in": 3600
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/drive/v3/about",
+            get(|| async { axum::Json(json!({ "ok": true })) }),
+        );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, mock_app).await.unwrap();
+    });
+
+    let Some((app, pool, admin_pool)) = setup_postgres_backed_app().await else {
+        server.abort();
+        eprintln!("skip oauth runtime approval bypass test: database not available");
+        return;
+    };
+
+    let admin_app = app.clone().layer(axum::Extension(create_admin_token()));
+    let create_credential_request = Request::builder()
+        .method("POST")
+        .uri("/credentials")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "service_id": "oauth-runtime-no-approval-secret",
+                "credential_type": "oauth_refresh",
+                "requires_approval": false,
+                "plaintext_data": {
+                    "refreshToken": "1//runtime_no_approval_refresh",
+                    "client_id": "google-client-id",
+                    "client_secret": "google-client-secret",
+                    "token_uri": format!("http://127.0.0.1:{}/token", addr.port())
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let credential_response = admin_app
+        .clone()
+        .oneshot(create_credential_request)
+        .await
+        .unwrap();
+    let credential_created = read_json(credential_response).await;
+    let backing_credential_id = credential_created["credential_id"]
+        .as_str()
+        .expect("credential id should be present")
+        .to_string();
+
+    let create_provider_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/providers")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "alias": "google-runtime-no-approval",
+                "display_name": "Google Runtime No Approval",
+                "provider_family": "google_workspace",
+                "binding_kind": "delegated_user",
+                "grant_family": "authorization_code_pkce",
+                "authorization_endpoint": format!("http://127.0.0.1:{}/authorize", addr.port()),
+                "token_endpoint": format!("http://127.0.0.1:{}/token", addr.port()),
+                "client_id": "google-client-id",
+                "client_auth_method": "client_secret_post",
+                "callback_mode": "query",
+                "adapter_key": "oauth_openid",
+                "adapter_version": "v1",
+                "scope_template": ["openid", "email", "profile"],
+                "runtime_config": {
+                    "redirect_uri": "http://localhost:8080/oauth-broker/callback/google",
+                    "allowed_domains": ["127.0.0.1"],
+                    "allowed_methods": ["GET"],
+                    "allowed_path_prefixes": ["/drive/v3/about"]
+                }
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let provider_response = admin_app
+        .clone()
+        .oneshot(create_provider_request)
+        .await
+        .unwrap();
+    let provider_created = read_json(provider_response).await;
+    let provider_definition_id = provider_created["data"]["id"]
+        .as_str()
+        .expect("provider id should be present");
+
+    let create_binding_request = Request::builder()
+        .method("POST")
+        .uri("/oauth-broker/bindings")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({
+                "provider_definition_id": provider_definition_id,
+                "alias": "google-runtime-no-approval-binding",
+                "purpose": "Google runtime no approval coverage",
+                "subject_ref": "google-user-no-approval",
+                "subject_display_name": "Google Runtime No Approval User",
+                "backing_credential_id": backing_credential_id
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let binding_response = admin_app
+        .clone()
+        .oneshot(create_binding_request)
+        .await
+        .unwrap();
+    let binding_created = read_json(binding_response).await;
+    let binding_id = binding_created["data"]["id"]
+        .as_str()
+        .expect("binding id should be present")
+        .to_string();
+    let binding_handle = binding_created["data"]["binding_handle"]
+        .as_str()
+        .expect("binding handle should be present")
+        .to_string();
+
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_bindings
+        SET status = 'ready', updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark binding ready");
+    sqlx::query(
+        r#"
+        UPDATE public.oauth_binding_runtime_states
+        SET health_status = 'ready',
+            last_error_code = NULL,
+            last_error_message = NULL,
+            cooldown_until = NULL,
+            rebind_required = FALSE,
+            updated_at = NOW()
+        WHERE binding_id = $1
+        "#,
+    )
+    .bind(Uuid::parse_str(&binding_id).unwrap())
+    .execute(&pool)
+    .await
+    .expect("should mark runtime state ready");
+
+    let runtime_request_id = "runtime-request-no-approval-001";
+    let runtime_app = app
+        .clone()
+        .layer(axum::Extension(create_runtime_token(&binding_handle)));
+    let runtime_response = runtime_app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/oauth-broker/runtime/invoke")
+                .header("Content-Type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "binding_handle": binding_handle,
+                        "request_id": runtime_request_id,
+                        "request": {
+                            "method": "GET",
+                            "url": format!("http://127.0.0.1:{}/drive/v3/about", addr.port()),
+                            "headers": {}
+                        }
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(runtime_response.status(), StatusCode::OK);
+    assert_eq!(token_exchange_attempts.load(Ordering::SeqCst), 1);
+
+    let pending_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM approval_requests
+        WHERE tenant_id = $1
+          AND business_type = 'credential_runtime_access'
+          AND business_id = $2
+        "#,
+    )
+    .bind(Uuid::nil())
+    .bind(runtime_request_id)
+    .fetch_one(&pool)
+    .await
+    .expect("approval request count query should succeed");
+    assert_eq!(pending_count, 0);
+
+    let db_name: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .expect("should read temp database name");
+    pool.close().await;
+    drop_temp_database(&admin_pool, &db_name).await;
+    admin_pool.close().await;
+    server.abort();
+}
+
+#[tokio::test]
 async fn binding_lifecycle_supports_staged_policy_apply_then_revoke_and_delete() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -895,6 +2124,7 @@ async fn binding_lifecycle_supports_staged_policy_apply_then_revoke_and_delete()
             json!({
                 "service_id": "lark-lifecycle-secret",
                 "credential_type": "api_key",
+                "allowed_domains": ["127.0.0.1"],
                 "plaintext_data": {
                     "app_id": "cli_mock",
                     "app_secret": "mock_secret"

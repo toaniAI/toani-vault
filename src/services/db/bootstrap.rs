@@ -28,9 +28,12 @@ const PUBLIC_REQUIRED_TABLES: &[&str] = &[
     "credential_versions",
     "sandbox_sessions",
     "sandbox_operations",
+    "http_request_operations",
     "service_accounts",
     "api_tokens",
     "approval_requests",
+    "approval_business_results",
+    "approval_audit_events",
     "oauth_provider_definitions",
     "oauth_bindings",
     "oauth_binding_policy_snapshots",
@@ -53,16 +56,23 @@ const FIXED_SCHEMA_REQUIRED_TABLES: &[&str] = &[
     "service_accounts",
     "api_tokens",
     "approval_requests",
+    "approval_business_results",
+    "approval_audit_events",
     "oauth_provider_definitions",
     "oauth_bindings",
     "oauth_binding_policy_snapshots",
     "oauth_binding_runtime_states",
     "oauth_auth_transactions",
 ];
-const FIXED_SCHEMA_SANDBOX_REQUIRED_TABLES: &[&str] = &["sandbox_sessions", "sandbox_operations"];
+const FIXED_SCHEMA_SANDBOX_REQUIRED_TABLES: &[&str] = &[
+    "sandbox_sessions",
+    "sandbox_operations",
+    "http_request_operations",
+];
 const FIXED_SCHEMA_SANDBOX_OBJECTS: &[&str] = &[
     "sandbox_sessions",
     "sandbox_operations",
+    "http_request_operations",
     "sandbox_active_sessions",
     "sandbox_session_stats",
 ];
@@ -202,10 +212,16 @@ const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
     PUBLIC_COMPATIBILITY_VIEW_RESET_SQL,
     include_str!("../../../migrations/20260317000001_create_sandbox_tables.sql"),
     include_str!("../../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"),
+    include_str!("../../../migrations/20260515111500_add_http_request_operations.sql"),
     include_str!("../../../migrations/20260409143000_add_service_accounts_and_api_tokens.sql"),
     include_str!("../../../migrations/20260410110000_extend_api_tokens_for_automation_tokens.sql"),
     include_str!("../../../migrations/20260413102000_add_api_token_credential_ids.sql"),
     include_str!("../../../migrations/20260515093000_add_approval_requests.sql"),
+    include_str!("../../../migrations/20260515100000_add_approval_terminal_state_fields.sql"),
+    include_str!("../../../migrations/20260515103000_add_approval_audit_and_idempotency.sql"),
+    include_str!(
+        "../../../migrations/20260519100000_scope_and_consume_runtime_approval_results.sql"
+    ),
     include_str!("../../../migrations/20260513010000_add_oauth_broker_resource_skeleton.sql"),
     include_str!(
         "../../../migrations/20260513020000_add_oauth_provider_registry_validation_metadata.sql"
@@ -224,6 +240,7 @@ const PUBLIC_BASELINE_SCRIPTS: &[&str] = &[
 const SANDBOX_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../migrations/20260317000001_create_sandbox_tables.sql"),
     include_str!("../../../migrations/20260403093000_add_sandbox_session_identity_columns.sql"),
+    include_str!("../../../migrations/20260515111500_add_http_request_operations.sql"),
     include_str!(
         "../../../migrations/20260421090000_align_sandbox_session_status_and_diagnostics.sql"
     ),
@@ -232,6 +249,11 @@ const SANDBOX_BASELINE_SCRIPTS: &[&str] = &[
 
 const OAUTH_BROKER_BASELINE_SCRIPTS: &[&str] = &[
     include_str!("../../../migrations/20260515093000_add_approval_requests.sql"),
+    include_str!("../../../migrations/20260515100000_add_approval_terminal_state_fields.sql"),
+    include_str!("../../../migrations/20260515103000_add_approval_audit_and_idempotency.sql"),
+    include_str!(
+        "../../../migrations/20260519100000_scope_and_consume_runtime_approval_results.sql"
+    ),
     include_str!("../../../migrations/20260513010000_add_oauth_broker_resource_skeleton.sql"),
     include_str!(
         "../../../migrations/20260513020000_add_oauth_provider_registry_validation_metadata.sql"
@@ -279,6 +301,21 @@ const PUBLIC_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
             "token_plane",
             "binding_handles",
         ],
+    ),
+    (
+        "approval_requests",
+        &[
+            "processed_by",
+            "processed_at",
+            "remark",
+            "result_code",
+            "result_payload",
+            "business_result_written_at",
+        ],
+    ),
+    (
+        "approval_business_results",
+        &["tenant_id", "consumed_at", "reservation_id", "reserved_at"],
     ),
     (
         "oauth_provider_definitions",
@@ -331,6 +368,21 @@ const FIXED_SCHEMA_OAUTH_REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
             "token_plane",
             "binding_handles",
         ],
+    ),
+    (
+        "approval_requests",
+        &[
+            "processed_by",
+            "processed_at",
+            "remark",
+            "result_code",
+            "result_payload",
+            "business_result_written_at",
+        ],
+    ),
+    (
+        "approval_business_results",
+        &["tenant_id", "consumed_at", "reservation_id", "reserved_at"],
     ),
 ];
 
@@ -919,6 +971,8 @@ mod tests {
             missing,
             vec![
                 "api_tokens".to_string(),
+                "approval_audit_events".to_string(),
+                "approval_business_results".to_string(),
                 "approval_requests".to_string(),
                 "audit_logs".to_string(),
                 "credential_versions".to_string(),

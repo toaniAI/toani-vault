@@ -22,7 +22,10 @@ use axum::{
 use serde::Serialize;
 use serde_json::json;
 use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
@@ -57,13 +60,16 @@ use vault_service::api::{
     oauth_broker::{OAuthBrokerApiState, oauth_broker_public_routes, oauth_broker_routes},
     rate_limit::{RateLimitConfig, RateLimitState, rate_limit_middleware},
     sandbox::{SandboxOwnerRuntime, SandboxState, sandbox_routes},
-    sandbox_owner::RedisSandboxOwnerRegistry,
+    sandbox_owner::{RedisSandboxOwnerRegistry, SandboxOwnerRegistry},
     service_account_routes,
     tenant::{TenantApiState, tenant_routes},
-    token_blacklist::{TokenStore, create_redis_token_store},
+    token_blacklist::{TokenStore, create_redis_token_store, create_token_store},
     token_routes,
 };
-use vault_service::config::{ConfigError, TeeRuntimeConfig, TeeRuntimeMode};
+use vault_service::config::{
+    CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV, CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV,
+    ConfigError, TeeRuntimeConfig, TeeRuntimeMode,
+};
 use vault_service::oauth_broker::PgOAuthBrokerService;
 use vault_service::services::db::{DatabasePool, ensure_required_tables_on_startup};
 use vault_service::tee::{
@@ -88,6 +94,10 @@ enum SandboxOwnerBaseUrlSource {
 const ATTESTATION_WARMUP_MAX_ATTEMPTS: u32 = 5;
 const ATTESTATION_WARMUP_INITIAL_BACKOFF_MS: u64 = 500;
 const ATTESTATION_REFRESH_INTERVAL_SECS: u64 = 1_800;
+const CREDBRIDGE_ATTESTATION_ALLOW_MEMORY_FALLBACK_ENV: &str =
+    "CREDBRIDGE_ATTESTATION_ALLOW_MEMORY_FALLBACK";
+const CREDBRIDGE_RATE_LIMIT_ALLOW_MEMORY_FALLBACK_ENV: &str =
+    "CREDBRIDGE_RATE_LIMIT_ALLOW_MEMORY_FALLBACK";
 
 impl SandboxOwnerBaseUrlSource {
     fn as_str(self) -> &'static str {
@@ -573,6 +583,27 @@ async fn warmup_attestation_quote_with_retry(state: &AttestationState) {
 async fn initialize_app_state(
     config: &ServerConfig,
 ) -> Result<AppState, Box<dyn std::error::Error>> {
+    info!(
+        module = "sealed_storage",
+        status = "initializing",
+        sealed_storage_path = %config.tee_runtime.sealed_storage_path,
+        "检查 sealed storage 本地持久化目录"
+    );
+    ensure_writable_directory(Path::new(&config.tee_runtime.sealed_storage_path)).map_err(
+        |error| {
+            std::io::Error::other(format!(
+                "sealed storage 目录不可写 {}: {error}",
+                config.tee_runtime.sealed_storage_path
+            ))
+        },
+    )?;
+    info!(
+        module = "sealed_storage",
+        status = "ready",
+        sealed_storage_path = %config.tee_runtime.sealed_storage_path,
+        "sealed storage 本地持久化目录可写"
+    );
+
     // --- Enclave ---
     info!(
         module = "enclave",
@@ -756,6 +787,7 @@ async fn initialize_app_state(
         database_pool.pool().clone(),
     )))
     .with_audit_storage(audit_storage.clone())
+    .with_approval_pool(database_pool.pool().clone())
     .with_credential_runtime(
         credential_state.vault.clone(),
         credential_state.key_hierarchy.clone(),
@@ -788,11 +820,12 @@ async fn initialize_app_state(
         "开始初始化速率限制"
     );
     let rate_limit_config = RateLimitConfig::from_env();
-    let rate_limit_state = initialize_rate_limit_state(rate_limit_config).await?;
+    let (rate_limit_state, rate_limit_backend) =
+        initialize_rate_limit_state(rate_limit_config).await?;
     info!(
         module = "rate_limit",
         status = "ready",
-        backend = "redis",
+        backend = rate_limit_backend,
         "速率限制就绪"
     );
 
@@ -806,6 +839,9 @@ async fn initialize_app_state(
         AttestationApiConfig {
             tee_runtime: config.tee_runtime.clone(),
             root_key_source: root_key_source.as_str().to_string(),
+            allow_memory_challenge_store: memory_fallback_enabled(
+                CREDBRIDGE_ATTESTATION_ALLOW_MEMORY_FALLBACK_ENV,
+            ),
             ..Default::default()
         },
         credential_state.enclave.clone(),
@@ -910,9 +946,6 @@ async fn initialize_sandbox_state(
 
     let database_pool = database_pool
         .ok_or_else(|| std::io::Error::other("沙箱持久化要求 DATABASE_URL，内存回退已禁用"))?;
-    let redis_url = env::var("REDIS_URL").map_err(|_| {
-        std::io::Error::other("sandbox owner routing 要求 REDIS_URL，内存回退已禁用")
-    })?;
     let owner_id = env::var("SANDBOX_OWNER_ID")
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -938,9 +971,7 @@ async fn initialize_sandbox_state(
         } else {
             format!("http://127.0.0.1:{}", config.port)
         };
-    let owner_registry = Arc::new(RedisSandboxOwnerRegistry::new(&redis_url).map_err(|error| {
-        std::io::Error::other(format!("sandbox owner registry init failed: {error}"))
-    })?);
+    let owner_registry = resolve_sandbox_owner_registry()?;
 
     let config = SandboxConfig::from_env();
     let state = SandboxState::new(
@@ -952,7 +983,7 @@ async fn initialize_sandbox_state(
         SandboxOwnerRuntime {
             owner_id,
             owner_base_url,
-            owner_registry: Some(owner_registry),
+            owner_registry,
         },
     )
     .await
@@ -1206,6 +1237,38 @@ async fn initialize_database_pool() -> Result<DatabasePool, Box<dyn std::error::
 async fn initialize_audit_storage(
     database_pool: DatabasePool,
 ) -> Result<(Arc<dyn AuditStorage>, Vec<u8>, &'static str), Box<dyn std::error::Error>> {
+    let schema =
+        env::var("CREDBRIDGE_PG_SCHEMA").unwrap_or_else(|_| "credbridge_vault".to_string());
+    let explicit_signing_key_path = env::var("CREDBRIDGE_AUDIT_SIGNING_KEY_PATH")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    let resolved_signing_key_path = resolve_audit_signing_key_path(
+        &schema,
+        explicit_signing_key_path.as_deref(),
+        env::var("SEALED_STORAGE_PATH")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .as_deref(),
+    );
+    let signing_key_dir = resolved_signing_key_path.parent().ok_or_else(|| {
+        std::io::Error::other(format!(
+            "审计签名密钥路径缺少父目录: {}",
+            resolved_signing_key_path.display()
+        ))
+    })?;
+    ensure_writable_directory(signing_key_dir).map_err(|error| {
+        std::io::Error::other(format!(
+            "审计签名密钥目录不可写 {}: {error}",
+            signing_key_dir.display()
+        ))
+    })?;
+    info!(
+        module = "audit",
+        schema = %schema,
+        signing_key_path = %resolved_signing_key_path.display(),
+        "审计签名密钥路径已解析"
+    );
+
     let storage = PostgresAuditStorageAdapter::new(database_pool.pool().clone())
         .await
         .map_err(|error| {
@@ -1213,6 +1276,57 @@ async fn initialize_audit_storage(
         })?;
     let public_key = storage.public_key().to_vec();
     Ok((Arc::new(storage), public_key, "postgres"))
+}
+
+fn ensure_writable_directory(path: &Path) -> io::Result<()> {
+    if path.exists() && !path.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("目标不是目录: {}", path.display()),
+        ));
+    }
+
+    fs::create_dir_all(path)?;
+    let metadata = fs::metadata(path)?;
+    if !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("目标不是目录: {}", path.display()),
+        ));
+    }
+
+    let probe_path = writable_probe_path(path);
+    {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&probe_path)?;
+        file.write_all(b"credbridge-sealed-storage-probe")?;
+        file.sync_all()?;
+    }
+    fs::remove_file(&probe_path)?;
+    Ok(())
+}
+
+fn writable_probe_path(path: &Path) -> PathBuf {
+    path.join(format!(".credbridge-write-check-{}", uuid::Uuid::now_v7()))
+}
+
+fn resolve_audit_signing_key_path(
+    schema: &str,
+    explicit_path: Option<&str>,
+    sealed_storage_path: Option<&str>,
+) -> PathBuf {
+    if let Some(path) = explicit_path
+        && !path.trim().is_empty()
+    {
+        return PathBuf::from(path);
+    }
+
+    let sealed_storage_path = sealed_storage_path
+        .filter(|path| !path.trim().is_empty())
+        .unwrap_or(".sealed");
+    PathBuf::from(sealed_storage_path).join(format!("{schema}.audit-signing-key.json"))
 }
 
 async fn build_tenant_config_store(
@@ -1227,21 +1341,80 @@ async fn build_tenant_config_store(
 }
 
 fn initialize_token_store() -> Result<(TokenStore, &'static str), Box<dyn std::error::Error>> {
-    let redis_url = env::var("REDIS_URL")
-        .map_err(|_| std::io::Error::other("token state 要求 REDIS_URL，内存回退已禁用"))?;
-    let token_store = create_redis_token_store(&redis_url)
-        .map_err(|error| std::io::Error::other(format!("Redis Token 存储初始化失败: {error}")))?;
-    Ok((token_store, "redis"))
+    match env::var("REDIS_URL") {
+        Ok(redis_url) => {
+            let token_store = create_redis_token_store(&redis_url).map_err(|error| {
+                std::io::Error::other(format!("Redis Token 存储初始化失败: {error}"))
+            })?;
+            Ok((token_store, "redis"))
+        }
+        Err(_) if memory_fallback_enabled(CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV) => {
+            warn!(
+                env_var = CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV,
+                "REDIS_URL missing; using in-memory token blacklist fallback"
+            );
+            Ok((create_token_store(), "memory"))
+        }
+        Err(_) => Err(std::io::Error::other("token state 要求 REDIS_URL，内存回退已禁用").into()),
+    }
 }
 
 async fn initialize_rate_limit_state(
     config: RateLimitConfig,
-) -> Result<RateLimitState, Box<dyn std::error::Error>> {
-    let redis_url = env::var("REDIS_URL")
-        .map_err(|_| std::io::Error::other("rate limit state 要求 REDIS_URL，内存回退已禁用"))?;
-    RateLimitState::new(config, &redis_url)
-        .await
-        .map_err(|error| std::io::Error::other(format!("Redis 限流存储初始化失败: {error}")).into())
+) -> Result<(RateLimitState, &'static str), Box<dyn std::error::Error>> {
+    match env::var("REDIS_URL") {
+        Ok(redis_url) => RateLimitState::new(config, &redis_url)
+            .await
+            .map(|state| (state, "redis"))
+            .map_err(|error| {
+                std::io::Error::other(format!("Redis 限流存储初始化失败: {error}")).into()
+            }),
+        Err(_) if memory_fallback_enabled(CREDBRIDGE_RATE_LIMIT_ALLOW_MEMORY_FALLBACK_ENV) => {
+            warn!(
+                env_var = CREDBRIDGE_RATE_LIMIT_ALLOW_MEMORY_FALLBACK_ENV,
+                "REDIS_URL missing; using in-memory rate limit fallback"
+            );
+            Ok((RateLimitState::new_in_memory(config), "memory"))
+        }
+        Err(_) => {
+            Err(std::io::Error::other("rate limit state 要求 REDIS_URL，内存回退已禁用").into())
+        }
+    }
+}
+
+fn resolve_sandbox_owner_registry()
+-> Result<Option<Arc<dyn SandboxOwnerRegistry>>, Box<dyn std::error::Error>> {
+    match env::var("REDIS_URL") {
+        Ok(redis_url) => {
+            let owner_registry = RedisSandboxOwnerRegistry::new(&redis_url).map_err(|error| {
+                std::io::Error::other(format!("sandbox owner registry init failed: {error}"))
+            })?;
+            Ok(Some(Arc::new(owner_registry)))
+        }
+        Err(_) if memory_fallback_enabled(CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV) => {
+            warn!(
+                env_var = CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV,
+                "REDIS_URL missing; sandbox owner routing will stay local-only"
+            );
+            Ok(None)
+        }
+        Err(_) => Err(std::io::Error::other(
+            "sandbox owner routing 要求 REDIS_URL，内存回退已禁用",
+        )
+        .into()),
+    }
+}
+
+fn memory_fallback_enabled(env_var: &'static str) -> bool {
+    env::var(env_var)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone)]
@@ -1643,12 +1816,21 @@ fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        LifecycleState, SandboxOwnerBaseUrlSource, StorageBackendKind, render_metrics,
+        CREDBRIDGE_ATTESTATION_ALLOW_MEMORY_FALLBACK_ENV,
+        CREDBRIDGE_RATE_LIMIT_ALLOW_MEMORY_FALLBACK_ENV, LifecycleState, SandboxOwnerBaseUrlSource,
+        StorageBackendKind, ensure_writable_directory, initialize_rate_limit_state,
+        initialize_token_store, memory_fallback_enabled, render_metrics,
         resolve_auto_storage_backend, resolve_sandbox_owner_base_url,
+        resolve_sandbox_owner_registry,
     };
     use std::{
-        io,
+        fs, io,
+        path::PathBuf,
         sync::{Arc, Mutex, OnceLock},
+    };
+    use vault_service::api::rate_limit::RateLimitConfig;
+    use vault_service::config::{
+        CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV, CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV,
     };
     use vault_service::tee::{SelfCheckItem, StartupReadiness};
 
@@ -1695,6 +1877,10 @@ mod tests {
         }
     }
 
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("credbridge-main-{name}-{}", uuid::Uuid::now_v7()))
+    }
+
     #[test]
     fn auto_backend_prefers_postgres_when_database_url_exists() {
         let backend = resolve_auto_storage_backend(true, false, false).unwrap();
@@ -1717,6 +1903,110 @@ mod tests {
     fn auto_backend_rejects_partial_vault_configuration() {
         let error = resolve_auto_storage_backend(false, true, false).unwrap_err();
         assert!(error.contains("VAULT_ADDR/VAULT_TOKEN"));
+    }
+
+    #[test]
+    fn memory_fallback_enabled_accepts_truthy_values() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var(CREDBRIDGE_ATTESTATION_ALLOW_MEMORY_FALLBACK_ENV, "yes");
+        }
+
+        assert!(memory_fallback_enabled(
+            CREDBRIDGE_ATTESTATION_ALLOW_MEMORY_FALLBACK_ENV
+        ));
+    }
+
+    #[test]
+    fn initialize_token_store_uses_memory_when_flag_enabled_without_redis() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("REDIS_URL");
+            std::env::set_var(CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV, "true");
+        }
+
+        let (_, backend) =
+            initialize_token_store().expect("token store should fall back to memory");
+
+        assert_eq!(backend, "memory");
+    }
+
+    #[test]
+    fn initialize_token_store_requires_redis_without_flag() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("REDIS_URL");
+            std::env::remove_var(CREDBRIDGE_TOKEN_ALLOW_MEMORY_FALLBACK_ENV);
+        }
+
+        let error = match initialize_token_store() {
+            Ok(_) => panic!("token store should require redis"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("token state 要求 REDIS_URL，内存回退已禁用")
+        );
+    }
+
+    #[test]
+    fn initialize_rate_limit_state_uses_memory_when_flag_enabled_without_redis() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("REDIS_URL");
+            std::env::set_var(CREDBRIDGE_RATE_LIMIT_ALLOW_MEMORY_FALLBACK_ENV, "true");
+        }
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+        let (state, backend) = runtime
+            .block_on(initialize_rate_limit_state(RateLimitConfig::default()))
+            .expect("rate limit should fall back to memory");
+
+        assert_eq!(backend, "memory");
+        assert!(
+            runtime
+                .block_on(state.check_and_record("127.0.0.1"))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn resolve_sandbox_owner_registry_uses_local_only_mode_when_flag_enabled_without_redis() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("REDIS_URL");
+            std::env::set_var(CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV, "true");
+        }
+
+        let owner_registry = resolve_sandbox_owner_registry()
+            .expect("sandbox owner registry should allow local-only mode");
+
+        assert!(owner_registry.is_none());
+    }
+
+    #[test]
+    fn resolve_sandbox_owner_registry_requires_redis_without_flag() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("REDIS_URL");
+            std::env::remove_var(CREDBRIDGE_SANDBOX_ALLOW_MEMORY_FALLBACK_ENV);
+        }
+
+        let error = match resolve_sandbox_owner_registry() {
+            Ok(_) => panic!("sandbox owner registry should require redis"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("sandbox owner routing 要求 REDIS_URL，内存回退已禁用")
+        );
     }
 
     #[test]
@@ -1758,6 +2048,36 @@ mod tests {
         assert!(LifecycleState::Ready.is_live());
         assert!(LifecycleState::Draining.is_live());
         assert!(!LifecycleState::Shutdown.is_live());
+    }
+
+    #[test]
+    fn ensure_writable_directory_creates_missing_directory_and_cleans_probe_file() {
+        let temp_dir = unique_temp_dir("writable-dir");
+        ensure_writable_directory(&temp_dir).expect("directory should be writable");
+        assert!(temp_dir.is_dir());
+        let entries = fs::read_dir(&temp_dir)
+            .expect("temp dir should be readable")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("directory entries should load");
+        assert!(
+            entries.is_empty(),
+            "writable probe file should be removed after validation"
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn ensure_writable_directory_rejects_regular_file_target() {
+        let temp_dir = unique_temp_dir("writable-file");
+        fs::create_dir_all(&temp_dir).expect("temp dir should exist");
+        let file_path = temp_dir.join("not-a-directory");
+        fs::write(&file_path, b"x").expect("regular file should exist");
+
+        let error = ensure_writable_directory(&file_path).unwrap_err();
+        assert!(error.to_string().contains("目标不是目录"));
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
